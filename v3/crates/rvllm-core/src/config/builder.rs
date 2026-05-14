@@ -8,8 +8,8 @@ use crate::error::{ConfigError, Result, RvllmError};
 
 use super::model::ModelConfig;
 use super::runtime::{
-    AppleBackendMode, AppleRolloutBucket, AppleRolloutBucketPolicy, GraphMode, LogLevel,
-    PreemptionMode, RuntimeConfig,
+    AneComputeProfile, AneFallbackPolicy, AppleBackendMode, AppleRolloutBucket,
+    AppleRolloutBucketPolicy, GraphMode, LogLevel, PreemptionMode, RuntimeConfig,
 };
 
 #[derive(Default)]
@@ -29,6 +29,13 @@ pub struct RuntimeConfigBuilder {
     kernel_dir: Option<PathBuf>,
     apple_backend_mode: Option<AppleBackendMode>,
     apple_private_ane_opt_in: Option<bool>,
+    strict_ane: Option<bool>,
+    ane_compute_profile: Option<AneComputeProfile>,
+    ane_fallback_policy: Option<AneFallbackPolicy>,
+    ane_hidden_size: Option<usize>,
+    ane_intermediate_size: Option<usize>,
+    ane_num_layers: Option<usize>,
+    model_layout_hash: Option<[u8; 32]>,
     apple_rollout_tokens: Option<u32>,
     apple_rollout_bucket_policy: Option<AppleRolloutBucketPolicy>,
     apple_rollout_bucket: Option<AppleRolloutBucket>,
@@ -63,6 +70,13 @@ impl RuntimeConfigBuilder {
     setter!(log_level, LogLevel);
     setter!(apple_backend_mode, AppleBackendMode);
     setter!(apple_private_ane_opt_in, bool);
+    setter!(strict_ane, bool);
+    setter!(ane_compute_profile, AneComputeProfile);
+    setter!(ane_fallback_policy, AneFallbackPolicy);
+    setter!(ane_hidden_size, usize);
+    setter!(ane_intermediate_size, usize);
+    setter!(ane_num_layers, usize);
+    setter!(model_layout_hash, [u8; 32]);
     setter!(apple_rollout_tokens, u32);
     setter!(apple_rollout_bucket_policy, AppleRolloutBucketPolicy);
     setter!(apple_rollout_bucket, AppleRolloutBucket);
@@ -102,10 +116,75 @@ impl RuntimeConfigBuilder {
         let apple_rollout_tokens = self.apple_rollout_tokens.unwrap_or(1);
         let apple_rollout_bucket_policy = self.apple_rollout_bucket_policy.unwrap_or_default();
         let mut apple_rollout_bucket = self.apple_rollout_bucket;
+        let strict_ane = self.strict_ane.unwrap_or(false);
+        let ane_compute_profile = self
+            .ane_compute_profile
+            .unwrap_or(if strict_ane {
+                AneComputeProfile::NeuralEngineOnly
+            } else {
+                AneComputeProfile::AnyAvailable
+            });
+        let ane_fallback_policy = self.ane_fallback_policy.unwrap_or(if strict_ane {
+            AneFallbackPolicy::FailFast
+        } else {
+            AneFallbackPolicy::AllowMetal
+        });
+        let ane_hidden_size = self.ane_hidden_size.unwrap_or(model.hidden_size);
+        let ane_intermediate_size = self.ane_intermediate_size.unwrap_or(model.intermediate_size);
+        let ane_num_layers = self.ane_num_layers.unwrap_or(model.num_layers);
+        let model_layout_hash = self.model_layout_hash.unwrap_or_else(|| {
+            let mut h: u64 = 0xcbf29ce484222325u64;
+            fn mix(mut h: u64, bytes: &[u8]) -> u64 {
+                for b in bytes {
+                    h ^= u64::from(*b);
+                    h = h.wrapping_mul(0x100000001b3);
+                }
+                h
+            }
+            h = mix(
+                h,
+                format!(
+                    "arch={:?};hidden={};intermediate={};layers={};kv={};heads={};head_dim={};max_pos={};dtype={:?}",
+                    model.architecture,
+                    model.hidden_size,
+                    model.intermediate_size,
+                    model.num_layers,
+                    model.num_kv_heads,
+                    model.num_attention_heads,
+                    model.head_dim,
+                    model.max_position_embeddings,
+                    model.torch_dtype,
+                )
+                .as_bytes(),
+            );
+            h = mix(h, format!("ane:{ane_hidden_size}:{ane_intermediate_size}:{ane_num_layers}").as_bytes());
+            let mut out = [0u8; 32];
+            out[..8].copy_from_slice(&h.to_le_bytes());
+            out[8..16].copy_from_slice(&h.rotate_left(13).to_le_bytes());
+            out[16..24].copy_from_slice(&h.rotate_left(29).to_le_bytes());
+            out[24..32].copy_from_slice(&h.rotate_left(47).to_le_bytes());
+            out
+        });
         let requires_private_ane = apple_backend_mode.requires_private_ane();
 
         if apple_rollout_tokens == 0 {
             reasons.push("apple_rollout_tokens must be >= 1".into());
+        }
+        if strict_ane && !requires_private_ane {
+            reasons.push(
+                "strict_ane requires an Apple backend mode that enables ANE rollout".into(),
+            );
+        }
+        if strict_ane && !apple_private_ane_opt_in {
+            reasons.push("strict_ane requires apple_private_ane_opt_in=true".into());
+        }
+        if strict_ane && !matches!(ane_fallback_policy, AneFallbackPolicy::FailFast) {
+            reasons.push("strict_ane requires ane_fallback_policy=FailFast".into());
+        }
+        if strict_ane
+            && !matches!(ane_compute_profile, AneComputeProfile::NeuralEngineOnly)
+        {
+            reasons.push("strict_ane requires ane_compute_profile=NeuralEngineOnly".into());
         }
         if requires_private_ane && !apple_private_ane_opt_in {
             reasons.push(format!(
@@ -213,6 +292,24 @@ impl RuntimeConfigBuilder {
                 reasons.push("fp8_kv_cache requires kv_block_size >= 32".into());
             }
         }
+        if ane_hidden_size == 0 {
+            reasons.push("ane_hidden_size must be >= 1".into());
+        }
+        if ane_intermediate_size == 0 {
+            reasons.push("ane_intermediate_size must be >= 1".into());
+        }
+        if ane_num_layers == 0 {
+            reasons.push("ane_num_layers must be >= 1".into());
+        }
+        if ane_hidden_size > 0 && ane_hidden_size != model.hidden_size {
+            reasons.push("ane_hidden_size should match model.hidden_size".into());
+        }
+        if ane_intermediate_size > 0 && ane_intermediate_size != model.intermediate_size {
+            reasons.push("ane_intermediate_size should match model.intermediate_size".into());
+        }
+        if ane_num_layers > 0 && ane_num_layers != model.num_layers {
+            reasons.push("ane_num_layers should match model.num_layers".into());
+        }
 
         if !reasons.is_empty() {
             return Err(RvllmError::config(
@@ -242,6 +339,13 @@ impl RuntimeConfigBuilder {
             apple_rollout_tokens,
             apple_rollout_bucket_policy,
             apple_rollout_bucket,
+            strict_ane,
+            ane_compute_profile,
+            ane_fallback_policy,
+            ane_hidden_size,
+            ane_intermediate_size,
+            ane_num_layers,
+            model_layout_hash,
             weights_path: self.weights_path,
         })
     }

@@ -12,6 +12,7 @@ mod runtime;
 pub use builder::RuntimeConfigBuilder;
 pub use model::{ModelArch, ModelConfig};
 pub use runtime::{
+    AneComputeProfile, AneFallbackPolicy,
     AppleBackendMode, AppleRolloutBucket, AppleRolloutBucketPolicy, GraphMode, LogLevel, PreemptionMode,
     RuntimeConfig,
 };

@@ -1,4 +1,4 @@
-use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
+use rvllm_core::{AneComputeProfile, AneFallbackPolicy, AppleCtx, AppleError, Result, RvllmError};
 use serde::{Deserialize, Serialize};
 
 use crate::device::AppleAcceleratorTarget;
@@ -82,6 +82,13 @@ pub struct AppleRuntimePlan {
     pub rollout_bucket: Option<RolloutBucket>,
     pub rollout_tokens: u32,
     pub private_ane_opt_in: bool,
+    pub strict_ane: bool,
+    pub ane_compute_profile: AneComputeProfile,
+    pub ane_fallback_policy: AneFallbackPolicy,
+    pub ane_hidden_size: usize,
+    pub ane_intermediate_size: usize,
+    pub ane_num_layers: usize,
+    pub model_layout_hash: [u8; 32],
     pub weights_path: Option<std::path::PathBuf>,
 }
 
@@ -92,6 +99,57 @@ impl AppleRuntimePlan {
                 AppleError::FeatureNotAvailable {
                     backend: "private-ane",
                     op: "rollout",
+                },
+                self.ctx("validate"),
+            ));
+        }
+        if self.strict_ane {
+            if !self.mode.requires_private_ane() || !self.private_ane_opt_in {
+                return Err(RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "private-ane",
+                        op: "strict_ane_requires_private_ane",
+                    },
+                    self.ctx("validate"),
+                ));
+            }
+            if !matches!(self.ane_compute_profile, AneComputeProfile::NeuralEngineOnly) {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidMil {
+                        reason: "strict_ane requires AneComputeProfile::NeuralEngineOnly",
+                    },
+                    self.ctx("validate"),
+                ));
+            }
+            if !matches!(self.ane_fallback_policy, AneFallbackPolicy::FailFast) {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidMil {
+                        reason: "strict_ane requires AneFallbackPolicy::FailFast",
+                    },
+                    self.ctx("validate"),
+                ));
+            }
+        }
+        if self.private_ane_opt_in && self.ane_num_layers == 0 {
+            return Err(RvllmError::apple(
+                AppleError::InvalidMil {
+                    reason: "ane_num_layers must be >= 1",
+                },
+                self.ctx("validate"),
+            ));
+        }
+        if self.private_ane_opt_in && self.ane_hidden_size == 0 {
+            return Err(RvllmError::apple(
+                AppleError::InvalidMil {
+                    reason: "ane_hidden_size must be >= 1",
+                },
+                self.ctx("validate"),
+            ));
+        }
+        if self.private_ane_opt_in && self.ane_intermediate_size == 0 {
+            return Err(RvllmError::apple(
+                AppleError::InvalidMil {
+                    reason: "ane_intermediate_size must be >= 1",
                 },
                 self.ctx("validate"),
             ));
@@ -130,6 +188,13 @@ mod tests {
             rollout_bucket: Some(RolloutBucket { seqs: 8, tokens: 4 }),
             rollout_tokens: 4,
             private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 1,
+            ane_intermediate_size: 1,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
             weights_path: None,
         };
         assert!(plan.validate().is_err());

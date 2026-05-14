@@ -106,15 +106,24 @@ impl ProductionAppleBackend {
         if self.compiled {
             return Ok(());
         }
+        if plan.strict_ane && !plan.ane_fallback_policy.is_strict() {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "production-apple",
+                    op: "strict_ane_requires_failfast",
+                },
+                Self::ctx("compile_if_needed"),
+            ));
+        }
 
         let bucket = plan
             .rollout_bucket
             .unwrap_or(RolloutBucket { seqs: 1, tokens: 1 });
         let ane_plan = AneProgramPlan::ffn_only(AneRolloutConfig {
             bucket,
-            hidden_size: 5376, // Gemma4 hidden size
-            intermediate_size: 21504,
-            num_layers: 1,
+            hidden_size: plan.ane_hidden_size,
+            intermediate_size: plan.ane_intermediate_size,
+            num_layers: plan.ane_num_layers,
         });
         let weights_path = plan.weights_path.as_deref().ok_or_else(|| {
             RvllmError::apple(
@@ -124,22 +133,41 @@ impl ProductionAppleBackend {
                 Self::ctx("compile_if_needed"),
             )
         })?;
-        compile_private_ane_program(&ane_plan, weights_path)?;
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "production-apple",
+                    op: "macos_or_ane_required",
+                },
+                Self::ctx("compile_if_needed"),
+            ));
+        }
+
+        let compiled_model = compile_private_ane_program(&ane_plan, weights_path)?;
+        let cache_key = ane_plan.cache_key();
 
         #[cfg(target_os = "macos")]
         {
-            let cache_key = ane_plan.cache_key();
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            let cache_root = std::path::PathBuf::from(home).join(".cache/rvllm/ane");
-            let cached_compiled = cache_root.join(format!("{}.mlmodelc", cache_key));
-            
-            if let Some(h) = rvllm_apple_ane_sys::AneModelHandle::load(cached_compiled.to_str().unwrap_or("")) {
+            let compiled_path = compiled_model.to_string_lossy();
+            if let Some(h) = rvllm_apple_ane_sys::AneModelHandle::load(compiled_path.as_ref()) {
                 self.handle = Some(h);
+                self.compiled = true;
+                return Ok(());
             }
+            return Err(RvllmError::apple(
+                AppleError::RuntimeAneModel {
+                    err: rvllm_core::AneRuntimeError::CacheMissOrCorrupt {
+                        cache_key: cache_key.clone(),
+                    },
+                },
+                Self::ctx("load_ane_model"),
+            ));
         }
 
-        self.compiled = true;
-        Ok(())
+        #[cfg(not(target_os = "macos"))]
+        unreachable!("compile branch is only reachable on non-macos due early return above")
     }
 }
 
@@ -405,6 +433,13 @@ mod tests {
             rollout_bucket: None,
             rollout_tokens: 1,
             private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: rvllm_core::AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: rvllm_core::AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 1,
+            ane_intermediate_size: 1,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
             weights_path: None,
         }
     }

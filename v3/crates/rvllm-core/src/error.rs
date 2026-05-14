@@ -246,6 +246,33 @@ pub enum AppleError {
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
     InvalidWeightBlob { reason: &'static str },
+    CompileAneModel { err: AneCompileError },
+    RuntimeAneModel { err: AneRuntimeError },
+}
+
+#[derive(Debug)]
+pub enum AneCompileError {
+    UnsupportedOp { op: &'static str },
+    CompileIo { detail: String },
+    CacheMissOrCorrupt {
+        cache_path: String,
+    },
+    MetadataMismatch {
+        expected: [u8; 32],
+        actual: [u8; 32],
+    },
+}
+
+#[derive(Debug)]
+pub enum AneRuntimeError {
+    UnsupportedOp { op: &'static str },
+    SurfaceUnavailable { id: u32 },
+    MetadataMismatch {
+        detail: String,
+    },
+    CacheMissOrCorrupt {
+        cache_key: String,
+    },
 }
 
 #[derive(Debug)]

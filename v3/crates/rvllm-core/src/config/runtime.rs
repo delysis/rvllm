@@ -4,6 +4,45 @@
 use std::path::{Path, PathBuf};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum AneComputeProfile {
+    /// Use any available compute backend that can execute the ANE-friendly
+    /// graph (MLKit default behavior).
+    AnyAvailable,
+    /// Prefer the ANE and allow framework fallback when ANE is unavailable.
+    NeuralEnginePreferred,
+    /// Force ANE execution; fail immediately when ANE cannot satisfy the request.
+    NeuralEngineOnly,
+}
+
+impl AneComputeProfile {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AnyAvailable => "AnyAvailable",
+            Self::NeuralEnginePreferred => "NeuralEnginePreferred",
+            Self::NeuralEngineOnly => "NeuralEngineOnly",
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum AneFallbackPolicy {
+    /// Never fallback from a strict ANE request.
+    FailFast,
+    /// Fallback to Metal path for non-fatal compile/runtime issues.
+    AllowMetal,
+    /// Keep current behavior for experimental soft transitions.
+    AllowSoft,
+}
+
+impl AneFallbackPolicy {
+    #[must_use]
+    pub const fn is_strict(self) -> bool {
+        matches!(self, Self::FailFast)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum AppleBackendMode {
     Disabled,
     MetalOnly,
@@ -109,6 +148,13 @@ pub struct RuntimeConfig {
     pub(super) apple_rollout_tokens: u32,
     pub(super) apple_rollout_bucket_policy: AppleRolloutBucketPolicy,
     pub(super) apple_rollout_bucket: Option<AppleRolloutBucket>,
+    pub(super) strict_ane: bool,
+    pub(super) ane_compute_profile: AneComputeProfile,
+    pub(super) ane_fallback_policy: AneFallbackPolicy,
+    pub(super) ane_hidden_size: usize,
+    pub(super) ane_intermediate_size: usize,
+    pub(super) ane_num_layers: usize,
+    pub(super) model_layout_hash: [u8; 32],
     pub(super) weights_path: Option<PathBuf>,
 }
 
@@ -159,6 +205,34 @@ impl RuntimeConfig {
 
     pub fn apple_private_ane_opt_in(&self) -> bool {
         self.apple_private_ane_opt_in
+    }
+
+    pub fn strict_ane(&self) -> bool {
+        self.strict_ane
+    }
+
+    pub fn ane_compute_profile(&self) -> AneComputeProfile {
+        self.ane_compute_profile
+    }
+
+    pub fn ane_fallback_policy(&self) -> AneFallbackPolicy {
+        self.ane_fallback_policy
+    }
+
+    pub fn ane_hidden_size(&self) -> usize {
+        self.ane_hidden_size
+    }
+
+    pub fn ane_intermediate_size(&self) -> usize {
+        self.ane_intermediate_size
+    }
+
+    pub fn ane_num_layers(&self) -> usize {
+        self.ane_num_layers
+    }
+
+    pub fn model_layout_hash(&self) -> &[u8; 32] {
+        &self.model_layout_hash
     }
 
     pub fn apple_rollout_tokens(&self) -> u32 {

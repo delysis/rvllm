@@ -264,6 +264,13 @@ mod tests {
             rollout_bucket: None,
             rollout_tokens: 1,
             private_ane_opt_in: true,
+            strict_ane: false,
+            ane_compute_profile: rvllm_core::AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: rvllm_core::AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 1,
+            ane_intermediate_size: 1,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
         };
         backend.prepare(&plan).unwrap();
 
@@ -298,6 +305,13 @@ mod tests {
             rollout_bucket: Some(rvllm_apple::plan::RolloutBucket { seqs: 4, tokens: 4 }),
             rollout_tokens: 1,
             private_ane_opt_in: true,
+            strict_ane: false,
+            ane_compute_profile: rvllm_core::AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: rvllm_core::AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 1,
+            ane_intermediate_size: 1,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
         };
         let e = Engine::new().with_apple_backend(backend);
         let e = match e.with_apple_runtime_plan(plan) {
@@ -379,6 +393,13 @@ fn runtime_to_apple_plan(
         rollout_bucket,
         rollout_tokens,
         private_ane_opt_in: runtime.apple_private_ane_opt_in(),
+        strict_ane: runtime.strict_ane(),
+        ane_compute_profile: runtime.ane_compute_profile(),
+        ane_fallback_policy: runtime.ane_fallback_policy(),
+        ane_hidden_size: runtime.ane_hidden_size(),
+        ane_intermediate_size: runtime.ane_intermediate_size(),
+        ane_num_layers: runtime.ane_num_layers(),
+        model_layout_hash: *runtime.model_layout_hash(),
         weights_path: runtime.weights_path().map(|p| p.to_path_buf()),
     };
     Ok(Some(plan))
