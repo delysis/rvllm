@@ -16,7 +16,7 @@ pub mod mil;
 pub mod plan;
 pub mod weight_blob;
 
-pub use ane::{AneProcedure, AneProgramPlan, AneRolloutConfig};
+pub use ane::{compile_private_ane_mil, AneProcedure, AneProgramPlan, AneRolloutConfig};
 pub use backend::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, StubAppleBackend, StepToken};
 pub use device::{
     AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier,
