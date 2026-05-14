@@ -19,10 +19,14 @@ pub mod layer_exec;
 pub mod sched_state;
 pub mod scheduler;
 
+#[cfg(feature = "apple")]
+pub use apple_bridge::{
+    ane_rollout_batch_from_decode_plan, handoff_from_decode_plan, handoff_from_prefill_plan,
+    rollout_bucket_for_decode, AneRolloutBatch, AneRolloutBranchPlan, AneRolloutSlot,
+    AneSpeculativeBranch,
+};
 pub use bring_up::{Bringup, EnginePaths, FusedModules, PplResult};
 pub use engine::{Engine, PendingStep, StepOutput};
-#[cfg(feature = "apple")]
-pub use apple_bridge::{handoff_from_decode_plan, handoff_from_prefill_plan, rollout_bucket_for_decode};
 pub use layer_exec::{forward, LayerDims};
 pub use sched_state::{ReqState, Request};
 pub use scheduler::{bucket_for, BatchPlan, Scheduler, DECODE_BUCKETS};
