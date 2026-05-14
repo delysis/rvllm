@@ -230,6 +230,7 @@ pub enum AppleError {
     HandoffMalformed { reason: &'static str },
     NotPrepared { backend: &'static str },
     FeatureNotAvailable { backend: &'static str, op: &'static str },
+    InvalidMetalRecipe { reason: &'static str },
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
     InvalidWeightBlob { reason: &'static str },
