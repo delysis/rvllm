@@ -30,9 +30,22 @@ impl AneRolloutConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AneProcedure {
+    DenseProjection { name: String },
     FusedFfn { layer: usize },
     FusedQkv { layer: usize },
     LmHead,
+}
+
+impl AneProcedure {
+    #[must_use]
+    pub const fn kind_name(&self) -> &'static str {
+        match self {
+            AneProcedure::DenseProjection { .. } => "dense_projection",
+            AneProcedure::FusedFfn { .. } => "fused_ffn",
+            AneProcedure::FusedQkv { .. } => "fused_qkv",
+            AneProcedure::LmHead => "lm_head",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -209,9 +222,103 @@ pub fn compile_private_ane_program(_plan: &AneProgramPlan) -> Result<()> {
     ))
 }
 
+pub fn compile_private_ane_mil(
+    procedure: &AneProcedure,
+    mil_source: &str,
+    weight_blob: &[u8],
+) -> Result<()> {
+    validate_private_ane_mil_request(procedure, mil_source, weight_blob)?;
+    private_ane_compile_unavailable(procedure, "compile_private_ane_mil")
+}
+
+fn validate_private_ane_mil_request(
+    procedure: &AneProcedure,
+    mil_source: &str,
+    weight_blob: &[u8],
+) -> Result<()> {
+    if mil_source.trim().is_empty() {
+        return Err(apple_err(
+            AppleError::InvalidMil {
+                reason: "MIL source is empty",
+            },
+            "validate_private_ane_mil",
+        ));
+    }
+    if !mil_source.trim_start().starts_with("program(1.0)") {
+        return Err(apple_err(
+            AppleError::InvalidMil {
+                reason: "MIL source must start with program(1.0)",
+            },
+            "validate_private_ane_mil",
+        ));
+    }
+    if let AneProcedure::DenseProjection { name } = procedure {
+        if !mil_source.contains(name) {
+            return Err(apple_err(
+                AppleError::InvalidMil {
+                    reason: "dense projection MIL is missing procedure name",
+                },
+                "validate_private_ane_mil",
+            ));
+        }
+    }
+    if weight_blob.len() < 128 {
+        return Err(apple_err(
+            AppleError::InvalidWeightBlob {
+                reason: "weight blob is too small",
+            },
+            "validate_private_ane_mil",
+        ));
+    }
+    if weight_blob.first().copied() != Some(0x01) || weight_blob.get(4).copied() != Some(0x02) {
+        return Err(apple_err(
+            AppleError::InvalidWeightBlob {
+                reason: "weight blob header is invalid",
+            },
+            "validate_private_ane_mil",
+        ));
+    }
+    Ok(())
+}
+
+fn private_ane_compile_unavailable(_procedure: &AneProcedure, op: &'static str) -> Result<()> {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64", feature = "private-ane"))]
+    {
+        Err(apple_err(
+            AppleError::PrivateApiUnavailable {
+                symbol: "ANECompiler",
+            },
+            op,
+        ))
+    }
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64", feature = "private-ane")))]
+    {
+        Err(apple_err(
+            AppleError::FeatureNotAvailable {
+                backend: "private-ane",
+                op,
+            },
+            op,
+        ))
+    }
+}
+
+fn apple_err(err: AppleError, op: &'static str) -> RvllmError {
+    RvllmError::apple(
+        err,
+        AppleCtx {
+            backend: "private-ane",
+            op,
+            device: "apple-silicon",
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mil::{dense_1x1_conv_mil, fused_ffn_mil, FfnMilOffsets};
+    use crate::weight_blob::build_weight_blob_fp16_named;
     use std::cell::RefCell;
 
     #[derive(Default)]
@@ -338,5 +445,59 @@ mod tests {
         };
         assert!(program.free().is_ok());
         assert_eq!(sys.calls.borrow().as_slice(), ["compile", "free"]);
+    }
+
+    #[test]
+    fn private_ane_mil_compile_reports_typed_unavailable() {
+        let weights = vec![1.0f32; 4];
+        let (weight_blob, descs) = build_weight_blob_fp16_named(&[("dense", &weights)]);
+        let mil = dense_1x1_conv_mil("dense", 2, 2, 1, descs[0].data_offset);
+        let err = match compile_private_ane_mil(
+            &AneProcedure::DenseProjection {
+                name: "dense".to_owned(),
+            },
+            &mil,
+            &weight_blob,
+        ) {
+            Ok(()) => panic!("private ANE compile should not be available in host tests"),
+            Err(err) => err,
+        };
+        match err {
+            RvllmError::Apple {
+                err: AppleError::FeatureNotAvailable { backend, op },
+                ctx,
+                ..
+            } => {
+                assert_eq!(backend, "private-ane");
+                assert_eq!(op, "compile_private_ane_mil");
+                assert_eq!(ctx.backend, "private-ane");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn private_ane_mil_compile_validates_weight_blob_before_hardware() {
+        let mil = fused_ffn_mil(
+            2,
+            4,
+            1,
+            FfnMilOffsets {
+                gate: 128,
+                up: 256,
+                down: 384,
+            },
+        );
+        let err = match compile_private_ane_mil(&AneProcedure::FusedFfn { layer: 0 }, &mil, &[]) {
+            Ok(()) => panic!("empty weight blob should fail validation"),
+            Err(err) => err,
+        };
+        match err {
+            RvllmError::Apple {
+                err: AppleError::InvalidWeightBlob { reason },
+                ..
+            } => assert_eq!(reason, "weight blob is too small"),
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

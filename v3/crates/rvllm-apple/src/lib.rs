@@ -20,7 +20,10 @@ pub mod mlx;
 pub mod plan;
 pub mod weight_blob;
 
-pub use ane::{AneProcedure, AneProgram, AneProgramPlan, AneRolloutConfig, AneSys, AneSysHandle};
+pub use ane::{
+    compile_private_ane_mil, compile_private_ane_program, AneProcedure, AneProgram,
+    AneProgramPlan, AneRolloutConfig, AneSys, AneSysHandle,
+};
 pub use backend::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, StubAppleBackend, StepToken};
 pub use compile_cache::{AneCompileCacheKey, CompileCacheHash};
 pub use device::{
