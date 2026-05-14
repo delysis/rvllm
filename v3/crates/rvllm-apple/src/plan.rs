@@ -22,6 +22,33 @@ impl AppleBackendMode {
                 | AppleBackendMode::MetalPrefillAneRolloutExperimental
         )
     }
+
+    #[must_use]
+    pub const fn as_flag(self) -> &'static str {
+        match self {
+            AppleBackendMode::MetalOnly => "metal-only",
+            AppleBackendMode::MlxPrototype => "mlx-prototype",
+            AppleBackendMode::MetalPrefillMetalDecode => "metal-prefill-metal-decode",
+            AppleBackendMode::MetalPrefillAneFfnRollout => "metal-prefill-ane-ffn-rollout",
+            AppleBackendMode::MetalPrefillAneRolloutExperimental => {
+                "metal-prefill-ane-rollout-experimental"
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn from_flag(value: &str) -> Option<Self> {
+        match value {
+            "metal-only" => Some(AppleBackendMode::MetalOnly),
+            "mlx-prototype" => Some(AppleBackendMode::MlxPrototype),
+            "metal-prefill-metal-decode" => Some(AppleBackendMode::MetalPrefillMetalDecode),
+            "metal-prefill-ane-ffn-rollout" => Some(AppleBackendMode::MetalPrefillAneFfnRollout),
+            "metal-prefill-ane-rollout-experimental" => {
+                Some(AppleBackendMode::MetalPrefillAneRolloutExperimental)
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
