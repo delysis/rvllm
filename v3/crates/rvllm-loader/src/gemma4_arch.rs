@@ -101,7 +101,7 @@ impl Gemma4Arch {
         let num_kv_heads_global = tc["num_global_key_value_heads"]
             .as_u64()
             .or_else(|| tc["num_key_value_heads_global"].as_u64())
-            .unwrap_or(4) as usize;
+            .unwrap_or(num_kv_heads_sliding as u64) as usize;
 
         // RoPE parameters -- nested per-type in Gemma 4
         let rope = &tc["rope_parameters"];
@@ -195,6 +195,35 @@ impl Gemma4Arch {
             if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                 if let Some(map) = v["weight_map"].as_object() {
                     for key in map.keys() {
+                        if key.starts_with("model.language_model.") {
+                            return "model.language_model".to_string();
+                        }
+                        if key.starts_with("language_model.") {
+                            return "language_model".to_string();
+                        }
+                    }
+                }
+            }
+        }
+        let safetensors_path = dir.join("model.safetensors");
+        if let Ok(mut file) = std::fs::File::open(&safetensors_path) {
+            use std::io::Read;
+            let mut len_bytes = [0u8; 8];
+            if file.read_exact(&mut len_bytes).is_ok() {
+                let header_len = u64::from_le_bytes(len_bytes) as usize;
+                let mut bytes = Vec::with_capacity(8 + header_len);
+                bytes.extend_from_slice(&len_bytes);
+                let mut header_bytes = vec![0u8; header_len];
+                let parsed = file
+                    .read_exact(&mut header_bytes)
+                    .map(|()| {
+                        bytes.extend_from_slice(&header_bytes);
+                        crate::safetensors::ShardHeader::parse(&safetensors_path, &bytes)
+                    })
+                    .ok()
+                    .and_then(std::result::Result::ok);
+                if let Some(header) = parsed {
+                    for key in header.tensors.keys() {
                         if key.starts_with("model.language_model.") {
                             return "model.language_model".to_string();
                         }

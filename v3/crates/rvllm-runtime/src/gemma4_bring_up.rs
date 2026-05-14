@@ -89,6 +89,7 @@ pub struct Gemma4Bringup {
     pub policy: Policy,
     pub arch: rvllm_loader::gemma4_arch::Gemma4Arch,
     pub model: rvllm_loader::gemma4_weights::Gemma4LoadedModel,
+    pub model_dir: PathBuf,
     pub kernels: Arc<KernelLoader>,
     pub stream: Stream,
     pub arena: HbmArena<'static>,
@@ -159,6 +160,7 @@ impl Gemma4Bringup {
             stream,
             arch,
             model,
+            model_dir: paths.model_dir,
             kernels,
             cutlass,
             cublaslt,
@@ -1837,7 +1839,25 @@ impl Gemma4Bringup {
         Err(gemma4_native_apple_feature_disabled("run_ppl"))
     }
 
-    #[cfg(all(not(feature = "cuda"), feature = "apple"))]
+    #[cfg(all(not(feature = "cuda"), feature = "apple-metal", target_os = "macos"))]
+    fn run_generate_native_apple(
+        &self,
+        prompt_ids: &[u32],
+        max_new: usize,
+        eos_ids: &[u32],
+    ) -> Result<Vec<u32>> {
+        crate::apple_bridge::plan_gemma4_native_apple_generate(
+            &self.arch, prompt_ids, max_new, eos_ids,
+        )?;
+        crate::apple_gemma4_metal::Gemma4AppleEngine::load(&self.model_dir)?
+            .generate(prompt_ids, max_new, eos_ids)
+    }
+
+    #[cfg(all(
+        not(feature = "cuda"),
+        feature = "apple",
+        not(all(feature = "apple-metal", target_os = "macos"))
+    ))]
     fn run_generate_native_apple(
         &self,
         prompt_ids: &[u32],

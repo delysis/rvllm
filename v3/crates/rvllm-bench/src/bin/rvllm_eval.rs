@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use rvllm_core::{DType, ModelArch as HfModelArch, ModelConfig};
+#[cfg(all(feature = "apple-metal", not(feature = "cuda"), target_os = "macos"))]
+use rvllm_runtime::apple_gemma4_metal::Gemma4AppleEngine;
 use rvllm_runtime::gemma4_bring_up::{Gemma4Bringup, Gemma4EnginePaths};
 use rvllm_runtime::{Bringup, EnginePaths};
 
@@ -76,6 +78,40 @@ fn run() -> Result<(), String> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(256);
+
+    #[cfg(all(feature = "apple-metal", not(feature = "cuda"), target_os = "macos"))]
+    if is_gemma4_model_dir(&model_dir)? {
+        let t0 = Instant::now();
+        let engine =
+            Gemma4AppleEngine::load(&model_dir).map_err(|e| format!("apple metal load: {e}"))?;
+        eprintln!("bringup: {:.2}s", t0.elapsed().as_secs_f64());
+
+        let prompt_with_bos: Vec<u32> = std::iter::once(2u32)
+            .chain(prompt_ids.iter().copied())
+            .collect();
+        let eos_ids: Vec<u32> = vec![1, 2, 107];
+
+        let t_gen = Instant::now();
+        let output_ids = engine
+            .generate(&prompt_with_bos, max_new as usize, &eos_ids)
+            .map_err(|e| format!("apple metal generate: {e}"))?;
+
+        let elapsed = t_gen.elapsed();
+        let n = output_ids.len();
+        eprintln!(
+            "generated {} tokens in {:.2}s ({:.1} tok/s)",
+            n,
+            elapsed.as_secs_f64(),
+            n as f64 / elapsed.as_secs_f64()
+        );
+        eprintln!("generated ids: {output_ids:?}");
+
+        let text = tokenizer
+            .decode(&output_ids, true)
+            .map_err(|e| format!("detokenize: {e}"))?;
+        println!("{text}");
+        return Ok(());
+    }
 
     // -- bringup --
     let paths = EnginePaths {

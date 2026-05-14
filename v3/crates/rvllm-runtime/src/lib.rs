@@ -11,6 +11,8 @@
 
 #[cfg(feature = "apple")]
 pub mod apple_bridge;
+#[cfg(all(feature = "apple-metal", target_os = "macos"))]
+pub mod apple_gemma4_metal;
 pub mod bring_up;
 pub mod engine;
 pub mod gemma4_bring_up;

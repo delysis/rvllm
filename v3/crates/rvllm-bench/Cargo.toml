@@ -25,6 +25,7 @@ path = "src/bin/rvllm_ppl.rs"
 default = []
 cuda = ["rvllm-runtime/cuda", "rvllm-fused/cuda", "rvllm-mem/cuda", "dep:cudarc"]
 apple = ["rvllm-runtime/apple"]
+apple-metal = ["apple", "rvllm-runtime/apple-metal"]
 
 [dependencies]
 rvllm-core = { workspace = true }
