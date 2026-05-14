@@ -22,7 +22,8 @@ pub mod weight_blob;
 
 pub use ane::{
     compile_private_ane_mil, compile_private_ane_program, AneProcedure, AneProgram,
-    AneProgramPlan, AneRolloutConfig, AneSys, AneSysHandle,
+    AneProgramPlan, AneRolloutConfig, AneSys, AneSysHandle, DenseFfnLayerWeights,
+    FusedFfnProgramArtifact,
 };
 pub use backend::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, StubAppleBackend, StepToken};
 pub use compile_cache::{AneCompileCacheKey, CompileCacheHash};
