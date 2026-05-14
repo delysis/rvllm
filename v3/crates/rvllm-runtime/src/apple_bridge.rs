@@ -119,39 +119,53 @@ pub fn rollout_bucket_for_decode(plan: &BatchPlan, tokens_per_rollout: u32) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Request, Scheduler};
     use rvllm_core::{ReqId, TokenId};
+
+    fn scheduled_prefill_plan() -> BatchPlan {
+        let mut scheduler = Scheduler::new();
+        scheduler.enqueue(Request::new(ReqId(1), vec![TokenId(10), TokenId(11)], 4));
+        scheduler.enqueue(Request::new(ReqId(2), vec![TokenId(20)], 4));
+        scheduler.schedule()
+    }
+
+    fn scheduled_decode_plan() -> BatchPlan {
+        let mut scheduler = Scheduler::new();
+        scheduler.enqueue(Request::new(ReqId(1), vec![TokenId(10), TokenId(11)], 4));
+        scheduler.enqueue(Request::new(ReqId(2), vec![TokenId(20)], 4));
+        let _prefill = scheduler.schedule();
+        scheduler.commit_decode(&[(ReqId(1), TokenId(12))]);
+        scheduler.schedule()
+    }
 
     #[test]
     fn prefill_plan_maps_to_well_formed_capsule() {
-        let plan = BatchPlan::Prefill {
-            req_ids: vec![ReqId(1), ReqId(2)],
-            prompt_tokens_flat: vec![TokenId(10), TokenId(11), TokenId(20)],
-            cu_seqlens_q: vec![0, 2, 3],
-        };
+        let plan = scheduled_prefill_plan();
         let capsule = match handoff_from_prefill_plan(&plan, HandoffKind::MetalPrefillToAneFfnRollout) {
             Ok(v) => v,
             Err(e) => panic!("unexpected error: {e}"),
         };
         assert!(capsule.is_well_formed());
+        assert_eq!(capsule.req_ids, vec![ReqId(1), ReqId(2)]);
+        assert_eq!(capsule.tokens_flat, vec![TokenId(10), TokenId(11), TokenId(20)]);
+        assert_eq!(capsule.cu_seqlens, vec![0, 2, 3]);
         assert_eq!(capsule.positions, vec![1, 0]);
         assert_eq!(capsule.context_lens, vec![2, 1]);
     }
 
     #[test]
     fn decode_plan_maps_to_unit_spans_and_bucket() {
-        let plan = BatchPlan::Decode {
-            req_ids: vec![ReqId(1), ReqId(2), ReqId(3)],
-            bucket: 4,
-            last_tokens: vec![TokenId(10), TokenId(20), TokenId(30)],
-            positions: vec![7, 8, 9],
-            context_lens: vec![8, 9, 10],
-        };
+        let plan = scheduled_decode_plan();
         let capsule = match handoff_from_decode_plan(&plan, HandoffKind::MetalPrefillToAneFfnRollout) {
             Ok(v) => v,
             Err(e) => panic!("unexpected error: {e}"),
         };
         assert!(capsule.is_well_formed());
-        assert_eq!(capsule.cu_seqlens, vec![0, 1, 2, 3]);
+        assert_eq!(capsule.req_ids, vec![ReqId(1), ReqId(2)]);
+        assert_eq!(capsule.tokens_flat, vec![TokenId(12), TokenId(20)]);
+        assert_eq!(capsule.cu_seqlens, vec![0, 1, 2]);
+        assert_eq!(capsule.positions, vec![2, 0]);
+        assert_eq!(capsule.context_lens, vec![3, 1]);
         let bucket = match rollout_bucket_for_decode(&plan, 4) {
             Ok(v) => v,
             Err(e) => panic!("unexpected bucket error: {e}"),
