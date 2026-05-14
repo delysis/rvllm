@@ -3,7 +3,8 @@
 //! The default build is safe and host-testable. It contains planning, handoff,
 //! layout, MIL, and weight-blob invariants, but no Metal or private ANE FFI.
 
-#![forbid(unsafe_code)]
+#![cfg_attr(not(all(feature = "metal", target_os = "macos")), forbid(unsafe_code))]
+#![cfg_attr(all(feature = "metal", target_os = "macos"), deny(unsafe_code))]
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
 pub mod ane;
@@ -26,7 +27,12 @@ pub use iosurface::{
     ByteSurfaceShape, IoSurfaceTensorDesc, PackedField, PackedFieldLayout, PackedFieldStrides,
     PackedInputLayout,
 };
-pub use metal::{MetalPrefillBackend, MetalPrefillConfig, PrefillContract};
+#[cfg(all(feature = "metal", target_os = "macos"))]
+pub use metal::DirectMetalContext;
+pub use metal::{
+    DirectMetalContextConfig, DirectMetalPipelineName, MetalPrefillBackend, MetalPrefillConfig,
+    PrefillContract,
+};
 pub use mil::{
     dense_1x1_conv_mil, fused_ffn_mil, fused_ffn_mil_from_descs, fused_qkv_mil,
     fused_qkv_mil_from_descs, FfnMilOffsets, FfnMilWeightDescs, QkvMilOffsets,
