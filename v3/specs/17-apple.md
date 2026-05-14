@@ -28,6 +28,15 @@ crates/rvllm-apple
   backend.rs      safe AppleBackend trait and host stub
 ```
 
+Unsafe private ANE sys crate:
+
+```text
+crates/rvllm-apple-ane-sys
+  lib.rs          typed error boundary and macOS/aarch64/private-ane gate
+  objc.rs         Objective-C runtime FFI symbols
+  tests/smoke.rs  ignored runtime/private ANE probes
+```
+
 Runtime bridge:
 
 ```rust
