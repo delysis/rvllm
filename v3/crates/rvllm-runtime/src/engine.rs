@@ -22,14 +22,21 @@ pub struct StepOutput {
     pub finished: bool,
 }
 
+#[cfg(feature = "apple")]
+use rvllm_apple::{AppleBackend, AppleLaunchTicket, HandoffKind};
+
 pub struct Engine {
     pub scheduler: Scheduler,
+    #[cfg(feature = "apple")]
+    pub apple_backend: Option<Box<dyn AppleBackend>>,
 }
 
 impl Engine {
     pub fn new() -> Self {
         Self {
             scheduler: Scheduler::new(),
+            #[cfg(feature = "apple")]
+            apple_backend: None,
         }
     }
 
@@ -37,15 +44,33 @@ impl Engine {
         self.scheduler.num_alive() > 0
     }
 
-    /// Launch one step. Returns a ticket that must be `collect()`ed.
-    /// The ticket borrows `&mut self`, so a second `step_launch` cannot
-    /// start while it is live.
     pub fn step_launch(&mut self) -> Result<PendingStep<'_>> {
         let plan = self.scheduler.schedule();
-        // Phase D wiring: enqueue kernels onto the stream for this plan.
+
+        #[cfg(feature = "apple")]
+        let mut apple_ticket = None;
+
+        #[cfg(feature = "apple")]
+        if let Some(backend) = &mut self.apple_backend {
+            match &plan {
+                BatchPlan::Prefill { .. } => {
+                    let handoff = crate::apple_bridge::handoff_from_prefill_plan(&plan, HandoffKind::MetalPrefillToMetalDecode)?;
+                    apple_ticket = Some(backend.launch_prefill(&handoff)?);
+                }
+                BatchPlan::Decode { .. } => {
+                    let handoff = crate::apple_bridge::handoff_from_decode_plan(&plan, HandoffKind::MetalPrefillToAneFfnRollout)?;
+                    let bucket = crate::apple_bridge::rollout_bucket_for_decode(&plan, 1)?; // Default tokens_per_rollout = 1
+                    apple_ticket = Some(backend.launch_rollout(&handoff, bucket)?);
+                }
+                BatchPlan::Idle => {}
+            }
+        }
+
         Ok(PendingStep {
             engine: self,
             plan: Some(plan),
+            #[cfg(feature = "apple")]
+            apple_ticket,
         })
     }
 }
@@ -56,15 +81,12 @@ impl Default for Engine {
     }
 }
 
-/// Consume-once ticket returned by `step_launch`. `#[must_use]` catches
-/// silent drops; `Drop` additionally panics in debug if the caller
-/// forgets to call `collect`. No auto-collect fallback.
 #[must_use = "PendingStep must be collect()-ed; silent drop loses the step's scheduler output"]
 pub struct PendingStep<'e> {
     engine: &'e mut Engine,
-    /// Holds `Some(plan)` until `collect` takes it.
-    /// `Drop` asserts it was taken (i.e. collect ran).
     plan: Option<BatchPlan>,
+    #[cfg(feature = "apple")]
+    apple_ticket: Option<AppleLaunchTicket>,
 }
 
 impl<'e> PendingStep<'e> {
@@ -72,21 +94,31 @@ impl<'e> PendingStep<'e> {
         self.plan.as_ref()
     }
 
-    /// Drain the launched step. Consumes self so the engine borrow is
-    /// released on return. Phase D reads DtoH, commits to scheduler.
     pub fn collect(mut self) -> Result<Vec<StepOutput>> {
         let _plan = self.plan.take().expect("PendingStep::collect called twice");
-        let _engine = &mut *self.engine;
-        // Phase D: decode DtoH, read tokens, scheduler.commit_decode,
-        // return StepOutputs.
-        Ok(Vec::new())
+        
+        let mut outputs = Vec::new();
+        
+        #[cfg(feature = "apple")]
+        if let Some(ticket) = self.apple_ticket.take() {
+            if let Some(backend) = &mut self.engine.apple_backend {
+                let step_tokens = backend.collect(ticket)?;
+                for st in step_tokens {
+                    outputs.push(StepOutput {
+                        req_id: st.req_id,
+                        new_token: st.token_id,
+                        finished: st.finished,
+                    });
+                }
+            }
+        }
+        
+        Ok(outputs)
     }
 }
 
 impl<'e> Drop for PendingStep<'e> {
     fn drop(&mut self) {
-        // `collect` sets `plan` to None. Dropping with Some means the
-        // caller silently dropped the ticket — programmer error.
         debug_assert!(
             self.plan.is_none(),
             "PendingStep dropped without collect(); scheduler output leaked."

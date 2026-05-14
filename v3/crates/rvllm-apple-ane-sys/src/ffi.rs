@@ -13,7 +13,7 @@ pub fn load_ane_framework() -> Result<(), String> {
     Ok(())
 }
 
-pub unsafe fn get_ane_client() -> Option<Retained<AnyObject>> {
+pub fn get_ane_client() -> Option<Retained<AnyObject>> {
     let cls = class!(_ANEClient);
     unsafe { msg_send![cls, sharedConnection] }
 }

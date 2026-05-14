@@ -28,7 +28,9 @@ fn allowed_deps() -> HashMap<&'static str, HashSet<&'static str>> {
         "rvllm-metadata", "rvllm-graph", "rvllm-loader", "rvllm-sampling",
         "rvllm-apple", "rvllm-apple-metal",
     ]));
-    m.insert("rvllm-apple", s(&["rvllm-core"]));
+    m.insert("rvllm-apple-coreml-sys", s(&[]));
+    m.insert("rvllm-apple-ane-sys", s(&["rvllm-core"]));
+    m.insert("rvllm-apple", s(&["rvllm-core", "rvllm-apple-coreml-sys", "rvllm-apple-ane-sys"]));
     m.insert("rvllm-apple-metal", s(&["rvllm-core", "rvllm-apple"]));
     m.insert("rvllm-serve", s(&["rvllm-core", "rvllm-runtime"]));
     m.insert("rvllm-bench", s(&["rvllm-core", "rvllm-runtime", "rvllm-mem", "rvllm-fused", "rvllm-kernels", "rvllm-cutlass"]));

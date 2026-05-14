@@ -69,6 +69,41 @@ impl AneProgramPlan {
 }
 
 pub fn compile_private_ane_program(_plan: &AneProgramPlan) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        rvllm_apple_ane_sys::ffi::load_ane_framework().map_err(|_| {
+            RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "private-ane",
+                    op: "dlopen_ane_framework",
+                },
+                AppleCtx {
+                    backend: "private-ane",
+                    op: "compile",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        
+        let _client = rvllm_apple_ane_sys::ffi::get_ane_client().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "private-ane",
+                    op: "get_ane_client",
+                },
+                AppleCtx {
+                    backend: "private-ane",
+                    op: "compile",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+
+        // TODO: actually construct .mlpackage from `mil::fused_ffn_mil` bytes, compile it, and load it
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "macos"))]
     Err(RvllmError::apple(
         AppleError::FeatureNotAvailable {
             backend: "private-ane",
@@ -77,7 +112,7 @@ pub fn compile_private_ane_program(_plan: &AneProgramPlan) -> Result<()> {
         AppleCtx {
             backend: "private-ane",
             op: "compile",
-            device: "apple-silicon",
+            device: "non-apple",
         },
     ))
 }
