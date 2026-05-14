@@ -82,6 +82,7 @@ pub struct AppleRuntimePlan {
     pub rollout_bucket: Option<RolloutBucket>,
     pub rollout_tokens: u32,
     pub private_ane_opt_in: bool,
+    pub weights_path: Option<std::path::PathBuf>,
 }
 
 impl AppleRuntimePlan {
@@ -91,15 +92,6 @@ impl AppleRuntimePlan {
                 AppleError::FeatureNotAvailable {
                     backend: "private-ane",
                     op: "rollout",
-                },
-                self.ctx("validate"),
-            ));
-        }
-        if self.mode.requires_private_ane() && self.rollout_bucket.is_none() {
-            return Err(RvllmError::apple(
-                AppleError::ShapeBucketMissing {
-                    seqs: 0,
-                    tokens: self.rollout_tokens,
                 },
                 self.ctx("validate"),
             ));
@@ -138,6 +130,7 @@ mod tests {
             rollout_bucket: Some(RolloutBucket { seqs: 8, tokens: 4 }),
             rollout_tokens: 4,
             private_ane_opt_in: false,
+            weights_path: None,
         };
         assert!(plan.validate().is_err());
     }

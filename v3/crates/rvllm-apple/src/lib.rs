@@ -3,7 +3,7 @@
 //! The default build is safe and host-testable. It contains planning, handoff,
 //! layout, MIL, and weight-blob invariants, but no Metal or private ANE FFI.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
 pub mod ane;
@@ -17,7 +17,10 @@ pub mod plan;
 pub mod weight_blob;
 
 pub use ane::{AneProcedure, AneProgramPlan, AneRolloutConfig};
-pub use backend::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, StubAppleBackend, StepToken};
+pub use backend::{
+    AppleBackend, AppleLaunchKind, AppleLaunchTicket, ProductionAppleBackend, StubAppleBackend,
+    StepToken,
+};
 pub use device::{
     AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier,
 };

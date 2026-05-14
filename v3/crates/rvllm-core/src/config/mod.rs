@@ -11,4 +11,7 @@ mod runtime;
 
 pub use builder::RuntimeConfigBuilder;
 pub use model::{ModelArch, ModelConfig};
-pub use runtime::{GraphMode, LogLevel, PreemptionMode, RuntimeConfig};
+pub use runtime::{
+    AppleBackendMode, AppleRolloutBucket, AppleRolloutBucketPolicy, GraphMode, LogLevel, PreemptionMode,
+    RuntimeConfig,
+};

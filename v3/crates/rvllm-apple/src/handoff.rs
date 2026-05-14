@@ -1,5 +1,10 @@
 use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
+use crate::plan::RolloutBucket;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+const LAYOUT_HASH_SEED: u64 = 0xcbf29ce484222325u64;
+const LAYOUT_HASH_PRIME: u64 = 0x100000001b3;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum HandoffKind {
@@ -35,6 +40,7 @@ pub struct HandoffCapsule {
     pub cu_seqlens: Vec<u32>,
     pub positions: Vec<u32>,
     pub context_lens: Vec<u32>,
+    pub rollout_bucket: Option<RolloutBucket>,
     pub state_handles: Vec<StateHandle>,
     pub input_surface: Option<SurfaceId>,
     pub output_surface: Option<SurfaceId>,
@@ -58,6 +64,7 @@ impl HandoffCapsule {
             cu_seqlens,
             positions,
             context_lens,
+            rollout_bucket: None,
             state_handles: Vec::new(),
             input_surface: None,
             output_surface: None,
@@ -78,6 +85,36 @@ impl HandoffCapsule {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if self.req_ids.is_empty() {
+            return Err(self.err("req_ids must be non-empty"));
+        }
+        match self.kind {
+            HandoffKind::MetalPrefillToAneFfnRollout
+            | HandoffKind::MetalPrefillToAneRolloutExperimental => {
+                let Some(bucket) = self.rollout_bucket else {
+                    return Err(self.err("rollout capsules require a rollout bucket"));
+                };
+                if bucket.seqs == 0 || bucket.tokens == 0 {
+                    return Err(self.err("rollout bucket tokens/seqs must be >= 1"));
+                }
+                let seqs = self.req_ids.len() as u32;
+                if !bucket.fits(seqs, 1) {
+                    return Err(self.err("rollout bucket seqs capacity is too small"));
+                }
+            }
+            _ => {
+                if self.rollout_bucket.is_some() {
+                    return Err(self.err("rollout bucket is only valid for ANE rollout capsules"));
+                }
+            }
+        }
+        let mut seen = HashSet::with_capacity(self.req_ids.len());
+        for req_id in &self.req_ids {
+            let raw = req_id.raw();
+            if !seen.insert(raw) {
+                return Err(self.err("req_ids must be unique"));
+            }
+        }
         if self.cu_seqlens.len() != self.req_ids.len() + 1 {
             return Err(self.err("cu_seqlens length must equal req_ids + 1"));
         }
@@ -96,6 +133,17 @@ impl HandoffCapsule {
         if !self.cu_seqlens.windows(2).all(|w| w[0] <= w[1]) {
             return Err(self.err("cu_seqlens must be monotonic"));
         }
+        for (req_id, (&position, &context_len)) in
+            self.req_ids.iter().zip(self.positions.iter().zip(self.context_lens.iter()))
+        {
+            let _ = req_id;
+            if context_len == 0 {
+                return Err(self.err("context_lens must be positive"));
+            }
+            if position + 1 != context_len {
+                return Err(self.err("each context_len must equal position + 1"));
+            }
+        }
         if self.compute_layout_hash() != self.layout_hash {
             return Err(self.err("layout hash mismatch"));
         }
@@ -105,6 +153,13 @@ impl HandoffCapsule {
     #[must_use]
     pub fn with_state_handle(mut self, handle: StateHandle) -> Self {
         self.state_handles.push(handle);
+        self.layout_hash = self.compute_layout_hash();
+        self
+    }
+
+    #[must_use]
+    pub fn with_rollout_bucket(mut self, rollout_bucket: Option<RolloutBucket>) -> Self {
+        self.rollout_bucket = rollout_bucket;
         self.layout_hash = self.compute_layout_hash();
         self
     }
@@ -130,18 +185,84 @@ impl HandoffCapsule {
 
     #[must_use]
     fn compute_layout_hash(&self) -> [u8; 32] {
-        // Deliberately simple deterministic hash for host-testable layout
-        // checks. Replace with SHA-256 when rvllm-metadata layout hashes wire in.
-        let mut h = [0u8; 32];
-        h[0] = self.req_ids.len() as u8;
-        h[1] = self.tokens_flat.len() as u8;
-        h[2] = self.cu_seqlens.len() as u8;
-        h[3] = self.positions.len() as u8;
-        h[4] = self.context_lens.len() as u8;
-        h[5] = self.state_handles.len() as u8;
-        h[6] = u8::from(self.input_surface.is_some());
-        h[7] = u8::from(self.output_surface.is_some());
-        h
+        let mut h = LAYOUT_HASH_SEED;
+        let mut acc = [0u8; 32];
+
+        let kind = match self.kind {
+            HandoffKind::MetalPrefillToMetalDecode => 0_u8,
+            HandoffKind::MetalPrefillToAneFfnRollout => 1_u8,
+            HandoffKind::MetalPrefillToAneRolloutExperimental => 2_u8,
+            HandoffKind::MetalDecodeToAneFfn => 3_u8,
+        };
+
+        for byte in [
+            kind,
+            self.req_ids.len() as u8,
+            self.tokens_flat.len() as u8,
+            self.cu_seqlens.len() as u8,
+            self.positions.len() as u8,
+            self.context_lens.len() as u8,
+            self.state_handles.len() as u8,
+            u8::from(self.input_surface.is_some()),
+            u8::from(self.output_surface.is_some()),
+            u8::from(self.rollout_bucket.is_some()),
+        ] {
+            h ^= u64::from(byte);
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+        }
+        if let Some(bucket) = self.rollout_bucket {
+            h ^= bucket.seqs as u64;
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            h ^= bucket.tokens as u64;
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+        }
+
+        for req in &self.req_ids {
+            h ^= req.raw();
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+        }
+        for token in &self.tokens_flat {
+            let raw = token.raw().to_le_bytes();
+            for byte in raw {
+                h ^= u64::from(byte);
+                h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            }
+        }
+        for offset in &self.cu_seqlens {
+            let raw = offset.to_le_bytes();
+            for byte in raw {
+                h ^= u64::from(byte);
+                h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            }
+        }
+        for position in &self.positions {
+            let raw = position.to_le_bytes();
+            for byte in raw {
+                h ^= u64::from(byte);
+                h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            }
+        }
+        for context_len in &self.context_lens {
+            let raw = context_len.to_le_bytes();
+            for byte in raw {
+                h ^= u64::from(byte);
+                h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            }
+        }
+        for handle in &self.state_handles {
+            h ^= u64::from(handle.id);
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            h ^= u64::from(handle.kind as u8 as u64);
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            h ^= handle.bytes as u64;
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+        }
+
+        acc[..8].copy_from_slice(&h.to_le_bytes());
+        acc[8..16].copy_from_slice(&h.rotate_left(13).to_le_bytes());
+        acc[16..24].copy_from_slice(&h.rotate_left(29).to_le_bytes());
+        acc[24..32].copy_from_slice(&h.rotate_left(47).to_le_bytes());
+        acc
     }
 }
 
@@ -158,7 +279,8 @@ mod tests {
             vec![0, 2, 3],
             vec![1, 0],
             vec![2, 1],
-        );
+        )
+        .with_rollout_bucket(Some(RolloutBucket { seqs: 4, tokens: 1 }));
         assert!(capsule.is_well_formed());
         assert_eq!(capsule.num_sequences(), 2);
     }
@@ -172,7 +294,8 @@ mod tests {
             vec![0, 1],
             vec![0],
             vec![1],
-        );
+        )
+        .with_rollout_bucket(Some(RolloutBucket { seqs: 4, tokens: 1 }));
         capsule.tokens_flat.push(TokenId(11));
         assert!(capsule.validate().is_err());
     }

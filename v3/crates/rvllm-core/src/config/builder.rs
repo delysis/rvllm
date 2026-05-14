@@ -7,7 +7,10 @@ use std::path::PathBuf;
 use crate::error::{ConfigError, Result, RvllmError};
 
 use super::model::ModelConfig;
-use super::runtime::{GraphMode, LogLevel, PreemptionMode, RuntimeConfig};
+use super::runtime::{
+    AppleBackendMode, AppleRolloutBucket, AppleRolloutBucketPolicy, GraphMode, LogLevel,
+    PreemptionMode, RuntimeConfig,
+};
 
 #[derive(Default)]
 pub struct RuntimeConfigBuilder {
@@ -24,6 +27,12 @@ pub struct RuntimeConfigBuilder {
     preemption: Option<PreemptionMode>,
     log_level: Option<LogLevel>,
     kernel_dir: Option<PathBuf>,
+    apple_backend_mode: Option<AppleBackendMode>,
+    apple_private_ane_opt_in: Option<bool>,
+    apple_rollout_tokens: Option<u32>,
+    apple_rollout_bucket_policy: Option<AppleRolloutBucketPolicy>,
+    apple_rollout_bucket: Option<AppleRolloutBucket>,
+    weights_path: Option<PathBuf>,
 }
 
 macro_rules! setter {
@@ -52,6 +61,12 @@ impl RuntimeConfigBuilder {
     setter!(graph_capture, GraphMode);
     setter!(preemption, PreemptionMode);
     setter!(log_level, LogLevel);
+    setter!(apple_backend_mode, AppleBackendMode);
+    setter!(apple_private_ane_opt_in, bool);
+    setter!(apple_rollout_tokens, u32);
+    setter!(apple_rollout_bucket_policy, AppleRolloutBucketPolicy);
+    setter!(apple_rollout_bucket, AppleRolloutBucket);
+    setter!(weights_path, PathBuf);
 
     pub fn kernel_dir(mut self, p: PathBuf) -> Self {
         self.kernel_dir = Some(p);
@@ -82,6 +97,74 @@ impl RuntimeConfigBuilder {
         let fp8_kv_cache = req!(fp8_kv_cache);
         let graph_capture = req!(graph_capture);
         let preemption = req!(preemption);
+        let apple_backend_mode = self.apple_backend_mode.unwrap_or(AppleBackendMode::Disabled);
+        let apple_private_ane_opt_in = self.apple_private_ane_opt_in.unwrap_or(false);
+        let apple_rollout_tokens = self.apple_rollout_tokens.unwrap_or(1);
+        let apple_rollout_bucket_policy = self.apple_rollout_bucket_policy.unwrap_or_default();
+        let mut apple_rollout_bucket = self.apple_rollout_bucket;
+        let requires_private_ane = apple_backend_mode.requires_private_ane();
+
+        if apple_rollout_tokens == 0 {
+            reasons.push("apple_rollout_tokens must be >= 1".into());
+        }
+        if requires_private_ane && !apple_private_ane_opt_in {
+            reasons.push(format!(
+                "apple_private_ane_opt_in must be true when apple_backend_mode={apple_backend_mode:?}"
+            ));
+        }
+        if !requires_private_ane {
+            if !matches!(apple_rollout_bucket_policy, AppleRolloutBucketPolicy::Auto) {
+                reasons.push("apple_rollout_bucket_policy must be Auto unless private ANE rollout is enabled".into());
+            }
+            if apple_private_ane_opt_in {
+                reasons.push("apple_private_ane_opt_in requires a private ANE mode (MetalPrefillAne* )".into());
+            }
+            if apple_rollout_bucket.is_some() {
+                reasons.push("apple_rollout_bucket is only valid for private ANE rollout modes".into());
+            }
+            if apple_rollout_tokens != 1 {
+                reasons.push("apple_rollout_tokens must be 1 unless private ANE mode is enabled".into());
+            }
+        }
+        if matches!(apple_rollout_bucket_policy, AppleRolloutBucketPolicy::Fixed { seqs: 0, tokens: _ }) {
+            reasons.push("apple_rollout_bucket_policy.Fixed.seqs must be >= 1".into());
+        }
+        if matches!(apple_rollout_bucket_policy, AppleRolloutBucketPolicy::Fixed { seqs: _, tokens: 0 }) {
+            reasons.push("apple_rollout_bucket_policy.Fixed.tokens must be >= 1".into());
+        }
+        if let AppleRolloutBucketPolicy::Fixed { seqs, tokens } = apple_rollout_bucket_policy {
+            if !requires_private_ane {
+                reasons.push("fixed apple_rollout_bucket_policy is invalid without private ANE rollout".into());
+            }
+            if let Some(requested) = apple_rollout_bucket {
+                if requested.seqs != seqs || requested.tokens != tokens {
+                    reasons.push(format!(
+                        "apple_rollout_bucket {:?} does not match fixed policy (seqs={seqs}, tokens={tokens})",
+                        requested
+                    ));
+                }
+            }
+            apple_rollout_bucket = Some(AppleRolloutBucket { seqs, tokens });
+        }
+
+        if requires_private_ane && apple_rollout_bucket.is_none() {
+            reasons.push(
+                "apple_rollout_bucket is required when apple_backend_mode uses private ANE".into(),
+            );
+        }
+        if let Some(requested) = apple_rollout_bucket {
+            if requested.seqs == 0 || requested.tokens == 0 {
+                reasons.push("apple_rollout_bucket requires positive seqs and tokens".into());
+            } else if !requested.capacity_ge(apple_rollout_tokens) {
+                reasons.push(format!(
+                    "apple_rollout_bucket.tokens must be >= apple_rollout_tokens ({apple_rollout_tokens}), got {}",
+                    requested.tokens
+                ));
+            }
+            if requested.seqs < 1 {
+                reasons.push("apple_rollout_bucket.seqs must be >= 1".into());
+            }
+        }
 
         if let Some(v) = kv_block_size {
             if ![16u32, 32, 64].contains(&v) {
@@ -92,12 +175,29 @@ impl RuntimeConfigBuilder {
             if !(1..=256).contains(&v) {
                 reasons.push(format!("max_batch must be in 1..=256, got {v}"));
             }
+            if v == 0 {
+                reasons.push("max_batch must be in 1..=256".into());
+            }
         }
         if let Some(ctx) = max_context {
             if ctx as usize > model.max_position_embeddings {
                 reasons.push(format!(
                     "max_context {ctx} > model.max_position_embeddings {}",
                     model.max_position_embeddings
+                ));
+            } else if ctx == 0 {
+                reasons.push("max_context must be >= 1".into());
+            }
+        }
+        if let (Some(v), Some(ctx), Some(block), Some(nbg), Some(ncb)) =
+            (max_batch, max_context, kv_block_size, num_gpu_blocks, num_cpu_blocks)
+        {
+            let min_blocks = ((v as u64 * ctx as u64) + (block as u64).saturating_sub(1))
+                / block as u64;
+            if (nbg as u64 + ncb as u64) < min_blocks {
+                reasons.push(format!(
+                    "num_gpu_blocks + num_cpu_blocks must be >= ceil(max_batch*max_context / kv_block_size) = {min_blocks}, got {}",
+                    nbg + ncb
                 ));
             }
         }
@@ -137,6 +237,12 @@ impl RuntimeConfigBuilder {
             preemption: preemption.unwrap(),
             log_level: self.log_level.unwrap_or(LogLevel::Info),
             kernel_dir: self.kernel_dir,
+            apple_backend_mode,
+            apple_private_ane_opt_in,
+            apple_rollout_tokens,
+            apple_rollout_bucket_policy,
+            apple_rollout_bucket,
+            weights_path: self.weights_path,
         })
     }
 }
@@ -211,9 +317,58 @@ mod tests {
             .fp8_kv_cache(false)
             .graph_capture(GraphMode::Buckets(vec![1, 2, 4, 8, 16, 32, 64, 128]))
             .preemption(PreemptionMode::Recompute)
+            .apple_backend_mode(AppleBackendMode::MetalPrefillMetalDecode)
+            .apple_rollout_tokens(1)
             .build(&qwen())
             .unwrap();
         assert_eq!(rt.max_batch(), 128);
         assert_eq!(rt.kv_block_size(), 64);
+    }
+
+    #[test]
+    fn rejects_private_ane_without_opt_in() {
+        let err = RuntimeConfigBuilder::new()
+            .device_id(0)
+            .max_batch(128)
+            .max_context(2048)
+            .kv_block_size(64)
+            .num_gpu_blocks(1024)
+            .num_cpu_blocks(0)
+            .gpu_memory_utilization(0.9)
+            .fp8_weights(true)
+            .fp8_kv_cache(false)
+            .graph_capture(GraphMode::Off)
+            .preemption(PreemptionMode::Recompute)
+            .apple_backend_mode(AppleBackendMode::MetalPrefillAneFfnRollout)
+            .apple_private_ane_opt_in(false)
+            .build(&qwen())
+            .unwrap_err();
+        assert!(format!("{err}").contains("apple_private_ane_opt_in"));
+    }
+
+    #[test]
+    fn validates_fixed_policy_bucket() {
+        let err = RuntimeConfigBuilder::new()
+            .device_id(0)
+            .max_batch(128)
+            .max_context(2048)
+            .kv_block_size(64)
+            .num_gpu_blocks(1024)
+            .num_cpu_blocks(0)
+            .gpu_memory_utilization(0.9)
+            .fp8_weights(true)
+            .fp8_kv_cache(false)
+            .graph_capture(GraphMode::Off)
+            .preemption(PreemptionMode::Recompute)
+            .apple_backend_mode(AppleBackendMode::MetalPrefillAneRolloutExperimental)
+            .apple_private_ane_opt_in(true)
+            .apple_rollout_bucket_policy(AppleRolloutBucketPolicy::Fixed {
+                seqs: 4,
+                tokens: 2,
+            })
+            .apple_rollout_bucket(AppleRolloutBucket { seqs: 8, tokens: 2 })
+            .build(&qwen())
+            .unwrap_err();
+        assert!(format!("{err}").contains("does not match fixed policy"));
     }
 }

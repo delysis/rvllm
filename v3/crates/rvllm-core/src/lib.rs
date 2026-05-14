@@ -18,8 +18,8 @@ pub mod shape;
 
 pub use arch::CompileTarget;
 pub use config::{
-    GraphMode, LogLevel, ModelArch, ModelConfig, PreemptionMode, RuntimeConfig,
-    RuntimeConfigBuilder,
+    AppleBackendMode, AppleRolloutBucket, AppleRolloutBucketPolicy, GraphMode, LogLevel,
+    ModelArch, ModelConfig, PreemptionMode, RuntimeConfig, RuntimeConfigBuilder,
 };
 pub use dtype::DType;
 pub use error::{

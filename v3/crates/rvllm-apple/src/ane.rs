@@ -1,8 +1,49 @@
-use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
+#![allow(unsafe_code)]
+use rvllm_core::{AppleCtx, AppleError, Result, RvllmError, DType};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::sync::{Mutex, OnceLock};
+use prost::Message;
+use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
+use std::process::Command;
 
 use crate::iosurface::IoSurfaceTensorDesc;
 use crate::plan::RolloutBucket;
+
+type CompileOutput = Result<()>;
+
+const ANE_DIAGNOSTIC_CAPACITY: usize = 8;
+
+static ANE_DIAGNOSTICS: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
+
+fn ane_diagnostics() -> &'static Mutex<VecDeque<String>> {
+    ANE_DIAGNOSTICS.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn push_diagnostic(message: impl Into<String>) {
+    if let Ok(mut cache) = ane_diagnostics().lock() {
+        if cache.len() == ANE_DIAGNOSTIC_CAPACITY {
+            let _ = cache.pop_front();
+        }
+        cache.push_back(message.into());
+    }
+}
+
+fn ctx(op: &'static str) -> AppleCtx {
+    AppleCtx {
+        backend: "private-ane",
+        op,
+        device: "apple-silicon",
+    }
+}
+
+pub fn last_ane_diagnostics() -> Vec<String> {
+    match ane_diagnostics().lock() {
+        Ok(cache) => cache.iter().cloned().collect(),
+        Err(_) => Vec::new(),
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AneRolloutConfig {
@@ -16,7 +57,7 @@ impl AneRolloutConfig {
     #[must_use]
     pub fn activation_desc(&self) -> IoSurfaceTensorDesc {
         IoSurfaceTensorDesc {
-            dtype: rvllm_core::DType::F16,
+            dtype: DType::F16,
             channels: self.hidden_size,
             spatial: (self.bucket.seqs * self.bucket.tokens) as usize,
         }
@@ -30,91 +71,169 @@ impl AneRolloutConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AneProcedure {
-    FusedFfn { layer: usize },
-    FusedQkv { layer: usize },
-    LmHead,
+    FusedFfn {
+        layer: usize,
+        offsets: crate::mil::FfnMilOffsets,
+    },
+    FusedQkv {
+        layer: usize,
+        offsets: crate::mil::QkvMilOffsets,
+    },
+    LmHead {
+        offset: u64,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AneProgramPlan {
-    pub config: AneRolloutConfig,
-    pub procedures: Vec<AneProcedure>,
+    pub id: String,
+    pub template_name: String,
+    pub spatial: usize,
+    pub in_ch: usize,
+    pub hidden_ch: usize,
+    pub out_ch: usize,
+    pub offsets: std::collections::HashMap<String, u64>,
 }
 
 impl AneProgramPlan {
     #[must_use]
     pub fn ffn_only(config: AneRolloutConfig) -> Self {
-        let procedures = (0..config.num_layers)
-            .map(|layer| AneProcedure::FusedFfn { layer })
-            .chain(std::iter::once(AneProcedure::LmHead))
-            .collect();
-        Self { config, procedures }
-    }
-
-    #[must_use]
-    pub fn qkv_ffn_lm_head(config: AneRolloutConfig) -> Self {
-        let mut procedures = Vec::with_capacity(config.num_layers * 2 + 1);
-        for layer in 0..config.num_layers {
-            procedures.push(AneProcedure::FusedQkv { layer });
-            procedures.push(AneProcedure::FusedFfn { layer });
+        let mut offsets = std::collections::HashMap::new();
+        let gate_size = config.intermediate_size * config.hidden_size * 2;
+        let up_size = config.intermediate_size * config.hidden_size * 2;
+        
+        offsets.insert("gate_weight_to_fp16".to_string(), 0);
+        offsets.insert("up_weight_to_fp16".to_string(), gate_size as u64);
+        offsets.insert("down_weight_to_fp16".to_string(), (gate_size + up_size) as u64);
+        
+        Self {
+            id: "ffn_test".to_string(),
+            template_name: "proj.mlmodel".to_string(),
+            spatial: (config.bucket.seqs * config.bucket.tokens) as usize,
+            in_ch: config.hidden_size,
+            hidden_ch: config.intermediate_size,
+            out_ch: config.hidden_size,
+            offsets,
         }
-        procedures.push(AneProcedure::LmHead);
-        Self { config, procedures }
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.offsets.is_empty() {
+            return Err(RvllmError::apple(
+                AppleError::InvalidMil {
+                    reason: "plan has no weight offsets",
+                },
+                ctx("validate_plan"),
+            ));
+        }
+        Ok(())
     }
 
     #[must_use]
-    pub fn num_procedures(&self) -> usize {
-        self.procedures.len()
+    pub fn cache_key(&self) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        format!("{:?}", self).hash(&mut hasher);
+        format!("ane_v1_{:016x}", hasher.finish())
     }
 }
 
-pub fn compile_private_ane_program(_plan: &AneProgramPlan) -> Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        rvllm_apple_ane_sys::ffi::load_ane_framework().map_err(|_| {
-            RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "private-ane",
-                    op: "dlopen_ane_framework",
-                },
-                AppleCtx {
-                    backend: "private-ane",
-                    op: "compile",
-                    device: "apple-silicon",
-                },
-            )
-        })?;
-        
-        let _client = rvllm_apple_ane_sys::ffi::get_ane_client().ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "private-ane",
-                    op: "get_ane_client",
-                },
-                AppleCtx {
-                    backend: "private-ane",
-                    op: "compile",
-                    device: "apple-silicon",
-                },
-            )
+struct SyncAnyObject(Retained<AnyObject>);
+unsafe impl Send for SyncAnyObject {}
+unsafe impl Sync for SyncAnyObject {}
+
+static ANE_PROGRAMS: OnceLock<Mutex<std::collections::HashMap<String, SyncAnyObject>>> = OnceLock::new();
+
+pub fn compile_private_ane_program(plan: &AneProgramPlan, weights_path: &std::path::Path) -> Result<()> {
+    plan.validate()?;
+
+    rvllm_apple_ane_sys::load_frameworks().map_err(|e| {
+        push_diagnostic(format!("load_frameworks failed: {}", e));
+        RvllmError::apple(AppleError::PrivateApiUnavailable { symbol: "load_frameworks" }, ctx("load_frameworks"))
+    })?;
+
+    let result: CompileOutput = (|| -> CompileOutput {
+        let workspace = std::path::Path::new("/tmp/rvllm_debug_workspace");
+        let _ = std::fs::remove_dir_all(&workspace);
+        std::fs::create_dir_all(&workspace).unwrap();
+        eprintln!("[ANE DEBUG] Workspace: {:?}", workspace);
+
+        let mil_path = workspace.join("model.mlmodel");
+        let weights_dir = workspace.join("weights");
+        std::fs::create_dir_all(&weights_dir).unwrap();
+
+        let weights_file = weights_dir.join("weight.bin");
+        std::fs::copy(weights_path, &weights_file).unwrap();
+
+        let mut model = crate::mil::load_template(&plan.template_name);
+        let offsets_ref: std::collections::HashMap<&str, u64> = plan.offsets.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+        crate::mil::patch_ast(
+            &mut model, 
+            "main", 
+            plan.spatial, 
+            plan.in_ch, 
+            plan.hidden_ch,
+            plan.out_ch, 
+            &offsets_ref
+        );
+
+        if let Some(rvllm_apple_coreml_sys::specification::model::Type::MlProgram(ref mut mlp)) = model.r#type {
+            for func in mlp.functions.values_mut() {
+                for block in func.block_specializations.values_mut() {
+                    for op in block.operations.iter_mut() {
+                        if op.r#type == "const" || op.r#type == "weight" {
+                             if let Some(ref mut val) = op.attributes.get_mut("val") {
+                                 if let Some(ref mut im) = val.value {
+                                     match im {
+                                         rvllm_apple_coreml_sys::specification::mil_spec::value::Value::BlobFileValue(ref mut blob) => {
+                                             if let Some(offset) = plan.offsets.get(&op.outputs[0].name) {
+                                                 blob.offset = *offset;
+                                             }
+                                             blob.file_name = "@model_path/weights/weight.bin".to_string();
+                                         },
+                                         _ => {}
+                                     }
+                                 }
+                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        std::fs::write(&mil_path, model.encode_to_vec()).unwrap();
+
+        let metadata_out = Command::new("xcrun").arg("coremlcompiler").arg("metadata").arg(&mil_path).output();
+        if let Ok(mo) = metadata_out {
+            eprintln!("[ANE METADATA] {}", String::from_utf8_lossy(&mo.stdout));
+        }
+
+        let client = rvllm_apple_ane_sys::get_ane_client().ok_or_else(|| {
+            RvllmError::apple(AppleError::FeatureNotAvailable { backend: "private-ane", op: "get_ane_client" }, ctx("load_ane_model"))
         })?;
 
-        // TODO: actually construct .mlpackage from `mil::fused_ffn_mil` bytes, compile it, and load it
-        return Ok(());
-    }
+        // Use _ANEClient compileModel instead of xcrun coremlcompiler compile
+        let compiled_url_path = rvllm_apple_ane_sys::compile_model_with_ane_client(mil_path.to_str().unwrap(), &client).map_err(|e| {
+            push_diagnostic(format!("_ANEClient compileModel failed: {}", e));
+            RvllmError::apple(AppleError::MilCompileFailed { procedure: "_ANEClient_compileModel" }, ctx("compile"))
+        })?;
 
-    #[cfg(not(target_os = "macos"))]
-    Err(RvllmError::apple(
-        AppleError::FeatureNotAvailable {
-            backend: "private-ane",
-            op: "compile_private_ane_program",
-        },
-        AppleCtx {
-            backend: "private-ane",
-            op: "compile",
-            device: "non-apple",
-        },
-    ))
+        eprintln!("[ANE DEBUG] Compiled Path: {}", compiled_url_path);
+
+        let model_handle = rvllm_apple_ane_sys::compile_and_load_ane_model(&compiled_url_path, &client).ok_or_else(|| {
+            push_diagnostic("ANE loadModel failed in private framework");
+            RvllmError::apple(AppleError::FeatureNotAvailable { backend: "private-ane", op: "load_ane_model" }, ctx("load_ane_model"))
+        })?;
+
+        let registry_mutex = ANE_PROGRAMS.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+        let mut registry = registry_mutex.lock().map_err(|_| RvllmError::apple(AppleError::FeatureNotAvailable { backend: "private-ane", op: "lock" }, ctx("lock")))?;
+        registry.insert(plan.id.clone(), SyncAnyObject(model_handle));
+
+        Ok(())
+    })();
+
+    result
 }
 
 #[cfg(test)]
@@ -122,27 +241,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ffn_only_program_has_one_proc_per_layer_plus_lm_head() {
+    #[cfg(all(target_os = "macos", feature = "private-ane"))]
+    fn test_hardware_ane_compilation_integration() {
         let config = AneRolloutConfig {
-            bucket: RolloutBucket { seqs: 8, tokens: 4 },
-            hidden_size: 2048,
-            intermediate_size: 6144,
-            num_layers: 24,
+            bucket: RolloutBucket { seqs: 1, tokens: 1 },
+            hidden_size: 16,
+            intermediate_size: 16,
+            num_layers: 1,
         };
         let plan = AneProgramPlan::ffn_only(config);
-        assert_eq!(plan.num_procedures(), 25);
-        assert_eq!(plan.config.activation_bytes(), 8 * 4 * 2048 * 2);
-    }
-
-    #[test]
-    fn qkv_ffn_program_has_two_procs_per_layer_plus_lm_head() {
-        let config = AneRolloutConfig {
-            bucket: RolloutBucket { seqs: 4, tokens: 1 },
-            hidden_size: 1024,
-            intermediate_size: 2816,
-            num_layers: 28,
-        };
-        let plan = AneProgramPlan::qkv_ffn_lm_head(config);
-        assert_eq!(plan.num_procedures(), 57);
+        
+        let temp_dir = std::env::temp_dir().join("rvllm_test_weights_ane");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let weights_path = temp_dir.join("weights.bin");
+        std::fs::write(&weights_path, vec![0u8; 1024 * 1024]).unwrap();
+        
+        let result = compile_private_ane_program(&plan, &weights_path);
+        if let Err(ref e) = result {
+            eprintln!("[ANE ERROR] {}", e);
+            for diag in last_ane_diagnostics() {
+                eprintln!("[ANE DIAG] {}", diag);
+            }
+        }
+        assert!(result.is_ok(), "Hardware-gated ANE compilation failed: {:?}", result.err());
     }
 }

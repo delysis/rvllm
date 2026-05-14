@@ -4,7 +4,9 @@
 //! `BatchPlan` values into host-testable `rvllm-apple` contracts.
 
 use rvllm_apple::{select_rollout_bucket, HandoffCapsule, HandoffKind, RolloutBucket};
-use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
+use rvllm_core::{
+    AppleCtx, AppleError, AppleRolloutBucketPolicy, AppleRolloutBucket, Result, RvllmError,
+};
 
 use crate::scheduler::BatchPlan;
 
@@ -25,6 +27,14 @@ fn err(reason: &'static str, op: &'static str) -> RvllmError {
 /// Positions and context lengths are derived from `cu_seqlens_q`: for each
 /// sequence, position is `len - 1` and context length is `len`.
 pub fn handoff_from_prefill_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<HandoffCapsule> {
+    handoff_from_prefill_plan_with_bucket(plan, kind, None)
+}
+
+pub fn handoff_from_prefill_plan_with_bucket(
+    plan: &BatchPlan,
+    kind: HandoffKind,
+    rollout_bucket: Option<RolloutBucket>,
+) -> Result<HandoffCapsule> {
     let BatchPlan::Prefill {
         req_ids,
         prompt_tokens_flat,
@@ -54,7 +64,7 @@ pub fn handoff_from_prefill_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<
         context_lens.push(len);
     }
 
-    let capsule = HandoffCapsule::new(
+    let mut capsule = HandoffCapsule::new(
         kind,
         req_ids.clone(),
         prompt_tokens_flat.clone(),
@@ -62,11 +72,27 @@ pub fn handoff_from_prefill_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<
         positions,
         context_lens,
     );
+    if matches!(
+        kind,
+        HandoffKind::MetalPrefillToAneFfnRollout | HandoffKind::MetalPrefillToAneRolloutExperimental
+    ) {
+        capsule = capsule.with_rollout_bucket(rollout_bucket);
+    } else if rollout_bucket.is_some() {
+        return Err(err("non-ANE prefill handoff must not have a rollout bucket", "prefill_handoff"));
+    }
     capsule.validate().map(|()| capsule)
 }
 
 /// Convert a decode plan into a one-token-per-sequence Apple handoff capsule.
 pub fn handoff_from_decode_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<HandoffCapsule> {
+    handoff_from_decode_plan_with_bucket(plan, kind, None)
+}
+
+pub fn handoff_from_decode_plan_with_bucket(
+    plan: &BatchPlan,
+    kind: HandoffKind,
+    rollout_bucket: Option<RolloutBucket>,
+) -> Result<HandoffCapsule> {
     let BatchPlan::Decode {
         req_ids,
         last_tokens,
@@ -90,7 +116,7 @@ pub fn handoff_from_decode_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<H
         cu.push((i + 1) as u32);
     }
 
-    let capsule = HandoffCapsule::new(
+    let mut capsule = HandoffCapsule::new(
         kind,
         req_ids.clone(),
         last_tokens.clone(),
@@ -98,22 +124,85 @@ pub fn handoff_from_decode_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<H
         positions.clone(),
         context_lens.clone(),
     );
+    capsule = capsule.with_rollout_bucket(rollout_bucket);
     capsule.validate().map(|()| capsule)
 }
 
 pub fn rollout_bucket_for_decode(plan: &BatchPlan, tokens_per_rollout: u32) -> Result<RolloutBucket> {
+    rollout_bucket_for_decode_with_config(plan, &None, tokens_per_rollout)
+}
+pub fn rollout_bucket_for_decode_with_runtime(
+    plan: &BatchPlan,
+    policy: &Option<AppleRolloutBucket>,
+    tokens_per_rollout: u32,
+) -> Result<RolloutBucket> {
+    rollout_bucket_for_decode_with_config(plan, policy, tokens_per_rollout)
+}
+
+pub fn rollout_bucket_for_decode_with_config(
+    plan: &BatchPlan,
+    requested_bucket: &Option<AppleRolloutBucket>,
+    tokens_per_rollout: u32,
+) -> Result<RolloutBucket> {
     let BatchPlan::Decode { req_ids, .. } = plan else {
         return Err(err("expected BatchPlan::Decode", "rollout_bucket"));
     };
-    select_rollout_bucket(req_ids.len() as u32, tokens_per_rollout).ok_or_else(|| {
-        RvllmError::apple(
+
+    if tokens_per_rollout == 0 {
+        return Err(err("tokens_per_rollout must be > 0", "rollout_bucket"));
+    }
+
+    let seqs = req_ids.len() as u32;
+    let bucket = match requested_bucket {
+        Some(b) => {
+            if b.tokens < tokens_per_rollout || b.seqs < seqs {
+                return Err(RvllmError::apple(
+                    AppleError::ShapeBucketMissing {
+                        seqs,
+                        tokens: tokens_per_rollout,
+                    },
+                    apple_ctx("rollout_bucket"),
+                ));
+            }
+            RolloutBucket {
+                seqs: b.seqs,
+                tokens: b.tokens,
+            }
+        }
+        None => select_rollout_bucket(seqs, tokens_per_rollout)
+            .ok_or_else(|| RvllmError::apple(
+                AppleError::ShapeBucketMissing { seqs, tokens: tokens_per_rollout },
+                apple_ctx("rollout_bucket"),
+            ))?,
+    };
+
+    if !bucket.fits(seqs, tokens_per_rollout) {
+        return Err(RvllmError::apple(
             AppleError::ShapeBucketMissing {
-                seqs: req_ids.len() as u32,
+                seqs,
                 tokens: tokens_per_rollout,
             },
             apple_ctx("rollout_bucket"),
-        )
-    })
+        ));
+    }
+
+    Ok(bucket)
+}
+
+#[cfg(feature = "apple")]
+#[allow(dead_code)]
+pub fn rollout_bucket_for_decode_with_runtime_config(
+    plan: &BatchPlan,
+    rollout_tokens: u32,
+    policy: AppleRolloutBucketPolicy,
+    fixed_bucket: Option<AppleRolloutBucket>,
+) -> Result<RolloutBucket> {
+    let bucket_override = match policy {
+        AppleRolloutBucketPolicy::Auto => None,
+        AppleRolloutBucketPolicy::Fixed { seqs, tokens } => Some(AppleRolloutBucket { seqs, tokens }),
+    };
+    let requested = fixed_bucket.or(bucket_override);
+    rollout_bucket_for_decode_with_config(plan, &requested, rollout_tokens)
 }
 
 #[cfg(test)]
@@ -128,7 +217,11 @@ mod tests {
             prompt_tokens_flat: vec![TokenId(10), TokenId(11), TokenId(20)],
             cu_seqlens_q: vec![0, 2, 3],
         };
-        let capsule = match handoff_from_prefill_plan(&plan, HandoffKind::MetalPrefillToAneFfnRollout) {
+        let capsule = match handoff_from_prefill_plan_with_bucket(
+            &plan,
+            HandoffKind::MetalPrefillToAneFfnRollout,
+            Some(RolloutBucket { seqs: 4, tokens: 1 }),
+        ) {
             Ok(v) => v,
             Err(e) => panic!("unexpected error: {e}"),
         };

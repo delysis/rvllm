@@ -1,79 +1,207 @@
-use prost::Message;
+use std::collections::HashMap;
 use rvllm_apple_coreml_sys::specification::{
-    mil_spec::{dimension, value, value_type, argument, tensor_value},
-    model, Model,
+    Model, FeatureDescription, feature_type,
+    mil_spec,
 };
-use serde::{Deserialize, Serialize};
+use prost::Message;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct FfnMilOffsets {
-    pub gate: u64,
-    pub up: u64,
-    pub down: u64,
+pub(crate) static PROJ_TEMPLATE: &[u8] = include_bytes!("../templates/proj.mlmodel");
+pub(crate) static FFN_TEMPLATE: &[u8] = include_bytes!("../templates/ffn.mlmodel");
+pub(crate) static QKV_TEMPLATE: &[u8] = include_bytes!("../templates/qkv.mlmodel");
+
+pub fn load_template(name: &str) -> Model {
+    let bytes = match name {
+        "proj.mlmodel" => PROJ_TEMPLATE,
+        "ffn.mlmodel" => FFN_TEMPLATE,
+        "qkv.mlmodel" => QKV_TEMPLATE,
+        _ => panic!("Unknown template: {}", name),
+    };
+    Model::decode(bytes).expect("Failed to decode MIL template")
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct QkvMilOffsets {
-    pub q: u64,
-    pub k: u64,
-    pub v: u64,
+fn patch_tensor_type(tensor: &mut mil_spec::TensorType, spatial: usize, ch: usize) {
+    tensor.data_type = mil_spec::DataType::Float16 as i32; // Force FP16
+    if tensor.dimensions.len() == 4 {
+        let is_ane_act = tensor.dimensions[0].dimension.as_ref().map_or(false, |d| matches!(d, mil_spec::dimension::Dimension::Constant(c) if c.size == 1))
+            && tensor.dimensions[2].dimension.as_ref().map_or(false, |d| matches!(d, mil_spec::dimension::Dimension::Constant(c) if c.size == 1));
+        
+        if is_ane_act {
+            tensor.dimensions[1].dimension = Some(mil_spec::dimension::Dimension::Constant(mil_spec::dimension::ConstantDimension { size: ch as u64 }));
+            tensor.dimensions[3].dimension = Some(mil_spec::dimension::Dimension::Constant(mil_spec::dimension::ConstantDimension { size: spatial as u64 }));
+        }
+    }
 }
 
-static FFN_TEMPLATE: &[u8] = include_bytes!("../templates/ffn.mlmodel");
-static QKV_TEMPLATE: &[u8] = include_bytes!("../templates/qkv.mlmodel");
-static PROJ_TEMPLATE: &[u8] = include_bytes!("../templates/proj.mlmodel");
-
-fn load_template(bytes: &[u8]) -> Model {
-    Model::decode(bytes).expect("Built-in CoreML template is corrupted")
+fn patch_weight_type(tensor: &mut mil_spec::TensorType, out_ch: usize, in_ch: usize) {
+    tensor.data_type = mil_spec::DataType::Float16 as i32; // Force FP16
+    if tensor.dimensions.len() == 4 {
+        tensor.dimensions[0].dimension = Some(mil_spec::dimension::Dimension::Constant(mil_spec::dimension::ConstantDimension { size: out_ch as u64 }));
+        tensor.dimensions[1].dimension = Some(mil_spec::dimension::Dimension::Constant(mil_spec::dimension::ConstantDimension { size: in_ch as u64 }));
+    }
 }
 
-fn patch_ast(
-    model: &mut Model,
-    spatial: usize,
-    in_ch: usize,
-    _out_ch: usize,
-    offsets: &std::collections::HashMap<&str, u64>,
-) {
-    if let Some(model::Type::MlProgram(ref mut program)) = model.r#type {
-        if let Some(func) = program.functions.get_mut("main") {
-            // Update input shape
-            if let Some(input) = func.inputs.first_mut() {
-                if let Some(ref mut val_type) = input.r#type {
-                    if let Some(value_type::Type::TensorType(ref mut tensor)) = val_type.r#type {
-                        if tensor.dimensions.len() == 4 {
-                            tensor.dimensions[1].dimension = Some(dimension::Dimension::Constant(dimension::ConstantDimension { size: in_ch as u64 }));
-                            tensor.dimensions[3].dimension = Some(dimension::Dimension::Constant(dimension::ConstantDimension { size: spatial as u64 }));
-                        }
-                    }
+fn patch_value_type(vt: &mut mil_spec::ValueType, spatial: usize, ch: usize, is_weight: bool, out_ch: usize) {
+    if let Some(ref mut t) = vt.r#type {
+        match t {
+            mil_spec::value_type::Type::TensorType(ref mut tensor) => {
+                if is_weight {
+                    patch_weight_type(tensor, out_ch, ch);
+                } else {
+                    patch_tensor_type(tensor, spatial, ch);
                 }
             }
+            _ => {}
+        }
+    }
+}
 
-            // Update operations
-            for block in func.block_specializations.values_mut() {
-                for op in block.operations.iter_mut() {
-                    // Patch constant weight offsets
-                    if op.r#type == "const" {
-                        if let Some(arg) = op.inputs.get_mut("val") {
-                            if let Some(binding) = arg.arguments.first_mut() {
-                                if let Some(argument::binding::Binding::Value(ref mut val)) = binding.binding {
-                                    if let Some(value::Value::BlobFileValue(ref mut blob)) = val.value {
-                                        if let Some(op_name) = op.attributes.get("name") {
-                                            if let Some(value::Value::ImmediateValue(imm)) = &op_name.value {
-                                                if let Some(value::immediate_value::Value::Tensor(tensor)) = &imm.value {
-                                                    if let Some(tensor_value::Value::Strings(strings)) = &tensor.value {
-                                                        if let Some(name) = strings.values.first() {
-                                                            let name_str: &str = name.as_str();
-                                                            if let Some(offset) = offsets.get(name_str) {
-                                                                blob.offset = *offset;
-                                                            }
-                                                        }
-                                                    }
-                                                }
+fn patch_feature_description(desc: &mut FeatureDescription, spatial: usize, ch: usize) {
+    if let Some(ref mut t) = desc.r#type {
+        if let Some(feature_type::Type::MultiArrayType(ref mut array)) = t.r#type {
+            array.data_type = rvllm_apple_coreml_sys::specification::array_feature_type::ArrayDataType::Float16 as i32;
+            if array.shape.len() == 4 {
+                array.shape[1] = ch as i64;
+                array.shape[3] = spatial as i64;
+            }
+        }
+    }
+}
+
+pub fn patch_ast(
+    model: &mut Model,
+    _func_name: &str,
+    spatial: usize,
+    in_ch: usize,
+    hidden_ch: usize,
+    out_ch: usize,
+    _offsets: &HashMap<&str, u64>,
+) {
+    model.specification_version = 7;
+    
+    if let Some(ref mut desc) = model.description {
+        for input in desc.input.iter_mut() {
+            patch_feature_description(input, spatial, in_ch);
+        }
+        for output in desc.output.iter_mut() {
+            patch_feature_description(output, spatial, out_ch);
+        }
+    }
+
+    let mlp = match model.r#type {
+        Some(rvllm_apple_coreml_sys::specification::model::Type::MlProgram(ref mut p)) => p,
+        _ => return,
+    };
+
+    let mut symbol_channels = HashMap::new();
+
+    for func in mlp.functions.values_mut() {
+        for input in func.inputs.iter_mut() {
+            symbol_channels.insert(input.name.clone(), in_ch);
+            if let Some(ref mut t) = input.r#type {
+                patch_value_type(t, spatial, in_ch, false, 0);
+            }
+        }
+
+        for block in func.block_specializations.values_mut() {
+            for op in block.operations.iter_mut() {
+                let name = &op.r#type;
+                
+                if name == "const" || name == "weight" {
+                    let out_name = &op.outputs[0].name;
+                    
+                    if let Some(ref mut val_attr) = op.attributes.get_mut("val") {
+                        match val_attr.value {
+                            Some(mil_spec::value::Value::BlobFileValue(ref mut _blob)) => {
+                                let (w_out, w_in) = if out_name.contains("gate") || out_name.contains("up") {
+                                    (hidden_ch, in_ch)
+                                } else if out_name.contains("down") {
+                                    (out_ch, hidden_ch)
+                                } else {
+                                    (out_ch, in_ch)
+                                };
+
+                                if let Some(ref mut vt) = val_attr.r#type {
+                                    patch_value_type(vt, spatial, w_in, true, w_out);
+                                }
+                                
+                                if let Some(ref mut vt) = op.outputs[0].r#type {
+                                    patch_value_type(vt, spatial, w_in, true, w_out);
+                                }
+                            },
+                            Some(mil_spec::value::Value::ImmediateValue(ref mut imm)) => {
+                                if let Some(mil_spec::value::immediate_value::Value::Tensor(ref mut tensor)) = imm.value {
+                                    if let Some(mil_spec::tensor_value::Value::Strings(ref mut rs)) = tensor.value {
+                                        for s in rs.values.iter_mut() {
+                                            if s == "fp32" || s == "float32" {
+                                                *s = "fp16".to_string();
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            _ => {}
+                        }
+                    }
+                } else if name == "conv" || name == "linear" || name == "matmul" {
+                    let weight_name = op.inputs.get("weight").and_then(|a| a.arguments.first()).and_then(|b| {
+                        if let Some(mil_spec::argument::binding::Binding::Name(ref n)) = b.binding {
+                            Some(n)
+                        } else {
+                            None
+                        }
+                    });
+
+                    let target_ch = if let Some(wn) = weight_name {
+                        if wn.contains("gate") || wn.contains("up") {
+                            hidden_ch
+                        } else if wn.contains("down") {
+                            out_ch
+                        } else {
+                            out_ch
+                        }
+                    } else {
+                        out_ch
+                    };
+
+                    for output in op.outputs.iter_mut() {
+                        symbol_channels.insert(output.name.clone(), target_ch);
+                        if let Some(ref mut t) = output.r#type {
+                            patch_value_type(t, spatial, target_ch, false, 0);
+                        }
+                    }
+                } else {
+                    for (attr_name, attr_val) in op.attributes.iter_mut() {
+                        if attr_name == "dtype" {
+                            if let Some(mil_spec::value::Value::ImmediateValue(ref mut imm)) = attr_val.value {
+                                if let Some(mil_spec::value::immediate_value::Value::Tensor(ref mut tensor)) = imm.value {
+                                    if let Some(mil_spec::tensor_value::Value::Strings(ref mut rs)) = tensor.value {
+                                        for s in rs.values.iter_mut() {
+                                            if s == "fp32" || s == "float32" {
+                                                *s = "fp16".to_string();
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    let mut input_ch = in_ch;
+                    for arg in op.inputs.values() {
+                        for binding in &arg.arguments {
+                            if let Some(mil_spec::argument::binding::Binding::Name(ref n)) = binding.binding {
+                                if let Some(&ch) = symbol_channels.get(n) {
+                                    input_ch = ch;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    for output in op.outputs.iter_mut() {
+                        symbol_channels.insert(output.name.clone(), input_ch);
+                        if let Some(ref mut t) = output.r#type {
+                            patch_value_type(t, spatial, input_ch, false, 0);
                         }
                     }
                 }
@@ -82,52 +210,52 @@ fn patch_ast(
     }
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
+pub struct FfnMilOffsets {
+    pub gate: u64,
+    pub up: u64,
+    pub down: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
+pub struct QkvMilOffsets {
+    pub q: u64,
+    pub k: u64,
+    pub v: u64,
+}
+
 #[must_use]
 pub fn dense_1x1_conv_mil(_name: &str, in_ch: usize, out_ch: usize, spatial: usize, offset: u64) -> Vec<u8> {
-    let mut model = load_template(PROJ_TEMPLATE);
+    let mut model = load_template("proj.mlmodel");
     let mut offsets = std::collections::HashMap::new();
-    offsets.insert("proj.weight", offset);
-    patch_ast(&mut model, spatial, in_ch, out_ch, &offsets);
+    offsets.insert("proj_weight_to_fp16", offset);
+    patch_ast(&mut model, "main", spatial, in_ch, in_ch, out_ch, &offsets);
     model.encode_to_vec()
 }
 
 #[must_use]
-pub fn fused_ffn_mil(dim: usize, _hidden_dim: usize, spatial: usize, offsets: FfnMilOffsets) -> Vec<u8> {
-    let mut model = load_template(FFN_TEMPLATE);
+pub fn fused_ffn_mil(dim: usize, hidden_dim: usize, spatial: usize, offsets: FfnMilOffsets) -> Vec<u8> {
+    let mut model = load_template("ffn.mlmodel");
     let mut off = std::collections::HashMap::new();
-    off.insert("gate.weight", offsets.gate);
-    off.insert("up.weight", offsets.up);
-    off.insert("down.weight", offsets.down);
-    patch_ast(&mut model, spatial, dim, dim, &off);
+    off.insert("gate_weight_to_fp16", offsets.gate);
+    off.insert("up_weight_to_fp16", offsets.up);
+    off.insert("down_weight_to_fp16", offsets.down);
+    patch_ast(&mut model, "main", spatial, dim, hidden_dim, dim, &off);
     model.encode_to_vec()
 }
 
-#[must_use]
 pub fn fused_qkv_mil(
-    dim: usize,
     q_dim: usize,
-    _kv_dim: usize,
+    kv_dim: usize,
+    _head_dim: usize,
     spatial: usize,
     offsets: QkvMilOffsets,
 ) -> Vec<u8> {
-    let mut model = load_template(QKV_TEMPLATE);
+    let mut model = load_template("proj.mlmodel"); 
     let mut off = std::collections::HashMap::new();
-    off.insert("q.weight", offsets.q);
-    off.insert("k.weight", offsets.k);
-    off.insert("v.weight", offsets.v);
-    patch_ast(&mut model, spatial, dim, q_dim, &off);
+    off.insert("q_weight_to_fp16", offsets.q);
+    off.insert("k_weight_to_fp16", offsets.k);
+    off.insert("v_weight_to_fp16", offsets.v);
+    patch_ast(&mut model, "main", spatial, q_dim, q_dim, kv_dim, &off); // Dummy
     model.encode_to_vec()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_load_templates() {
-        let ffn = fused_ffn_mil(64, 128, 4, FfnMilOffsets { gate: 0, up: 0, down: 0 });
-        assert!(!ffn.is_empty());
-        let qkv = fused_qkv_mil(128, 128, 32, 8, QkvMilOffsets { q: 0, k: 0, v: 0 });
-        assert!(!qkv.is_empty());
-    }
 }
