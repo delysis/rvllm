@@ -8,6 +8,7 @@
 
 pub mod ane;
 pub mod backend;
+pub mod compile_cache;
 pub mod device;
 pub mod handoff;
 pub mod iosurface;
@@ -18,6 +19,7 @@ pub mod weight_blob;
 
 pub use ane::{AneProcedure, AneProgramPlan, AneRolloutConfig};
 pub use backend::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, StubAppleBackend, StepToken};
+pub use compile_cache::{AneCompileCacheKey, CompileCacheHash};
 pub use device::{
     AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier,
 };

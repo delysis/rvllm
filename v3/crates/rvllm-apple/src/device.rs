@@ -26,6 +26,17 @@ impl AppleGpuFamily {
     pub const fn has_nax(self) -> bool {
         matches!(self, AppleGpuFamily::Apple10)
     }
+
+    #[must_use]
+    pub const fn cache_slug(self) -> &'static str {
+        match self {
+            AppleGpuFamily::Unknown => "unknown",
+            AppleGpuFamily::Apple7 => "apple7",
+            AppleGpuFamily::Apple8 => "apple8",
+            AppleGpuFamily::Apple9 => "apple9",
+            AppleGpuFamily::Apple10 => "apple10",
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -46,6 +57,16 @@ impl DeviceTier {
             DeviceTier::Ultra => 8,
         }
     }
+
+    #[must_use]
+    pub const fn cache_slug(self) -> &'static str {
+        match self {
+            DeviceTier::Base => "base",
+            DeviceTier::Pro => "pro",
+            DeviceTier::Max => "max",
+            DeviceTier::Ultra => "ultra",
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -56,6 +77,20 @@ pub enum AppleNpuGeneration {
     M3,
     M4,
     M5,
+}
+
+impl AppleNpuGeneration {
+    #[must_use]
+    pub const fn cache_slug(self) -> &'static str {
+        match self {
+            AppleNpuGeneration::Unknown => "unknown",
+            AppleNpuGeneration::M1 => "m1",
+            AppleNpuGeneration::M2 => "m2",
+            AppleNpuGeneration::M3 => "m3",
+            AppleNpuGeneration::M4 => "m4",
+            AppleNpuGeneration::M5 => "m5",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -113,8 +148,14 @@ impl AppleAcceleratorTarget {
     #[must_use]
     pub fn cache_key(&self) -> String {
         format!(
-            "{}:{:?}:{:?}:{:?}:dies{}",
-            self.device_name, self.gpu_family, self.tier, self.npu_generation, self.die_count
+            "apple-gpu-{}-arch{}-npu-{}-tier-{}-nax{}-ane{}-dies{}",
+            self.gpu_family.cache_slug(),
+            self.architecture_gen,
+            self.npu_generation.cache_slug(),
+            self.tier.cache_slug(),
+            if self.has_nax { 1 } else { 0 },
+            self.ane_cores,
+            self.die_count
         )
     }
 }
