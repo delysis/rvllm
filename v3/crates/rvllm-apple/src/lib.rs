@@ -19,7 +19,7 @@ pub mod mlx;
 pub mod plan;
 pub mod weight_blob;
 
-pub use ane::{AneProcedure, AneProgramPlan, AneRolloutConfig};
+pub use ane::{AneProcedure, AneProgram, AneProgramPlan, AneRolloutConfig, AneSys, AneSysHandle};
 pub use backend::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, StubAppleBackend, StepToken};
 pub use device::{
     AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier,

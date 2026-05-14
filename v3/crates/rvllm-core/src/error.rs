@@ -250,6 +250,7 @@ pub enum AppleError {
     InvalidWeightBlob { reason: &'static str },
     InvalidBufferArena { reason: &'static str },
     BufferArenaTooSmall { requested: usize, capacity: usize },
+    AneLifecycleViolation { op: &'static str, state: &'static str },
 }
 
 impl std::fmt::Display for AppleError {
@@ -272,8 +273,50 @@ impl std::fmt::Display for AppleError {
             AppleError::IoSurfaceFailed { bytes } => {
                 write!(f, "IoSurfaceFailed bytes={bytes}")
             }
+            AppleError::IoSurfaceInvalidDesc {
+                dtype,
+                channels,
+                spatial,
+            } => {
+                write!(
+                    f,
+                    "IoSurfaceInvalidDesc dtype={dtype:?} channels={channels} spatial={spatial}"
+                )
+            }
+            AppleError::IoSurfaceSizeOverflow {
+                dtype,
+                channels,
+                spatial,
+            } => {
+                write!(
+                    f,
+                    "IoSurfaceSizeOverflow dtype={dtype:?} channels={channels} spatial={spatial}"
+                )
+            }
+            AppleError::IoSurfacePackEmpty => f.write_str("IoSurfacePackEmpty"),
+            AppleError::IoSurfacePackUnnamedField { field } => {
+                write!(f, "IoSurfacePackUnnamedField field={field}")
+            }
+            AppleError::IoSurfacePackDuplicateField { field } => {
+                write!(f, "IoSurfacePackDuplicateField field={field}")
+            }
+            AppleError::IoSurfacePackFieldMismatch {
+                field,
+                expected_dtype,
+                actual_dtype,
+                expected_channels,
+                actual_channels,
+            } => {
+                write!(
+                    f,
+                    "IoSurfacePackFieldMismatch field={field} expected_dtype={expected_dtype:?} actual_dtype={actual_dtype:?} expected_channels={expected_channels} actual_channels={actual_channels}"
+                )
+            }
             AppleError::ShapeBucketMissing { seqs, tokens } => {
                 write!(f, "ShapeBucketMissing seqs={seqs} tokens={tokens}")
+            }
+            AppleError::LayerShapeInvalid { reason } => {
+                write!(f, "LayerShapeInvalid reason={reason}")
             }
             AppleError::HandoffMalformed { reason } => {
                 write!(f, "HandoffMalformed reason={reason}")
@@ -281,8 +324,14 @@ impl std::fmt::Display for AppleError {
             AppleError::NotPrepared { backend } => {
                 write!(f, "NotPrepared backend={backend}")
             }
+            AppleError::LaunchNotPending { step_id } => {
+                write!(f, "LaunchNotPending step_id={step_id}")
+            }
             AppleError::FeatureNotAvailable { backend, op } => {
                 write!(f, "FeatureNotAvailable backend={backend} op={op}")
+            }
+            AppleError::InvalidMetalRecipe { reason } => {
+                write!(f, "InvalidMetalRecipe reason={reason}")
             }
             AppleError::UnsupportedDevice { name } => {
                 write!(f, "UnsupportedDevice name={name}")
@@ -292,6 +341,21 @@ impl std::fmt::Display for AppleError {
             }
             AppleError::InvalidWeightBlob { reason } => {
                 write!(f, "InvalidWeightBlob reason={reason}")
+            }
+            AppleError::InvalidBufferArena { reason } => {
+                write!(f, "InvalidBufferArena reason={reason}")
+            }
+            AppleError::BufferArenaTooSmall {
+                requested,
+                capacity,
+            } => {
+                write!(
+                    f,
+                    "BufferArenaTooSmall requested={requested} capacity={capacity}"
+                )
+            }
+            AppleError::AneLifecycleViolation { op, state } => {
+                write!(f, "AneLifecycleViolation op={op} state={state}")
             }
         }
     }
