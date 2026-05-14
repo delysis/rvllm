@@ -9,6 +9,12 @@
 //!   RVLLM_KERNELS_DIR, RVLLM_CUTLASS_SO, RVLLM_FA3_SO, RVLLM_POLICY
 //!   RVLLM_MAX_TOKENS  = max output tokens (default 256)
 //!   RVLLM_PROMPT      = prompt string (alternative to stdin)
+//!   RVLLM_BACKEND_PROFILE       = cuda|apple|xla|unknown
+//!   RVLLM_APPLE_MODE            = disabled|metal-only|metal-prefill-metal-decode|ane-fn|ane-exp
+//!   RVLLM_STRICT_ANE            = 1 (strict ANE mode)
+//!   RVLLM_APPLE_PRIVATE_ANE     = 1
+//!   RVLLM_APPLE_ANE_PROFILE     = any|neural_engine_preferred|neural_engine_only
+//!   RVLLM_APPLE_ANE_FALLBACK    = allow-metal|allow-soft|failfast
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -53,6 +59,7 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let model_dir = env_path("RVLLM_MODEL_DIR")?;
+    eprintln!("run_profile={}", eval_profile_summary());
 
     // -- tokenizer --
     let tok_path = model_dir.join("tokenizer.json");
@@ -194,6 +201,35 @@ fn run() -> Result<(), String> {
         .map_err(|e| format!("detokenize: {e}"))?;
     println!("{text}");
     Ok(())
+}
+
+fn eval_profile_summary() -> String {
+    let strict_ane = parse_bool("RVLLM_STRICT_ANE");
+    let private = parse_bool("RVLLM_APPLE_PRIVATE_ANE");
+    let mode = std::env::var("RVLLM_APPLE_MODE")
+        .unwrap_or_else(|_| "not-set".into());
+    let profile = std::env::var("RVLLM_APPLE_ANE_PROFILE")
+        .or_else(|_| std::env::var("RVLLM_ANE_PROFILE"))
+        .unwrap_or_else(|_| "any".into());
+    let fallback = std::env::var("RVLLM_APPLE_ANE_FALLBACK")
+        .or_else(|_| std::env::var("RVLLM_ANE_FALLBACK"))
+        .unwrap_or_else(|_| "allow-metal".into());
+    format!("backend={}; strict_ane={}; private_ane={}; ane_profile={}; ane_fallback={}", mode, strict_ane, private, profile, fallback)
+}
+
+fn parse_bool(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .and_then(|s| parse_bool_value(&s))
+        .unwrap_or(false)
+}
+
+fn parse_bool_value(s: &str) -> Option<bool> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 #[cfg(feature = "cuda")]

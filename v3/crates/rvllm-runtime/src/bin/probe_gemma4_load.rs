@@ -21,6 +21,11 @@
 //! RVLLM_CUTLASS_SO=/path/to/libcutlass_sm90.so \
 //! RVLLM_FA3_SO=/path/to/libfa3_sm90.so \
 //! RVLLM_POLICY=/path/to/policy.json \
+//! RVLLM_STRICT_ANE=1 \
+//! RVLLM_APPLE_PRIVATE_ANE=1 \
+//! RVLLM_APPLE_MODE=ane-fn \
+//! RVLLM_APPLE_ANE_PROFILE=any|neural_engine_preferred|neural_engine_only \
+//! RVLLM_APPLE_ANE_FALLBACK=allow-metal|allow-soft|failfast \
 //! RVLLM_ARENA_GB=4 \
 //! cargo run --release -p rvllm-runtime --bin probe-gemma4-load --features gb10
 //! ```
@@ -79,6 +84,8 @@ fn resolve_policy_path(kernels_dir: &std::path::Path) -> Result<PathBuf, String>
 }
 
 fn run() -> Result<(), String> {
+    eprintln!("run_profile={}", probe_profile_summary());
+
     // On sm_121 the CUTLASS `.so` and FA3 `.so` are never opened —
     // `CutlassBackend::load_for` short-circuits to `Absent` on sm_121,
     // and the attention layer takes `AttentionBackend::Fa2Ptx` instead
@@ -281,6 +288,37 @@ fn run() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn probe_profile_summary() -> String {
+    let strict_ane = parse_bool("RVLLM_STRICT_ANE");
+    let private = parse_bool("RVLLM_APPLE_PRIVATE_ANE");
+    let mode = std::env::var("RVLLM_APPLE_MODE").unwrap_or_else(|_| "not-set".into());
+    let profile = std::env::var("RVLLM_APPLE_ANE_PROFILE")
+        .or_else(|_| std::env::var("RVLLM_ANE_PROFILE"))
+        .unwrap_or_else(|_| "any".into());
+    let fallback = std::env::var("RVLLM_APPLE_ANE_FALLBACK")
+        .or_else(|_| std::env::var("RVLLM_ANE_FALLBACK"))
+        .unwrap_or_else(|_| "allow-metal".into());
+    format!(
+        "backend={}; strict_ane={}; private_ane={}; ane_profile={}; ane_fallback={}",
+        mode, strict_ane, private, profile, fallback
+    )
+}
+
+fn parse_bool(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .and_then(|s| parse_bool_value(&s))
+        .unwrap_or(false)
+}
+
+fn parse_bool_value(s: &str) -> Option<bool> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 fn main() -> ExitCode {

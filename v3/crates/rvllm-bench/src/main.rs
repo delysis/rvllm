@@ -3,28 +3,49 @@
 //! tokens/sec.
 //!
 //! Env vars:
-//!   RVLLM_MODEL_DIR   = HF snapshot dir with config.json + safetensors (required)
-//!   RVLLM_KERNELS_DIR = dir with manifest.json + compiled PTX         (required)
-//!   RVLLM_CUTLASS_SO  = path to libcutlass_kernels.so                 (SM90 only)
-//!   RVLLM_FA3_SO      = path to libfa3_kernels.so                     (SM90 only)
-//!   RVLLM_POLICY      = path to policy.json                           (SM90 only)
-//!   RVLLM_BATCH       = batch size (default 128)
-//!   RVLLM_ITERS       = decode-step iterations (default 100)
-//!   RVLLM_WARMUP      = warmup iterations (default 10)
-//!
-//! The three SM90 vars are ignored on sm_121 (CutlassBackend::Absent/
-//! SoSm120 + AttentionBackend::Fa2Ptx never open those files). When
-//! unset they default to `/dev/null`; dlopen of `/dev/null` fails
-//! cleanly on SM90 with a clear message.
-//!
-//! Prints one JSON line per run: {batch, iters, tok_per_sec, ms_per_step}.
+//!   RVLLM_MODEL_DIR             = HF snapshot dir with config.json + safetensors (required)
+//!   RVLLM_KERNELS_DIR           = dir with manifest.json + compiled PTX         (required)
+//!   RVLLM_CUTLASS_SO            = path to libcutlass_kernels.so                 (SM90 only)
+//!   RVLLM_FA3_SO                = path to libfa3_kernels.so                     (SM90 only)
+//!   RVLLM_POLICY                = path to policy.json                           (SM90 only)
+//!   RVLLM_BATCH                 = batch size (default 128)
+//!   RVLLM_ITERS                 = decode-step iterations (default 100)
+//!   RVLLM_WARMUP                = warmup iterations (default 10)
+//!   RVLLM_SWEEP                 = if 1, sample a policy parameter sweep
+//!   RVLLM_BACKEND_PROFILE       = cuda|apple|xla|unknown (default: cuda)
+//!   RVLLM_APPLE_MODE            = disabled|metal-only|metal-prefill-metal-decode|ane-fn|ane-exp
+//!   RVLLM_STRICT_ANE            = 1 enables strict fail-fast ANE mode
+//!   RVLLM_APPLE_PRIVATE_ANE     = 1 opt-in for private ANE plan path
+//!   RVLLM_APPLE_ANE_PROFILE     = any|neural_engine_preferred|neural_engine_only
+//!   RVLLM_APPLE_ANE_FALLBACK    = allow-metal|allow-soft|failfast
+//!   RVLLM_APPLE_ROLLOUT_TOKENS   = rollout token target (default 1)
+//!   RVLLM_APPLE_BUCKET_SEQS      = rollout bucket sequence size (metadata only)
+//!   RVLLM_APPLE_BUCKET_TOKENS    = rollout bucket token size (metadata only)
+//!   RVLLM_APPLE_LAYOUT_HASH      = optional model layout hash (opaque)
+//!   RVLLM_BENCH_LOG_DIR          = directory to append JSON benchmark records
+//!   RVLLM_APPLE_COMPILE_CACHE_KEY = optional cache key used by your Apple run
+//!   RVLLM_APPLE_COMPILE_CACHE_HIT = 1/0 cache hit/miss marker for Apple
+//!   RVLLM_APPLE_COMPILE_MS        = compile wall time in ms for Apple
+//!   RVLLM_APPLE_COMPILE_REASON     = optional compile fail reason
+//!   RVLLM_SIDE_BY_SIDE_CUDA       = one-line JSON with baseline CUDA metrics
+//!   RVLLM_SIDE_BY_SIDE_XLA        = one-line JSON with baseline XLA metrics
+//! 
+//! Prints JSON records with enriched metadata:
+//!   {batch,iters,tok_per_sec,ms_per_step,[ttft],backend,backend_profile,side_by_side}
 
+mod ane_meta;
+
+use std::fs::{OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use rvllm_core::{ModelArch as HfModelArch, ModelConfig};
+use rvllm_core::{AneFallbackPolicy, ModelArch as HfModelArch, ModelConfig};
 use rvllm_runtime::{Bringup, EnginePaths};
 use rvllm_runtime::gemma4_bring_up::{Gemma4Bringup, Gemma4EnginePaths};
+use serde_json::{json, Value};
+
+use ane_meta::{AppleCliProfile, BackendProfile};
 
 fn env_path(k: &str) -> Result<PathBuf, String> {
     std::env::var(k)
@@ -57,6 +78,14 @@ fn is_gemma4_model_dir(model_dir: &std::path::Path) -> Result<bool, String> {
     ))
 }
 
+fn ane_policy_label(policy: AneFallbackPolicy) -> &'static str {
+    match policy {
+        AneFallbackPolicy::FailFast => "failfast",
+        AneFallbackPolicy::AllowMetal => "allow-metal",
+        AneFallbackPolicy::AllowSoft => "allow-soft",
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -70,6 +99,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let profile = AppleCliProfile::from_env();
     let paths = EnginePaths {
         model_dir: env_path("RVLLM_MODEL_DIR")?,
         kernels_dir: env_path("RVLLM_KERNELS_DIR")?,
@@ -90,10 +120,11 @@ fn run() -> Result<(), String> {
     let arena_bytes: usize = arena_gb * 1024 * 1024 * 1024;
 
     eprintln!("== rvllm-bench v3 ==");
-    eprintln!("model_dir   = {}", paths.model_dir.display());
-    eprintln!("kernels_dir = {}", paths.kernels_dir.display());
+    eprintln!("model_dir    = {}", paths.model_dir.display());
+    eprintln!("kernels_dir  = {}", paths.kernels_dir.display());
     eprintln!("batch       = {batch}");
     eprintln!("iters       = {iters} (warmup {warmup})");
+    eprintln!("apple_intent= {}", profile.compact_summary());
 
     let is_gemma4 = is_gemma4_model_dir(&paths.model_dir)?;
 
@@ -109,9 +140,10 @@ fn run() -> Result<(), String> {
         let t0 = Instant::now();
         let g4 = Gemma4Bringup::load(g4_paths, arena_bytes)
             .map_err(|e| format!("gemma4 bringup: {e}"))?;
+        let load_ms = t0.elapsed().as_millis();
         eprintln!(
             "bringup: {:.2}s | arch layers={} hidden={} heads={} sliding_kv={} global_kv={}",
-            t0.elapsed().as_secs_f64(),
+            (load_ms as f64) / 1000.0,
             g4.arch.num_hidden_layers,
             g4.arch.hidden_size,
             g4.arch.num_attention_heads,
@@ -120,15 +152,15 @@ fn run() -> Result<(), String> {
         );
         eprintln!("arena used = {} MiB", g4.arena.used() / (1024 * 1024));
         let result = unsafe { g4.run_bench(batch, iters, warmup) };
-        print_result(result);
-        return Ok(());
+        return print_result(&profile, result, load_ms, true);
     }
 
     let t0 = Instant::now();
     let br = Bringup::load(paths, arena_bytes).map_err(|e| format!("bringup: {e}"))?;
+    let load_ms = t0.elapsed().as_millis();
     eprintln!(
         "bringup: {:.2}s | arch layers={} hidden={} heads={} kv_heads={}",
-        t0.elapsed().as_secs_f64(),
+        (load_ms as f64) / 1000.0,
         br.arch.num_hidden_layers,
         br.arch.hidden_size,
         br.arch.num_attention_heads,
@@ -142,11 +174,15 @@ fn run() -> Result<(), String> {
 
     let result = unsafe { br.run_bench(batch, iters, warmup) }
         .map_err(|e| format!("run_bench: {e}"))?;
-    print_result(result);
-    Ok(())
+    print_result(&profile, result, load_ms, false)
 }
 
-fn print_result(r: rvllm_runtime::bring_up::BenchResult) {
+fn print_result(
+    profile: &AppleCliProfile,
+    r: rvllm_runtime::bring_up::BenchResult,
+    load_ms: u128,
+    is_gemma4: bool,
+) -> Result<(), String> {
     let tok_per_sec = if r.total_ns > 0 {
         (r.iters as f64 * r.num_seqs as f64) * 1.0e9 / r.total_ns as f64
     } else {
@@ -166,19 +202,102 @@ fn print_result(r: rvllm_runtime::bring_up::BenchResult) {
         "bench: batch={} iters={} -> {:.0} tok/s ({:.3} ms/step){}",
         r.num_seqs, r.iters, tok_per_sec, ms_per_step, ttft_str
     );
-    let ttft_json = match (r.ttft_ns, r.ttft_hot_ns) {
-        (Some(cold), Some(hot)) => format!(
-            ",\"ttft_cold_ms\":{:.3},\"ttft_hot_ms\":{:.3}",
-            cold as f64 / 1.0e6,
-            hot as f64 / 1.0e6
-        ),
-        (Some(cold), None) => format!(",\"ttft_ms\":{:.3}", cold as f64 / 1.0e6),
-        _ => String::new(),
-    };
-    println!(
-        "{{\"batch\":{},\"iters\":{},\"tok_per_sec\":{:.1},\"ms_per_step\":{:.4}{}}}",
-        r.num_seqs, r.iters, tok_per_sec, ms_per_step, ttft_json
-    );
+
+    let current = backend_entry(profile.backend(), tok_per_sec, ms_per_step, load_ms, &r);
+
+    let side_by_side = json!({
+        "cuda": if matches!(profile.backend(), BackendProfile::Cuda) {
+            current.clone()
+        } else {
+            profile.peer_cuda.clone().unwrap_or(Value::Null)
+        },
+        "apple": if matches!(profile.backend(), BackendProfile::Apple) {
+            profile.compact_apple_object()
+        } else {
+            Value::Null
+        },
+        "xla": if matches!(profile.backend(), BackendProfile::Xla) {
+            current.clone()
+        } else {
+            profile.peer_xla.clone().unwrap_or(Value::Null)
+        },
+    });
+
+    let mut record = json!({
+        "batch": r.num_seqs,
+        "iters": r.iters,
+        "tok_per_sec": tok_per_sec,
+        "ms_per_step": ms_per_step,
+        "ttft_cold_ms": r.ttft_ns.map(|ns| ns as f64 / 1.0e6),
+        "ttft_hot_ms": r.ttft_hot_ns.map(|ns| ns as f64 / 1.0e6),
+        "backend": profile.backend().to_string(),
+        "backend_profile": profile.backend().to_string(),
+        "compile_ns": load_ms * 1_000_000,
+        "compile_ms": load_ms as f64,
+        "load_plan": {
+            "mode": profile.apple_mode_label(),
+            "strict_ane": profile.strict_ane,
+            "is_strict_ane_mode": profile.is_strict_ane_mode(),
+            "private_ane_opt_in": profile.private_ane_opt_in,
+            "ane_compute_profile": profile.ane_compute_profile.as_str(),
+            "ane_fallback_policy": ane_policy_label(profile.ane_fallback_policy),
+            "apple_rollout_tokens": profile.apple_rollout_tokens,
+            "apple_rollout_bucket": profile
+                .rollout_bucket_seqs
+                .zip(profile.rollout_bucket_tokens)
+                .map(|(seqs, tokens)| json!({ "seqs": seqs, "tokens": tokens })),
+            "model_layout_hash": profile.model_layout_hash,
+            "compile_cache_key": profile.compile_cache_key,
+            "compile_cache_hit": profile.compile_cache_hit,
+            "compile_ms_override": profile.compile_ms,
+            "compile_reason": profile.compile_reason,
+        },
+        "is_gemma4": is_gemma4,
+        "side_by_side": side_by_side,
+    });
+    if let Some(v) = profile.log_dir.clone() {
+        let mut log = v.clone();
+        log.push("rvllm_bench_records.jsonl");
+        append_record_to_file(log, &record)?;
+    }
+    println!("{}", serde_json::to_string(&record).map_err(|e| format!("serialize json: {e}"))?);
+    Ok(())
+}
+
+fn backend_entry(
+    backend: BackendProfile,
+    tok_per_sec: f64,
+    ms_per_step: f64,
+    load_ms: u128,
+    r: &rvllm_runtime::bring_up::BenchResult,
+) -> Value {
+    json!({
+        "backend": backend.to_string(),
+        "enabled": true,
+        "compile_ns": load_ms * 1_000_000,
+        "compile_ms": load_ms as f64,
+        "iter_ns": r.total_ns,
+        "iters": r.iters,
+        "batch": r.num_seqs,
+        "tok_per_sec": tok_per_sec,
+        "ms_per_step": ms_per_step,
+        "ttft_ns": r.ttft_ns,
+        "ttft_hot_ns": r.ttft_hot_ns,
+    })
+}
+
+fn append_record_to_file(path: PathBuf, record: &Value) -> Result<(), String> {
+    let dir = path.parent().ok_or_else(|| "invalid RVLLM_BENCH_LOG_DIR".to_string())?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("create log dir {}: {e}", dir.display()))?;
+    let mut fp = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("open log file {}: {e}", path.display()))?;
+    let line = serde_json::to_string(record).map_err(|e| format!("serialize json: {e}"))?;
+    fp.write_all(line.as_bytes())
+        .and_then(|_| fp.write_all(b"\n"))
+        .map_err(|e| format!("write log file {}: {e}", path.display()))
 }
 
 fn run_sweep(br: &Bringup, batch: u32, iters: u32, warmup: u32) -> Result<(), String> {
