@@ -14,6 +14,8 @@ pub mod handoff;
 pub mod iosurface;
 pub mod metal;
 pub mod mil;
+#[cfg(feature = "mlx")]
+pub mod mlx;
 pub mod plan;
 pub mod weight_blob;
 
@@ -39,6 +41,11 @@ pub use mil::{
     dense_1x1_conv_mil, fused_ffn_mil, fused_ffn_mil_from_descs, fused_qkv_mil,
     fused_qkv_mil_from_descs, FfnMilOffsets, FfnMilWeightDescs, QkvMilOffsets,
     QkvMilWeightDescs,
+};
+#[cfg(feature = "mlx")]
+pub use mlx::{
+    MlxParityCase, MlxParityOutput, MlxReferenceExecution, MlxReferenceHarness,
+    MlxReferenceInvocation, MlxReferenceMode,
 };
 pub use plan::{
     select_rollout_bucket, AppleBackendMode, AppleRuntimePlan, RolloutBucket, ROLLOUT_BUCKETS,
