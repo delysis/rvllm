@@ -233,6 +233,7 @@ pub enum AppleError {
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
     InvalidWeightBlob { reason: &'static str },
+    ProcedureIndexMissing { layer: usize },
 }
 
 #[derive(Debug)]
