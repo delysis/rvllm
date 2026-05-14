@@ -233,6 +233,8 @@ pub enum AppleError {
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
     InvalidWeightBlob { reason: &'static str },
+    UnsupportedQuantization { backend: &'static str, quantization: &'static str },
+    InvalidQuantizationMetadata { quantization: &'static str, reason: &'static str },
 }
 
 #[derive(Debug)]

@@ -28,7 +28,10 @@ pub use mil::{
     dense_1x1_conv_mil, fused_ffn_mil, fused_qkv_mil, FfnMilOffsets, QkvMilOffsets,
 };
 pub use plan::{
-    select_rollout_bucket, AppleBackendMode, AppleRuntimePlan, RolloutBucket, ROLLOUT_BUCKETS,
+    apple_quantization_matrix_entry, plan_apple_matmul, select_rollout_bucket, AppleBackendMode,
+    AppleElementType, AppleMatmulBackend, AppleMatmulConfig, AppleMatmulMetadata, AppleMatmulPlan,
+    AppleMatmulQuantization, AppleQuantizationMatrixEntry, AppleRuntimePlan, AppleScaleSpec,
+    RolloutBucket, APPLE_QUANTIZATION_MATRIX, ROLLOUT_BUCKETS,
 };
 pub use weight_blob::{
     build_weight_blob_fp16, build_weight_blob_fp16_named, WeightChunkDesc,
