@@ -21,8 +21,9 @@ pub use config::{
 };
 pub use dtype::DType;
 pub use error::{
-    AttentionError, AttnCtx, ConfigError, CudaCtx, CudaErrorKind, CutlassCtx, CutlassError,
-    GraphError, IoError, Launch, LoaderCtx, LoaderError, MetaLayoutHash, Result, RvllmError,
+    AppleCtx, AppleError, AttentionError, AttnCtx, ConfigError, CudaCtx, CudaErrorKind,
+    CutlassCtx, CutlassError, GraphError, IoError, Launch, LoaderCtx, LoaderError,
+    MetaLayoutHash, Result, RvllmError,
     SampleCtx, SamplingError, ScheduleId, SchedulerError,
 };
 pub use ids::{BlockId, ReqId, SeqId, TokenId};

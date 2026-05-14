@@ -9,6 +9,8 @@
 //! One codepath. No sync vs pipelined duality. Graph replay is a
 //! transparent implementation detail.
 
+#[cfg(feature = "apple")]
+pub mod apple_bridge;
 pub mod bring_up;
 pub mod engine;
 pub mod gemma4_bring_up;
@@ -19,6 +21,8 @@ pub mod scheduler;
 
 pub use bring_up::{Bringup, EnginePaths, FusedModules, PplResult};
 pub use engine::{Engine, PendingStep, StepOutput};
+#[cfg(feature = "apple")]
+pub use apple_bridge::{handoff_from_decode_plan, handoff_from_prefill_plan, rollout_bucket_for_decode};
 pub use layer_exec::{forward, LayerDims};
 pub use sched_state::{ReqState, Request};
 pub use scheduler::{bucket_for, BatchPlan, Scheduler, DECODE_BUCKETS};

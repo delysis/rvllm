@@ -117,6 +117,13 @@ pub struct SampleCtx {
     pub stream: u64,
 }
 
+#[derive(Clone, Debug)]
+pub struct AppleCtx {
+    pub backend: &'static str,
+    pub op: &'static str,
+    pub device: &'static str,
+}
+
 // ---------------------------------------------------------------------------
 // Per-subsystem error enums.
 // ---------------------------------------------------------------------------
@@ -211,6 +218,24 @@ pub enum SamplingError {
 }
 
 #[derive(Debug)]
+pub enum AppleError {
+    MetalUnavailable,
+    MetallibMissing { path: PathBuf },
+    PipelineMissing { name: &'static str },
+    AneUnavailable,
+    PrivateApiUnavailable { symbol: &'static str },
+    MilCompileFailed { procedure: &'static str },
+    IoSurfaceFailed { bytes: usize },
+    ShapeBucketMissing { seqs: u32, tokens: u32 },
+    HandoffMalformed { reason: &'static str },
+    NotPrepared { backend: &'static str },
+    FeatureNotAvailable { backend: &'static str, op: &'static str },
+    UnsupportedDevice { name: &'static str },
+    InvalidMil { reason: &'static str },
+    InvalidWeightBlob { reason: &'static str },
+}
+
+#[derive(Debug)]
 pub enum IoError {
     NotFound,
     PermissionDenied,
@@ -271,6 +296,11 @@ pub enum RvllmError {
         err: SamplingError,
         ctx: SampleCtx,
     },
+    Apple {
+        err: AppleError,
+        ctx: AppleCtx,
+        bt: Backtrace,
+    },
     Io {
         err: IoError,
         path: PathBuf,
@@ -329,6 +359,10 @@ impl std::fmt::Display for RvllmError {
                 "sampling: {err:?} op={:?} stream=0x{:x}",
                 ctx.op, ctx.stream
             ),
+            Apple { err, ctx, .. } => write!(
+                f,
+                "apple: {err:?} backend={:?} op={:?} device={:?}", ctx.backend, ctx.op, ctx.device
+            ),
             Io { err, path, source } => {
                 write!(f, "io: {err:?} path={path:?} source={source}")
             }
@@ -370,6 +404,14 @@ impl RvllmError {
 
     pub fn config(err: ConfigError, field: &'static str) -> Self {
         RvllmError::Config { err, field }
+    }
+
+    pub fn apple(err: AppleError, ctx: AppleCtx) -> Self {
+        RvllmError::Apple {
+            err,
+            ctx,
+            bt: Backtrace::capture(),
+        }
     }
 }
 
@@ -415,5 +457,21 @@ mod tests {
         assert!(s.contains("bucket=128"));
         assert!(s.contains("aaaaaaaa"));
         assert!(s.contains("bbbbbbbb"));
+    }
+
+    #[test]
+    fn apple_error_display_names_backend_op_and_device() {
+        let e = RvllmError::apple(
+            AppleError::ShapeBucketMissing { seqs: 17, tokens: 9 },
+            AppleCtx {
+                backend: "private-ane",
+                op: "rollout",
+                device: "Apple M4 Max",
+            },
+        );
+        let s = format!("{e}");
+        assert!(s.contains("ShapeBucketMissing"));
+        assert!(s.contains("private-ane"));
+        assert!(s.contains("rollout"));
     }
 }

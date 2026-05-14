@@ -4,11 +4,12 @@
 //! level. All ids are `Copy`, `Eq`, `Hash` and cheap to pass by value.
 
 use core::fmt;
+use serde::{Deserialize, Serialize};
 
 macro_rules! id_newtype {
     ($(#[$doc:meta])* $name:ident($inner:ty)) => {
         $(#[$doc])*
-        #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+        #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
         #[repr(transparent)]
         pub struct $name(pub $inner);
 

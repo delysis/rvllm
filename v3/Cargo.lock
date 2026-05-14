@@ -633,6 +633,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
+name = "rvllm-apple"
+version = "0.3.0"
+dependencies = [
+ "half",
+ "rvllm-core",
+ "serde",
+]
+
+[[package]]
 name = "rvllm-attention"
 version = "0.3.0"
 dependencies = [
@@ -768,6 +777,7 @@ name = "rvllm-runtime"
 version = "0.3.0"
 dependencies = [
  "cudarc",
+ "rvllm-apple",
  "rvllm-attention",
  "rvllm-core",
  "rvllm-cutlass",
