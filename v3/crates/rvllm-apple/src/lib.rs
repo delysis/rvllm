@@ -22,7 +22,10 @@ pub use device::{
     AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier,
 };
 pub use handoff::{HandoffCapsule, HandoffKind, StateHandle, StateHandleKind, SurfaceId};
-pub use iosurface::{IoSurfaceTensorDesc, PackedField, PackedInputLayout};
+pub use iosurface::{
+    ByteSurfaceShape, IoSurfaceTensorDesc, PackedField, PackedFieldLayout, PackedFieldStrides,
+    PackedInputLayout,
+};
 pub use metal::{MetalPrefillBackend, MetalPrefillConfig, PrefillContract};
 pub use mil::{
     dense_1x1_conv_mil, fused_ffn_mil, fused_ffn_mil_from_descs, fused_qkv_mil,
