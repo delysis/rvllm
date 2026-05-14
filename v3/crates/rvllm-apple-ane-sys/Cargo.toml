@@ -1,0 +1,26 @@
+[package]
+name = "rvllm-apple-ane-sys"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.80"
+license.workspace = true
+authors.workspace = true
+
+# rvllm-apple-ane-sys: Unsafe bindings to private Apple Neural Engine frameworks.
+#
+# Contains FFI to AppleNeuralEngine.framework and IOSurface to bypass
+# Metal CPU roundtrips and explicitly map tensors directly to the ANE.
+
+[features]
+default = []
+
+[dependencies]
+rvllm-core = { workspace = true }
+rvllm-apple = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSURL", "NSArray", "NSDictionary"] }
+objc2-io-surface = { version = "0.3" }
+libc = "0.2"
