@@ -227,6 +227,7 @@ pub enum AppleError {
     MilCompileFailed { procedure: &'static str },
     IoSurfaceFailed { bytes: usize },
     ShapeBucketMissing { seqs: u32, tokens: u32 },
+    LayerShapeInvalid { reason: &'static str },
     HandoffMalformed { reason: &'static str },
     NotPrepared { backend: &'static str },
     FeatureNotAvailable { backend: &'static str, op: &'static str },
