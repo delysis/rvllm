@@ -20,5 +20,10 @@ private-ane = []
 
 [dependencies]
 rvllm-core = { workspace = true }
+tracing = { workspace = true }
 half = { workspace = true }
 serde = { workspace = true }
+prost = "0.14"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rvllm-apple-coreml-sys = { path = "../rvllm-apple-coreml-sys" }
