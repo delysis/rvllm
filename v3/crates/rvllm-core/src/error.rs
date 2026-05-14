@@ -166,27 +166,62 @@ pub enum AttentionError {
 
 #[derive(Debug)]
 pub enum LoaderError {
-    MissingTensor { name: String },
-    ShapeMismatch { tensor: String, expected: Vec<usize>, got: Vec<usize> },
-    DtypeMismatch { tensor: String, expected: DType, got: DType },
-    Fp8MisScaled { tensor: String, clamp_ppm: f32 },
-    Corrupt { detail: String },
+    MissingTensor {
+        name: String,
+    },
+    ShapeMismatch {
+        tensor: String,
+        expected: Vec<usize>,
+        got: Vec<usize>,
+    },
+    DtypeMismatch {
+        tensor: String,
+        expected: DType,
+        got: DType,
+    },
+    Fp8MisScaled {
+        tensor: String,
+        clamp_ppm: f32,
+    },
+    Corrupt {
+        detail: String,
+    },
 }
 
 #[derive(Debug)]
 pub enum ConfigError {
-    MissingHfField { name: &'static str, file: PathBuf },
-    HfTypeMismatch { name: &'static str, expected: &'static str },
-    MissingField { name: &'static str },
-    InvalidField { name: &'static str, reason: String },
-    UnknownEnvVar { name: String },
-    Inconsistent { reasons: Vec<String> },
+    MissingHfField {
+        name: &'static str,
+        file: PathBuf,
+    },
+    HfTypeMismatch {
+        name: &'static str,
+        expected: &'static str,
+    },
+    MissingField {
+        name: &'static str,
+    },
+    InvalidField {
+        name: &'static str,
+        reason: String,
+    },
+    UnknownEnvVar {
+        name: String,
+    },
+    Inconsistent {
+        reasons: Vec<String>,
+    },
 }
 
 #[derive(Debug)]
 pub enum SchedulerError {
-    KvExhausted { needed_blocks: u32, free_blocks: u32 },
-    BucketNotCaptured { num_seqs: u32 },
+    KvExhausted {
+        needed_blocks: u32,
+        free_blocks: u32,
+    },
+    BucketNotCaptured {
+        num_seqs: u32,
+    },
     QueueFull,
 }
 
@@ -220,17 +255,39 @@ pub enum SamplingError {
 #[derive(Debug)]
 pub enum AppleError {
     MetalUnavailable,
-    MetallibMissing { path: PathBuf },
-    PipelineMissing { name: &'static str },
+    MetallibMissing {
+        path: PathBuf,
+    },
+    PipelineMissing {
+        name: &'static str,
+    },
     AneUnavailable,
-    PrivateApiUnavailable { symbol: &'static str },
-    MilCompileFailed { procedure: &'static str },
-    IoSurfaceFailed { bytes: usize },
-    IoSurfaceInvalidDesc { dtype: DType, channels: usize, spatial: usize },
-    IoSurfaceSizeOverflow { dtype: DType, channels: usize, spatial: usize },
+    PrivateApiUnavailable {
+        symbol: &'static str,
+    },
+    MilCompileFailed {
+        procedure: &'static str,
+    },
+    IoSurfaceFailed {
+        bytes: usize,
+    },
+    IoSurfaceInvalidDesc {
+        dtype: DType,
+        channels: usize,
+        spatial: usize,
+    },
+    IoSurfaceSizeOverflow {
+        dtype: DType,
+        channels: usize,
+        spatial: usize,
+    },
     IoSurfacePackEmpty,
-    IoSurfacePackUnnamedField { field: usize },
-    IoSurfacePackDuplicateField { field: usize },
+    IoSurfacePackUnnamedField {
+        field: usize,
+    },
+    IoSurfacePackDuplicateField {
+        field: usize,
+    },
     IoSurfacePackFieldMismatch {
         field: usize,
         expected_dtype: DType,
@@ -238,22 +295,60 @@ pub enum AppleError {
         expected_channels: usize,
         actual_channels: usize,
     },
-    ShapeBucketMissing { seqs: u32, tokens: u32 },
-    LayerShapeInvalid { reason: &'static str },
-    HandoffMalformed { reason: &'static str },
-    NotPrepared { backend: &'static str },
-    LaunchNotPending { step_id: u64 },
-    FeatureNotAvailable { backend: &'static str, op: &'static str },
-    InvalidMetalRecipe { reason: &'static str },
-    UnsupportedDevice { name: &'static str },
-    InvalidMil { reason: &'static str },
-    InvalidWeightBlob { reason: &'static str },
-    InvalidBufferArena { reason: &'static str },
-    BufferArenaTooSmall { requested: usize, capacity: usize },
-    AneLifecycleViolation { op: &'static str, state: &'static str },
-    ProcedureIndexMissing { layer: usize },
-    UnsupportedQuantization { backend: &'static str, quantization: &'static str },
-    InvalidQuantizationMetadata { quantization: &'static str, reason: &'static str },
+    ShapeBucketMissing {
+        seqs: u32,
+        tokens: u32,
+    },
+    LayerShapeInvalid {
+        reason: &'static str,
+    },
+    HandoffMalformed {
+        reason: &'static str,
+    },
+    NotPrepared {
+        backend: &'static str,
+    },
+    LaunchNotPending {
+        step_id: u64,
+    },
+    FeatureNotAvailable {
+        backend: &'static str,
+        op: &'static str,
+    },
+    InvalidMetalRecipe {
+        reason: &'static str,
+    },
+    UnsupportedDevice {
+        name: &'static str,
+    },
+    InvalidMil {
+        reason: &'static str,
+    },
+    InvalidWeightBlob {
+        reason: &'static str,
+    },
+    InvalidBufferArena {
+        reason: &'static str,
+    },
+    BufferArenaTooSmall {
+        requested: usize,
+        capacity: usize,
+    },
+    AneLifecycleViolation {
+        op: &'static str,
+        state: &'static str,
+    },
+    ProcedureIndexMissing {
+        layer: usize,
+    },
+    UnsupportedQuantization {
+        backend: &'static str,
+        quantization: &'static str,
+    },
+    InvalidQuantizationMetadata {
+        quantization: &'static str,
+        reason: &'static str,
+    },
 }
 
 impl std::fmt::Display for AppleError {
@@ -367,7 +462,10 @@ impl std::fmt::Display for AppleError {
                 backend,
                 quantization,
             } => {
-                write!(f, "UnsupportedQuantization backend={backend} quantization={quantization}")
+                write!(
+                    f,
+                    "UnsupportedQuantization backend={backend} quantization={quantization}"
+                )
             }
             AppleError::InvalidQuantizationMetadata {
                 quantization,
@@ -475,11 +573,7 @@ impl std::fmt::Display for RvllmError {
                     ctx.kernel, ctx.stream, ctx.device
                 )?;
                 if let Some(l) = ctx.launch {
-                    write!(
-                        f,
-                        " grid={:?} block={:?} smem={}",
-                        l.grid, l.block, l.smem
-                    )?;
+                    write!(f, " grid={:?} block={:?} smem={}", l.grid, l.block, l.smem)?;
                 }
                 Ok(())
             }
@@ -610,7 +704,10 @@ mod tests {
     #[test]
     fn apple_error_display_names_backend_op_and_device() {
         let e = RvllmError::apple(
-            AppleError::ShapeBucketMissing { seqs: 17, tokens: 9 },
+            AppleError::ShapeBucketMissing {
+                seqs: 17,
+                tokens: 9,
+            },
             AppleCtx {
                 backend: "private-ane",
                 op: "rollout",

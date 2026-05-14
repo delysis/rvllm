@@ -79,18 +79,45 @@ pub const ROLLOUT_BUCKETS: &[RolloutBucket] = &[
     RolloutBucket { seqs: 2, tokens: 1 },
     RolloutBucket { seqs: 4, tokens: 1 },
     RolloutBucket { seqs: 8, tokens: 1 },
-    RolloutBucket { seqs: 16, tokens: 1 },
-    RolloutBucket { seqs: 32, tokens: 1 },
-    RolloutBucket { seqs: 64, tokens: 1 },
-    RolloutBucket { seqs: 128, tokens: 1 },
+    RolloutBucket {
+        seqs: 16,
+        tokens: 1,
+    },
+    RolloutBucket {
+        seqs: 32,
+        tokens: 1,
+    },
+    RolloutBucket {
+        seqs: 64,
+        tokens: 1,
+    },
+    RolloutBucket {
+        seqs: 128,
+        tokens: 1,
+    },
     RolloutBucket { seqs: 4, tokens: 4 },
     RolloutBucket { seqs: 8, tokens: 4 },
-    RolloutBucket { seqs: 16, tokens: 4 },
-    RolloutBucket { seqs: 32, tokens: 4 },
-    RolloutBucket { seqs: 64, tokens: 4 },
+    RolloutBucket {
+        seqs: 16,
+        tokens: 4,
+    },
+    RolloutBucket {
+        seqs: 32,
+        tokens: 4,
+    },
+    RolloutBucket {
+        seqs: 64,
+        tokens: 4,
+    },
     RolloutBucket { seqs: 8, tokens: 8 },
-    RolloutBucket { seqs: 16, tokens: 8 },
-    RolloutBucket { seqs: 32, tokens: 8 },
+    RolloutBucket {
+        seqs: 16,
+        tokens: 8,
+    },
+    RolloutBucket {
+        seqs: 32,
+        tokens: 8,
+    },
 ];
 
 #[must_use]
@@ -112,7 +139,14 @@ fn select_rollout_bucket_from(
         .iter()
         .copied()
         .filter(|bucket| bucket.fits(seqs, tokens))
-        .min_by_key(|bucket| (bucket.waste(seqs, tokens), bucket.capacity(), bucket.seqs, bucket.tokens))
+        .min_by_key(|bucket| {
+            (
+                bucket.waste(seqs, tokens),
+                bucket.capacity(),
+                bucket.seqs,
+                bucket.tokens,
+            )
+        })
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -548,19 +582,40 @@ mod tests {
 
     #[test]
     fn rollout_bucket_minimizes_padding_waste() {
-        assert_eq!(select_rollout_bucket(1, 1), Some(RolloutBucket { seqs: 1, tokens: 1 }));
-        assert_eq!(select_rollout_bucket(3, 1), Some(RolloutBucket { seqs: 4, tokens: 1 }));
-        assert_eq!(select_rollout_bucket(3, 4), Some(RolloutBucket { seqs: 4, tokens: 4 }));
-        assert_eq!(select_rollout_bucket(9, 4), Some(RolloutBucket { seqs: 16, tokens: 4 }));
+        assert_eq!(
+            select_rollout_bucket(1, 1),
+            Some(RolloutBucket { seqs: 1, tokens: 1 })
+        );
+        assert_eq!(
+            select_rollout_bucket(3, 1),
+            Some(RolloutBucket { seqs: 4, tokens: 1 })
+        );
+        assert_eq!(
+            select_rollout_bucket(3, 4),
+            Some(RolloutBucket { seqs: 4, tokens: 4 })
+        );
+        assert_eq!(
+            select_rollout_bucket(9, 4),
+            Some(RolloutBucket {
+                seqs: 16,
+                tokens: 4
+            })
+        );
         assert_eq!(select_rollout_bucket(33, 8), None);
     }
 
     #[test]
     fn rollout_bucket_selection_is_not_first_fit() {
         let buckets = [
-            RolloutBucket { seqs: 32, tokens: 4 },
+            RolloutBucket {
+                seqs: 32,
+                tokens: 4,
+            },
             RolloutBucket { seqs: 8, tokens: 4 },
-            RolloutBucket { seqs: 16, tokens: 4 },
+            RolloutBucket {
+                seqs: 16,
+                tokens: 4,
+            },
         ];
 
         assert_eq!(

@@ -159,7 +159,9 @@ impl AneProgramPlan {
         for procedure in &self.procedures {
             let layer = match procedure {
                 AneProcedure::FusedFfn { layer } => *layer,
-                AneProcedure::FusedQkv { .. } | AneProcedure::LmHead => continue,
+                AneProcedure::DenseProjection { .. }
+                | AneProcedure::FusedQkv { .. }
+                | AneProcedure::LmHead => continue,
             };
             if layer >= self.config.num_layers {
                 return Err(invalid_mil("dense FFN procedure layer out of range"));

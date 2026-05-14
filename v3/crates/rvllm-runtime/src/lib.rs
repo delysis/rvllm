@@ -21,8 +21,8 @@ pub mod scheduler;
 
 #[cfg(feature = "apple")]
 pub use apple_bridge::{
-    ane_rollout_batch_from_decode_plan, handoff_from_decode_plan, handoff_from_prefill_plan,
-    gemma4_layer_parity, qwen_layer_parity, rollout_bucket_for_decode, AneRolloutBatch,
+    ane_rollout_batch_from_decode_plan, gemma4_layer_parity, handoff_from_decode_plan,
+    handoff_from_prefill_plan, qwen_layer_parity, rollout_bucket_for_decode, AneRolloutBatch,
     AneRolloutBranchPlan, AneRolloutSlot, AneSpeculativeBranch, AppleGemma4LayerParity,
     AppleLayerDerivedShape, AppleLayerParity,
 };

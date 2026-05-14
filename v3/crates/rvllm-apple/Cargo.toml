@@ -14,7 +14,7 @@ authors.workspace = true
 
 [features]
 default = []
-metal = ["dep:objc2", "dep:objc2-foundation"]
+metal = ["dep:metal-rs"]
 mlx = []
 private-ane = []
 
@@ -25,5 +25,4 @@ serde = { workspace = true }
 sha2 = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6.4", optional = true }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString"], optional = true }
+metal-rs = { package = "metal", version = "0.31", optional = true }

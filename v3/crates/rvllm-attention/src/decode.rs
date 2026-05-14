@@ -220,8 +220,17 @@ impl<'a> PagedDecodeFp8Launcher<'a> {
         #[cfg(not(feature = "cuda"))]
         {
             let _ = (
-                o_f16, q_fp8, k_cache_fp8, v_cache_fp8, block_tables, context_lens,
-                workspace, q_descale_ptr, k_descale_ptr, v_descale_ptr, stream,
+                o_f16,
+                q_fp8,
+                k_cache_fp8,
+                v_cache_fp8,
+                block_tables,
+                context_lens,
+                workspace,
+                q_descale_ptr,
+                k_descale_ptr,
+                v_descale_ptr,
+                stream,
             );
         }
         Ok(())

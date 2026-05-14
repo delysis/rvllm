@@ -176,7 +176,7 @@ impl Gemma4Bringup {
         num_seqs: u32,
         iters: u32,
         warmup: u32,
-    ) -> crate::bring_up::BenchResult {
+    ) -> Result<crate::bring_up::BenchResult> {
         use crate::gemma4_layer_exec::*;
         use rvllm_loader::gemma4_arch::Gemma4LayerType;
 
@@ -252,19 +252,29 @@ impl Gemma4Bringup {
             .unwrap();
 
         let kv_bytes_per_elem: u32 = 1; // bench path always FP8
-        let sliding_blocks = ((arch.sliding_window_size as u32 + block_size - 1) / block_size).min(num_blocks_total);
+        let sliding_blocks =
+            ((arch.sliding_window_size as u32 + block_size - 1) / block_size).min(num_blocks_total);
 
         let mut kv_layer_offsets: Vec<u64> = Vec::with_capacity(arch.num_hidden_layers);
         let mut kv_total_bytes: u64 = 0;
         for l in 0..arch.num_hidden_layers {
             kv_layer_offsets.push(kv_total_bytes);
-            let layer_blocks = if arch.layer_types[l] == rvllm_loader::gemma4_arch::Gemma4LayerType::GlobalAttention { num_blocks_total } else { sliding_blocks };
+            let layer_blocks = if arch.layer_types[l]
+                == rvllm_loader::gemma4_arch::Gemma4LayerType::GlobalAttention
+            {
+                num_blocks_total
+            } else {
+                sliding_blocks
+            };
             let nkvh_l = arch.num_kv_heads_for_layer(l) as u32;
             let hd_l = arch.head_dim_for_layer(l) as u32;
-            let layer_elems = 2u64 * layer_blocks as u64 * block_size as u64 * nkvh_l as u64 * hd_l as u64;
+            let layer_elems =
+                2u64 * layer_blocks as u64 * block_size as u64 * nkvh_l as u64 * hd_l as u64;
             kv_total_bytes += layer_elems * kv_bytes_per_elem as u64;
         }
-        let kv_cache = arena.region("kv_cache", kv_total_bytes as usize, 256).unwrap();
+        let kv_cache = arena
+            .region("kv_cache", kv_total_bytes as usize, 256)
+            .unwrap();
         #[cfg(feature = "cuda")]
         {
             cudarc::driver::sys::cuMemsetD8_v2(kv_cache.device_ptr(), 0, kv_total_bytes as usize);
@@ -390,7 +400,11 @@ impl Gemma4Bringup {
                 let q_dim = (arch.num_attention_heads as u32) * hd;
                 let kv_dim = nkvh * hd;
                 let qkv_rows = q_dim + 2 * kv_dim;
-                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention { num_blocks_total } else { sliding_blocks };
+                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention {
+                    num_blocks_total
+                } else {
+                    sliding_blocks
+                };
 
                 let dims = Gemma4LayerDims {
                     num_tokens: num_seqs,
@@ -413,8 +427,13 @@ impl Gemma4Bringup {
                 let k_out = q_base + (num_seqs as u64) * (q_dim as u64) * 2;
                 let v_out = k_out + (num_seqs as u64) * (kv_dim as u64) * 2;
                 let is_global = lt == Gemma4LayerType::GlobalAttention;
-                let layer_blocks = if is_global { num_blocks_total } else { sliding_blocks };
-                let layer_kv_elems = 2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
+                let layer_blocks = if is_global {
+                    num_blocks_total
+                } else {
+                    sliding_blocks
+                };
+                let layer_kv_elems =
+                    2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
                 let kv_layer_bytes = layer_kv_elems * kv_bytes_per_elem as u64;
                 let layer_kv_base = kv_cache.device_ptr() + kv_layer_offsets[layer_idx];
 
@@ -576,7 +595,8 @@ impl Gemma4Bringup {
                 rvllm_graph::GraphFingerprint([0u8; 32]),
                 stream,
                 || one_step(),
-            ).unwrap();
+            )
+            .unwrap();
             self.stream.fence().unwrap();
             let t0 = std::time::Instant::now();
             for _ in 0..iters {
@@ -586,14 +606,24 @@ impl Gemma4Bringup {
             t0.elapsed()
         };
 
-        crate::bring_up::BenchResult {
+        Ok(crate::bring_up::BenchResult {
             ns_per_step: elapsed.as_nanos() / iters.max(1) as u128,
             total_ns: elapsed.as_nanos(),
             iters,
             num_seqs,
             ttft_ns: None,
             ttft_hot_ns: None,
-        }
+        })
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    pub unsafe fn run_bench(
+        &self,
+        num_seqs: u32,
+        iters: u32,
+        warmup: u32,
+    ) -> Result<crate::bring_up::BenchResult> {
+        self.run_bench_native_apple(num_seqs, iters, warmup)
     }
 
     #[cfg(feature = "cuda")]
@@ -674,22 +704,33 @@ impl Gemma4Bringup {
 
         // Per-layer KV budget: sliding layers cap at sliding_window/block_size blocks,
         // global layers use full num_blocks_total. Saves ~5x KV memory for long context.
-        let sliding_blocks = ((arch.sliding_window_size as u32 + block_size - 1) / block_size).min(num_blocks_total);
-
+        let sliding_blocks =
+            ((arch.sliding_window_size as u32 + block_size - 1) / block_size).min(num_blocks_total);
 
         let mut kv_layer_offsets: Vec<u64> = Vec::with_capacity(arch.num_hidden_layers);
         let mut kv_total_bytes: u64 = 0;
         for l in 0..arch.num_hidden_layers {
             kv_layer_offsets.push(kv_total_bytes);
-            let is_global = arch.layer_types[l] == rvllm_loader::gemma4_arch::Gemma4LayerType::GlobalAttention;
-            let layer_blocks = if is_global { num_blocks_total } else { sliding_blocks };
+            let is_global =
+                arch.layer_types[l] == rvllm_loader::gemma4_arch::Gemma4LayerType::GlobalAttention;
+            let layer_blocks = if is_global {
+                num_blocks_total
+            } else {
+                sliding_blocks
+            };
             let nkvh = arch.num_kv_heads_for_layer(l) as u32;
             let hd = arch.head_dim_for_layer(l) as u32;
-            let layer_elems = 2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
+            let layer_elems =
+                2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
             kv_total_bytes += layer_elems * kv_bytes_per_elem as u64;
         }
-        eprintln!("[ppl] KV cache: {:.1} MB (sliding={} blocks, global={} blocks, {} bytes/elem)",
-            kv_total_bytes as f64 / 1e6, sliding_blocks, num_blocks_total, kv_bytes_per_elem);
+        eprintln!(
+            "[ppl] KV cache: {:.1} MB (sliding={} blocks, global={} blocks, {} bytes/elem)",
+            kv_total_bytes as f64 / 1e6,
+            sliding_blocks,
+            num_blocks_total,
+            kv_bytes_per_elem
+        );
 
         let kv_cache = arena.region("kv_cache", kv_total_bytes as usize, 256)?;
         cudarc::driver::sys::cuMemsetD8_v2(kv_cache.device_ptr(), 0, kv_total_bytes as usize);
@@ -775,7 +816,11 @@ impl Gemma4Bringup {
                 let nkvh = arch.num_kv_heads_for_layer(layer_idx) as u32;
                 let q_dim = (arch.num_attention_heads as u32) * hd;
                 let kv_dim = nkvh * hd;
-                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention { num_blocks_total } else { sliding_blocks };
+                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention {
+                    num_blocks_total
+                } else {
+                    sliding_blocks
+                };
 
                 let dims = Gemma4LayerDims {
                     num_tokens: num_seqs,
@@ -798,8 +843,13 @@ impl Gemma4Bringup {
                 let k_out = q_base + (num_seqs as u64) * (q_dim as u64) * 2;
                 let v_out = k_out + (num_seqs as u64) * (kv_dim as u64) * 2;
                 let is_global = lt == Gemma4LayerType::GlobalAttention;
-                let layer_blocks = if is_global { num_blocks_total } else { sliding_blocks };
-                let layer_kv_elems = 2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
+                let layer_blocks = if is_global {
+                    num_blocks_total
+                } else {
+                    sliding_blocks
+                };
+                let layer_kv_elems =
+                    2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
                 let kv_layer_bytes = layer_kv_elems * kv_bytes_per_elem as u64;
                 let layer_kv_base = kv_cache.device_ptr() + kv_layer_offsets[layer_idx];
                 let (cos, sin) = match lt {
@@ -1051,8 +1101,18 @@ impl Gemma4Bringup {
         // Build a graph-capturable forward: embed + all layers + lm_head.
         // No debug probes (they break capture).
         let ppl_forward = || -> Result<()> {
-            rvllm_fused::EmbeddingGatherLaunch { num_tokens: 1, hidden, vocab }
-                .launch(fn_embed, residual_ptr, self.model.embedding.offset_bytes, token_ids_region.device_ptr(), stream)?;
+            rvllm_fused::EmbeddingGatherLaunch {
+                num_tokens: 1,
+                hidden,
+                vocab,
+            }
+            .launch(
+                fn_embed,
+                residual_ptr,
+                self.model.embedding.offset_bytes,
+                token_ids_region.device_ptr(),
+                stream,
+            )?;
             one_step()
         };
 
@@ -1154,6 +1214,15 @@ impl Gemma4Bringup {
         })
     }
 
+    #[cfg(not(feature = "cuda"))]
+    pub unsafe fn run_ppl(
+        &self,
+        _fn_embed: rvllm_kernels::KernelFn,
+        token_ids: &[u32],
+    ) -> Result<crate::bring_up::PplResult> {
+        self.run_ppl_native_apple(token_ids)
+    }
+
     #[cfg(feature = "cuda")]
     pub unsafe fn run_generate(
         &self,
@@ -1170,7 +1239,9 @@ impl Gemma4Bringup {
 
         let block_size: u32 = 32;
         let num_blocks_total: u32 = std::env::var("RVLLM_NUM_BLOCKS")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(1024);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1024);
 
         let arena = &self.arena;
         let max_hd = arch.max_head_dim() as u32;
@@ -1192,7 +1263,8 @@ impl Gemma4Bringup {
         let k_normed = arena.region("gen_k_normed", (max_tokens * max_kv_dim * 2) as usize, 16)?;
         let q_fp8 = arena.region("gen_q_fp8", (max_tokens * max_q_dim) as usize, 16)?;
         let attn_out = arena.region("gen_attn_out", (max_tokens * max_q_dim * 2) as usize, 16)?;
-        let attn_out_fp8 = arena.region("gen_attn_out_fp8", (max_tokens * max_q_dim) as usize, 16)?;
+        let attn_out_fp8 =
+            arena.region("gen_attn_out_fp8", (max_tokens * max_q_dim) as usize, 16)?;
         let attn_out_scale = arena.region("gen_attn_out_scale", (max_tokens * 4) as usize, 16)?;
         let gate_up_out = arena.region("gen_gate_up", (max_tokens * 2 * inter * 2) as usize, 16)?;
         let gate_up_fp8 = arena.region("gen_gate_up_fp8", (max_tokens * 2 * inter) as usize, 16)?;
@@ -1201,20 +1273,31 @@ impl Gemma4Bringup {
         let mlp_out_scale = arena.region("gen_mlp_scale", (max_tokens * 4) as usize, 16)?;
         let delta_f16 = arena.region("gen_delta", (max_tokens * hidden * 2) as usize, 16)?;
         let gemm_f32_max_n = std::cmp::max(max_qkv_rows, 2 * inter);
-        let gemm_f32_tmp = arena.region("gen_gemm_f32", (max_tokens * gemm_f32_max_n * 4) as usize, 16)?;
+        let gemm_f32_tmp = arena.region(
+            "gen_gemm_f32",
+            (max_tokens * gemm_f32_max_n * 4) as usize,
+            16,
+        )?;
 
-        let sliding_blocks = ((arch.sliding_window_size as u32 + block_size - 1) / block_size).min(num_blocks_total);
+        let sliding_blocks =
+            ((arch.sliding_window_size as u32 + block_size - 1) / block_size).min(num_blocks_total);
         let use_f16_kv = std::env::var("RVLLM_F16_KV").map_or(true, |v| v != "0");
         let kv_bytes_per_elem: u32 = if use_f16_kv { 2 } else { 1 };
         let mut kv_layer_offsets: Vec<u64> = Vec::with_capacity(arch.num_hidden_layers);
         let mut kv_total_bytes: u64 = 0;
         for l in 0..arch.num_hidden_layers {
             kv_layer_offsets.push(kv_total_bytes);
-            let is_global = arch.layer_types[l] == rvllm_loader::gemma4_arch::Gemma4LayerType::GlobalAttention;
-            let layer_blocks = if is_global { num_blocks_total } else { sliding_blocks };
+            let is_global =
+                arch.layer_types[l] == rvllm_loader::gemma4_arch::Gemma4LayerType::GlobalAttention;
+            let layer_blocks = if is_global {
+                num_blocks_total
+            } else {
+                sliding_blocks
+            };
             let nkvh = arch.num_kv_heads_for_layer(l) as u32;
             let hd = arch.head_dim_for_layer(l) as u32;
-            let layer_elems = 2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
+            let layer_elems =
+                2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
             kv_total_bytes += layer_elems * kv_bytes_per_elem as u64;
         }
         let kv_cache = arena.region("gen_kv", kv_total_bytes as usize, 256)?;
@@ -1251,15 +1334,26 @@ impl Gemma4Bringup {
 
         use rvllm_loader::gemma4_arch::Gemma4LayerType;
         let max_layers = std::env::var("RVLLM_MAX_LAYERS")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(arch.num_hidden_layers);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(arch.num_hidden_layers);
 
         // Helper: run one token through all layers (decode path)
         let run_one_token = |tok_id: u32, step: usize| -> Result<()> {
             let tok_i32 = [tok_id as i32];
             token_ids_region.copy_from_host(bytemuck_cast_i32(&tok_i32))?;
-            rvllm_fused::EmbeddingGatherLaunch { num_tokens: 1, hidden, vocab }
-                .launch(fn_embed, residual_ptr, self.model.embedding.offset_bytes,
-                    token_ids_region.device_ptr(), stream)?;
+            rvllm_fused::EmbeddingGatherLaunch {
+                num_tokens: 1,
+                hidden,
+                vocab,
+            }
+            .launch(
+                fn_embed,
+                residual_ptr,
+                self.model.embedding.offset_bytes,
+                token_ids_region.device_ptr(),
+                stream,
+            )?;
 
             let pos = [step as i32];
             let slot = [step as i32];
@@ -1269,24 +1363,38 @@ impl Gemma4Bringup {
             context_lens.copy_from_host(bytemuck_cast_i32(&ctx))?;
 
             for (layer_idx, layer) in self.model.layers.iter().enumerate() {
-                if layer_idx >= max_layers { break; }
+                if layer_idx >= max_layers {
+                    break;
+                }
                 let lt = arch.layer_types[layer_idx];
                 let hd = arch.head_dim_for_layer(layer_idx) as u32;
                 let nkvh = arch.num_kv_heads_for_layer(layer_idx) as u32;
                 let q_dim = (arch.num_attention_heads as u32) * hd;
                 let kv_dim = nkvh * hd;
-                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention { num_blocks_total } else { sliding_blocks };
-                let layer_kv_elems = 2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
+                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention {
+                    num_blocks_total
+                } else {
+                    sliding_blocks
+                };
+                let layer_kv_elems =
+                    2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
                 let layer_kv_base = kv_cache.device_ptr() + kv_layer_offsets[layer_idx];
 
                 let dims = crate::gemma4_layer_exec::Gemma4LayerDims {
-                    num_tokens: 1, hidden,
-                    num_heads: arch.num_attention_heads as u32, num_kv_heads: nkvh, head_dim: hd,
+                    num_tokens: 1,
+                    hidden,
+                    num_heads: arch.num_attention_heads as u32,
+                    num_kv_heads: nkvh,
+                    head_dim: hd,
                     rotary_dim: arch.rotary_dim_for_layer(layer_idx) as u32,
-                    intermediate: inter, block_size,
-                    max_blocks_per_seq: layer_blocks, num_blocks_total: layer_blocks,
-                    attn_scale: 1.0, rms_eps: arch.rms_norm_eps,
-                    layer_type: lt, sliding_window: arch.sliding_window_size as u32,
+                    intermediate: inter,
+                    block_size,
+                    max_blocks_per_seq: layer_blocks,
+                    num_blocks_total: layer_blocks,
+                    attn_scale: 1.0,
+                    rms_eps: arch.rms_norm_eps,
+                    layer_type: lt,
+                    sliding_window: arch.sliding_window_size as u32,
                     f16_kv: use_f16_kv,
                 };
                 let w = crate::gemma4_layer_exec::Gemma4LayerWeightPtrs {
@@ -1296,10 +1404,14 @@ impl Gemma4Bringup {
                     post_ff_norm_gamma: layer.post_feedforward_layernorm.offset_bytes,
                     q_norm_gamma: layer.q_norm.offset_bytes,
                     k_norm_gamma: layer.k_norm.offset_bytes,
-                    qkv_fp8: layer.qkv.offset_bytes, qkv_scale: layer.qkv.scale_ptr,
-                    o_fp8: layer.o_proj.offset_bytes, o_scale: layer.o_proj.scale_ptr,
-                    gate_up_fp8: layer.gate_up.offset_bytes, gate_up_scale: layer.gate_up.scale_ptr,
-                    down_fp8: layer.down_proj.offset_bytes, down_scale: layer.down_proj.scale_ptr,
+                    qkv_fp8: layer.qkv.offset_bytes,
+                    qkv_scale: layer.qkv.scale_ptr,
+                    o_fp8: layer.o_proj.offset_bytes,
+                    o_scale: layer.o_proj.scale_ptr,
+                    gate_up_fp8: layer.gate_up.offset_bytes,
+                    gate_up_scale: layer.gate_up.scale_ptr,
+                    down_fp8: layer.down_proj.offset_bytes,
+                    down_scale: layer.down_proj.scale_ptr,
                     layer_scalar_ptr: layer.layer_scalar.offset_bytes,
                     qkv_f16: layer.qkv_f16.as_ref().map_or(0, |w| w.offset_bytes),
                     o_f16: layer.o_proj_f16.as_ref().map_or(0, |w| w.offset_bytes),
@@ -1313,35 +1425,62 @@ impl Gemma4Bringup {
                 let k_out = q_base + (q_dim as u64) * 2;
                 let v_out = k_out + (kv_dim as u64) * 2;
                 let (cos, sin) = match lt {
-                    Gemma4LayerType::SlidingAttention => (self.model.rope_cos_sliding.offset_bytes, self.model.rope_sin_sliding.offset_bytes),
-                    Gemma4LayerType::GlobalAttention => (self.model.rope_cos_global.offset_bytes, self.model.rope_sin_global.offset_bytes),
+                    Gemma4LayerType::SlidingAttention => (
+                        self.model.rope_cos_sliding.offset_bytes,
+                        self.model.rope_sin_sliding.offset_bytes,
+                    ),
+                    Gemma4LayerType::GlobalAttention => (
+                        self.model.rope_cos_global.offset_bytes,
+                        self.model.rope_sin_global.offset_bytes,
+                    ),
                 };
                 let scratch = crate::gemma4_layer_exec::Gemma4LayerScratch {
-                    hidden_fp8: hidden_fp8.device_ptr(), hidden_scale: hidden_scale.device_ptr(),
-                    q_out: q_base, k_out, v_out,
-                    q_normed: q_normed.device_ptr(), k_normed: k_normed.device_ptr(),
+                    hidden_fp8: hidden_fp8.device_ptr(),
+                    hidden_scale: hidden_scale.device_ptr(),
+                    q_out: q_base,
+                    k_out,
+                    v_out,
+                    q_normed: q_normed.device_ptr(),
+                    k_normed: k_normed.device_ptr(),
                     q_fp8: q_fp8.device_ptr(),
                     k_cache: layer_kv_base,
                     v_cache: layer_kv_base + (layer_kv_elems / 2) * kv_bytes_per_elem as u64,
-                    q_scale_ptr: q_scale_region.device_ptr(), kv_scale_ptr: kv_scale_region.device_ptr(),
-                    attn_out: attn_out.device_ptr(), attn_out_fp8: attn_out_fp8.device_ptr(),
-                    attn_out_scale: attn_out_scale.device_ptr(), delta_f16: delta_f16.device_ptr(),
-                    gate_up_out: gate_up_out.device_ptr(), gate_up_fp8: gate_up_fp8.device_ptr(),
+                    q_scale_ptr: q_scale_region.device_ptr(),
+                    kv_scale_ptr: kv_scale_region.device_ptr(),
+                    attn_out: attn_out.device_ptr(),
+                    attn_out_fp8: attn_out_fp8.device_ptr(),
+                    attn_out_scale: attn_out_scale.device_ptr(),
+                    delta_f16: delta_f16.device_ptr(),
+                    gate_up_out: gate_up_out.device_ptr(),
+                    gate_up_fp8: gate_up_fp8.device_ptr(),
                     gate_up_scale: gate_up_scale.device_ptr(),
-                    mlp_out_fp8: mlp_out_fp8.device_ptr(), mlp_out_scale: mlp_out_scale.device_ptr(),
+                    mlp_out_fp8: mlp_out_fp8.device_ptr(),
+                    mlp_out_scale: mlp_out_scale.device_ptr(),
                     gemm_f32_tmp: gemm_f32_tmp.device_ptr(),
-                    cutlass_workspace: cutlass_ws.device_ptr(), cutlass_workspace_bytes: cutlass_ws_bytes,
+                    cutlass_workspace: cutlass_ws.device_ptr(),
+                    cutlass_workspace_bytes: cutlass_ws_bytes,
                     fa3_workspace: fa3_ws.device_ptr(),
                 };
                 let meta = crate::gemma4_layer_exec::Gemma4MetadataPtrs {
-                    positions: positions.device_ptr(), slot_mapping: slot_mapping.device_ptr(),
-                    cos, sin,
-                    block_tables: block_tables.device_ptr(), context_lens: context_lens.device_ptr(),
+                    positions: positions.device_ptr(),
+                    slot_mapping: slot_mapping.device_ptr(),
+                    cos,
+                    sin,
+                    block_tables: block_tables.device_ptr(),
+                    context_lens: context_lens.device_ptr(),
                 };
                 crate::gemma4_layer_exec::gemma4_forward(
-                    dims, &kernels, &w, &scratch, &meta,
-                    &self.cublaslt, &self.cutlass, &self.sliding_attention, &self.global_attention,
-                    residual_ptr, stream,
+                    dims,
+                    &kernels,
+                    &w,
+                    &scratch,
+                    &meta,
+                    &self.cublaslt,
+                    &self.cutlass,
+                    &self.sliding_attention,
+                    &self.global_attention,
+                    residual_ptr,
+                    stream,
                 )?;
             }
             Ok(())
@@ -1353,9 +1492,18 @@ impl Gemma4Bringup {
         {
             let tok_ids: Vec<i32> = prompt_ids.iter().map(|&t| t as i32).collect();
             token_ids_region.copy_from_host(bytemuck_cast_i32(&tok_ids))?;
-            rvllm_fused::EmbeddingGatherLaunch { num_tokens: prompt_len, hidden, vocab }
-                .launch(fn_embed, residual_ptr, self.model.embedding.offset_bytes,
-                    token_ids_region.device_ptr(), stream)?;
+            rvllm_fused::EmbeddingGatherLaunch {
+                num_tokens: prompt_len,
+                hidden,
+                vocab,
+            }
+            .launch(
+                fn_embed,
+                residual_ptr,
+                self.model.embedding.offset_bytes,
+                token_ids_region.device_ptr(),
+                stream,
+            )?;
 
             let pos: Vec<i32> = (0..prompt_len as i32).collect();
             let slot: Vec<i32> = (0..prompt_len as i32).collect();
@@ -1373,24 +1521,38 @@ impl Gemma4Bringup {
             };
 
             for (layer_idx, layer) in self.model.layers.iter().enumerate() {
-                if layer_idx >= max_layers { break; }
+                if layer_idx >= max_layers {
+                    break;
+                }
                 let lt = arch.layer_types[layer_idx];
                 let hd = arch.head_dim_for_layer(layer_idx) as u32;
                 let nkvh = arch.num_kv_heads_for_layer(layer_idx) as u32;
                 let q_dim = (arch.num_attention_heads as u32) * hd;
                 let kv_dim = nkvh * hd;
-                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention { num_blocks_total } else { sliding_blocks };
-                let layer_kv_elems = 2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
+                let layer_blocks = if lt == Gemma4LayerType::GlobalAttention {
+                    num_blocks_total
+                } else {
+                    sliding_blocks
+                };
+                let layer_kv_elems =
+                    2u64 * layer_blocks as u64 * block_size as u64 * nkvh as u64 * hd as u64;
                 let layer_kv_base = kv_cache.device_ptr() + kv_layer_offsets[layer_idx];
 
                 let dims = crate::gemma4_layer_exec::Gemma4LayerDims {
-                    num_tokens: prompt_len, hidden,
-                    num_heads: arch.num_attention_heads as u32, num_kv_heads: nkvh, head_dim: hd,
+                    num_tokens: prompt_len,
+                    hidden,
+                    num_heads: arch.num_attention_heads as u32,
+                    num_kv_heads: nkvh,
+                    head_dim: hd,
                     rotary_dim: arch.rotary_dim_for_layer(layer_idx) as u32,
-                    intermediate: inter, block_size,
-                    max_blocks_per_seq: layer_blocks, num_blocks_total: layer_blocks,
-                    attn_scale: 1.0, rms_eps: arch.rms_norm_eps,
-                    layer_type: lt, sliding_window: arch.sliding_window_size as u32,
+                    intermediate: inter,
+                    block_size,
+                    max_blocks_per_seq: layer_blocks,
+                    num_blocks_total: layer_blocks,
+                    attn_scale: 1.0,
+                    rms_eps: arch.rms_norm_eps,
+                    layer_type: lt,
+                    sliding_window: arch.sliding_window_size as u32,
                     f16_kv: false, // prefill uses FP8 KV (no F16 prefill kernel)
                 };
                 let w = crate::gemma4_layer_exec::Gemma4LayerWeightPtrs {
@@ -1400,10 +1562,14 @@ impl Gemma4Bringup {
                     post_ff_norm_gamma: layer.post_feedforward_layernorm.offset_bytes,
                     q_norm_gamma: layer.q_norm.offset_bytes,
                     k_norm_gamma: layer.k_norm.offset_bytes,
-                    qkv_fp8: layer.qkv.offset_bytes, qkv_scale: layer.qkv.scale_ptr,
-                    o_fp8: layer.o_proj.offset_bytes, o_scale: layer.o_proj.scale_ptr,
-                    gate_up_fp8: layer.gate_up.offset_bytes, gate_up_scale: layer.gate_up.scale_ptr,
-                    down_fp8: layer.down_proj.offset_bytes, down_scale: layer.down_proj.scale_ptr,
+                    qkv_fp8: layer.qkv.offset_bytes,
+                    qkv_scale: layer.qkv.scale_ptr,
+                    o_fp8: layer.o_proj.offset_bytes,
+                    o_scale: layer.o_proj.scale_ptr,
+                    gate_up_fp8: layer.gate_up.offset_bytes,
+                    gate_up_scale: layer.gate_up.scale_ptr,
+                    down_fp8: layer.down_proj.offset_bytes,
+                    down_scale: layer.down_proj.scale_ptr,
                     layer_scalar_ptr: layer.layer_scalar.offset_bytes,
                     qkv_f16: layer.qkv_f16.as_ref().map_or(0, |w| w.offset_bytes),
                     o_f16: layer.o_proj_f16.as_ref().map_or(0, |w| w.offset_bytes),
@@ -1417,35 +1583,63 @@ impl Gemma4Bringup {
                 let k_out = q_base + (prompt_len as u64) * (q_dim as u64) * 2;
                 let v_out = k_out + (prompt_len as u64) * (kv_dim as u64) * 2;
                 let (cos, sin) = match lt {
-                    Gemma4LayerType::SlidingAttention => (self.model.rope_cos_sliding.offset_bytes, self.model.rope_sin_sliding.offset_bytes),
-                    Gemma4LayerType::GlobalAttention => (self.model.rope_cos_global.offset_bytes, self.model.rope_sin_global.offset_bytes),
+                    Gemma4LayerType::SlidingAttention => (
+                        self.model.rope_cos_sliding.offset_bytes,
+                        self.model.rope_sin_sliding.offset_bytes,
+                    ),
+                    Gemma4LayerType::GlobalAttention => (
+                        self.model.rope_cos_global.offset_bytes,
+                        self.model.rope_sin_global.offset_bytes,
+                    ),
                 };
                 let scratch = crate::gemma4_layer_exec::Gemma4LayerScratch {
-                    hidden_fp8: hidden_fp8.device_ptr(), hidden_scale: hidden_scale.device_ptr(),
-                    q_out: q_base, k_out, v_out,
-                    q_normed: q_normed.device_ptr(), k_normed: k_normed.device_ptr(),
+                    hidden_fp8: hidden_fp8.device_ptr(),
+                    hidden_scale: hidden_scale.device_ptr(),
+                    q_out: q_base,
+                    k_out,
+                    v_out,
+                    q_normed: q_normed.device_ptr(),
+                    k_normed: k_normed.device_ptr(),
                     q_fp8: q_fp8.device_ptr(),
                     k_cache: layer_kv_base,
                     v_cache: layer_kv_base + (layer_kv_elems / 2) * kv_bytes_per_elem as u64,
-                    q_scale_ptr: q_scale_region.device_ptr(), kv_scale_ptr: kv_scale_region.device_ptr(),
-                    attn_out: attn_out.device_ptr(), attn_out_fp8: attn_out_fp8.device_ptr(),
-                    attn_out_scale: attn_out_scale.device_ptr(), delta_f16: delta_f16.device_ptr(),
-                    gate_up_out: gate_up_out.device_ptr(), gate_up_fp8: gate_up_fp8.device_ptr(),
+                    q_scale_ptr: q_scale_region.device_ptr(),
+                    kv_scale_ptr: kv_scale_region.device_ptr(),
+                    attn_out: attn_out.device_ptr(),
+                    attn_out_fp8: attn_out_fp8.device_ptr(),
+                    attn_out_scale: attn_out_scale.device_ptr(),
+                    delta_f16: delta_f16.device_ptr(),
+                    gate_up_out: gate_up_out.device_ptr(),
+                    gate_up_fp8: gate_up_fp8.device_ptr(),
                     gate_up_scale: gate_up_scale.device_ptr(),
-                    mlp_out_fp8: mlp_out_fp8.device_ptr(), mlp_out_scale: mlp_out_scale.device_ptr(),
+                    mlp_out_fp8: mlp_out_fp8.device_ptr(),
+                    mlp_out_scale: mlp_out_scale.device_ptr(),
                     gemm_f32_tmp: gemm_f32_tmp.device_ptr(),
-                    cutlass_workspace: cutlass_ws.device_ptr(), cutlass_workspace_bytes: cutlass_ws_bytes,
+                    cutlass_workspace: cutlass_ws.device_ptr(),
+                    cutlass_workspace_bytes: cutlass_ws_bytes,
                     fa3_workspace: fa3_ws.device_ptr(),
                 };
                 let meta = crate::gemma4_layer_exec::Gemma4MetadataPtrs {
-                    positions: positions.device_ptr(), slot_mapping: slot_mapping.device_ptr(),
-                    cos, sin,
-                    block_tables: block_tables.device_ptr(), context_lens: context_lens.device_ptr(),
+                    positions: positions.device_ptr(),
+                    slot_mapping: slot_mapping.device_ptr(),
+                    cos,
+                    sin,
+                    block_tables: block_tables.device_ptr(),
+                    context_lens: context_lens.device_ptr(),
                 };
                 crate::gemma4_layer_exec::gemma4_forward_phase(
-                    dims, &kernels, &w, &scratch, &meta,
-                    &self.cublaslt, &self.cutlass, &self.sliding_attention, &self.global_attention,
-                    residual_ptr, stream, phase,
+                    dims,
+                    &kernels,
+                    &w,
+                    &scratch,
+                    &meta,
+                    &self.cublaslt,
+                    &self.cutlass,
+                    &self.sliding_attention,
+                    &self.global_attention,
+                    residual_ptr,
+                    stream,
+                    phase,
                 )?;
             }
 
@@ -1453,26 +1647,60 @@ impl Gemma4Bringup {
             if prompt_len > 1 {
                 let last_offset = (prompt_len - 1) as u64 * hidden as u64 * 2;
                 cudarc::driver::sys::cuMemcpyDtoDAsync_v2(
-                    residual_ptr, residual_ptr + last_offset, (hidden * 2) as usize, stream as _,
+                    residual_ptr,
+                    residual_ptr + last_offset,
+                    (hidden * 2) as usize,
+                    stream as _,
                 );
             }
         }
 
         // LM head on last prompt token
         rvllm_fused::gemma4_launcher::RmsnormInplaceLaunch {
-            num_tokens: 1, hidden, eps: arch.rms_norm_eps,
-        }.launch(kernels.fused_rmsnorm, residual_ptr, self.model.final_norm.offset_bytes, stream)?;
-        self.cublaslt.f16_gemm_f32(residual_ptr, self.model.lm_head_f16.offset_bytes,
-            logits_f32.device_ptr(), 1, vocab as i32, hidden as i32, stream)?;
-        rvllm_fused::ArgmaxLaunch { num_tokens: 1, vocab }
-            .launch(fn_argmax, logits_f32.device_ptr(), sampled.device_ptr(), stream)?;
+            num_tokens: 1,
+            hidden,
+            eps: arch.rms_norm_eps,
+        }
+        .launch(
+            kernels.fused_rmsnorm,
+            residual_ptr,
+            self.model.final_norm.offset_bytes,
+            stream,
+        )?;
+        self.cublaslt.f16_gemm_f32(
+            residual_ptr,
+            self.model.lm_head_f16.offset_bytes,
+            logits_f32.device_ptr(),
+            1,
+            vocab as i32,
+            hidden as i32,
+            stream,
+        )?;
+        rvllm_fused::ArgmaxLaunch {
+            num_tokens: 1,
+            vocab,
+        }
+        .launch(
+            fn_argmax,
+            logits_f32.device_ptr(),
+            sampled.device_ptr(),
+            stream,
+        )?;
 
         self.stream.fence()?;
         let mut host_tok = [0i32; 1];
-        cudarc::driver::sys::cuMemcpyDtoH_v2(host_tok.as_mut_ptr() as *mut _, sampled.device_ptr(), 4);
+        cudarc::driver::sys::cuMemcpyDtoH_v2(
+            host_tok.as_mut_ptr() as *mut _,
+            sampled.device_ptr(),
+            4,
+        );
         let prefill_ms = t0.elapsed().as_secs_f64() * 1000.0;
-        eprintln!("[prefill] {} tokens in {:.1}ms (TTFT={:.1}ms)",
-            prompt_ids.len(), prefill_ms, prefill_ms);
+        eprintln!(
+            "[prefill] {} tokens in {:.1}ms (TTFT={:.1}ms)",
+            prompt_ids.len(),
+            prefill_ms,
+            prefill_ms
+        );
 
         let mut output_ids: Vec<u32> = Vec::with_capacity(max_new);
         output_ids.push(host_tok[0] as u32);
@@ -1486,25 +1714,70 @@ impl Gemma4Bringup {
             run_one_token(tok_id, prompt_ids.len() + decode_step)?;
 
             rvllm_fused::gemma4_launcher::RmsnormInplaceLaunch {
-                num_tokens: 1, hidden, eps: arch.rms_norm_eps,
-            }.launch(kernels.fused_rmsnorm, residual_ptr, self.model.final_norm.offset_bytes, stream)?;
-            self.cublaslt.f16_gemm_f32(residual_ptr, self.model.lm_head_f16.offset_bytes,
-                logits_f32.device_ptr(), 1, vocab as i32, hidden as i32, stream)?;
-            rvllm_fused::ArgmaxLaunch { num_tokens: 1, vocab }
-                .launch(fn_argmax, logits_f32.device_ptr(), sampled.device_ptr(), stream)?;
+                num_tokens: 1,
+                hidden,
+                eps: arch.rms_norm_eps,
+            }
+            .launch(
+                kernels.fused_rmsnorm,
+                residual_ptr,
+                self.model.final_norm.offset_bytes,
+                stream,
+            )?;
+            self.cublaslt.f16_gemm_f32(
+                residual_ptr,
+                self.model.lm_head_f16.offset_bytes,
+                logits_f32.device_ptr(),
+                1,
+                vocab as i32,
+                hidden as i32,
+                stream,
+            )?;
+            rvllm_fused::ArgmaxLaunch {
+                num_tokens: 1,
+                vocab,
+            }
+            .launch(
+                fn_argmax,
+                logits_f32.device_ptr(),
+                sampled.device_ptr(),
+                stream,
+            )?;
 
             self.stream.fence()?;
-            cudarc::driver::sys::cuMemcpyDtoH_v2(host_tok.as_mut_ptr() as *mut _, sampled.device_ptr(), 4);
+            cudarc::driver::sys::cuMemcpyDtoH_v2(
+                host_tok.as_mut_ptr() as *mut _,
+                sampled.device_ptr(),
+                4,
+            );
             let next_id = host_tok[0] as u32;
             output_ids.push(next_id);
-            if eos_ids.contains(&next_id) { break; }
+            if eos_ids.contains(&next_id) {
+                break;
+            }
         }
 
         let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
         let decode_ms = total_ms - prefill_ms;
-        eprintln!("[generate] {} tokens decoded in {:.1}ms ({:.1} tok/s)",
-            output_ids.len(), decode_ms, output_ids.len() as f64 / (decode_ms / 1000.0));
+        eprintln!(
+            "[generate] {} tokens decoded in {:.1}ms ({:.1} tok/s)",
+            output_ids.len(),
+            decode_ms,
+            output_ids.len() as f64 / (decode_ms / 1000.0)
+        );
         Ok(output_ids)
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    pub unsafe fn run_generate(
+        &self,
+        _fn_embed: rvllm_kernels::KernelFn,
+        _fn_argmax: rvllm_kernels::KernelFn,
+        prompt_ids: &[u32],
+        max_new: usize,
+        eos_ids: &[u32],
+    ) -> Result<Vec<u32>> {
+        self.run_generate_native_apple(prompt_ids, max_new, eos_ids)
     }
 
     pub fn layer_kernels(&self) -> Gemma4LayerKernels {
@@ -1533,10 +1806,77 @@ impl Gemma4Bringup {
             scale_cols_f16: self.fused.fn_scale_cols_f16,
         }
     }
+
+    #[cfg(all(not(feature = "cuda"), feature = "apple"))]
+    fn run_bench_native_apple(
+        &self,
+        num_seqs: u32,
+        iters: u32,
+        warmup: u32,
+    ) -> Result<crate::bring_up::BenchResult> {
+        crate::apple_bridge::run_gemma4_native_apple_bench(&self.arch, num_seqs, iters, warmup)
+    }
+
+    #[cfg(all(not(feature = "cuda"), not(feature = "apple")))]
+    fn run_bench_native_apple(
+        &self,
+        _num_seqs: u32,
+        _iters: u32,
+        _warmup: u32,
+    ) -> Result<crate::bring_up::BenchResult> {
+        Err(gemma4_native_apple_feature_disabled("run_bench"))
+    }
+
+    #[cfg(all(not(feature = "cuda"), feature = "apple"))]
+    fn run_ppl_native_apple(&self, token_ids: &[u32]) -> Result<crate::bring_up::PplResult> {
+        crate::apple_bridge::run_gemma4_native_apple_ppl(&self.arch, token_ids)
+    }
+
+    #[cfg(all(not(feature = "cuda"), not(feature = "apple")))]
+    fn run_ppl_native_apple(&self, _token_ids: &[u32]) -> Result<crate::bring_up::PplResult> {
+        Err(gemma4_native_apple_feature_disabled("run_ppl"))
+    }
+
+    #[cfg(all(not(feature = "cuda"), feature = "apple"))]
+    fn run_generate_native_apple(
+        &self,
+        prompt_ids: &[u32],
+        max_new: usize,
+        eos_ids: &[u32],
+    ) -> Result<Vec<u32>> {
+        crate::apple_bridge::run_gemma4_native_apple_generate(
+            &self.arch, prompt_ids, max_new, eos_ids,
+        )
+    }
+
+    #[cfg(all(not(feature = "cuda"), not(feature = "apple")))]
+    fn run_generate_native_apple(
+        &self,
+        _prompt_ids: &[u32],
+        _max_new: usize,
+        _eos_ids: &[u32],
+    ) -> Result<Vec<u32>> {
+        Err(gemma4_native_apple_feature_disabled("run_generate"))
+    }
 }
 
 fn bytemuck_cast_i32(v: &[i32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) }
+}
+
+#[cfg(all(not(feature = "cuda"), not(feature = "apple")))]
+fn gemma4_native_apple_feature_disabled(op: &'static str) -> rvllm_core::RvllmError {
+    rvllm_core::RvllmError::apple(
+        rvllm_core::AppleError::FeatureNotAvailable {
+            backend: "native-apple-gemma4",
+            op,
+        },
+        rvllm_core::AppleCtx {
+            backend: "native-apple-gemma4",
+            op,
+            device: "apple-silicon",
+        },
+    )
 }
 
 fn load_gemma4_fused(loader: &KernelLoader) -> Result<Gemma4FusedModules> {
@@ -1597,8 +1937,7 @@ fn load_gemma4_fused(loader: &KernelLoader) -> Result<Gemma4FusedModules> {
         fused_norm_add_residual_f16_mod.get_function("fused_norm_add_residual_f16_kernel")?;
 
     let fused_qkv_rmsnorm_mod = loader.load_ptx("fused_qkv_rmsnorm")?;
-    let fn_fused_qkv_rmsnorm =
-        fused_qkv_rmsnorm_mod.get_function("fused_qkv_rmsnorm_kernel")?;
+    let fn_fused_qkv_rmsnorm = fused_qkv_rmsnorm_mod.get_function("fused_qkv_rmsnorm_kernel")?;
 
     let scale_cols_f16_mod = loader.load_ptx("scale_cols_f16")?;
     let fn_scale_cols_f16 = scale_cols_f16_mod.get_function("scale_cols_f16_kernel")?;

@@ -225,12 +225,12 @@ impl AppleParseState {
         match self.mode {
             None if self.rollout_tokens.is_none() && !self.private_ane_opt_in => Ok(None),
             None => Err(invalid("--apple-mode", "required when Apple flags are set")),
-            Some(mode) if mode.requires_private_ane() && self.rollout_tokens.is_none() => Err(
-                invalid(
+            Some(mode) if mode.requires_private_ane() && self.rollout_tokens.is_none() => {
+                Err(invalid(
                     "--apple-rollout-tokens",
                     "required for private ANE Apple modes",
-                ),
-            ),
+                ))
+            }
             Some(mode) => Ok(Some(AppleServeConfig {
                 mode,
                 rollout_tokens: self.rollout_tokens,

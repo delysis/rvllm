@@ -614,40 +614,34 @@ impl DirectMetalContext {
 
 #[cfg(all(feature = "metal", target_os = "macos"))]
 mod direct_metal_ffi {
-    #![allow(unsafe_code)]
-
     use std::collections::BTreeMap;
     use std::path::Path;
 
-    use objc2::msg_send;
-    use objc2::rc::Retained;
-    use objc2::runtime::AnyObject;
-    use objc2_foundation::NSString;
+    use metal_rs::{CommandQueue, ComputePipelineState, Device, Library};
     use rvllm_core::{AppleError, Result, RvllmError};
 
     use super::{metal_ctx, DirectMetalContextConfig, DirectMetalPipelineName};
 
-    #[link(name = "Metal", kind = "framework")]
-    extern "C" {
-        fn MTLCreateSystemDefaultDevice() -> *mut AnyObject;
-    }
-
     pub struct DirectMetalHandles {
         device_name: String,
-        _device: Retained<AnyObject>,
-        _command_queue: Retained<AnyObject>,
-        _library: Retained<AnyObject>,
-        pipelines: BTreeMap<DirectMetalPipelineName, Retained<AnyObject>>,
+        _device: Device,
+        _command_queue: CommandQueue,
+        _library: Library,
+        pipelines: BTreeMap<DirectMetalPipelineName, ComputePipelineState>,
     }
 
     impl DirectMetalHandles {
         pub fn new(config: &DirectMetalContextConfig) -> Result<Self> {
             let metallib_path = config.metallib_path()?;
             ensure_metallib_exists(metallib_path)?;
-            let device = system_default_device()?;
-            let device_name = objc_device_name(&device);
-            let command_queue = new_command_queue(&device)?;
-            let library = new_library_with_file(&device, metallib_path)?;
+            let device = Device::system_default().ok_or_else(|| {
+                RvllmError::apple(AppleError::MetalUnavailable, metal_ctx("create_device"))
+            })?;
+            let device_name = device.name().to_string();
+            let command_queue = device.new_command_queue();
+            let library = device
+                .new_library_with_file(metallib_path)
+                .map_err(|_| metallib_missing(metallib_path))?;
             let pipelines = new_compute_pipelines(&device, &library, config.pipeline_names())?;
 
             Ok(Self {
@@ -672,95 +666,44 @@ mod direct_metal_ffi {
         if path.is_file() {
             Ok(())
         } else {
-            Err(RvllmError::apple(
-                AppleError::MetallibMissing {
-                    path: path.to_path_buf(),
-                },
-                metal_ctx("load_metallib"),
-            ))
+            Err(metallib_missing(path))
         }
     }
 
-    fn system_default_device() -> Result<Retained<AnyObject>> {
-        let raw = unsafe { MTLCreateSystemDefaultDevice() };
-        unsafe { Retained::from_raw(raw) }.ok_or_else(|| {
-            RvllmError::apple(AppleError::MetalUnavailable, metal_ctx("create_device"))
-        })
-    }
-
-    fn objc_device_name(device: &AnyObject) -> String {
-        let raw: *mut NSString = unsafe { msg_send![device, name] };
-        if raw.is_null() {
-            String::new()
-        } else {
-            unsafe { &*raw }.to_string()
-        }
-    }
-
-    fn new_command_queue(device: &AnyObject) -> Result<Retained<AnyObject>> {
-        let queue: Option<Retained<AnyObject>> = unsafe { msg_send![device, newCommandQueue] };
-        queue.ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::MetalUnavailable,
-                metal_ctx("create_command_queue"),
-            )
-        })
-    }
-
-    fn new_library_with_file(device: &AnyObject, path: &Path) -> Result<Retained<AnyObject>> {
-        let path_buf = path.to_path_buf();
-        let Some(path) = path.to_str() else {
-            return Err(RvllmError::apple(
-                AppleError::MetallibMissing { path: path_buf },
-                metal_ctx("load_metallib"),
-            ));
-        };
-        let path = NSString::from_str(path);
-        let mut error: *mut AnyObject = std::ptr::null_mut();
-        let library: Option<Retained<AnyObject>> =
-            unsafe { msg_send![device, newLibraryWithFile: &*path, error: &mut error] };
-        library.ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::MetallibMissing { path: path_buf },
-                metal_ctx("load_metallib"),
-            )
-        })
+    fn metallib_missing(path: &Path) -> RvllmError {
+        RvllmError::apple(
+            AppleError::MetallibMissing {
+                path: path.to_path_buf(),
+            },
+            metal_ctx("load_metallib"),
+        )
     }
 
     fn new_compute_pipelines(
-        device: &AnyObject,
-        library: &AnyObject,
+        device: &Device,
+        library: &Library,
         pipeline_names: &[DirectMetalPipelineName; 4],
-    ) -> Result<std::collections::BTreeMap<DirectMetalPipelineName, Retained<AnyObject>>> {
+    ) -> Result<BTreeMap<DirectMetalPipelineName, ComputePipelineState>> {
         let mut pipelines = BTreeMap::new();
         for name in pipeline_names {
-            let symbol = NSString::from_str(name.symbol());
-            let function: Option<Retained<AnyObject>> =
-                unsafe { msg_send![library, newFunctionWithName: &*symbol] };
-            let Some(function) = function else {
-                return Err(RvllmError::apple(
-                    AppleError::PipelineMissing {
-                        name: name.symbol(),
-                    },
-                    metal_ctx("load_pipeline"),
-                ));
-            };
-
-            let mut error: *mut AnyObject = std::ptr::null_mut();
-            let pipeline: Option<Retained<AnyObject>> = unsafe {
-                msg_send![device, newComputePipelineStateWithFunction: &*function, error: &mut error]
-            };
-            let Some(pipeline) = pipeline else {
-                return Err(RvllmError::apple(
-                    AppleError::PipelineMissing {
-                        name: name.symbol(),
-                    },
-                    metal_ctx("compile_pipeline"),
-                ));
-            };
+            let function = library
+                .get_function(name.symbol(), None)
+                .map_err(|_| pipeline_missing(*name, "load_pipeline"))?;
+            let pipeline = device
+                .new_compute_pipeline_state_with_function(&function)
+                .map_err(|_| pipeline_missing(*name, "compile_pipeline"))?;
             pipelines.insert(*name, pipeline);
         }
         Ok(pipelines)
+    }
+
+    fn pipeline_missing(name: DirectMetalPipelineName, op: &'static str) -> RvllmError {
+        RvllmError::apple(
+            AppleError::PipelineMissing {
+                name: name.symbol(),
+            },
+            metal_ctx(op),
+        )
     }
 }
 
