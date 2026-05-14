@@ -1,0 +1,46 @@
+[package]
+name = "rvllm-apple-metal"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.80"
+license.workspace = true
+authors.workspace = true
+
+# rvllm-apple-metal: Metal GPU compute backend for Apple Silicon.
+#
+# This crate contains all Metal FFI (device, command queues, compute
+# pipelines, buffer management) and the Metal layer-forward path.
+# It is macOS/aarch64-only. The safe `rvllm-apple` crate remains
+# host-testable and platform-independent.
+
+[features]
+default = []
+
+[dependencies]
+rvllm-core = { workspace = true }
+rvllm-apple = { workspace = true }
+half = { workspace = true }
+tracing = { workspace = true }
+serde_json.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSURL", "NSArray"] }
+objc2-metal = { version = "0.3", features = [
+    "MTLDevice",
+    "MTLCommandQueue",
+    "MTLCommandBuffer",
+    "MTLComputeCommandEncoder",
+    "MTLComputePipeline",
+    "MTLLibrary",
+    "MTLBuffer",
+    "MTLResource",
+    "MTLTypes",
+    "MTLArgument",
+    "MTLTexture",
+    "MTLPixelFormat",
+    "std",
+    "objc2-io-surface",
+] }
+
+[dev-dependencies]
