@@ -38,7 +38,27 @@ pub fn handoff_from_prefill_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<
 pub fn handoff_from_decode_plan(plan: &BatchPlan, kind: HandoffKind) -> Result<HandoffCapsule>;
 ```
 
-Backend modes:
+## Private API risk
+
+The ANE rollout path depends on private Apple behavior: unpublished symbols,
+MIL procedure details, BLOBFILE offsets, IOSurface layout rules, and per-OS
+compiler/cache behavior. Those contracts can change across macOS releases or
+devices, and may carry distribution or entitlement risk outside local research
+builds.
+
+Private ANE use is therefore never implicit. `AppleRuntimePlan::validate()`
+requires `private_ane_opt_in` for every mode where
+`AppleBackendMode::requires_private_ane()` is true. If ANE was requested and a
+symbol, compiler, surface, or shape is unavailable, rvLLM must return a typed
+`RvllmError::Apple` such as `PrivateApiUnavailable`, `AneUnavailable`,
+`MilCompileFailed`, `IoSurfaceFailed`, `ShapeBucketMissing`, or
+`FeatureNotAvailable`. It must not silently reroute to Metal, MLX, CPU, or CUDA.
+
+The safe default build remains host-testable and free of private FFI. Unsafe
+Objective-C/private-ANE bindings belong in a separate sys crate, behind explicit
+platform cfg and opt-in policy.
+
+## Supported modes
 
 ```rust
 pub enum AppleBackendMode {
@@ -49,6 +69,23 @@ pub enum AppleBackendMode {
     MetalPrefillAneRolloutExperimental,
 }
 ```
+
+Mode contracts:
+
+- `MetalOnly`: public Metal-only execution. No ANE/private API dependency.
+- `MlxPrototype`: MLX-based bring-up/prototype path. Useful for shape and parity
+  exploration, not for shipping performance claims.
+- `MetalPrefillMetalDecode`: public Metal prefill and public Metal decode using
+  the scheduler handoff capsule. This is the private-free Apple baseline.
+- `MetalPrefillAneFfnRollout`: Metal prefill plus private ANE FFN/lm-head
+  rollout for a selected static `RolloutBucket`. Requires explicit opt-in.
+- `MetalPrefillAneRolloutExperimental`: Metal prefill plus broader private ANE
+  rollout, including QKV/FFN/lm-head procedures. Requires explicit opt-in and is
+  expected to fail closed while coverage is incomplete.
+
+Mode selection is a contract, not a preference list. If the selected mode cannot
+prepare or launch, initialization/benchmarking fails with the typed Apple error
+instead of trying another backend.
 
 ## Invariants
 
@@ -62,11 +99,45 @@ pub enum AppleBackendMode {
 
 ## Failure modes
 
-- `MetalUnavailable`, `MetallibMissing`, `PipelineMissing` for Metal bring-up.
-- `AneUnavailable`, `PrivateApiUnavailable`, `MilCompileFailed`, `IoSurfaceFailed` for ANE bring-up/eval.
-- `ShapeBucketMissing` for unsupported rollout shape.
-- `HandoffMalformed` for scheduler/metadata mismatch.
-- `FeatureNotAvailable` for requested experimental paths.
+All Apple failures should cross crate boundaries as `RvllmError::Apple` with an
+`AppleCtx` naming backend, operation, and device.
+
+- Metal bring-up: `MetalUnavailable`, `MetallibMissing`, `PipelineMissing`.
+- Private ANE bring-up/eval: `AneUnavailable`,
+  `PrivateApiUnavailable { symbol }`, `MilCompileFailed`, `IoSurfaceFailed`.
+- Planning and shape policy: `ShapeBucketMissing` when no static
+  `RolloutBucket` covers the requested rollout.
+- Scheduler handoff: `HandoffMalformed` for req/span/position/layout mismatch.
+- Backend lifecycle: `NotPrepared` when launch/collect runs before prepare.
+- Policy and incomplete coverage: `FeatureNotAvailable`, `UnsupportedDevice`,
+  `InvalidMil`, `InvalidWeightBlob`.
+
+These are hard failures for the selected mode. They are not signals to retry on
+another Apple path or fall back to CUDA behavior.
+
+## Benchmark interpretation
+
+Apple benchmark numbers are mode-specific. Always report the
+`AppleBackendMode`, device name/tier, macOS build, model artifact, prompt length,
+output length, batch size, selected `RolloutBucket`, and whether compile/cache
+warmup was included.
+
+Interpret results by path:
+
+- `MlxPrototype` numbers are bring-up data only. They should not be compared to
+  direct Metal, private ANE, CUDA, or vLLM as throughput claims.
+- `MetalOnly` and `MetalPrefillMetalDecode` are the public Apple baseline.
+- Private ANE modes measure a risk-bearing experimental path. A failed private
+  API check means "unsupported on this host/config", not a performance
+  regression.
+- Static rollout buckets introduce padding waste. Tokens/sec should be read
+  alongside bucket capacity and requested `(seqs, tokens)`.
+- First-run ANE compile/cache time and steady-state launch time are separate
+  metrics. Do not merge them unless the benchmark labels the run as cold-start.
+
+Because mode selection fails closed, a successful ANE benchmark is evidence that
+the ANE path actually prepared and launched. If private API setup fails, the
+benchmark must fail rather than publishing Metal numbers under an ANE label.
 
 ## Test plan
 
