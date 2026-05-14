@@ -235,6 +235,51 @@ pub enum AppleError {
     InvalidWeightBlob { reason: &'static str },
 }
 
+impl std::fmt::Display for AppleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppleError::MetalUnavailable => f.write_str("MetalUnavailable"),
+            AppleError::MetallibMissing { path } => {
+                write!(f, "MetallibMissing path={path:?}")
+            }
+            AppleError::PipelineMissing { name } => {
+                write!(f, "PipelineMissing name={name}")
+            }
+            AppleError::AneUnavailable => f.write_str("AneUnavailable"),
+            AppleError::PrivateApiUnavailable { symbol } => {
+                write!(f, "PrivateApiUnavailable symbol={symbol}")
+            }
+            AppleError::MilCompileFailed { procedure } => {
+                write!(f, "MilCompileFailed procedure={procedure}")
+            }
+            AppleError::IoSurfaceFailed { bytes } => {
+                write!(f, "IoSurfaceFailed bytes={bytes}")
+            }
+            AppleError::ShapeBucketMissing { seqs, tokens } => {
+                write!(f, "ShapeBucketMissing seqs={seqs} tokens={tokens}")
+            }
+            AppleError::HandoffMalformed { reason } => {
+                write!(f, "HandoffMalformed reason={reason}")
+            }
+            AppleError::NotPrepared { backend } => {
+                write!(f, "NotPrepared backend={backend}")
+            }
+            AppleError::FeatureNotAvailable { backend, op } => {
+                write!(f, "FeatureNotAvailable backend={backend} op={op}")
+            }
+            AppleError::UnsupportedDevice { name } => {
+                write!(f, "UnsupportedDevice name={name}")
+            }
+            AppleError::InvalidMil { reason } => {
+                write!(f, "InvalidMil reason={reason}")
+            }
+            AppleError::InvalidWeightBlob { reason } => {
+                write!(f, "InvalidWeightBlob reason={reason}")
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum IoError {
     NotFound,
@@ -361,7 +406,8 @@ impl std::fmt::Display for RvllmError {
             ),
             Apple { err, ctx, .. } => write!(
                 f,
-                "apple: {err:?} backend={:?} op={:?} device={:?}", ctx.backend, ctx.op, ctx.device
+                "apple: {err} backend={} op={} device={}",
+                ctx.backend, ctx.op, ctx.device
             ),
             Io { err, path, source } => {
                 write!(f, "io: {err:?} path={path:?} source={source}")
@@ -473,5 +519,6 @@ mod tests {
         assert!(s.contains("ShapeBucketMissing"));
         assert!(s.contains("private-ane"));
         assert!(s.contains("rollout"));
+        assert!(s.contains("Apple M4 Max"));
     }
 }
