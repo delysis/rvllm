@@ -239,6 +239,7 @@ pub enum AppleError {
         actual_channels: usize,
     },
     ShapeBucketMissing { seqs: u32, tokens: u32 },
+    LayerShapeInvalid { reason: &'static str },
     HandoffMalformed { reason: &'static str },
     NotPrepared { backend: &'static str },
     LaunchNotPending { step_id: u64 },
