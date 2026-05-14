@@ -30,8 +30,9 @@ pub use iosurface::{
 #[cfg(all(feature = "metal", target_os = "macos"))]
 pub use metal::DirectMetalContext;
 pub use metal::{
-    DirectMetalContextConfig, DirectMetalPipelineName, MetalPrefillBackend, MetalPrefillConfig,
-    PrefillContract,
+    DirectMetalContextConfig, DirectMetalPipelineName, MetalBufferAllocation, MetalBufferArenaPlan,
+    MetalBufferBinding, MetalBufferRequest, MetalBufferRole, MetalPrefillBackend,
+    MetalPrefillConfig, PrefillContract,
 };
 pub use mil::{
     dense_1x1_conv_mil, fused_ffn_mil, fused_ffn_mil_from_descs, fused_qkv_mil,
