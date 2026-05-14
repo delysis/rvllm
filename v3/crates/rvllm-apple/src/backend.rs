@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +41,7 @@ pub trait AppleBackend {
 pub struct StubAppleBackend {
     prepared: bool,
     next_step_id: u64,
+    pending: HashSet<AppleLaunchTicket>,
 }
 
 impl StubAppleBackend {
@@ -60,20 +63,40 @@ impl StubAppleBackend {
             Ok(())
         } else {
             Err(RvllmError::apple(
-                AppleError::NotPrepared { backend: "stub-apple" },
+                AppleError::NotPrepared {
+                    backend: "stub-apple",
+                },
                 Self::ctx(op),
             ))
         }
     }
 
-    fn next_ticket(&mut self, kind: AppleLaunchKind, bucket: Option<RolloutBucket>) -> AppleLaunchTicket {
+    fn next_ticket(
+        &mut self,
+        kind: AppleLaunchKind,
+        bucket: Option<RolloutBucket>,
+    ) -> AppleLaunchTicket {
         let ticket = AppleLaunchTicket {
             step_id: self.next_step_id,
             kind,
             bucket,
         };
         self.next_step_id += 1;
+        self.pending.insert(ticket);
         ticket
+    }
+
+    fn ensure_pending(&mut self, ticket: AppleLaunchTicket) -> Result<()> {
+        if self.pending.remove(&ticket) {
+            Ok(())
+        } else {
+            Err(RvllmError::apple(
+                AppleError::LaunchNotPending {
+                    step_id: ticket.step_id,
+                },
+                Self::ctx("collect"),
+            ))
+        }
     }
 }
 
@@ -81,6 +104,7 @@ impl AppleBackend for StubAppleBackend {
     fn prepare(&mut self, plan: &AppleRuntimePlan) -> Result<()> {
         plan.validate()?;
         self.prepared = true;
+        self.pending.clear();
         Ok(())
     }
 
@@ -102,7 +126,7 @@ impl AppleBackend for StubAppleBackend {
 
     fn collect(&mut self, ticket: AppleLaunchTicket) -> Result<Vec<StepToken>> {
         self.ensure_prepared("collect")?;
-        let _ = ticket;
+        self.ensure_pending(ticket)?;
         Ok(Vec::new())
     }
 }
@@ -124,23 +148,76 @@ mod tests {
         }
     }
 
-    #[test]
-    fn backend_requires_prepare_before_launch() {
-        let mut backend = StubAppleBackend::new();
-        let handoff = HandoffCapsule::new(
+    fn handoff() -> HandoffCapsule {
+        HandoffCapsule::new(
             HandoffKind::MetalPrefillToMetalDecode,
             vec![ReqId(1)],
             vec![TokenId(10)],
             vec![0, 1],
             vec![0],
             vec![1],
-        );
-        assert!(backend.launch_prefill(&handoff).is_err());
+        )
+    }
+
+    #[test]
+    fn launch_requires_prepare_with_typed_error() {
+        let mut backend = StubAppleBackend::new();
+        let err = match backend.launch_prefill(&handoff()) {
+            Ok(ticket) => panic!("launch unexpectedly succeeded with ticket {ticket:?}"),
+            Err(err) => err,
+        };
+        assert!(matches!(
+            err,
+            RvllmError::Apple {
+                err: AppleError::NotPrepared {
+                    backend: "stub-apple"
+                },
+                ..
+            }
+        ));
+
+        let err = match backend.launch_rollout(&handoff(), RolloutBucket { seqs: 1, tokens: 1 }) {
+            Ok(ticket) => panic!("launch unexpectedly succeeded with ticket {ticket:?}"),
+            Err(err) => err,
+        };
+        assert!(matches!(
+            err,
+            RvllmError::Apple {
+                err: AppleError::NotPrepared {
+                    backend: "stub-apple"
+                },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn backend_launch_collect_lifecycle_requires_real_ticket() {
+        let mut backend = StubAppleBackend::new();
         assert!(backend.prepare(&plan()).is_ok());
-        let ticket = match backend.launch_rollout(&handoff, RolloutBucket { seqs: 1, tokens: 1 }) {
+        let forged_ticket = AppleLaunchTicket {
+            step_id: 99,
+            kind: AppleLaunchKind::Rollout,
+            bucket: Some(RolloutBucket { seqs: 1, tokens: 1 }),
+        };
+        let err = match backend.collect(forged_ticket) {
+            Ok(tokens) => panic!("collect unexpectedly succeeded with tokens {tokens:?}"),
+            Err(err) => err,
+        };
+        assert!(matches!(
+            err,
+            RvllmError::Apple {
+                err: AppleError::LaunchNotPending { step_id: 99 },
+                ..
+            }
+        ));
+
+        let ticket = match backend.launch_rollout(&handoff(), RolloutBucket { seqs: 1, tokens: 1 })
+        {
             Ok(v) => v,
             Err(e) => panic!("unexpected launch error: {e}"),
         };
         assert_eq!(ticket.kind, AppleLaunchKind::Rollout);
+        assert!(backend.collect(ticket).is_ok());
     }
 }
