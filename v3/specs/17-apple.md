@@ -25,6 +25,7 @@ crates/rvllm-apple
   weight_blob.rs  64-byte global + 64-byte chunk FP16 ANE blobs
   mil.rs          dense, fused FFN, fused QKV MIL text generators
   metal.rs        direct-Metal prefill contract
+  mlx.rs          optional non-production MLX parity-oracle invocation scaffold
   backend.rs      safe AppleBackend trait and host stub
 ```
 
@@ -57,6 +58,7 @@ pub enum AppleBackendMode {
 - `positions.len() == context_lens.len() == req_ids.len()`.
 - Rollout bucket selection minimizes padding waste among static buckets.
 - Direct Metal contract requires one command buffer per layer group and no hot-path allocation.
+- MLX reference mode is prototype-only, feature-gated, and never implements `AppleBackend` or fallback routing.
 - ANE MIL weights use explicit BLOBFILE offsets from tested descriptors.
 - Private ANE requires explicit opt-in and macOS/aarch64 cfg.
 
@@ -78,6 +80,7 @@ Host tests:
 - IOSurface descriptor byte size and packed single-input layout.
 - Weight blob header, chunk descriptors, FP16 conversion, BLOBFILE offsets.
 - MIL generator names, shapes, and offsets.
+- MLX parity scaffold: valid handoff cases, explicit executor requirement, and planned-only invocation.
 - Stub backend prepare/launch/collect lifecycle.
 
 Hardware tests, ignored by default:
