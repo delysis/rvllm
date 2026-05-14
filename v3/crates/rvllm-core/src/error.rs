@@ -233,6 +233,8 @@ pub enum AppleError {
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
     InvalidWeightBlob { reason: &'static str },
+    InvalidBufferArena { reason: &'static str },
+    BufferArenaTooSmall { requested: usize, capacity: usize },
 }
 
 #[derive(Debug)]

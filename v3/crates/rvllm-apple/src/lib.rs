@@ -23,7 +23,10 @@ pub use device::{
 };
 pub use handoff::{HandoffCapsule, HandoffKind, StateHandle, StateHandleKind, SurfaceId};
 pub use iosurface::{IoSurfaceTensorDesc, PackedField, PackedInputLayout};
-pub use metal::{MetalPrefillBackend, MetalPrefillConfig, PrefillContract};
+pub use metal::{
+    MetalBufferAllocation, MetalBufferArenaPlan, MetalBufferBinding, MetalBufferRequest,
+    MetalBufferRole, MetalPrefillBackend, MetalPrefillConfig, PrefillContract,
+};
 pub use mil::{
     dense_1x1_conv_mil, fused_ffn_mil, fused_qkv_mil, FfnMilOffsets, QkvMilOffsets,
 };
