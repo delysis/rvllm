@@ -29,5 +29,7 @@ pub use apple_bridge::{
 pub use bring_up::{Bringup, EnginePaths, FusedModules, PplResult};
 pub use engine::{Engine, PendingStep, StepOutput};
 pub use layer_exec::{forward, LayerDims};
+#[cfg(feature = "apple")]
+pub use rvllm_apple::{AppleBackendMode, AppleRuntimePlan, RolloutBucket};
 pub use sched_state::{ReqState, Request};
 pub use scheduler::{bucket_for, BatchPlan, Scheduler, DECODE_BUCKETS};

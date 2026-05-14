@@ -56,6 +56,16 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let args: Vec<String> = std::env::args().collect();
+    let cli = if args.iter().skip(1).any(|arg| arg.starts_with("--apple-")) {
+        rvllm_bench::parse_bench_args(args).map_err(|e| e.to_string())?
+    } else {
+        rvllm_bench::BenchConfig { apple: None }
+    };
+    if cli.apple.is_some() {
+        return Err(rvllm_bench::apple_execution_unavailable().to_string());
+    }
+
     let paths = EnginePaths {
         model_dir: env_path("RVLLM_MODEL_DIR")?,
         kernels_dir: env_path("RVLLM_KERNELS_DIR")?,

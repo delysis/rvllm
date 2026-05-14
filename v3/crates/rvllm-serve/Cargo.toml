@@ -13,6 +13,10 @@ authors.workspace = true
 name = "rvllm-server"
 path = "src/main.rs"
 
+[features]
+default = []
+apple = ["rvllm-runtime/apple"]
+
 [dependencies]
 rvllm-core = { workspace = true }
 rvllm-runtime = { workspace = true }
