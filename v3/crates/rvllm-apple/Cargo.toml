@@ -14,7 +14,7 @@ authors.workspace = true
 
 [features]
 default = []
-metal = []
+metal = ["dep:objc2", "dep:objc2-foundation"]
 mlx = []
 private-ane = []
 
@@ -22,3 +22,7 @@ private-ane = []
 rvllm-core = { workspace = true }
 half = { workspace = true }
 serde = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6.4", optional = true }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString"], optional = true }
