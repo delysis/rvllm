@@ -1,26 +1,66 @@
 name: CI
 
 on:
+  pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      run_private_ane:
+        description: Run private ANE tests on a self-hosted Apple Silicon runner.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
-jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
+defaults:
+  run:
+    working-directory: v3
 
-  test:
-    name: Test
+jobs:
+  linux-host-tests:
+    name: Linux host tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
+        with:
+          workspaces: v3 -> target
+      - run: cargo test -p rvllm-apple --no-default-features
+      - run: cargo test -p rvllm-runtime --features apple --no-default-features
+
+  macos-metal-tests:
+    name: macOS Metal tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3 -> target
+      - run: cargo test -p rvllm-apple --features metal
+      - run: cargo test -p rvllm-runtime --features apple
+
+  private-ane-tests:
+    name: Private ANE tests
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_private_ane }}
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - private-ane
+    environment: private-ane
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3 -> target
+      - run: cargo test -p rvllm-apple --features private-ane
