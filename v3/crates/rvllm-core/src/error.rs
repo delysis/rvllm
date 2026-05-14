@@ -243,6 +243,7 @@ pub enum AppleError {
     NotPrepared { backend: &'static str },
     LaunchNotPending { step_id: u64 },
     FeatureNotAvailable { backend: &'static str, op: &'static str },
+    InvalidMetalRecipe { reason: &'static str },
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
     InvalidWeightBlob { reason: &'static str },

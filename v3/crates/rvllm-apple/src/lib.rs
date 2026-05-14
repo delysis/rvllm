@@ -32,7 +32,8 @@ pub use metal::DirectMetalContext;
 pub use metal::{
     DirectMetalContextConfig, DirectMetalPipelineName, MetalBufferAllocation, MetalBufferArenaPlan,
     MetalBufferBinding, MetalBufferRequest, MetalBufferRole, MetalPrefillBackend,
-    MetalPrefillConfig, PrefillContract,
+    MetalPrefillCommand, MetalPrefillCommandBufferRecipe, MetalPrefillCommandEvent,
+    MetalPrefillConfig, MetalPrefillOp, PrefillContract, PrefillLayerGroup, PREFILL_LAYER_OPS,
 };
 pub use mil::{
     dense_1x1_conv_mil, fused_ffn_mil, fused_ffn_mil_from_descs, fused_qkv_mil,
