@@ -233,6 +233,7 @@ pub enum AppleError {
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
     InvalidWeightBlob { reason: &'static str },
+    AneLifecycleViolation { op: &'static str, state: &'static str },
 }
 
 #[derive(Debug)]
