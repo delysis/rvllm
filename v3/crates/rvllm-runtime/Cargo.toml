@@ -26,6 +26,7 @@ cuda = [
 # (`cuMemAllocManaged`) instead of `HbmArena` (`cuMemAlloc_v2`) when
 # the live device is a Blackwell consumer part. Implies `cuda`.
 gb10 = ["cuda", "rvllm-mem/gb10"]
+apple = ["dep:rvllm-apple"]
 
 # `probe-gemma4-load` requires a real CUDA device + Gemma 4 fp8 model
 # artifacts. Kept as an opt-in `[[bin]]` guarded by
@@ -47,6 +48,7 @@ rvllm-metadata = { workspace = true }
 rvllm-graph = { workspace = true }
 rvllm-loader = { workspace = true }
 rvllm-sampling = { workspace = true }
+rvllm-apple = { workspace = true, optional = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }
 cudarc = { version = "0.19", features = ["driver", "cuda-version-from-build-system"], optional = true }
