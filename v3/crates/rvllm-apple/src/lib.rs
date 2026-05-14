@@ -25,11 +25,14 @@ pub use handoff::{HandoffCapsule, HandoffKind, StateHandle, StateHandleKind, Sur
 pub use iosurface::{IoSurfaceTensorDesc, PackedField, PackedInputLayout};
 pub use metal::{MetalPrefillBackend, MetalPrefillConfig, PrefillContract};
 pub use mil::{
-    dense_1x1_conv_mil, fused_ffn_mil, fused_qkv_mil, FfnMilOffsets, QkvMilOffsets,
+    dense_1x1_conv_mil, fused_ffn_mil, fused_ffn_mil_from_descs, fused_qkv_mil,
+    fused_qkv_mil_from_descs, FfnMilOffsets, FfnMilWeightDescs, QkvMilOffsets,
+    QkvMilWeightDescs,
 };
 pub use plan::{
     select_rollout_bucket, AppleBackendMode, AppleRuntimePlan, RolloutBucket, ROLLOUT_BUCKETS,
 };
 pub use weight_blob::{
-    build_weight_blob_fp16, build_weight_blob_fp16_named, WeightChunkDesc,
+    build_weight_blob_fp16, build_weight_blob_fp16_described, build_weight_blob_fp16_named,
+    AneFp16WeightSpec, WeightChunkDesc,
 };
