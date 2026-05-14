@@ -252,6 +252,8 @@ pub enum AppleError {
     BufferArenaTooSmall { requested: usize, capacity: usize },
     AneLifecycleViolation { op: &'static str, state: &'static str },
     ProcedureIndexMissing { layer: usize },
+    UnsupportedQuantization { backend: &'static str, quantization: &'static str },
+    InvalidQuantizationMetadata { quantization: &'static str, reason: &'static str },
 }
 
 impl std::fmt::Display for AppleError {
@@ -360,6 +362,21 @@ impl std::fmt::Display for AppleError {
             }
             AppleError::ProcedureIndexMissing { layer } => {
                 write!(f, "ProcedureIndexMissing layer={layer}")
+            }
+            AppleError::UnsupportedQuantization {
+                backend,
+                quantization,
+            } => {
+                write!(f, "UnsupportedQuantization backend={backend} quantization={quantization}")
+            }
+            AppleError::InvalidQuantizationMetadata {
+                quantization,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "InvalidQuantizationMetadata quantization={quantization} reason={reason}"
+                )
             }
         }
     }

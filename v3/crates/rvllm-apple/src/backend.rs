@@ -136,12 +136,13 @@ mod tests {
     use super::*;
     use crate::device::AppleAcceleratorTarget;
     use crate::handoff::HandoffKind;
-    use crate::plan::{AppleBackendMode, RolloutBucket};
+    use crate::plan::{AppleBackendMode, AppleMatmulConfig, RolloutBucket};
 
     fn plan() -> AppleRuntimePlan {
         AppleRuntimePlan {
             target: AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
             mode: AppleBackendMode::MetalPrefillMetalDecode,
+            matmul: AppleMatmulConfig::fp16(),
             rollout_bucket: None,
             rollout_tokens: 1,
             private_ane_opt_in: false,

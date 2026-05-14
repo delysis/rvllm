@@ -55,7 +55,10 @@ pub use mlx::{
     MlxReferenceInvocation, MlxReferenceMode,
 };
 pub use plan::{
-    select_rollout_bucket, AppleBackendMode, AppleRuntimePlan, RolloutBucket, ROLLOUT_BUCKETS,
+    apple_quantization_matrix_entry, plan_apple_matmul, select_rollout_bucket, AppleBackendMode,
+    AppleElementType, AppleMatmulBackend, AppleMatmulConfig, AppleMatmulMetadata, AppleMatmulPlan,
+    AppleMatmulQuantization, AppleQuantizationMatrixEntry, AppleRuntimePlan, AppleScaleSpec,
+    RolloutBucket, APPLE_QUANTIZATION_MATRIX, ROLLOUT_BUCKETS,
 };
 pub use weight_blob::{
     build_weight_blob_fp16, build_weight_blob_fp16_described, build_weight_blob_fp16_named,
