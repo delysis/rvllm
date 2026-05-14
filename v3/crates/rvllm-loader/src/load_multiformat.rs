@@ -896,7 +896,7 @@ mod tests {
     #[test]
     fn fp8_encode_zero_is_zero() {
         assert_eq!(fp8_e4m3_encode(0.0), 0);
-        assert_eq!(fp8_e4m3_encode(-0.0), 0);
+        assert_eq!(fp8_e4m3_encode(-0.0), 0x80);
     }
 
     #[test]
