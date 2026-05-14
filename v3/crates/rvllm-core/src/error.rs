@@ -241,6 +241,7 @@ pub enum AppleError {
     ShapeBucketMissing { seqs: u32, tokens: u32 },
     HandoffMalformed { reason: &'static str },
     NotPrepared { backend: &'static str },
+    LaunchNotPending { step_id: u64 },
     FeatureNotAvailable { backend: &'static str, op: &'static str },
     UnsupportedDevice { name: &'static str },
     InvalidMil { reason: &'static str },
