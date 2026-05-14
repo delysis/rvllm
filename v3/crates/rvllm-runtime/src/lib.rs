@@ -21,8 +21,10 @@ pub mod scheduler;
 
 #[cfg(feature = "apple")]
 pub use apple_bridge::{
-    gemma4_layer_parity, handoff_from_decode_plan, handoff_from_prefill_plan, qwen_layer_parity,
-    rollout_bucket_for_decode, AppleGemma4LayerParity, AppleLayerDerivedShape, AppleLayerParity,
+    ane_rollout_batch_from_decode_plan, handoff_from_decode_plan, handoff_from_prefill_plan,
+    gemma4_layer_parity, qwen_layer_parity, rollout_bucket_for_decode, AneRolloutBatch,
+    AneRolloutBranchPlan, AneRolloutSlot, AneSpeculativeBranch, AppleGemma4LayerParity,
+    AppleLayerDerivedShape, AppleLayerParity,
 };
 pub use bring_up::{Bringup, EnginePaths, FusedModules, PplResult};
 pub use engine::{Engine, PendingStep, StepOutput};
