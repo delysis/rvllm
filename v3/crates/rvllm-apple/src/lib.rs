@@ -21,6 +21,7 @@ pub mod plan;
 pub mod weight_blob;
 
 pub use ane::{
+    AneBucketCompilePlan, AneLayerProcedureIndices,
     compile_private_ane_mil, compile_private_ane_program, AneProcedure, AneProgram,
     AneProgramPlan, AneRolloutConfig, AneSys, AneSysHandle, DenseFfnLayerWeights,
     FusedFfnProgramArtifact,

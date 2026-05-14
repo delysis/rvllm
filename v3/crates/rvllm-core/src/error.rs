@@ -251,6 +251,7 @@ pub enum AppleError {
     InvalidBufferArena { reason: &'static str },
     BufferArenaTooSmall { requested: usize, capacity: usize },
     AneLifecycleViolation { op: &'static str, state: &'static str },
+    ProcedureIndexMissing { layer: usize },
 }
 
 impl std::fmt::Display for AppleError {
@@ -356,6 +357,9 @@ impl std::fmt::Display for AppleError {
             }
             AppleError::AneLifecycleViolation { op, state } => {
                 write!(f, "AneLifecycleViolation op={op} state={state}")
+            }
+            AppleError::ProcedureIndexMissing { layer } => {
+                write!(f, "ProcedureIndexMissing layer={layer}")
             }
         }
     }
