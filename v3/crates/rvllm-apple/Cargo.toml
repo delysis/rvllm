@@ -9,8 +9,8 @@ authors.workspace = true
 # rvllm-apple: safe, host-testable Apple Silicon backend contracts.
 #
 # No private-framework FFI lives in this crate. Direct Objective-C/IOSurface
-# access should land in a future `rvllm-apple-ane-sys` crate and be consumed
-# through safe wrappers behind explicit macOS/aarch64/private-ane cfg gates.
+# access lives in `rvllm-apple-ane-sys` and should be consumed through safe
+# wrappers behind explicit macOS/aarch64/private-ane cfg gates.
 
 [features]
 default = []

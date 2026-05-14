@@ -1,0 +1,17 @@
+[package]
+name = "rvllm-apple-ane-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# Unsafe Objective-C runtime boundary for private ANE bring-up.
+# Safe planning and backend contracts stay in rvllm-apple.
+
+[features]
+default = []
+private-ane = []
+
+[dependencies]
+rvllm-core = { workspace = true }
