@@ -578,7 +578,7 @@ mod tests {
             .sum::<f32>()
             / hidden as f32
             + eps)
-        .sqrt();
+            .sqrt();
         input
             .iter()
             .take(hidden as usize)
@@ -824,8 +824,7 @@ mod tests {
 
                     for d in 0..head_dim {
                         let v_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
-                        out[seq * q_dim + head * head_dim + d] +=
-                            weight * v_cache[v_idx].to_f32();
+                        out[seq * q_dim + head * head_dim + d] += weight * v_cache[v_idx].to_f32();
                     }
                 }
             }
@@ -837,20 +836,62 @@ mod tests {
     #[test]
     fn kernel_attention_decode_cpu_reference_matches_naive() {
         let q = vec![
-            f16::from_f32(0.15), f16::from_f32(-0.1), f16::from_f32(0.2), f16::from_f32(0.05),
-            f16::from_f32(-0.15), f16::from_f32(0.12), f16::from_f32(0.08), f16::from_f32(-0.04),
-            f16::from_f32(0.25), f16::from_f32(-0.2), f16::from_f32(0.18), f16::from_f32(0.11),
-            f16::from_f32(0.03), f16::from_f32(0.22), f16::from_f32(-0.07), f16::from_f32(0.09),
-            f16::from_f32(0.19), f16::from_f32(-0.06), f16::from_f32(0.02), f16::from_f32(0.13),
-            f16::from_f32(-0.09), f16::from_f32(0.16), f16::from_f32(0.05), f16::from_f32(0.01),
-            f16::from_f32(0.02), f16::from_f32(0.01), f16::from_f32(-0.11), f16::from_f32(0.04),
-            f16::from_f32(0.05), f16::from_f32(0.06), f16::from_f32(-0.07), f16::from_f32(0.08),
-            f16::from_f32(0.09), f16::from_f32(0.07), f16::from_f32(-0.12), f16::from_f32(0.03),
-            f16::from_f32(-0.01), f16::from_f32(0.02), f16::from_f32(0.04), f16::from_f32(0.06),
-            f16::from_f32(0.08), f16::from_f32(0.1), f16::from_f32(-0.03), f16::from_f32(0.05),
-            f16::from_f32(0.07), f16::from_f32(-0.08), f16::from_f32(0.06), f16::from_f32(0.03),
-            f16::from_f32(0.02), f16::from_f32(0.05), f16::from_f32(-0.06), f16::from_f32(0.07),
-            f16::from_f32(0.09), f16::from_f32(0.01), f16::from_f32(-0.02), f16::from_f32(0.04),
+            f16::from_f32(0.15),
+            f16::from_f32(-0.1),
+            f16::from_f32(0.2),
+            f16::from_f32(0.05),
+            f16::from_f32(-0.15),
+            f16::from_f32(0.12),
+            f16::from_f32(0.08),
+            f16::from_f32(-0.04),
+            f16::from_f32(0.25),
+            f16::from_f32(-0.2),
+            f16::from_f32(0.18),
+            f16::from_f32(0.11),
+            f16::from_f32(0.03),
+            f16::from_f32(0.22),
+            f16::from_f32(-0.07),
+            f16::from_f32(0.09),
+            f16::from_f32(0.19),
+            f16::from_f32(-0.06),
+            f16::from_f32(0.02),
+            f16::from_f32(0.13),
+            f16::from_f32(-0.09),
+            f16::from_f32(0.16),
+            f16::from_f32(0.05),
+            f16::from_f32(0.01),
+            f16::from_f32(0.02),
+            f16::from_f32(0.01),
+            f16::from_f32(-0.11),
+            f16::from_f32(0.04),
+            f16::from_f32(0.05),
+            f16::from_f32(0.06),
+            f16::from_f32(-0.07),
+            f16::from_f32(0.08),
+            f16::from_f32(0.09),
+            f16::from_f32(0.07),
+            f16::from_f32(-0.12),
+            f16::from_f32(0.03),
+            f16::from_f32(-0.01),
+            f16::from_f32(0.02),
+            f16::from_f32(0.04),
+            f16::from_f32(0.06),
+            f16::from_f32(0.08),
+            f16::from_f32(0.1),
+            f16::from_f32(-0.03),
+            f16::from_f32(0.05),
+            f16::from_f32(0.07),
+            f16::from_f32(-0.08),
+            f16::from_f32(0.06),
+            f16::from_f32(0.03),
+            f16::from_f32(0.02),
+            f16::from_f32(0.05),
+            f16::from_f32(-0.06),
+            f16::from_f32(0.07),
+            f16::from_f32(0.09),
+            f16::from_f32(0.01),
+            f16::from_f32(-0.02),
+            f16::from_f32(0.04),
         ];
         let mut k_cache = vec![f16::from_f32(0.0); 3 * 8];
         let mut v_cache = vec![f16::from_f32(0.0); 3 * 8];
@@ -913,10 +954,7 @@ mod tests {
     #[test]
     fn kernel_gelu_reference_matches_definition() {
         let got_single = gelu_tanh_ref(0.5);
-        let got_pair = gelu_mul_ref(
-            &[1.0, 0.5, -0.5, 2.0, 1.5, -1.0, 0.25, 3.0],
-            4,
-        );
+        let got_pair = gelu_mul_ref(&[1.0, 0.5, -0.5, 2.0, 1.5, -1.0, 0.25, 3.0], 4);
         let expected = {
             let c = 0.7978845608f32;
             0.5f32 * 0.5 * (1.0f32 + f32::tanh(c * (0.5 + 0.044715f32 * 0.5f32.powi(3))))

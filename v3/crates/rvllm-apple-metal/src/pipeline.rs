@@ -3,12 +3,12 @@
 //! Compiles Metal functions to PSOs once at init. PSOs are keyed by
 //! function name. No compilation happens during inference.
 
-use std::collections::HashMap;
+use crate::context::MetalContext;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::MTLComputePipelineState;
-use crate::context::MetalContext;
 use rvllm_core::Result;
+use std::collections::HashMap;
 
 /// Cached compute pipeline state objects, keyed by function name.
 pub struct PipelineCache {
@@ -17,7 +17,9 @@ pub struct PipelineCache {
 
 impl PipelineCache {
     pub fn new() -> Self {
-        Self { pipelines: HashMap::new() }
+        Self {
+            pipelines: HashMap::new(),
+        }
     }
 
     /// Compile a named function from the context's library into a PSO.
@@ -39,21 +41,34 @@ impl PipelineCache {
     }
 
     /// Get a cached PSO by name.
-    pub fn get(&self, name: &str) -> Result<&Retained<ProtocolObject<dyn MTLComputePipelineState>>> {
+    pub fn get(
+        &self,
+        name: &str,
+    ) -> Result<&Retained<ProtocolObject<dyn MTLComputePipelineState>>> {
         self.pipelines.get(name).ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::PipelineMissing { name: "unknown" },
-                rvllm_core::AppleCtx { backend: "metal", op: "get_pso", device: "apple-silicon" },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "get_pso",
+                    device: "apple-silicon",
+                },
             )
         })
     }
 
-    pub fn len(&self) -> usize { self.pipelines.len() }
-    pub fn is_empty(&self) -> bool { self.pipelines.is_empty() }
+    pub fn len(&self) -> usize {
+        self.pipelines.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.pipelines.is_empty()
+    }
 }
 
 impl Default for PipelineCache {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::fmt::Debug for PipelineCache {

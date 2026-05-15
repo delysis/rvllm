@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-use rvllm_apple_coreml_sys::specification::{
-    Model, FeatureDescription, feature_type,
-    NeuralNetwork, NeuralNetworkLayer,
-    neural_network_layer,
-    ConvolutionLayerParams,
-};
 use prost::Message;
+use rvllm_apple_coreml_sys::specification::{
+    feature_type, neural_network_layer, ConvolutionLayerParams, FeatureDescription, Model,
+    NeuralNetwork, NeuralNetworkLayer,
+};
+use std::collections::HashMap;
 
 pub(crate) static PROJ_TEMPLATE: &[u8] = include_bytes!("../templates/proj.mlmodel");
 pub(crate) static FFN_TEMPLATE: &[u8] = include_bytes!("../templates/ffn.mlmodel");
@@ -24,7 +22,9 @@ pub fn load_template(name: &str) -> Model {
 fn patch_feature_description(desc: &mut FeatureDescription, spatial: usize, ch: usize) {
     if let Some(ref mut t) = desc.r#type {
         if let Some(feature_type::Type::MultiArrayType(ref mut array)) = t.r#type {
-            array.data_type = rvllm_apple_coreml_sys::specification::array_feature_type::ArrayDataType::Float32 as i32;
+            array.data_type =
+                rvllm_apple_coreml_sys::specification::array_feature_type::ArrayDataType::Float32
+                    as i32;
             array.shape = vec![ch as i64, 1, spatial as i64];
         }
     }
@@ -40,7 +40,7 @@ pub fn patch_ast(
     _offsets: &HashMap<String, u64>,
 ) {
     model.specification_version = 4; // Downgrade to NN
-    
+
     if let Some(ref mut desc) = model.description {
         for input in desc.input.iter_mut() {
             patch_feature_description(input, spatial, in_ch);
@@ -51,12 +51,12 @@ pub fn patch_ast(
     }
 
     let mut nn = NeuralNetwork::default();
-    
+
     let mut layer = NeuralNetworkLayer::default();
     layer.name = "proj".to_string();
     layer.input.push("x".to_string());
     layer.output.push("var_13".to_string());
-    
+
     let mut conv = ConvolutionLayerParams::default();
     conv.output_channels = out_ch as u64;
     conv.kernel_channels = in_ch as u64;
@@ -70,10 +70,10 @@ pub fn patch_ast(
     weights.float_value = vec![0.0; (out_ch * in_ch) as usize];
     conv.weights = Some(weights);
     conv.convolution_padding_type = Some(rvllm_apple_coreml_sys::specification::convolution_layer_params::ConvolutionPaddingType::Valid(rvllm_apple_coreml_sys::specification::ValidPadding::default()));
-    
+
     layer.layer = Some(neural_network_layer::Layer::Convolution(conv));
     nn.layers.push(layer);
-    
+
     model.r#type = Some(rvllm_apple_coreml_sys::specification::model::Type::NeuralNetwork(nn));
 }
 
@@ -92,7 +92,13 @@ pub struct QkvMilOffsets {
 }
 
 #[must_use]
-pub fn dense_1x1_conv_mil(_name: &str, in_ch: usize, out_ch: usize, spatial: usize, offset: u64) -> Vec<u8> {
+pub fn dense_1x1_conv_mil(
+    _name: &str,
+    in_ch: usize,
+    out_ch: usize,
+    spatial: usize,
+    offset: u64,
+) -> Vec<u8> {
     let mut model = load_template("proj.mlmodel");
     let mut offsets = HashMap::new();
     offsets.insert("proj_weight_to_fp16".to_string(), offset);
@@ -101,7 +107,12 @@ pub fn dense_1x1_conv_mil(_name: &str, in_ch: usize, out_ch: usize, spatial: usi
 }
 
 #[must_use]
-pub fn fused_ffn_mil(dim: usize, hidden_dim: usize, spatial: usize, offsets: FfnMilOffsets) -> Vec<u8> {
+pub fn fused_ffn_mil(
+    dim: usize,
+    hidden_dim: usize,
+    spatial: usize,
+    offsets: FfnMilOffsets,
+) -> Vec<u8> {
     let mut model = load_template("ffn.mlmodel");
     let mut off = HashMap::new();
     off.insert("gate_weight_to_fp16".to_string(), offsets.gate);
@@ -118,7 +129,7 @@ pub fn fused_qkv_mil(
     spatial: usize,
     offsets: QkvMilOffsets,
 ) -> Vec<u8> {
-    let mut model = load_template("proj.mlmodel"); 
+    let mut model = load_template("proj.mlmodel");
     let mut off = HashMap::new();
     off.insert("q_weight_to_fp16".to_string(), offsets.q);
     off.insert("k_weight_to_fp16".to_string(), offsets.k);

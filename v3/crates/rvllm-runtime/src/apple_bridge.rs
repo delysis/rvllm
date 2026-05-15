@@ -5,7 +5,7 @@
 
 use rvllm_apple::{select_rollout_bucket, HandoffCapsule, HandoffKind, RolloutBucket};
 use rvllm_core::{
-    AppleCtx, AppleError, AppleRolloutBucketPolicy, AppleRolloutBucket, Result, RvllmError,
+    AppleCtx, AppleError, AppleRolloutBucket, AppleRolloutBucketPolicy, Result, RvllmError,
 };
 
 use crate::scheduler::BatchPlan;
@@ -39,18 +39,25 @@ pub fn handoff_from_prefill_plan_with_bucket(
         req_ids,
         prompt_tokens_flat,
         cu_seqlens_q,
-    } = plan else {
+    } = plan
+    else {
         return Err(err("expected BatchPlan::Prefill", "prefill_handoff"));
     };
 
     if cu_seqlens_q.len() != req_ids.len() + 1 {
-        return Err(err("cu_seqlens length must equal req_ids + 1", "prefill_handoff"));
+        return Err(err(
+            "cu_seqlens length must equal req_ids + 1",
+            "prefill_handoff",
+        ));
     }
     if cu_seqlens_q.first().copied() != Some(0) {
         return Err(err("cu_seqlens must start at 0", "prefill_handoff"));
     }
     if cu_seqlens_q.last().copied() != Some(prompt_tokens_flat.len() as u32) {
-        return Err(err("cu_seqlens must end at token length", "prefill_handoff"));
+        return Err(err(
+            "cu_seqlens must end at token length",
+            "prefill_handoff",
+        ));
     }
 
     let mut positions = Vec::with_capacity(req_ids.len());
@@ -74,11 +81,15 @@ pub fn handoff_from_prefill_plan_with_bucket(
     );
     if matches!(
         kind,
-        HandoffKind::MetalPrefillToAneFfnRollout | HandoffKind::MetalPrefillToAneRolloutExperimental
+        HandoffKind::MetalPrefillToAneFfnRollout
+            | HandoffKind::MetalPrefillToAneRolloutExperimental
     ) {
         capsule = capsule.with_rollout_bucket(rollout_bucket);
     } else if rollout_bucket.is_some() {
-        return Err(err("non-ANE prefill handoff must not have a rollout bucket", "prefill_handoff"));
+        return Err(err(
+            "non-ANE prefill handoff must not have a rollout bucket",
+            "prefill_handoff",
+        ));
     }
     capsule.validate().map(|()| capsule)
 }
@@ -99,7 +110,8 @@ pub fn handoff_from_decode_plan_with_bucket(
         positions,
         context_lens,
         ..
-    } = plan else {
+    } = plan
+    else {
         return Err(err("expected BatchPlan::Decode", "decode_handoff"));
     };
 
@@ -128,7 +140,10 @@ pub fn handoff_from_decode_plan_with_bucket(
     capsule.validate().map(|()| capsule)
 }
 
-pub fn rollout_bucket_for_decode(plan: &BatchPlan, tokens_per_rollout: u32) -> Result<RolloutBucket> {
+pub fn rollout_bucket_for_decode(
+    plan: &BatchPlan,
+    tokens_per_rollout: u32,
+) -> Result<RolloutBucket> {
     rollout_bucket_for_decode_with_config(plan, &None, tokens_per_rollout)
 }
 pub fn rollout_bucket_for_decode_with_runtime(
@@ -169,11 +184,15 @@ pub fn rollout_bucket_for_decode_with_config(
                 tokens: b.tokens,
             }
         }
-        None => select_rollout_bucket(seqs, tokens_per_rollout)
-            .ok_or_else(|| RvllmError::apple(
-                AppleError::ShapeBucketMissing { seqs, tokens: tokens_per_rollout },
+        None => select_rollout_bucket(seqs, tokens_per_rollout).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::ShapeBucketMissing {
+                    seqs,
+                    tokens: tokens_per_rollout,
+                },
                 apple_ctx("rollout_bucket"),
-            ))?,
+            )
+        })?,
     };
 
     if !bucket.fits(seqs, tokens_per_rollout) {
@@ -199,7 +218,9 @@ pub fn rollout_bucket_for_decode_with_runtime_config(
 ) -> Result<RolloutBucket> {
     let bucket_override = match policy {
         AppleRolloutBucketPolicy::Auto => None,
-        AppleRolloutBucketPolicy::Fixed { seqs, tokens } => Some(AppleRolloutBucket { seqs, tokens }),
+        AppleRolloutBucketPolicy::Fixed { seqs, tokens } => {
+            Some(AppleRolloutBucket { seqs, tokens })
+        }
     };
     let requested = fixed_bucket.or(bucket_override);
     rollout_bucket_for_decode_with_config(plan, &requested, rollout_tokens)

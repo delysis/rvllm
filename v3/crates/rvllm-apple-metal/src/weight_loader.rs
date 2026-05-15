@@ -5,8 +5,8 @@
 //! via the bf16_to_f16 Metal kernel.
 
 use std::collections::{BTreeMap, HashSet};
-use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use crate::arena::{MetalBufferArena, MetalRegion};
 use crate::context::MetalContext;
@@ -23,7 +23,11 @@ pub struct SafetensorTensorInfo {
 }
 
 fn ctx(op: &'static str) -> AppleCtx {
-    AppleCtx { backend: "metal-loader", op, device: "apple-silicon" }
+    AppleCtx {
+        backend: "metal-loader",
+        op,
+        device: "apple-silicon",
+    }
 }
 
 /// Describes a loaded model's weight layout in the arena.
@@ -83,9 +87,7 @@ pub fn bf16_to_f16_cpu(bf16_data: &[u8]) -> Vec<u8> {
     f16_data
 }
 
-pub fn parse_safetensors_index(
-    model_dir: &Path,
-) -> Result<Vec<(String, PathBuf)>> {
+pub fn parse_safetensors_index(model_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
     let single = model_dir.join("model.safetensors");
     if single.exists() {
         return Ok(vec![("model.safetensors".to_owned(), single)]);
@@ -99,27 +101,32 @@ pub fn parse_safetensors_index(
         ));
     }
 
-    let index_bytes = std::fs::read(&index_path).map_err(|e| {
-        RvllmError::Io {
-            err: rvllm_core::IoError::from(&e),
-            path: index_path.clone(),
-            source: e,
-        }
+    let index_bytes = std::fs::read(&index_path).map_err(|e| RvllmError::Io {
+        err: rvllm_core::IoError::from(&e),
+        path: index_path.clone(),
+        source: e,
     })?;
 
     let index: serde_json::Value = serde_json::from_slice(&index_bytes).map_err(|_| {
         RvllmError::apple(
-            AppleError::InvalidWeightBlob { reason: "invalid index json" },
+            AppleError::InvalidWeightBlob {
+                reason: "invalid index json",
+            },
             ctx("parse_index"),
         )
     })?;
 
-    let weight_map = index.get("weight_map").and_then(|v| v.as_object()).ok_or_else(|| {
-        RvllmError::apple(
-            AppleError::InvalidWeightBlob { reason: "missing weight_map" },
-            ctx("parse_index"),
-        )
-    })?;
+    let weight_map = index
+        .get("weight_map")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "missing weight_map",
+                },
+                ctx("parse_index"),
+            )
+        })?;
 
     let mut files = Vec::new();
     let mut seen = HashSet::new();
@@ -187,16 +194,15 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
             ))
         }
     };
-    let header: serde_json::Map<String, serde_json::Value> = serde_json::from_str(header_json).map_err(
-        |_| {
+    let header: serde_json::Map<String, serde_json::Value> = serde_json::from_str(header_json)
+        .map_err(|_| {
             RvllmError::apple(
                 AppleError::InvalidWeightBlob {
                     reason: "safetensor header is not valid json",
                 },
                 ctx("parse_safetensor_file"),
             )
-        },
-    )?;
+        })?;
     let mut out = Vec::new();
     for (name, meta) in header {
         if name == "__metadata__" {
@@ -264,27 +270,22 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
                 ctx("parse_safetensor_file"),
             ));
         }
-        let start = offsets[0]
-            .as_u64()
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "safetensor offset start not integer",
-                    },
-                    ctx("parse_safetensor_file"),
-                )
-            })?
-            as usize;
-        let end = offsets[1]
-            .as_u64()
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "safetensor offset end not integer",
-                    },
-                    ctx("parse_safetensor_file"),
-                )
-            })? as usize;
+        let start = offsets[0].as_u64().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "safetensor offset start not integer",
+                },
+                ctx("parse_safetensor_file"),
+            )
+        })? as usize;
+        let end = offsets[1].as_u64().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "safetensor offset end not integer",
+                },
+                ctx("parse_safetensor_file"),
+            )
+        })? as usize;
         if end < start {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -294,8 +295,7 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
             ));
         }
         let nbytes = end - start;
-        let expected = dtype_bytes(dtype)
-            .saturating_mul(shape.iter().copied().product::<usize>());
+        let expected = dtype_bytes(dtype).saturating_mul(shape.iter().copied().product::<usize>());
         if expected != nbytes {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -305,10 +305,7 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
             ));
         }
         let offset = 8 + header_bytes + start;
-        if offset
-            .checked_add(nbytes)
-            .map_or(true, |v| v > bytes.len())
-        {
+        if offset.checked_add(nbytes).map_or(true, |v| v > bytes.len()) {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
                     reason: "safetensor tensor offset out of file bounds",
@@ -449,19 +446,19 @@ pub fn map_safetensor_to_arena_from_tensors(
                 ctx("map_safetensor_to_arena"),
             ));
         }
-        let entry = tensors
-            .get(name)
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "tensor not found",
-                    },
-                    ctx("map_safetensor_to_arena"),
-                )
-            })?;
+        let entry = tensors.get(name).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "tensor not found",
+                },
+                ctx("map_safetensor_to_arena"),
+            )
+        })?;
         let bytes = load_safetensor_entry_f16(entry)?;
         let region = arena.region(name, bytes.len(), 16)?;
-        unsafe { arena.write_region(&region, &bytes)?; }
+        unsafe {
+            arena.write_region(&region, &bytes)?;
+        }
         out.push((name.to_string(), region));
     }
     Ok(out)
@@ -474,18 +471,19 @@ pub fn map_safetensor_to_model_weights(
 ) -> Result<MetalModelWeights> {
     let mut ordered = Vec::new();
     let mut seen = HashSet::new();
-    let mut add_name = |name: &str, ordered: &mut Vec<String>, seen: &mut HashSet<String>| -> Result<()> {
-        if !seen.insert(name.to_owned()) {
-            return Err(RvllmError::apple(
-                AppleError::InvalidWeightBlob {
-                    reason: "duplicate tensor name in weight mapping manifest",
-                },
-                ctx("map_safetensor_to_model_weights"),
-            ));
-        }
-        ordered.push(name.to_string());
-        Ok(())
-    };
+    let mut add_name =
+        |name: &str, ordered: &mut Vec<String>, seen: &mut HashSet<String>| -> Result<()> {
+            if !seen.insert(name.to_owned()) {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "duplicate tensor name in weight mapping manifest",
+                    },
+                    ctx("map_safetensor_to_model_weights"),
+                ));
+            }
+            ordered.push(name.to_string());
+            Ok(())
+        };
 
     for layer in &names.layers {
         add_name(&layer.attn_norm, &mut ordered, &mut seen)?;
@@ -514,16 +512,14 @@ pub fn map_safetensor_to_model_weights(
     }
 
     let mut take = |name: &str| -> Result<MetalRegion> {
-        region_by_name
-            .remove(name)
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "missing mapped tensor in weight map",
-                    },
-                    ctx("map_safetensor_to_model_weights"),
-                )
-            })
+        region_by_name.remove(name).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "missing mapped tensor in weight map",
+                },
+                ctx("map_safetensor_to_model_weights"),
+            )
+        })
     };
 
     let mut layers = Vec::with_capacity(names.layers.len());
@@ -544,7 +540,13 @@ pub fn map_safetensor_to_model_weights(
     let rope_cos = take(&names.rope_cos)?;
     let rope_sin = take(&names.rope_sin)?;
 
-    Ok(MetalModelWeights { layers, final_norm, lm_head, rope_cos, rope_sin })
+    Ok(MetalModelWeights {
+        layers,
+        final_norm,
+        lm_head,
+        rope_cos,
+        rope_sin,
+    })
 }
 
 #[cfg(test)]
@@ -569,10 +571,7 @@ mod tests {
         p
     }
 
-    fn write_safetensor_shard(
-        dir: &Path,
-        entries: &[(&str, DType, &[u8], &[usize])],
-    ) -> PathBuf {
+    fn write_safetensor_shard(dir: &Path, entries: &[(&str, DType, &[u8], &[usize])]) -> PathBuf {
         let mut header = serde_json::Map::new();
         let mut payload: Vec<u8> = Vec::new();
         for (name, dtype, data, shape) in entries {
@@ -660,7 +659,7 @@ mod tests {
             Err(e) => panic!("unexpected bf16 load error: {e}"),
         };
         assert_eq!(w_bf16.len(), 4);
-            assert_eq!(
+        assert_eq!(
             half::f16::from_bits(u16::from_le_bytes([w_bf16[0], w_bf16[1]])).to_f32(),
             2.0
         );

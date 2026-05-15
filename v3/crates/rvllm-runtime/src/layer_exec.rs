@@ -344,9 +344,9 @@ pub unsafe fn forward_phase(
                 scratch.q_fp8,
                 scratch.k_cache,
                 scratch.v_cache,
-                0, // k_scale_cache (per-slot; not populated on Llama/Qwen)
-                0, // v_scale_cache
-                0, // q_scale_cache (Llama/Qwen uses scalar)
+                0,                    // k_scale_cache (per-slot; not populated on Llama/Qwen)
+                0,                    // v_scale_cache
+                0,                    // q_scale_cache (Llama/Qwen uses scalar)
                 scratch.kv_scale_ptr, // k_descale_fallback (scalar)
                 scratch.kv_scale_ptr, // v_descale_fallback (scalar)
                 meta.block_tables,

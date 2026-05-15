@@ -60,7 +60,10 @@ pub struct PackedInputLayout {
 impl PackedInputLayout {
     #[must_use]
     pub fn pack_spatial(dtype: DType, channels: usize, fields: Vec<PackedField>) -> Option<Self> {
-        if fields.iter().any(|f| f.desc.dtype != dtype || f.desc.channels != channels) {
+        if fields
+            .iter()
+            .any(|f| f.desc.dtype != dtype || f.desc.channels != channels)
+        {
             return None;
         }
         let spatial = fields.iter().map(|f| f.desc.spatial).sum();
@@ -106,11 +109,19 @@ mod tests {
         let fields = vec![
             PackedField {
                 name: "activations".to_owned(),
-                desc: IoSurfaceTensorDesc { dtype: DType::F16, channels: 1024, spatial: 4 },
+                desc: IoSurfaceTensorDesc {
+                    dtype: DType::F16,
+                    channels: 1024,
+                    spatial: 4,
+                },
             },
             PackedField {
                 name: "metadata".to_owned(),
-                desc: IoSurfaceTensorDesc { dtype: DType::F16, channels: 1024, spatial: 1 },
+                desc: IoSurfaceTensorDesc {
+                    dtype: DType::F16,
+                    channels: 1024,
+                    spatial: 1,
+                },
             },
         ];
         let layout = match PackedInputLayout::pack_spatial(DType::F16, 1024, fields) {

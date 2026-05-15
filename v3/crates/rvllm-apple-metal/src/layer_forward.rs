@@ -3,15 +3,15 @@
 //! Mirrors the CUDA `layer_exec::forward_phase()` but uses Metal compute
 //! encoders instead of CUDA kernel launches.
 
+use crate::arena::MetalBufferArena;
+use crate::context::MetalContext;
+use crate::pipeline::PipelineCache;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTLBuffer, MTLCommandBuffer, MTLComputeCommandEncoder, MTLSize,
-    MTLCommandQueue, MTLCommandEncoder,
+    MTLBuffer, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder,
+    MTLSize,
 };
-use crate::arena::MetalBufferArena;
-use crate::pipeline::PipelineCache;
-use crate::context::MetalContext;
 use rvllm_core::Result;
 
 /// Dimensions for a single decoder layer, matching rvllm-runtime's LayerDims.
@@ -48,7 +48,7 @@ pub struct MetalLayerWeights {
 #[derive(Copy, Clone, Debug)]
 pub struct MetalScratch {
     pub normed_hidden: usize,
-    pub qkv_out: usize,  // packed [Q, K, V]
+    pub qkv_out: usize, // packed [Q, K, V]
     pub q_offset: usize,
     pub k_offset: usize,
     pub v_offset: usize,
@@ -74,10 +74,7 @@ pub struct MetalMetadata {
 #[derive(Copy, Clone, Debug)]
 pub enum MetalPhase {
     Decode,
-    Prefill {
-        max_seqlen_q: u32,
-        batch_size: u32,
-    },
+    Prefill { max_seqlen_q: u32, batch_size: u32 },
 }
 
 fn ranges_overlap(a_start: usize, a_len: usize, b_start: usize, b_len: usize) -> bool {
@@ -97,21 +94,19 @@ fn validate_qkv_scratch_planar(
     kv_dim: usize,
 ) -> Result<()> {
     let elem = std::mem::size_of::<u16>();
-    let qkv_elems = num_tokens
-        .checked_mul(q_dim + 2 * kv_dim)
-        .ok_or_else(|| {
-            rvllm_core::RvllmError::apple(
-                rvllm_core::AppleError::FeatureNotAvailable {
-                    backend: "metal",
-                    op: "qkv scratch element overflow",
-                },
-                rvllm_core::AppleCtx {
-                    backend: "metal",
-                    op: "layer_forward_scratch_planar",
-                    device: "apple-silicon",
-                },
-            )
-        })?;
+    let qkv_elems = num_tokens.checked_mul(q_dim + 2 * kv_dim).ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::FeatureNotAvailable {
+                backend: "metal",
+                op: "qkv scratch element overflow",
+            },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "layer_forward_scratch_planar",
+                device: "apple-silicon",
+            },
+        )
+    })?;
     let qkv_len = qkv_elems.checked_mul(elem).ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::FeatureNotAvailable {
@@ -201,7 +196,11 @@ pub unsafe fn metal_forward_layer(
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
-                rvllm_core::AppleCtx { backend: "metal", op: "rmsnorm_encoder", device: "apple-silicon" },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "rmsnorm_encoder",
+                    device: "apple-silicon",
+                },
             )
         })?;
         let pso = pipelines.get("rmsnorm_f16")?;
@@ -219,18 +218,33 @@ pub unsafe fn metal_forward_layer(
             4,
             4,
         );
-        let threads_per_group = MTLSize { width: 256, height: 1, depth: 1 };
-        let groups = MTLSize { width: num_tokens as usize, height: 1, depth: 1 };
+        let threads_per_group = MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        };
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        };
         encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
         encoder.endEncoding();
     }
 
     // 2. QKV GEMM: normed_hidden[M,K] × W_qkv[K,N] → qkv_out[M,N]
     encode_gemm(
-        &cmd_buf, pipelines, buf,
-        scratch.normed_hidden, weights.qkv_offset, scratch.qkv_out,
-        num_tokens, qkv_n, hidden,
-        1.0, 0.0,
+        &cmd_buf,
+        pipelines,
+        buf,
+        scratch.normed_hidden,
+        weights.qkv_offset,
+        scratch.qkv_out,
+        num_tokens,
+        qkv_n,
+        hidden,
+        1.0,
+        0.0,
     )?;
 
     // 3. Split fused QKV into planar Q/K/V scratch regions.
@@ -252,7 +266,11 @@ pub unsafe fn metal_forward_layer(
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
-                rvllm_core::AppleCtx { backend: "metal", op: "rope_encoder", device: "apple-silicon" },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "rope_encoder",
+                    device: "apple-silicon",
+                },
             )
         })?;
         let pso = pipelines.get("rope_partial_f16")?;
@@ -262,14 +280,42 @@ pub unsafe fn metal_forward_layer(
         encoder.setBuffer_offset_atIndex(Some(buf), meta.cos_offset, 2);
         encoder.setBuffer_offset_atIndex(Some(buf), meta.sin_offset, 3);
         encoder.setBuffer_offset_atIndex(Some(buf), meta.positions_offset, 4);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _), 4, 5);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _), 4, 6);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _), 4, 7);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _), 4, 8);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.rope_dim as *const _ as *mut _), 4, 9);
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+            4,
+            5,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
+            4,
+            6,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
+            4,
+            7,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
+            4,
+            8,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&dims.rope_dim as *const _ as *mut _),
+            4,
+            9,
+        );
         let half_rope = dims.rope_dim / 2;
-        let groups = MTLSize { width: num_tokens as usize, height: half_rope as usize, depth: 1 };
-        let tpg = MTLSize { width: 1, height: 1, depth: 1 };
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: half_rope as usize,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        };
         encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
         encoder.endEncoding();
     }
@@ -279,7 +325,11 @@ pub unsafe fn metal_forward_layer(
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
-                rvllm_core::AppleCtx { backend: "metal", op: "kv_write_encoder", device: "apple-silicon" },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "kv_write_encoder",
+                    device: "apple-silicon",
+                },
             )
         })?;
         let pso = pipelines.get("kv_cache_write_f16")?;
@@ -289,10 +339,26 @@ pub unsafe fn metal_forward_layer(
         encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_k_offset, 2);
         encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_v_offset, 3);
         encoder.setBuffer_offset_atIndex(Some(buf), meta.slot_mapping_offset, 4);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _), 4, 5);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&kv_dim as *const _ as *mut _), 4, 6);
-        let groups = MTLSize { width: num_tokens as usize, height: kv_dim as usize, depth: 1 };
-        let tpg = MTLSize { width: 1, height: 1, depth: 1 };
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+            4,
+            5,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&kv_dim as *const _ as *mut _),
+            4,
+            6,
+        );
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: kv_dim as usize,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        };
         encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
         encoder.endEncoding();
     }
@@ -303,7 +369,11 @@ pub unsafe fn metal_forward_layer(
             let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
                 rvllm_core::RvllmError::apple(
                     rvllm_core::AppleError::MetalUnavailable,
-                    rvllm_core::AppleCtx { backend: "metal", op: "attn_decode", device: "apple-silicon" },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "attn_decode",
+                        device: "apple-silicon",
+                    },
                 )
             })?;
             let pso = pipelines.get("attention_decode_f16")?;
@@ -314,25 +384,68 @@ pub unsafe fn metal_forward_layer(
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.attn_out, 3);
             encoder.setBuffer_offset_atIndex(Some(buf), meta.block_tables_offset, 4);
             encoder.setBuffer_offset_atIndex(Some(buf), meta.context_lens_offset, 5);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _), 4, 6);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _), 4, 7);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _), 4, 8);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _), 4, 9);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _), 4, 10);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _), 4, 11);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _), 4, 12);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+                4,
+                6,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
+                4,
+                7,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
+                4,
+                8,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
+                4,
+                9,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
+                4,
+                10,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _),
+                4,
+                11,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
+                4,
+                12,
+            );
             let total_heads = num_tokens * dims.num_heads;
-            let groups = MTLSize { width: total_heads as usize, height: 1, depth: 1 };
-            let tpg = MTLSize { width: 1, height: 1, depth: 1 };
+            let groups = MTLSize {
+                width: total_heads as usize,
+                height: 1,
+                depth: 1,
+            };
+            let tpg = MTLSize {
+                width: 1,
+                height: 1,
+                depth: 1,
+            };
             encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
             encoder.endEncoding();
         }
-        MetalPhase::Prefill { max_seqlen_q: _, batch_size } => {
+        MetalPhase::Prefill {
+            max_seqlen_q: _,
+            batch_size,
+        } => {
             let total_q = num_tokens;
             let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
                 rvllm_core::RvllmError::apple(
                     rvllm_core::AppleError::MetalUnavailable,
-                    rvllm_core::AppleCtx { backend: "metal", op: "attn_prefill", device: "apple-silicon" },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "attn_prefill",
+                        device: "apple-silicon",
+                    },
                 )
             })?;
             let pso = pipelines.get("attention_prefill_f16")?;
@@ -346,16 +459,56 @@ pub unsafe fn metal_forward_layer(
             if let Some(cu_off) = meta.cu_seqlens_offset {
                 encoder.setBuffer_offset_atIndex(Some(buf), cu_off, 6);
             }
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&total_q as *const _ as *mut _), 4, 7);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&batch_size as *const _ as *mut _), 4, 8);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _), 4, 9);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _), 4, 10);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _), 4, 11);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _), 4, 12);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _), 4, 13);
-            encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _), 4, 14);
-            let groups = MTLSize { width: total_q as usize, height: dims.num_heads as usize, depth: 1 };
-            let tpg = MTLSize { width: 1, height: 1, depth: 1 };
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&total_q as *const _ as *mut _),
+                4,
+                7,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&batch_size as *const _ as *mut _),
+                4,
+                8,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
+                4,
+                9,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
+                4,
+                10,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
+                4,
+                11,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
+                4,
+                12,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _),
+                4,
+                13,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
+                4,
+                14,
+            );
+            let groups = MTLSize {
+                width: total_q as usize,
+                height: dims.num_heads as usize,
+                depth: 1,
+            };
+            let tpg = MTLSize {
+                width: 1,
+                height: 1,
+                depth: 1,
+            };
             encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
             encoder.endEncoding();
         }
@@ -363,9 +516,16 @@ pub unsafe fn metal_forward_layer(
 
     // 6. O projection with residual: residual += attn_out × W_o
     encode_gemm_residual(
-        &cmd_buf, pipelines, buf,
-        scratch.attn_out, weights.o_proj_offset, residual_offset, residual_offset,
-        num_tokens, hidden, q_dim,
+        &cmd_buf,
+        pipelines,
+        buf,
+        scratch.attn_out,
+        weights.o_proj_offset,
+        residual_offset,
+        residual_offset,
+        num_tokens,
+        hidden,
+        q_dim,
     )?;
 
     // 7. Pre-FFN RMSNorm
@@ -373,7 +533,11 @@ pub unsafe fn metal_forward_layer(
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
-                rvllm_core::AppleCtx { backend: "metal", op: "ffn_norm", device: "apple-silicon" },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "ffn_norm",
+                    device: "apple-silicon",
+                },
             )
         })?;
         let pso = pipelines.get("rmsnorm_f16")?;
@@ -381,10 +545,26 @@ pub unsafe fn metal_forward_layer(
         encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
         encoder.setBuffer_offset_atIndex(Some(buf), scratch.normed_hidden, 1);
         encoder.setBuffer_offset_atIndex(Some(buf), weights.mlp_norm_offset, 2);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _), 4, 3);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.rms_eps as *const _ as *mut _), 4, 4);
-        let threads_per_group = MTLSize { width: 256, height: 1, depth: 1 };
-        let groups = MTLSize { width: num_tokens as usize, height: 1, depth: 1 };
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+            4,
+            3,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&dims.rms_eps as *const _ as *mut _),
+            4,
+            4,
+        );
+        let threads_per_group = MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        };
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        };
         encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
         encoder.endEncoding();
     }
@@ -392,10 +572,17 @@ pub unsafe fn metal_forward_layer(
     // 8. Gate||Up projection: normed_hidden × W_gate_up → gate_up_out
     let two_inter = 2 * dims.intermediate;
     encode_gemm(
-        &cmd_buf, pipelines, buf,
-        scratch.normed_hidden, weights.gate_up_offset, scratch.gate_up_out,
-        num_tokens, two_inter, hidden,
-        1.0, 0.0,
+        &cmd_buf,
+        pipelines,
+        buf,
+        scratch.normed_hidden,
+        weights.gate_up_offset,
+        scratch.gate_up_out,
+        num_tokens,
+        two_inter,
+        hidden,
+        1.0,
+        0.0,
     )?;
 
     // 9. GELU(gate) * up → activated
@@ -403,26 +590,53 @@ pub unsafe fn metal_forward_layer(
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
-                rvllm_core::AppleCtx { backend: "metal", op: "gelu_mul", device: "apple-silicon" },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "gelu_mul",
+                    device: "apple-silicon",
+                },
             )
         })?;
         let pso = pipelines.get("gelu_mul_f16")?;
         encoder.setComputePipelineState(pso);
         encoder.setBuffer_offset_atIndex(Some(buf), scratch.gate_up_out, 0);
         encoder.setBuffer_offset_atIndex(Some(buf), scratch.activated, 1);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _), 4, 2);
-        encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.intermediate as *const _ as *mut _), 4, 3);
-        let groups = MTLSize { width: num_tokens as usize, height: dims.intermediate as usize, depth: 1 };
-        let tpg = MTLSize { width: 1, height: 1, depth: 1 };
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+            4,
+            2,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&dims.intermediate as *const _ as *mut _),
+            4,
+            3,
+        );
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: dims.intermediate as usize,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        };
         encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
         encoder.endEncoding();
     }
 
     // 10. Down projection with residual: residual += activated × W_down
     encode_gemm_residual(
-        &cmd_buf, pipelines, buf,
-        scratch.activated, weights.down_proj_offset, residual_offset, residual_offset,
-        num_tokens, hidden, dims.intermediate,
+        &cmd_buf,
+        pipelines,
+        buf,
+        scratch.activated,
+        weights.down_proj_offset,
+        residual_offset,
+        residual_offset,
+        num_tokens,
+        hidden,
+        dims.intermediate,
     )?;
 
     cmd_buf.commit();
@@ -708,7 +922,11 @@ unsafe fn encode_split_qkv(
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx { backend: "metal", op: "split_qkv_encode", device: "apple-silicon" },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "split_qkv_encode",
+                device: "apple-silicon",
+            },
         )
     })?;
     let pso = pipelines.get("split_qkv_f16")?;
@@ -717,12 +935,32 @@ unsafe fn encode_split_qkv(
     encoder.setBuffer_offset_atIndex(Some(buf), q_offset, 1);
     encoder.setBuffer_offset_atIndex(Some(buf), k_offset, 2);
     encoder.setBuffer_offset_atIndex(Some(buf), v_offset, 3);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _), 4, 4);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&q_dim as *const _ as *mut _), 4, 5);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&kv_dim as *const _ as *mut _), 4, 6);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&q_dim as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&kv_dim as *const _ as *mut _),
+        4,
+        6,
+    );
     let max_dim = q_dim.saturating_add(2u32.saturating_mul(kv_dim));
-    let groups = MTLSize { width: num_tokens as usize, height: max_dim as usize, depth: 1 };
-    let tpg = MTLSize { width: 1, height: 1, depth: 1 };
+    let groups = MTLSize {
+        width: num_tokens as usize,
+        height: max_dim as usize,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 1,
+        height: 1,
+        depth: 1,
+    };
     encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
     Ok(())
@@ -809,8 +1047,7 @@ mod tests {
 
                     for d in 0..head_dim {
                         let v_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
-                        out[seq * q_dim + head * head_dim + d] +=
-                            weight * v_cache[v_idx].to_f32();
+                        out[seq * q_dim + head * head_dim + d] += weight * v_cache[v_idx].to_f32();
                     }
                 }
             }
@@ -947,7 +1184,12 @@ mod tests {
         );
     }
 
-    fn rmsnorm_ref(input: &[half::f16], gamma: &[half::f16], hidden: usize, eps: f32) -> Vec<half::f16> {
+    fn rmsnorm_ref(
+        input: &[half::f16],
+        gamma: &[half::f16],
+        hidden: usize,
+        eps: f32,
+    ) -> Vec<half::f16> {
         let mut out = Vec::with_capacity(input.len());
         for token in 0..(input.len() / hidden) {
             let base = token * hidden;
@@ -1077,7 +1319,11 @@ mod tests {
         let final_norm_region = arena.region("final_norm", final_norm.len() * half_bytes, 2)?;
         let lm_head_region = arena.region("lm_head", lm_head.len() * half_bytes, 2)?;
         let normed_region = arena.region("normed", residual.len() * half_bytes, 2)?;
-        let logits_region = arena.region("logits", (NUM_TOKENS as usize * VOCAB as usize) * half_bytes, 2)?;
+        let logits_region = arena.region(
+            "logits",
+            (NUM_TOKENS as usize * VOCAB as usize) * half_bytes,
+            2,
+        )?;
         let token_region = arena.region("tokens", (NUM_TOKENS as usize) * i32_bytes, 4)?;
 
         unsafe {
@@ -1183,8 +1429,13 @@ mod tests {
         let k_cache_region = arena.region("attn_decode_k", k_cache.len() * half_bytes, 2)?;
         let v_cache_region = arena.region("attn_decode_v", v_cache.len() * half_bytes, 2)?;
         let out_region = arena.region("attn_decode_out", q.len() * half_bytes, 2)?;
-        let block_table_region = arena.region("attn_decode_block_tables", block_tables.len() * i32_bytes, 4)?;
-        let context_region = arena.region("attn_decode_context", context_lens.len() * i32_bytes, 4)?;
+        let block_table_region = arena.region(
+            "attn_decode_block_tables",
+            block_tables.len() * i32_bytes,
+            4,
+        )?;
+        let context_region =
+            arena.region("attn_decode_context", context_lens.len() * i32_bytes, 4)?;
 
         unsafe {
             let q_ptr = arena.host_ptr(&q_region) as *mut half::f16;
@@ -1311,7 +1562,9 @@ mod tests {
             attn_scale,
         );
 
-        let got = unsafe { std::slice::from_raw_parts(arena.host_ptr(&out_region) as *const half::f16, q.len()) };
+        let got = unsafe {
+            std::slice::from_raw_parts(arena.host_ptr(&out_region) as *const half::f16, q.len())
+        };
         for i in 0..got.len() {
             assert!((got[i].to_f32() - expected[i]).abs() < 1e-2);
         }
@@ -1327,13 +1580,20 @@ unsafe fn encode_gemm(
     a_offset: usize,
     b_offset: usize,
     c_offset: usize,
-    m: u32, n: u32, k: u32,
-    alpha: f32, beta: f32,
+    m: u32,
+    n: u32,
+    k: u32,
+    alpha: f32,
+    beta: f32,
 ) -> Result<()> {
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx { backend: "metal", op: "gemm_encode", device: "apple-silicon" },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "gemm_encode",
+                device: "apple-silicon",
+            },
         )
     })?;
     let pso = pipelines.get("gemm_f16")?;
@@ -1341,18 +1601,46 @@ unsafe fn encode_gemm(
     encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
     encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
     encoder.setBuffer_offset_atIndex(Some(buf), c_offset, 2);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _), 4, 3);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&n as *const _ as *mut _), 4, 4);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _), 4, 5);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&alpha as *const _ as *mut _), 4, 6);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&beta as *const _ as *mut _), 4, 7);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&n as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&alpha as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&beta as *const _ as *mut _),
+        4,
+        7,
+    );
 
     let tile_m: usize = 8;
     let tile_n: usize = 8;
     let groups_x = (m as usize + tile_m - 1) / tile_m;
     let groups_y = (n as usize + tile_n - 1) / tile_n;
-    let groups = MTLSize { width: groups_x, height: groups_y, depth: 1 };
-    let tpg = MTLSize { width: tile_m, height: tile_n, depth: 1 };
+    let groups = MTLSize {
+        width: groups_x,
+        height: groups_y,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: tile_m,
+        height: tile_n,
+        depth: 1,
+    };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
     Ok(())
@@ -1367,12 +1655,18 @@ unsafe fn encode_gemm_residual(
     b_offset: usize,
     c_offset: usize,
     residual_offset: usize,
-    m: u32, n: u32, k: u32,
+    m: u32,
+    n: u32,
+    k: u32,
 ) -> Result<()> {
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx { backend: "metal", op: "gemm_res_encode", device: "apple-silicon" },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "gemm_res_encode",
+                device: "apple-silicon",
+            },
         )
     })?;
     let pso = pipelines.get("gemm_residual_f16")?;
@@ -1381,16 +1675,36 @@ unsafe fn encode_gemm_residual(
     encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
     encoder.setBuffer_offset_atIndex(Some(buf), c_offset, 2);
     encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 3);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _), 4, 4);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&n as *const _ as *mut _), 4, 5);
-    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _), 4, 6);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&n as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _),
+        4,
+        6,
+    );
 
     let tile_m: usize = 8;
     let tile_n: usize = 8;
     let groups_x = (m as usize + tile_m - 1) / tile_m;
     let groups_y = (n as usize + tile_n - 1) / tile_n;
-    let groups = MTLSize { width: groups_x, height: groups_y, depth: 1 };
-    let tpg = MTLSize { width: tile_m, height: tile_n, depth: 1 };
+    let groups = MTLSize {
+        width: groups_x,
+        height: groups_y,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: tile_m,
+        height: tile_n,
+        depth: 1,
+    };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
     Ok(())

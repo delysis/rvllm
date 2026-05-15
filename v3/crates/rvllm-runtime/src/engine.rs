@@ -10,10 +10,7 @@
 //! There is ONE codepath. Graph capture/replay is an implementation
 //! detail inside `step_launch`.
 
-use rvllm_core::{
-    ReqId, Result, RuntimeConfig, TokenId,
-    AppleError, AppleCtx,
-};
+use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RuntimeConfig, TokenId};
 
 use crate::scheduler::{BatchPlan, Scheduler};
 
@@ -25,6 +22,8 @@ pub struct StepOutput {
     pub finished: bool,
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+use crate::apple_metal_backend::{ModelMetalBackend, RuntimeMetalBackend, ToyMetalBackend};
 #[cfg(feature = "apple")]
 use rvllm_apple::{
     AppleAcceleratorTarget, AppleBackend, AppleBackendMode as AppleBackendModeImpl,
@@ -32,8 +31,6 @@ use rvllm_apple::{
 };
 #[cfg(feature = "apple")]
 use rvllm_apple::{ProductionAppleBackend, StubAppleBackend};
-#[cfg(all(feature = "apple", target_os = "macos"))]
-use crate::apple_metal_backend::{ModelMetalBackend, RuntimeMetalBackend, ToyMetalBackend};
 
 fn apple_ctx(op: &'static str) -> AppleCtx {
     AppleCtx {
@@ -127,47 +124,55 @@ impl Engine {
         #[cfg(feature = "apple")]
         if let Some(apple_plan) = &self.apple_runtime_plan {
             let Some(backend) = self.apple_backend.as_mut() else {
-                return Err(apple_unavailable_error("apple_backend_missing", "apple-runtime"));
+                return Err(apple_unavailable_error(
+                    "apple_backend_missing",
+                    "apple-runtime",
+                ));
             };
 
             enforce_apple_mode_availability(apple_plan)?;
 
-                    if backend_plan_is_enabled(apple_plan) {
-                        match &plan {
-                            BatchPlan::Prefill { .. } => {
-                                let kind = match_apple_mode_to_handoff_kind(apple_plan.mode);
-                                let handoff = crate::apple_bridge::handoff_from_prefill_plan(&plan, kind)?;
-                                // Keep prefill fully on-accelerator for now.
-                                apple_ticket = Some(backend.launch_prefill(&handoff)?);
-                            }
-                            BatchPlan::Decode { .. } => {
-                                let kind = match_apple_mode_to_handoff_kind(apple_plan.mode);
-                                if apple_plan.mode.requires_private_ane() {
-                                    let requested_bucket =
-                                        apple_plan.rollout_bucket.map(|b| rvllm_core::AppleRolloutBucket {
-                                            seqs: b.seqs,
-                                            tokens: b.tokens,
-                                        });
-                                    let bucket = crate::apple_bridge::rollout_bucket_for_decode_with_config(
-                                        &plan,
-                                        &requested_bucket,
-                                        apple_plan.rollout_tokens,
-                                    )?;
-                                    let handoff = crate::apple_bridge::handoff_from_decode_plan_with_bucket(
-                                        &plan,
-                                        kind,
-                                        Some(bucket),
-                                    )?;
-                                    apple_ticket = Some(backend.launch_rollout(&handoff, Some(bucket))?);
-                                } else {
-                                    let handoff = crate::apple_bridge::handoff_from_decode_plan(&plan, kind)?;
-                                    apple_ticket = Some(backend.launch_rollout(&handoff, None)?);
-                                }
-                            }
-                            BatchPlan::Idle => {}
+            if backend_plan_is_enabled(apple_plan) {
+                match &plan {
+                    BatchPlan::Prefill { .. } => {
+                        let kind = match_apple_mode_to_handoff_kind(apple_plan.mode);
+                        let handoff = crate::apple_bridge::handoff_from_prefill_plan(&plan, kind)?;
+                        // Keep prefill fully on-accelerator for now.
+                        apple_ticket = Some(backend.launch_prefill(&handoff)?);
+                    }
+                    BatchPlan::Decode { .. } => {
+                        let kind = match_apple_mode_to_handoff_kind(apple_plan.mode);
+                        if apple_plan.mode.requires_private_ane() {
+                            let requested_bucket =
+                                apple_plan
+                                    .rollout_bucket
+                                    .map(|b| rvllm_core::AppleRolloutBucket {
+                                        seqs: b.seqs,
+                                        tokens: b.tokens,
+                                    });
+                            let bucket =
+                                crate::apple_bridge::rollout_bucket_for_decode_with_config(
+                                    &plan,
+                                    &requested_bucket,
+                                    apple_plan.rollout_tokens,
+                                )?;
+                            let handoff =
+                                crate::apple_bridge::handoff_from_decode_plan_with_bucket(
+                                    &plan,
+                                    kind,
+                                    Some(bucket),
+                                )?;
+                            apple_ticket = Some(backend.launch_rollout(&handoff, Some(bucket))?);
+                        } else {
+                            let handoff =
+                                crate::apple_bridge::handoff_from_decode_plan(&plan, kind)?;
+                            apple_ticket = Some(backend.launch_rollout(&handoff, None)?);
                         }
                     }
+                    BatchPlan::Idle => {}
                 }
+            }
+        }
 
         Ok(PendingStep {
             engine: self,
@@ -199,11 +204,11 @@ impl<'e> PendingStep<'e> {
 
     pub fn collect(mut self) -> Result<Vec<StepOutput>> {
         let _plan = self.plan.take().expect("PendingStep::collect called twice");
-        
+
         let mut outputs = Vec::new();
         #[cfg(feature = "apple")]
         let mut decoded = Vec::<(ReqId, TokenId)>::new();
-        
+
         #[cfg(feature = "apple")]
         if let Some(ticket) = self.apple_ticket.take() {
             if let Some(backend) = &mut self.engine.apple_backend {
@@ -223,7 +228,7 @@ impl<'e> PendingStep<'e> {
         if !decoded.is_empty() {
             self.engine.scheduler.commit_decode(&decoded);
         }
-        
+
         Ok(outputs)
     }
 }
@@ -241,8 +246,8 @@ impl<'e> Drop for PendingStep<'e> {
 mod tests {
     use super::*;
     use crate::sched_state::Request;
-    use rvllm_core::{ReqId, TokenId};
     use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
+    use rvllm_core::{ReqId, TokenId};
 
     #[test]
     fn empty_engine_has_no_pending_work() {
@@ -269,7 +274,10 @@ mod tests {
         use rvllm_apple::AppleRuntimePlan;
 
         let plan = AppleRuntimePlan {
-            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name(
+                "Apple M4 Max",
+                1,
+            ),
             mode: rvllm_apple::plan::AppleBackendMode::MetalPrefillMetalDecode,
             rollout_bucket: None,
             rollout_tokens: 1,
@@ -289,8 +297,9 @@ mod tests {
             Err(e) => panic!("unexpected runtime plan error: {e}"),
         };
         let mut e = e;
-        e.scheduler.enqueue(Request::new(ReqId(1), vec![TokenId(0)], 1));
-        
+        e.scheduler
+            .enqueue(Request::new(ReqId(1), vec![TokenId(0)], 1));
+
         // 1. Prefill
         let t1 = e.step_launch().unwrap();
         let outputs1 = t1.collect().unwrap();
@@ -299,7 +308,11 @@ mod tests {
         // 2. Decode (Rollout)
         let t2 = e.step_launch().unwrap();
         let outputs2 = t2.collect().unwrap();
-        assert_eq!(outputs2.len(), 1, "Decode should return tokens from backend");
+        assert_eq!(
+            outputs2.len(),
+            1,
+            "Decode should return tokens from backend"
+        );
         assert_eq!(outputs2[0].new_token, TokenId(1));
     }
 
@@ -311,7 +324,10 @@ mod tests {
 
         let seed = TokenId(11);
         let plan = AppleRuntimePlan {
-            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name(
+                "Apple M4 Max",
+                1,
+            ),
             mode: rvllm_apple::plan::AppleBackendMode::MetalPrefillMetalDecode,
             rollout_bucket: None,
             rollout_tokens: 1,
@@ -334,8 +350,7 @@ mod tests {
             Err(e) => panic!("unexpected runtime plan error: {e}"),
         };
         let mut e = e;
-        e.scheduler
-            .enqueue(Request::new(ReqId(1), vec![seed], 2));
+        e.scheduler.enqueue(Request::new(ReqId(1), vec![seed], 2));
 
         let t1 = e.step_launch().unwrap();
         let outputs1 = t1.collect().unwrap();
@@ -343,7 +358,11 @@ mod tests {
 
         let t2 = e.step_launch().unwrap();
         let outputs2 = t2.collect().unwrap();
-        assert_eq!(outputs2.len(), 1, "Decode should return tokens from Metal backend");
+        assert_eq!(
+            outputs2.len(),
+            1,
+            "Decode should return tokens from Metal backend"
+        );
         assert_eq!(outputs2[0].new_token, seed);
     }
 
@@ -352,7 +371,10 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     fn private_ane_mode_fails_closed_without_ane_target() {
         let plan = AppleRuntimePlan {
-            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name(
+                "Apple M4 Max",
+                1,
+            ),
             mode: rvllm_apple::plan::AppleBackendMode::MetalPrefillAneFfnRollout,
             rollout_bucket: Some(rvllm_apple::plan::RolloutBucket { seqs: 4, tokens: 4 }),
             rollout_tokens: 1,
@@ -371,7 +393,8 @@ mod tests {
             Err(e) => panic!("unexpected runtime plan error: {e}"),
         };
         let mut e = e;
-        e.scheduler.enqueue(Request::new(ReqId(1), vec![TokenId(10)], 4));
+        e.scheduler
+            .enqueue(Request::new(ReqId(1), vec![TokenId(10)], 4));
 
         let t1 = e.step_launch().unwrap();
         let _ = t1.collect().unwrap();
@@ -389,16 +412,16 @@ mod tests {
 
 #[cfg(feature = "apple")]
 fn backend_plan_is_enabled(plan: &AppleRuntimePlan) -> bool {
-    !matches!(
-        plan.mode,
-        AppleBackendModeImpl::MlxPrototype
-    )
+    !matches!(plan.mode, AppleBackendModeImpl::MlxPrototype)
 }
 
 #[cfg(feature = "apple")]
 fn enforce_apple_mode_availability(plan: &AppleRuntimePlan) -> Result<()> {
     if plan.mode.requires_private_ane() && !cfg!(target_os = "macos") {
-        return Err(apple_unavailable_error("private_ane_unavailable", "private-ane"));
+        return Err(apple_unavailable_error(
+            "private_ane_unavailable",
+            "private-ane",
+        ));
     }
     if plan.mode.requires_private_ane() && plan.target.ane_cores == 0 {
         return Err(apple_unavailable_error("ane_cores", "private-ane"));
@@ -408,10 +431,13 @@ fn enforce_apple_mode_availability(plan: &AppleRuntimePlan) -> Result<()> {
 
 #[cfg(feature = "apple")]
 fn runtime_to_apple_plan(
-        target: &AppleAcceleratorTarget,
-        runtime: &RuntimeConfig,
+    target: &AppleAcceleratorTarget,
+    runtime: &RuntimeConfig,
 ) -> Result<Option<AppleRuntimePlan>> {
-    if matches!(runtime.apple_backend_mode(), rvllm_core::AppleBackendMode::Disabled) {
+    if matches!(
+        runtime.apple_backend_mode(),
+        rvllm_core::AppleBackendMode::Disabled
+    ) {
         return Ok(None);
     }
     let mode = match runtime.apple_backend_mode() {
@@ -470,7 +496,10 @@ fn default_apple_backend_for_plan(plan: &AppleRuntimePlan) -> Result<Box<dyn App
         if std::env::var("RVLLM_APPLE_TOY_METAL").ok().as_deref() == Some("1") {
             return Ok(Box::new(ToyMetalBackend::new()));
         }
-        Err(apple_unavailable_error("metal_model_dir_required", "apple-metal"))
+        Err(apple_unavailable_error(
+            "metal_model_dir_required",
+            "apple-metal",
+        ))
     }
     #[cfg(not(all(feature = "apple", target_os = "macos")))]
     {
@@ -482,9 +511,9 @@ fn default_apple_backend_for_plan(plan: &AppleRuntimePlan) -> Result<Box<dyn App
 #[cfg(feature = "apple")]
 fn match_apple_mode_to_handoff_kind(mode: AppleBackendModeImpl) -> HandoffKind {
     match mode {
-        AppleBackendModeImpl::MetalOnly | AppleBackendModeImpl::MlxPrototype | AppleBackendModeImpl::MetalPrefillMetalDecode => {
-            HandoffKind::MetalPrefillToMetalDecode
-        }
+        AppleBackendModeImpl::MetalOnly
+        | AppleBackendModeImpl::MlxPrototype
+        | AppleBackendModeImpl::MetalPrefillMetalDecode => HandoffKind::MetalPrefillToMetalDecode,
         AppleBackendModeImpl::MetalPrefillAneFfnRollout => HandoffKind::MetalPrefillToAneFfnRollout,
         AppleBackendModeImpl::MetalPrefillAneRolloutExperimental => {
             HandoffKind::MetalPrefillToAneRolloutExperimental

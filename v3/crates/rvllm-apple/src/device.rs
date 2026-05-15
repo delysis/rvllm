@@ -195,7 +195,10 @@ mod tests {
     #[test]
     fn m10_does_not_match_m1() {
         assert_eq!(detect_gpu_family("Apple M10 Max"), AppleGpuFamily::Unknown);
-        assert_eq!(detect_npu_generation("Apple M10 Max"), AppleNpuGeneration::Unknown);
+        assert_eq!(
+            detect_npu_generation("Apple M10 Max"),
+            AppleNpuGeneration::Unknown
+        );
     }
 
     #[test]

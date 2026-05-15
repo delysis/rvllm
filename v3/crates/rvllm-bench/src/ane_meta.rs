@@ -170,9 +170,10 @@ impl AppleCliProfile {
 }
 
 fn parse_side_by_side(name: &str) -> Option<Value> {
-    std::env::var(name).ok().and_then(|raw| serde_json::from_str(&raw).ok())
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
 }
-
 
 fn ane_fallback_label(policy: AneFallbackPolicy) -> &'static str {
     match policy {
@@ -191,7 +192,10 @@ fn parse_bool(v: &str) -> Option<bool> {
 }
 
 fn env_bool(name: &str) -> bool {
-    std::env::var(name).ok().and_then(|v| parse_bool(&v)).unwrap_or(false)
+    std::env::var(name)
+        .ok()
+        .and_then(|v| parse_bool(&v))
+        .unwrap_or(false)
 }
 
 fn env_u32_opt(name: &str) -> Option<u32> {
@@ -229,17 +233,24 @@ fn parse_ane_fallback() -> AneFallbackPolicy {
 }
 
 fn env_apple_mode() -> Option<AppleBackendMode> {
-    let mode = std::env::var("RVLLM_APPLE_MODE").ok()?.trim().to_lowercase();
+    let mode = std::env::var("RVLLM_APPLE_MODE")
+        .ok()?
+        .trim()
+        .to_lowercase();
     let parsed = match mode.as_str() {
         "disabled" | "off" => AppleBackendMode::Disabled,
         "metal-only" | "metal_only" | "metalonly" => AppleBackendMode::MetalOnly,
         "metal-prefill-metal-decode" | "metal_prefill_metal_decode" | "metalprefillmetaldecode" => {
             AppleBackendMode::MetalPrefillMetalDecode
         }
-        "ane-ffn" | "ane-fn" | "metal-prefill-ane-ffn-rollout" | "metal_prefill_ane_ffn_rollout" => {
-            AppleBackendMode::MetalPrefillAneFfnRollout
-        }
-        "ane-experimental" | "ane-exp" | "metal-prefill-ane-rollout-experimental" | "metal_prefill_ane_rollout_experimental" => {
+        "ane-ffn"
+        | "ane-fn"
+        | "metal-prefill-ane-ffn-rollout"
+        | "metal_prefill_ane_ffn_rollout" => AppleBackendMode::MetalPrefillAneFfnRollout,
+        "ane-experimental"
+        | "ane-exp"
+        | "metal-prefill-ane-rollout-experimental"
+        | "metal_prefill_ane_rollout_experimental" => {
             AppleBackendMode::MetalPrefillAneRolloutExperimental
         }
         _ => return None,

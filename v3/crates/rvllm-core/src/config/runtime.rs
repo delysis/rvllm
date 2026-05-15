@@ -1,8 +1,8 @@
 //! Frozen runtime configuration. Only constructible via
 //! `RuntimeConfigBuilder::build(&model)` in `builder.rs`.
 
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AneComputeProfile {
@@ -63,7 +63,10 @@ impl AppleBackendMode {
 
     #[must_use]
     pub const fn requires_rollout(self) -> bool {
-        matches!(self, Self::MetalPrefillAneFfnRollout | Self::MetalPrefillAneRolloutExperimental)
+        matches!(
+            self,
+            Self::MetalPrefillAneFfnRollout | Self::MetalPrefillAneRolloutExperimental
+        )
     }
 }
 

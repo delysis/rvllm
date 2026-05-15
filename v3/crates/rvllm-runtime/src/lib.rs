@@ -21,12 +21,14 @@ pub mod layer_exec;
 pub mod sched_state;
 pub mod scheduler;
 
-pub use bring_up::{Bringup, EnginePaths, FusedModules, PplResult};
-pub use engine::{Engine, PendingStep, StepOutput};
 #[cfg(feature = "apple")]
-pub use apple_bridge::{handoff_from_decode_plan, handoff_from_prefill_plan, rollout_bucket_for_decode};
+pub use apple_bridge::{
+    handoff_from_decode_plan, handoff_from_prefill_plan, rollout_bucket_for_decode,
+};
 #[cfg(feature = "apple")]
 pub use apple_metal_backend::RuntimeMetalBackend;
+pub use bring_up::{Bringup, EnginePaths, FusedModules, PplResult};
+pub use engine::{Engine, PendingStep, StepOutput};
 pub use layer_exec::{forward, LayerDims};
 pub use sched_state::{ReqState, Request};
 pub use scheduler::{bucket_for, BatchPlan, Scheduler, DECODE_BUCKETS};

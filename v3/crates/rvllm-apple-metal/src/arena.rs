@@ -10,7 +10,11 @@ use objc2_metal::{MTLBuffer, MTLDevice, MTLResourceOptions};
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 
 fn ctx(op: &'static str) -> AppleCtx {
-    AppleCtx { backend: "metal-arena", op, device: "apple-silicon" }
+    AppleCtx {
+        backend: "metal-arena",
+        op,
+        device: "apple-silicon",
+    }
 }
 
 /// A named sub-region within the arena buffer.
@@ -41,7 +45,9 @@ impl MetalBufferArena {
             .newBufferWithLength_options(capacity_bytes, MTLResourceOptions::empty())
             .ok_or_else(|| {
                 RvllmError::apple(
-                    AppleError::IoSurfaceFailed { bytes: capacity_bytes },
+                    AppleError::IoSurfaceFailed {
+                        bytes: capacity_bytes,
+                    },
                     ctx("alloc"),
                 )
             })?;
@@ -108,25 +114,37 @@ impl MetalBufferArena {
 
     /// Get the underlying MTLBuffer for binding to compute encoders.
     #[inline]
-    pub fn buffer(&self) -> &ProtocolObject<dyn MTLBuffer> { &*self.buffer }
+    pub fn buffer(&self) -> &ProtocolObject<dyn MTLBuffer> {
+        &*self.buffer
+    }
 
     #[inline]
-    pub fn buffer_retained(&self) -> &Retained<ProtocolObject<dyn MTLBuffer>> { &self.buffer }
+    pub fn buffer_retained(&self) -> &Retained<ProtocolObject<dyn MTLBuffer>> {
+        &self.buffer
+    }
 
     /// Total bytes allocated so far.
     #[inline]
-    pub fn allocated(&self) -> usize { self.cursor }
+    pub fn allocated(&self) -> usize {
+        self.cursor
+    }
 
     /// Total capacity.
     #[inline]
-    pub fn capacity(&self) -> usize { self.capacity }
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
 
     /// Remaining bytes.
     #[inline]
-    pub fn remaining(&self) -> usize { self.capacity - self.cursor }
+    pub fn remaining(&self) -> usize {
+        self.capacity - self.cursor
+    }
 
     /// List all allocated regions (for debugging/audit).
-    pub fn regions(&self) -> &[MetalRegion] { &self.regions }
+    pub fn regions(&self) -> &[MetalRegion] {
+        &self.regions
+    }
 
     /// Reset the arena (reuse for a different model/config).
     pub fn reset(&mut self) {

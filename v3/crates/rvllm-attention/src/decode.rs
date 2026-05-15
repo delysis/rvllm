@@ -325,8 +325,7 @@ impl<'a> PagedDecodeFp8Launcher<'a> {
                     const FA2_BC: i32 = 16;
                     let hd = params.head_dim as i32;
                     let kernel_fn = fa2.fn_decode_fp8kv;
-                    let smem_bytes =
-                        2 * FA2_BC * hd * 4 + FA2_BC * 4 + (FA2_THREADS / 32) * 4;
+                    let smem_bytes = 2 * FA2_BC * hd * 4 + FA2_BC * 4 + (FA2_THREADS / 32) * 4;
                     if smem_bytes as u32 >= 48 * 1024 {
                         let _ = cuFuncSetAttribute(
                             kernel_fn.raw() as CUfunction,
@@ -461,9 +460,20 @@ impl<'a> PagedDecodeFp8Launcher<'a> {
         #[cfg(not(feature = "cuda"))]
         {
             let _ = (
-                o_f16, q_fp8, k_cache_fp8, v_cache_fp8, block_tables, context_lens,
-                workspace, q_descale_ptr, k_descale_fallback_ptr, v_descale_fallback_ptr,
-                k_scale_cache, v_scale_cache, q_scale_cache, stream,
+                o_f16,
+                q_fp8,
+                k_cache_fp8,
+                v_cache_fp8,
+                block_tables,
+                context_lens,
+                workspace,
+                q_descale_ptr,
+                k_descale_fallback_ptr,
+                v_descale_fallback_ptr,
+                k_scale_cache,
+                v_scale_cache,
+                q_scale_cache,
+                stream,
             );
         }
         Ok(())

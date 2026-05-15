@@ -1,5 +1,5 @@
-use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
 use crate::plan::RolloutBucket;
+use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -133,8 +133,10 @@ impl HandoffCapsule {
         if !self.cu_seqlens.windows(2).all(|w| w[0] <= w[1]) {
             return Err(self.err("cu_seqlens must be monotonic"));
         }
-        for (req_id, (&position, &context_len)) in
-            self.req_ids.iter().zip(self.positions.iter().zip(self.context_lens.iter()))
+        for (req_id, (&position, &context_len)) in self
+            .req_ids
+            .iter()
+            .zip(self.positions.iter().zip(self.context_lens.iter()))
         {
             let _ = req_id;
             if context_len == 0 {

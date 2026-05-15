@@ -29,20 +29,20 @@
 //!   RVLLM_APPLE_COMPILE_REASON     = optional compile fail reason
 //!   RVLLM_SIDE_BY_SIDE_CUDA       = one-line JSON with baseline CUDA metrics
 //!   RVLLM_SIDE_BY_SIDE_XLA        = one-line JSON with baseline XLA metrics
-//! 
+//!
 //! Prints JSON records with enriched metadata:
 //!   {batch,iters,tok_per_sec,ms_per_step,[ttft],backend,backend_profile,side_by_side}
 
 mod ane_meta;
 
-use std::fs::{OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use rvllm_core::{AneFallbackPolicy, ModelArch as HfModelArch, ModelConfig};
-use rvllm_runtime::{Bringup, EnginePaths};
 use rvllm_runtime::gemma4_bring_up::{Gemma4Bringup, Gemma4EnginePaths};
+use rvllm_runtime::{Bringup, EnginePaths};
 use serde_json::{json, Value};
 
 use ane_meta::{AppleCliProfile, BackendProfile};
@@ -172,8 +172,8 @@ fn run() -> Result<(), String> {
         return run_sweep(&br, batch, iters, warmup);
     }
 
-    let result = unsafe { br.run_bench(batch, iters, warmup) }
-        .map_err(|e| format!("run_bench: {e}"))?;
+    let result =
+        unsafe { br.run_bench(batch, iters, warmup) }.map_err(|e| format!("run_bench: {e}"))?;
     print_result(&profile, result, load_ms, false)
 }
 
@@ -260,7 +260,10 @@ fn print_result(
         log.push("rvllm_bench_records.jsonl");
         append_record_to_file(log, &record)?;
     }
-    println!("{}", serde_json::to_string(&record).map_err(|e| format!("serialize json: {e}"))?);
+    println!(
+        "{}",
+        serde_json::to_string(&record).map_err(|e| format!("serialize json: {e}"))?
+    );
     Ok(())
 }
 
@@ -287,7 +290,9 @@ fn backend_entry(
 }
 
 fn append_record_to_file(path: PathBuf, record: &Value) -> Result<(), String> {
-    let dir = path.parent().ok_or_else(|| "invalid RVLLM_BENCH_LOG_DIR".to_string())?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| "invalid RVLLM_BENCH_LOG_DIR".to_string())?;
     std::fs::create_dir_all(dir).map_err(|e| format!("create log dir {}: {e}", dir.display()))?;
     let mut fp = OpenOptions::new()
         .create(true)
@@ -311,7 +316,8 @@ fn run_sweep(br: &Bringup, batch: u32, iters: u32, warmup: u32) -> Result<(), St
     for &nr in nonres {
         for &r in residuals {
             let ck = br.arena.checkpoint();
-            let res = unsafe { br.run_bench_with_variants(batch, iters, warmup, Some(nr), Some(r)) };
+            let res =
+                unsafe { br.run_bench_with_variants(batch, iters, warmup, Some(nr), Some(r)) };
             unsafe { br.arena.restore(ck) };
             match res {
                 Ok(r_) => {
@@ -339,6 +345,11 @@ fn run_sweep(br: &Bringup, batch: u32, iters: u32, warmup: u32) -> Result<(), St
             }
         }
     }
-    eprintln!("BEST: nonres={} res={} ({:.3} ms/step)", best.1, best.2, best.0 as f64 / 1.0e6);
+    eprintln!(
+        "BEST: nonres={} res={} ({:.3} ms/step)",
+        best.1,
+        best.2,
+        best.0 as f64 / 1.0e6
+    );
     Ok(())
 }

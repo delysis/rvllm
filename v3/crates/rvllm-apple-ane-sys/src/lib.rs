@@ -22,15 +22,31 @@ mod platform {
             output_indices: &[u64],
             procedure_index: u64,
         ) -> Option<Self> {
-            let ns_inputs = create_ns_array(&inputs.iter().map(|s| s.inner.clone()).collect::<Vec<_>>());
-            let ns_input_indices =
-                create_ns_array(&input_indices.iter().map(|&i| create_ns_number_u64(i)).collect::<Vec<_>>());
-            let ns_outputs = create_ns_array(&outputs.iter().map(|s| s.inner.clone()).collect::<Vec<_>>());
-            let ns_output_indices =
-                create_ns_array(&output_indices.iter().map(|&i| create_ns_number_u64(i)).collect::<Vec<_>>());
+            let ns_inputs =
+                create_ns_array(&inputs.iter().map(|s| s.inner.clone()).collect::<Vec<_>>());
+            let ns_input_indices = create_ns_array(
+                &input_indices
+                    .iter()
+                    .map(|&i| create_ns_number_u64(i))
+                    .collect::<Vec<_>>(),
+            );
+            let ns_outputs =
+                create_ns_array(&outputs.iter().map(|s| s.inner.clone()).collect::<Vec<_>>());
+            let ns_output_indices = create_ns_array(
+                &output_indices
+                    .iter()
+                    .map(|&i| create_ns_number_u64(i))
+                    .collect::<Vec<_>>(),
+            );
 
-            create_ane_request(&ns_inputs, &ns_input_indices, &ns_outputs, &ns_output_indices, procedure_index)
-                .map(|inner| Self { inner })
+            create_ane_request(
+                &ns_inputs,
+                &ns_input_indices,
+                &ns_outputs,
+                &ns_output_indices,
+                procedure_index,
+            )
+            .map(|inner| Self { inner })
         }
     }
 

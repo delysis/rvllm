@@ -1,11 +1,14 @@
-use std::ffi::CString;
-use objc2::{class, msg_send, msg_send_id};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
+use objc2::{class, msg_send, msg_send_id};
+use std::ffi::CString;
 
 // Load the frameworks into the process.
 pub fn load_frameworks() -> Result<(), String> {
-    let ane_path = CString::new("/System/Library/PrivateFrameworks/AppleNeuralEngine.framework/AppleNeuralEngine").unwrap();
+    let ane_path = CString::new(
+        "/System/Library/PrivateFrameworks/AppleNeuralEngine.framework/AppleNeuralEngine",
+    )
+    .unwrap();
     let ane_handle = unsafe { libc::dlopen(ane_path.as_ptr(), libc::RTLD_LAZY) };
     if ane_handle.is_null() {
         return Err("Failed to dlopen AppleNeuralEngine.framework".to_string());
@@ -29,17 +32,13 @@ pub fn coreml_compile_model(model_url_path: &str) -> Result<String, String> {
     let cls_nsstring = class!(NSString);
 
     let path_str = std::ffi::CString::new(model_url_path).unwrap();
-    let ns_path: *mut AnyObject = unsafe {
-        msg_send![cls_nsstring, stringWithUTF8String: path_str.as_ptr()]
-    };
-    let url: *mut AnyObject = unsafe {
-        msg_send![cls_url, fileURLWithPath: ns_path]
-    };
+    let ns_path: *mut AnyObject =
+        unsafe { msg_send![cls_nsstring, stringWithUTF8String: path_str.as_ptr()] };
+    let url: *mut AnyObject = unsafe { msg_send![cls_url, fileURLWithPath: ns_path] };
 
     let mut error: *mut AnyObject = std::ptr::null_mut();
-    let compiled_url: *mut AnyObject = unsafe {
-        msg_send![cls_model, compileModelAtURL: url, error: &mut error]
-    };
+    let compiled_url: *mut AnyObject =
+        unsafe { msg_send![cls_model, compileModelAtURL: url, error: &mut error] };
 
     if compiled_url.is_null() {
         if !error.is_null() {
@@ -57,22 +56,24 @@ pub fn coreml_compile_model(model_url_path: &str) -> Result<String, String> {
 
     let path_ns: *mut AnyObject = unsafe { msg_send![compiled_url, path] };
     let path_utf8: *const std::ffi::c_char = unsafe { msg_send![path_ns, UTF8String] };
-    let path = unsafe { std::ffi::CStr::from_ptr(path_utf8) }.to_string_lossy().into_owned();
-    
+    let path = unsafe { std::ffi::CStr::from_ptr(path_utf8) }
+        .to_string_lossy()
+        .into_owned();
+
     Ok(path)
 }
 
-pub fn compile_model_with_ane_client(model_url_path: &str, client: &Retained<AnyObject>) -> Result<String, String> {
+pub fn compile_model_with_ane_client(
+    model_url_path: &str,
+    client: &Retained<AnyObject>,
+) -> Result<String, String> {
     let cls_url = class!(NSURL);
     let cls_nsstring = class!(NSString);
 
     let path_str = std::ffi::CString::new(model_url_path).unwrap();
-    let ns_path: *mut AnyObject = unsafe {
-        msg_send![cls_nsstring, stringWithUTF8String: path_str.as_ptr()]
-    };
-    let url: *mut AnyObject = unsafe {
-        msg_send![cls_url, fileURLWithPath: ns_path]
-    };
+    let ns_path: *mut AnyObject =
+        unsafe { msg_send![cls_nsstring, stringWithUTF8String: path_str.as_ptr()] };
+    let url: *mut AnyObject = unsafe { msg_send![cls_url, fileURLWithPath: ns_path] };
 
     let mut error: *mut AnyObject = std::ptr::null_mut();
     let compiled_url: Option<Retained<AnyObject>> = unsafe {
@@ -96,44 +97,44 @@ pub fn compile_model_with_ane_client(model_url_path: &str, client: &Retained<Any
     let compiled_url = compiled_url.unwrap();
     let path_ns: *mut AnyObject = unsafe { msg_send![&compiled_url, path] };
     let path_utf8: *const std::ffi::c_char = unsafe { msg_send![path_ns, UTF8String] };
-    let path = unsafe { std::ffi::CStr::from_ptr(path_utf8) }.to_string_lossy().into_owned();
-    
+    let path = unsafe { std::ffi::CStr::from_ptr(path_utf8) }
+        .to_string_lossy()
+        .into_owned();
+
     Ok(path)
 }
 
 pub fn create_ane_options() -> Retained<AnyObject> {
     let cls_dict = class!(NSDictionary);
     let cls_string = class!(NSString);
-    
-    let key: *mut AnyObject = unsafe { msg_send![cls_string, stringWithUTF8String: "ForceEspresso\0".as_ptr() as *const i8] };
-    let val: *mut AnyObject = unsafe { msg_send![class!(NSNumber), numberWithBool: true] };
-    
-    let dict: Retained<AnyObject> = unsafe {
-        msg_send_id![cls_dict, dictionaryWithObject: val, forKey: key]
+
+    let key: *mut AnyObject = unsafe {
+        msg_send![cls_string, stringWithUTF8String: "ForceEspresso\0".as_ptr() as *const i8]
     };
+    let val: *mut AnyObject = unsafe { msg_send![class!(NSNumber), numberWithBool: true] };
+
+    let dict: Retained<AnyObject> =
+        unsafe { msg_send_id![cls_dict, dictionaryWithObject: val, forKey: key] };
     dict
 }
 
-pub fn compile_and_load_ane_model(compiled_url_path: &str, client: &Retained<AnyObject>) -> Option<Retained<AnyObject>> {
+pub fn compile_and_load_ane_model(
+    compiled_url_path: &str,
+    client: &Retained<AnyObject>,
+) -> Option<Retained<AnyObject>> {
     let cls_model = class!(_ANEModel);
     let cls_url = class!(NSURL);
     let cls_nsstring = class!(NSString);
 
     let path_str = std::ffi::CString::new(compiled_url_path).unwrap();
-    let ns_path: *mut AnyObject = unsafe {
-        msg_send![cls_nsstring, stringWithUTF8String: path_str.as_ptr()]
-    };
-    let url: *mut AnyObject = unsafe {
-        msg_send![cls_url, fileURLWithPath: ns_path]
-    };
+    let ns_path: *mut AnyObject =
+        unsafe { msg_send![cls_nsstring, stringWithUTF8String: path_str.as_ptr()] };
+    let url: *mut AnyObject = unsafe { msg_send![cls_url, fileURLWithPath: ns_path] };
     let key_str = std::ffi::CString::new("rvllm_key").unwrap();
-    let ns_key: *mut AnyObject = unsafe {
-        msg_send![cls_nsstring, stringWithUTF8String: key_str.as_ptr()]
-    };
+    let ns_key: *mut AnyObject =
+        unsafe { msg_send![cls_nsstring, stringWithUTF8String: key_str.as_ptr()] };
 
-    let model: *mut AnyObject = unsafe {
-        msg_send![cls_model, alloc]
-    };
+    let model: *mut AnyObject = unsafe { msg_send![cls_model, alloc] };
     let model: *mut AnyObject = unsafe {
         msg_send![model, initWithModelAtURL: url, key: ns_key, identifierSource: 1_i64, cacheURLIdentifier: std::ptr::null_mut::<AnyObject>(), modelAttributes: std::ptr::null_mut::<AnyObject>(), standardizeURL: true]
     };
@@ -165,7 +166,11 @@ pub fn compile_and_load_ane_model(compiled_url_path: &str, client: &Retained<Any
     Some(unsafe { Retained::retain(model).unwrap() })
 }
 
-pub fn create_ane_iosurface(width: usize, height: usize, pixel_size: usize) -> Option<Retained<AnyObject>> {
+pub fn create_ane_iosurface(
+    width: usize,
+    height: usize,
+    pixel_size: usize,
+) -> Option<Retained<AnyObject>> {
     let cls = class!(_ANEIOSurfaceObject);
     let obj: *mut AnyObject = unsafe {
         msg_send![cls, createIOSurfaceWithWidth: width, pixel_size: pixel_size, height: height]
@@ -182,9 +187,9 @@ pub fn get_iosurface_from_object(obj: &Retained<AnyObject>) -> *mut std::ffi::c_
 }
 
 pub fn create_ane_request(
-    inputs: &Retained<AnyObject>,      // NSArray of _ANEIOSurfaceObject
-    input_indices: &Retained<AnyObject>, // NSArray of NSNumber
-    outputs: &Retained<AnyObject>,     // NSArray of _ANEIOSurfaceObject
+    inputs: &Retained<AnyObject>,         // NSArray of _ANEIOSurfaceObject
+    input_indices: &Retained<AnyObject>,  // NSArray of NSNumber
+    outputs: &Retained<AnyObject>,        // NSArray of _ANEIOSurfaceObject
     output_indices: &Retained<AnyObject>, // NSArray of NSNumber
     procedure_index: u64,
 ) -> Option<Retained<AnyObject>> {
@@ -243,9 +248,7 @@ pub fn get_ane_surface_from_id(id: u32) -> Option<Retained<AnyObject>> {
         return None;
     }
     let cls = class!(_ANEIOSurfaceObject);
-    let obj: *mut AnyObject = unsafe {
-        msg_send![cls, objectWithIOSurface: surface]
-    };
+    let obj: *mut AnyObject = unsafe { msg_send![cls, objectWithIOSurface: surface] };
     if obj.is_null() {
         None
     } else {
@@ -263,20 +266,23 @@ mod tests {
         let client = get_ane_client();
         println!("Got ANEClient: {:?}", client);
         assert!(client.is_some());
-        
+
         let dump_class = |cls_name: &str| {
             let cstr = std::ffi::CString::new(cls_name).unwrap();
             let cls = unsafe { objc2::runtime::AnyClass::get(&cstr) };
             if let Some(cls) = cls {
                 println!("\n--- Instance Methods for {} ---", cls_name);
                 let mut count = 0;
-                let methods = unsafe { objc2::ffi::class_copyMethodList(cls as *const _ as *mut _, &mut count) };
+                let methods = unsafe {
+                    objc2::ffi::class_copyMethodList(cls as *const _ as *mut _, &mut count)
+                };
                 if !methods.is_null() {
                     for i in 0..count {
                         let m = unsafe { *methods.add(i as usize) };
                         let sel = unsafe { objc2::ffi::method_getName(m) };
                         if let Some(sel) = sel {
-                            let sel_name = unsafe { std::ffi::CStr::from_ptr(objc2::ffi::sel_getName(sel)) };
+                            let sel_name =
+                                unsafe { std::ffi::CStr::from_ptr(objc2::ffi::sel_getName(sel)) };
                             println!("Method: {}", sel_name.to_string_lossy());
                         }
                     }
@@ -286,13 +292,16 @@ mod tests {
                 println!("\n--- Class Methods for {} ---", cls_name);
                 let meta_cls = unsafe { objc2::ffi::object_getClass(cls as *const _ as *mut _) };
                 let mut count = 0;
-                let methods = unsafe { objc2::ffi::class_copyMethodList(meta_cls as *const _ as *mut _, &mut count) };
+                let methods = unsafe {
+                    objc2::ffi::class_copyMethodList(meta_cls as *const _ as *mut _, &mut count)
+                };
                 if !methods.is_null() {
                     for i in 0..count {
                         let m = unsafe { *methods.add(i as usize) };
                         let sel = unsafe { objc2::ffi::method_getName(m) };
                         if let Some(sel) = sel {
-                            let sel_name = unsafe { std::ffi::CStr::from_ptr(objc2::ffi::sel_getName(sel)) };
+                            let sel_name =
+                                unsafe { std::ffi::CStr::from_ptr(objc2::ffi::sel_getName(sel)) };
                             println!("Class Method: {}", sel_name.to_string_lossy());
                         }
                     }
@@ -321,21 +330,26 @@ mod tests {
         }
         let compiled_path = coreml_compile_model(mil_path).unwrap();
         println!("Public compiled path: {}", compiled_path);
-        
+
         // Try loading it with MLModel
         let cls_model = class!(MLModel);
         let cls_url = class!(NSURL);
         let ns_path = std::ffi::CString::new(compiled_path.clone()).unwrap();
-        let ns_path_obj: *mut AnyObject = unsafe { msg_send![class!(NSString), stringWithUTF8String: ns_path.as_ptr()] };
+        let ns_path_obj: *mut AnyObject =
+            unsafe { msg_send![class!(NSString), stringWithUTF8String: ns_path.as_ptr()] };
         let url: *mut AnyObject = unsafe { msg_send![cls_url, fileURLWithPath: ns_path_obj] };
-        
+
         let mut error: *mut AnyObject = std::ptr::null_mut();
-        let model: *mut AnyObject = unsafe { msg_send![cls_model, modelWithContentsOfURL: url, error: &mut error] };
-        
+        let model: *mut AnyObject =
+            unsafe { msg_send![cls_model, modelWithContentsOfURL: url, error: &mut error] };
+
         if model.is_null() {
             let desc: *mut AnyObject = unsafe { msg_send![error, localizedDescription] };
             let utf8: *const std::ffi::c_char = unsafe { msg_send![desc, UTF8String] };
-            println!("MLModel load failed: {}", unsafe { std::ffi::CStr::from_ptr(utf8) }.to_string_lossy());
+            println!(
+                "MLModel load failed: {}",
+                unsafe { std::ffi::CStr::from_ptr(utf8) }.to_string_lossy()
+            );
         } else {
             println!("MLModel load SUCCESS!");
         }

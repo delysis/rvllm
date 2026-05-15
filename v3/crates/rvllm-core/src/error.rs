@@ -160,46 +160,99 @@ pub enum CutlassError {
     /// follow-up). Bring-up itself succeeds; only launches into the
     /// absent backend fail, and fail closed with this typed error
     /// instead of a silent miscomputation.
-    FeatureNotAvailable { op: &'static str },
+    FeatureNotAvailable {
+        op: &'static str,
+    },
 }
 
 #[derive(Debug)]
 pub enum AttentionError {
-    Fa3SoMissing { path: PathBuf },
-    UnsupportedHeadDim { got: u32, supported: &'static [u32] },
-    GqaRatioInvalid { num_heads: u32, num_kv_heads: u32 },
-    ContextExceedsBucket { context: u32, max: u32 },
-    KernelLaunchFailed { cuda: CudaErrorKind },
+    Fa3SoMissing {
+        path: PathBuf,
+    },
+    UnsupportedHeadDim {
+        got: u32,
+        supported: &'static [u32],
+    },
+    GqaRatioInvalid {
+        num_heads: u32,
+        num_kv_heads: u32,
+    },
+    ContextExceedsBucket {
+        context: u32,
+        max: u32,
+    },
+    KernelLaunchFailed {
+        cuda: CudaErrorKind,
+    },
     /// The selected `AttentionBackend` does not implement this launch
     /// path. Used on sm_121 (Fa2Ptx variant) when callers reach for
     /// FP8-KV paged-decode / paged-prefill — those translate from
     /// FA3's parameter set and will land in a follow-up PR.
-    FeatureNotAvailable { backend: &'static str, op: &'static str },
+    FeatureNotAvailable {
+        backend: &'static str,
+        op: &'static str,
+    },
 }
 
 #[derive(Debug)]
 pub enum LoaderError {
-    MissingTensor { name: String },
-    ShapeMismatch { tensor: String, expected: Vec<usize>, got: Vec<usize> },
-    DtypeMismatch { tensor: String, expected: DType, got: DType },
-    Fp8MisScaled { tensor: String, clamp_ppm: f32 },
-    Corrupt { detail: String },
+    MissingTensor {
+        name: String,
+    },
+    ShapeMismatch {
+        tensor: String,
+        expected: Vec<usize>,
+        got: Vec<usize>,
+    },
+    DtypeMismatch {
+        tensor: String,
+        expected: DType,
+        got: DType,
+    },
+    Fp8MisScaled {
+        tensor: String,
+        clamp_ppm: f32,
+    },
+    Corrupt {
+        detail: String,
+    },
 }
 
 #[derive(Debug)]
 pub enum ConfigError {
-    MissingHfField { name: &'static str, file: PathBuf },
-    HfTypeMismatch { name: &'static str, expected: &'static str },
-    MissingField { name: &'static str },
-    InvalidField { name: &'static str, reason: String },
-    UnknownEnvVar { name: String },
-    Inconsistent { reasons: Vec<String> },
+    MissingHfField {
+        name: &'static str,
+        file: PathBuf,
+    },
+    HfTypeMismatch {
+        name: &'static str,
+        expected: &'static str,
+    },
+    MissingField {
+        name: &'static str,
+    },
+    InvalidField {
+        name: &'static str,
+        reason: String,
+    },
+    UnknownEnvVar {
+        name: String,
+    },
+    Inconsistent {
+        reasons: Vec<String>,
+    },
 }
 
 #[derive(Debug)]
 pub enum SchedulerError {
-    KvExhausted { needed_blocks: u32, free_blocks: u32 },
-    BucketNotCaptured { num_seqs: u32 },
+    KvExhausted {
+        needed_blocks: u32,
+        free_blocks: u32,
+    },
+    BucketNotCaptured {
+        num_seqs: u32,
+    },
     QueueFull,
 }
 
@@ -233,27 +286,61 @@ pub enum SamplingError {
 #[derive(Debug)]
 pub enum AppleError {
     MetalUnavailable,
-    MetallibMissing { path: PathBuf },
-    PipelineMissing { name: &'static str },
+    MetallibMissing {
+        path: PathBuf,
+    },
+    PipelineMissing {
+        name: &'static str,
+    },
     AneUnavailable,
-    PrivateApiUnavailable { symbol: &'static str },
-    MilCompileFailed { procedure: &'static str },
-    IoSurfaceFailed { bytes: usize },
-    ShapeBucketMissing { seqs: u32, tokens: u32 },
-    HandoffMalformed { reason: &'static str },
-    NotPrepared { backend: &'static str },
-    FeatureNotAvailable { backend: &'static str, op: &'static str },
-    UnsupportedDevice { name: &'static str },
-    InvalidMil { reason: &'static str },
-    InvalidWeightBlob { reason: &'static str },
-    CompileAneModel { err: AneCompileError },
-    RuntimeAneModel { err: AneRuntimeError },
+    PrivateApiUnavailable {
+        symbol: &'static str,
+    },
+    MilCompileFailed {
+        procedure: &'static str,
+    },
+    IoSurfaceFailed {
+        bytes: usize,
+    },
+    ShapeBucketMissing {
+        seqs: u32,
+        tokens: u32,
+    },
+    HandoffMalformed {
+        reason: &'static str,
+    },
+    NotPrepared {
+        backend: &'static str,
+    },
+    FeatureNotAvailable {
+        backend: &'static str,
+        op: &'static str,
+    },
+    UnsupportedDevice {
+        name: &'static str,
+    },
+    InvalidMil {
+        reason: &'static str,
+    },
+    InvalidWeightBlob {
+        reason: &'static str,
+    },
+    CompileAneModel {
+        err: AneCompileError,
+    },
+    RuntimeAneModel {
+        err: AneRuntimeError,
+    },
 }
 
 #[derive(Debug)]
 pub enum AneCompileError {
-    UnsupportedOp { op: &'static str },
-    CompileIo { detail: String },
+    UnsupportedOp {
+        op: &'static str,
+    },
+    CompileIo {
+        detail: String,
+    },
     CacheMissOrCorrupt {
         cache_path: String,
     },
@@ -267,12 +354,8 @@ pub enum AneCompileError {
 pub enum AneRuntimeError {
     UnsupportedOp { op: &'static str },
     SurfaceUnavailable { id: u32 },
-    MetadataMismatch {
-        detail: String,
-    },
-    CacheMissOrCorrupt {
-        cache_key: String,
-    },
+    MetadataMismatch { detail: String },
+    CacheMissOrCorrupt { cache_key: String },
 }
 
 #[derive(Debug)]
@@ -368,11 +451,7 @@ impl std::fmt::Display for RvllmError {
                     ctx.kernel, ctx.stream, ctx.device
                 )?;
                 if let Some(l) = ctx.launch {
-                    write!(
-                        f,
-                        " grid={:?} block={:?} smem={}",
-                        l.grid, l.block, l.smem
-                    )?;
+                    write!(f, " grid={:?} block={:?} smem={}", l.grid, l.block, l.smem)?;
                 }
                 Ok(())
             }
@@ -401,7 +480,8 @@ impl std::fmt::Display for RvllmError {
             ),
             Apple { err, ctx, .. } => write!(
                 f,
-                "apple: {err:?} backend={:?} op={:?} device={:?}", ctx.backend, ctx.op, ctx.device
+                "apple: {err:?} backend={:?} op={:?} device={:?}",
+                ctx.backend, ctx.op, ctx.device
             ),
             Io { err, path, source } => {
                 write!(f, "io: {err:?} path={path:?} source={source}")
@@ -502,7 +582,10 @@ mod tests {
     #[test]
     fn apple_error_display_names_backend_op_and_device() {
         let e = RvllmError::apple(
-            AppleError::ShapeBucketMissing { seqs: 17, tokens: 9 },
+            AppleError::ShapeBucketMissing {
+                seqs: 17,
+                tokens: 9,
+            },
             AppleCtx {
                 backend: "private-ane",
                 op: "rollout",

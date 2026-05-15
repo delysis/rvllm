@@ -26,7 +26,9 @@ pub fn build_weight_blob_fp16(weight_sets: &[&[f32]]) -> Vec<u8> {
 }
 
 #[must_use]
-pub fn build_weight_blob_fp16_named(weight_sets: &[(&str, &[f32])]) -> (Vec<u8>, Vec<WeightChunkDesc>) {
+pub fn build_weight_blob_fp16_named(
+    weight_sets: &[(&str, &[f32])],
+) -> (Vec<u8>, Vec<WeightChunkDesc>) {
     let mut chunks: Vec<Vec<u8>> = Vec::with_capacity(weight_sets.len());
 
     for (_, weights) in weight_sets {

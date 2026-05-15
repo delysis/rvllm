@@ -2,11 +2,10 @@
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{
-    MTLCreateSystemDefaultDevice, MTLDevice, MTLCommandQueue, MTLLibrary,
-    MTLComputePipelineState,
-};
 use objc2_foundation::NSString;
+use objc2_metal::{
+    MTLCommandQueue, MTLComputePipelineState, MTLCreateSystemDefaultDevice, MTLDevice, MTLLibrary,
+};
 use rvllm_apple::device::{AppleAcceleratorTarget, AppleGpuFamily};
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 
@@ -21,7 +20,11 @@ pub struct MetalContext {
 }
 
 fn ctx(op: &'static str) -> AppleCtx {
-    AppleCtx { backend: "metal", op, device: "apple-silicon" }
+    AppleCtx {
+        backend: "metal",
+        op,
+        device: "apple-silicon",
+    }
 }
 
 impl MetalContext {
@@ -43,9 +46,9 @@ impl MetalContext {
             ));
         }
 
-        let queue = device.newCommandQueue().ok_or_else(|| {
-            RvllmError::apple(AppleError::MetalUnavailable, ctx("create_queue"))
-        })?;
+        let queue = device
+            .newCommandQueue()
+            .ok_or_else(|| RvllmError::apple(AppleError::MetalUnavailable, ctx("create_queue")))?;
 
         tracing::info!(
             device = %name,
@@ -55,18 +58,26 @@ impl MetalContext {
             "Metal context initialized"
         );
 
-        Ok(Self { device, queue, library: None, target })
+        Ok(Self {
+            device,
+            queue,
+            library: None,
+            target,
+        })
     }
 
     /// Compile Metal Shading Language source into a library.
     pub fn compile_library(&mut self, source: &str) -> Result<()> {
         let ns_source = NSString::from_str(source);
-        let lib = self.device
+        let lib = self
+            .device
             .newLibraryWithSource_options_error(&ns_source, None)
             .map_err(|e| {
                 tracing::error!(error = %e, "Metal shader compilation failed");
                 RvllmError::apple(
-                    AppleError::MilCompileFailed { procedure: "metallib" },
+                    AppleError::MilCompileFailed {
+                        procedure: "metallib",
+                    },
                     ctx("compile_library"),
                 )
             })?;
@@ -78,20 +89,23 @@ impl MetalContext {
     pub fn load_metallib(&mut self, path: &std::path::Path) -> Result<()> {
         let ns_path = NSString::from_str(&path.to_string_lossy());
         let url = unsafe { objc2_foundation::NSURL::fileURLWithPath(&ns_path) };
-        let lib = self.device
-            .newLibraryWithURL_error(&url)
-            .map_err(|_| {
-                RvllmError::apple(
-                    AppleError::MetallibMissing { path: path.to_path_buf() },
-                    ctx("load_metallib"),
-                )
-            })?;
+        let lib = self.device.newLibraryWithURL_error(&url).map_err(|_| {
+            RvllmError::apple(
+                AppleError::MetallibMissing {
+                    path: path.to_path_buf(),
+                },
+                ctx("load_metallib"),
+            )
+        })?;
         self.library = Some(lib);
         Ok(())
     }
 
     /// Create a compute pipeline state object from a named function.
-    pub fn make_pipeline(&self, function_name: &str) -> Result<Retained<ProtocolObject<dyn MTLComputePipelineState>>> {
+    pub fn make_pipeline(
+        &self,
+        function_name: &str,
+    ) -> Result<Retained<ProtocolObject<dyn MTLComputePipelineState>>> {
         let lib = self.library.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::PipelineMissing { name: "no_library" },
@@ -105,7 +119,8 @@ impl MetalContext {
                 ctx("get_function"),
             )
         })?;
-        let pso = self.device
+        let pso = self
+            .device
             .newComputePipelineStateWithFunction_error(&func)
             .map_err(|_| {
                 RvllmError::apple(
@@ -117,16 +132,24 @@ impl MetalContext {
     }
 
     #[inline]
-    pub fn device(&self) -> &ProtocolObject<dyn MTLDevice> { &*self.device }
+    pub fn device(&self) -> &ProtocolObject<dyn MTLDevice> {
+        &*self.device
+    }
 
     #[inline]
-    pub fn device_retained(&self) -> &Retained<ProtocolObject<dyn MTLDevice>> { &self.device }
+    pub fn device_retained(&self) -> &Retained<ProtocolObject<dyn MTLDevice>> {
+        &self.device
+    }
 
     #[inline]
-    pub fn queue(&self) -> &ProtocolObject<dyn MTLCommandQueue> { &*self.queue }
+    pub fn queue(&self) -> &ProtocolObject<dyn MTLCommandQueue> {
+        &*self.queue
+    }
 
     #[inline]
-    pub fn queue_retained(&self) -> &Retained<ProtocolObject<dyn MTLCommandQueue>> { &self.queue }
+    pub fn queue_retained(&self) -> &Retained<ProtocolObject<dyn MTLCommandQueue>> {
+        &self.queue
+    }
 
     #[inline]
     pub fn library(&self) -> Option<&ProtocolObject<dyn MTLLibrary>> {
@@ -134,11 +157,17 @@ impl MetalContext {
     }
 
     #[inline]
-    pub fn target(&self) -> &AppleAcceleratorTarget { &self.target }
+    pub fn target(&self) -> &AppleAcceleratorTarget {
+        &self.target
+    }
 
     /// Maximum threadgroup memory in bytes (Apple9: 32KB, Apple10+: 64KB).
     pub fn max_threadgroup_memory(&self) -> usize {
-        if self.target.has_nax { 65536 } else { 32768 }
+        if self.target.has_nax {
+            65536
+        } else {
+            32768
+        }
     }
 }
 

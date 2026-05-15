@@ -111,26 +111,28 @@ impl RuntimeConfigBuilder {
         let fp8_kv_cache = req!(fp8_kv_cache);
         let graph_capture = req!(graph_capture);
         let preemption = req!(preemption);
-        let apple_backend_mode = self.apple_backend_mode.unwrap_or(AppleBackendMode::Disabled);
+        let apple_backend_mode = self
+            .apple_backend_mode
+            .unwrap_or(AppleBackendMode::Disabled);
         let apple_private_ane_opt_in = self.apple_private_ane_opt_in.unwrap_or(false);
         let apple_rollout_tokens = self.apple_rollout_tokens.unwrap_or(1);
         let apple_rollout_bucket_policy = self.apple_rollout_bucket_policy.unwrap_or_default();
         let mut apple_rollout_bucket = self.apple_rollout_bucket;
         let strict_ane = self.strict_ane.unwrap_or(false);
-        let ane_compute_profile = self
-            .ane_compute_profile
-            .unwrap_or(if strict_ane {
-                AneComputeProfile::NeuralEngineOnly
-            } else {
-                AneComputeProfile::AnyAvailable
-            });
+        let ane_compute_profile = self.ane_compute_profile.unwrap_or(if strict_ane {
+            AneComputeProfile::NeuralEngineOnly
+        } else {
+            AneComputeProfile::AnyAvailable
+        });
         let ane_fallback_policy = self.ane_fallback_policy.unwrap_or(if strict_ane {
             AneFallbackPolicy::FailFast
         } else {
             AneFallbackPolicy::AllowMetal
         });
         let ane_hidden_size = self.ane_hidden_size.unwrap_or(model.hidden_size);
-        let ane_intermediate_size = self.ane_intermediate_size.unwrap_or(model.intermediate_size);
+        let ane_intermediate_size = self
+            .ane_intermediate_size
+            .unwrap_or(model.intermediate_size);
         let ane_num_layers = self.ane_num_layers.unwrap_or(model.num_layers);
         let model_layout_hash = self.model_layout_hash.unwrap_or_else(|| {
             let mut h: u64 = 0xcbf29ce484222325u64;
@@ -171,9 +173,8 @@ impl RuntimeConfigBuilder {
             reasons.push("apple_rollout_tokens must be >= 1".into());
         }
         if strict_ane && !requires_private_ane {
-            reasons.push(
-                "strict_ane requires an Apple backend mode that enables ANE rollout".into(),
-            );
+            reasons
+                .push("strict_ane requires an Apple backend mode that enables ANE rollout".into());
         }
         if strict_ane && !apple_private_ane_opt_in {
             reasons.push("strict_ane requires apple_private_ane_opt_in=true".into());
@@ -181,9 +182,7 @@ impl RuntimeConfigBuilder {
         if strict_ane && !matches!(ane_fallback_policy, AneFallbackPolicy::FailFast) {
             reasons.push("strict_ane requires ane_fallback_policy=FailFast".into());
         }
-        if strict_ane
-            && !matches!(ane_compute_profile, AneComputeProfile::NeuralEngineOnly)
-        {
+        if strict_ane && !matches!(ane_compute_profile, AneComputeProfile::NeuralEngineOnly) {
             reasons.push("strict_ane requires ane_compute_profile=NeuralEngineOnly".into());
         }
         if requires_private_ane && !apple_private_ane_opt_in {
@@ -196,24 +195,40 @@ impl RuntimeConfigBuilder {
                 reasons.push("apple_rollout_bucket_policy must be Auto unless private ANE rollout is enabled".into());
             }
             if apple_private_ane_opt_in {
-                reasons.push("apple_private_ane_opt_in requires a private ANE mode (MetalPrefillAne* )".into());
+                reasons.push(
+                    "apple_private_ane_opt_in requires a private ANE mode (MetalPrefillAne* )"
+                        .into(),
+                );
             }
             if apple_rollout_bucket.is_some() {
-                reasons.push("apple_rollout_bucket is only valid for private ANE rollout modes".into());
+                reasons.push(
+                    "apple_rollout_bucket is only valid for private ANE rollout modes".into(),
+                );
             }
             if apple_rollout_tokens != 1 {
-                reasons.push("apple_rollout_tokens must be 1 unless private ANE mode is enabled".into());
+                reasons.push(
+                    "apple_rollout_tokens must be 1 unless private ANE mode is enabled".into(),
+                );
             }
         }
-        if matches!(apple_rollout_bucket_policy, AppleRolloutBucketPolicy::Fixed { seqs: 0, tokens: _ }) {
+        if matches!(
+            apple_rollout_bucket_policy,
+            AppleRolloutBucketPolicy::Fixed { seqs: 0, tokens: _ }
+        ) {
             reasons.push("apple_rollout_bucket_policy.Fixed.seqs must be >= 1".into());
         }
-        if matches!(apple_rollout_bucket_policy, AppleRolloutBucketPolicy::Fixed { seqs: _, tokens: 0 }) {
+        if matches!(
+            apple_rollout_bucket_policy,
+            AppleRolloutBucketPolicy::Fixed { seqs: _, tokens: 0 }
+        ) {
             reasons.push("apple_rollout_bucket_policy.Fixed.tokens must be >= 1".into());
         }
         if let AppleRolloutBucketPolicy::Fixed { seqs, tokens } = apple_rollout_bucket_policy {
             if !requires_private_ane {
-                reasons.push("fixed apple_rollout_bucket_policy is invalid without private ANE rollout".into());
+                reasons.push(
+                    "fixed apple_rollout_bucket_policy is invalid without private ANE rollout"
+                        .into(),
+                );
             }
             if let Some(requested) = apple_rollout_bucket {
                 if requested.seqs != seqs || requested.tokens != tokens {
@@ -268,11 +283,15 @@ impl RuntimeConfigBuilder {
                 reasons.push("max_context must be >= 1".into());
             }
         }
-        if let (Some(v), Some(ctx), Some(block), Some(nbg), Some(ncb)) =
-            (max_batch, max_context, kv_block_size, num_gpu_blocks, num_cpu_blocks)
-        {
-            let min_blocks = ((v as u64 * ctx as u64) + (block as u64).saturating_sub(1))
-                / block as u64;
+        if let (Some(v), Some(ctx), Some(block), Some(nbg), Some(ncb)) = (
+            max_batch,
+            max_context,
+            kv_block_size,
+            num_gpu_blocks,
+            num_cpu_blocks,
+        ) {
+            let min_blocks =
+                ((v as u64 * ctx as u64) + (block as u64).saturating_sub(1)) / block as u64;
             if (nbg as u64 + ncb as u64) < min_blocks {
                 reasons.push(format!(
                     "num_gpu_blocks + num_cpu_blocks must be >= ceil(max_batch*max_context / kv_block_size) = {min_blocks}, got {}",
@@ -354,8 +373,8 @@ impl RuntimeConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dtype::DType;
     use crate::config::model::{ModelArch, ModelConfig};
+    use crate::dtype::DType;
 
     fn qwen() -> ModelConfig {
         ModelConfig {
@@ -466,10 +485,7 @@ mod tests {
             .preemption(PreemptionMode::Recompute)
             .apple_backend_mode(AppleBackendMode::MetalPrefillAneRolloutExperimental)
             .apple_private_ane_opt_in(true)
-            .apple_rollout_bucket_policy(AppleRolloutBucketPolicy::Fixed {
-                seqs: 4,
-                tokens: 2,
-            })
+            .apple_rollout_bucket_policy(AppleRolloutBucketPolicy::Fixed { seqs: 4, tokens: 2 })
             .apple_rollout_bucket(AppleRolloutBucket { seqs: 8, tokens: 2 })
             .build(&qwen())
             .unwrap_err();

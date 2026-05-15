@@ -1,5 +1,5 @@
-use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
+use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 use serde::{Deserialize, Serialize};
 
 use crate::device::AppleAcceleratorTarget;
@@ -53,18 +53,45 @@ pub const ROLLOUT_BUCKETS: &[RolloutBucket] = &[
     RolloutBucket { seqs: 2, tokens: 1 },
     RolloutBucket { seqs: 4, tokens: 1 },
     RolloutBucket { seqs: 8, tokens: 1 },
-    RolloutBucket { seqs: 16, tokens: 1 },
-    RolloutBucket { seqs: 32, tokens: 1 },
-    RolloutBucket { seqs: 64, tokens: 1 },
-    RolloutBucket { seqs: 128, tokens: 1 },
+    RolloutBucket {
+        seqs: 16,
+        tokens: 1,
+    },
+    RolloutBucket {
+        seqs: 32,
+        tokens: 1,
+    },
+    RolloutBucket {
+        seqs: 64,
+        tokens: 1,
+    },
+    RolloutBucket {
+        seqs: 128,
+        tokens: 1,
+    },
     RolloutBucket { seqs: 4, tokens: 4 },
     RolloutBucket { seqs: 8, tokens: 4 },
-    RolloutBucket { seqs: 16, tokens: 4 },
-    RolloutBucket { seqs: 32, tokens: 4 },
-    RolloutBucket { seqs: 64, tokens: 4 },
+    RolloutBucket {
+        seqs: 16,
+        tokens: 4,
+    },
+    RolloutBucket {
+        seqs: 32,
+        tokens: 4,
+    },
+    RolloutBucket {
+        seqs: 64,
+        tokens: 4,
+    },
     RolloutBucket { seqs: 8, tokens: 8 },
-    RolloutBucket { seqs: 16, tokens: 8 },
-    RolloutBucket { seqs: 32, tokens: 8 },
+    RolloutBucket {
+        seqs: 16,
+        tokens: 8,
+    },
+    RolloutBucket {
+        seqs: 32,
+        tokens: 8,
+    },
 ];
 
 #[must_use]
@@ -73,7 +100,14 @@ pub fn select_rollout_bucket(seqs: u32, tokens: u32) -> Option<RolloutBucket> {
         .iter()
         .copied()
         .filter(|bucket| bucket.fits(seqs, tokens))
-        .min_by_key(|bucket| (bucket.waste(seqs, tokens), bucket.capacity(), bucket.seqs, bucket.tokens))
+        .min_by_key(|bucket| {
+            (
+                bucket.waste(seqs, tokens),
+                bucket.capacity(),
+                bucket.seqs,
+                bucket.tokens,
+            )
+        })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -114,7 +148,10 @@ impl AppleRuntimePlan {
                     self.ctx("validate"),
                 ));
             }
-            if !matches!(self.ane_compute_profile, AneComputeProfile::NeuralEngineOnly) {
+            if !matches!(
+                self.ane_compute_profile,
+                AneComputeProfile::NeuralEngineOnly
+            ) {
                 return Err(RvllmError::apple(
                     AppleError::InvalidMil {
                         reason: "strict_ane requires AneComputeProfile::NeuralEngineOnly",
@@ -174,10 +211,25 @@ mod tests {
 
     #[test]
     fn rollout_bucket_minimizes_padding_waste() {
-        assert_eq!(select_rollout_bucket(1, 1), Some(RolloutBucket { seqs: 1, tokens: 1 }));
-        assert_eq!(select_rollout_bucket(3, 1), Some(RolloutBucket { seqs: 4, tokens: 1 }));
-        assert_eq!(select_rollout_bucket(3, 4), Some(RolloutBucket { seqs: 4, tokens: 4 }));
-        assert_eq!(select_rollout_bucket(9, 4), Some(RolloutBucket { seqs: 16, tokens: 4 }));
+        assert_eq!(
+            select_rollout_bucket(1, 1),
+            Some(RolloutBucket { seqs: 1, tokens: 1 })
+        );
+        assert_eq!(
+            select_rollout_bucket(3, 1),
+            Some(RolloutBucket { seqs: 4, tokens: 1 })
+        );
+        assert_eq!(
+            select_rollout_bucket(3, 4),
+            Some(RolloutBucket { seqs: 4, tokens: 4 })
+        );
+        assert_eq!(
+            select_rollout_bucket(9, 4),
+            Some(RolloutBucket {
+                seqs: 16,
+                tokens: 4
+            })
+        );
         assert_eq!(select_rollout_bucket(33, 8), None);
     }
 

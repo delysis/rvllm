@@ -18,21 +18,15 @@ pub mod weight_blob;
 
 pub use ane::{AneProcedure, AneProgramPlan, AneRolloutConfig};
 pub use backend::{
-    AppleBackend, AppleLaunchKind, AppleLaunchTicket, ProductionAppleBackend, StubAppleBackend,
-    StepToken,
+    AppleBackend, AppleLaunchKind, AppleLaunchTicket, ProductionAppleBackend, StepToken,
+    StubAppleBackend,
 };
-pub use device::{
-    AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier,
-};
+pub use device::{AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier};
 pub use handoff::{HandoffCapsule, HandoffKind, StateHandle, StateHandleKind, SurfaceId};
 pub use iosurface::{IoSurfaceTensorDesc, PackedField, PackedInputLayout};
 pub use metal::{MetalPrefillBackend, MetalPrefillConfig, PrefillContract};
-pub use mil::{
-    dense_1x1_conv_mil, fused_ffn_mil, fused_qkv_mil, FfnMilOffsets, QkvMilOffsets,
-};
+pub use mil::{dense_1x1_conv_mil, fused_ffn_mil, fused_qkv_mil, FfnMilOffsets, QkvMilOffsets};
 pub use plan::{
     select_rollout_bucket, AppleBackendMode, AppleRuntimePlan, RolloutBucket, ROLLOUT_BUCKETS,
 };
-pub use weight_blob::{
-    build_weight_blob_fp16, build_weight_blob_fp16_named, WeightChunkDesc,
-};
+pub use weight_blob::{build_weight_blob_fp16, build_weight_blob_fp16_named, WeightChunkDesc};

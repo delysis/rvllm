@@ -1,5 +1,5 @@
-use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
 use rvllm_core::error::AneRuntimeError;
+use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
 use serde::{Deserialize, Serialize};
 
 use crate::ane::{compile_private_ane_program, AneProgramPlan, AneRolloutConfig};
@@ -244,14 +244,15 @@ impl AppleBackend for ProductionAppleBackend {
                     Self::ctx("launch_rollout"),
                 )
             })?;
-            let out_surface = rvllm_apple_ane_sys::AneSurface::from_id(out_id).ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::HandoffMalformed {
-                        reason: "failed to lookup output_surface",
-                    },
-                    Self::ctx("launch_rollout"),
-                )
-            })?;
+            let out_surface =
+                rvllm_apple_ane_sys::AneSurface::from_id(out_id).ok_or_else(|| {
+                    RvllmError::apple(
+                        AppleError::HandoffMalformed {
+                            reason: "failed to lookup output_surface",
+                        },
+                        Self::ctx("launch_rollout"),
+                    )
+                })?;
 
             // Create and evaluate ANE request
             let request = rvllm_apple_ane_sys::AneRequest::new(
@@ -302,7 +303,9 @@ impl AppleBackend for ProductionAppleBackend {
     fn collect(&mut self, ticket: AppleLaunchTicket) -> Result<Vec<StepToken>> {
         self.ensure_prepared("collect")?;
         match self.last_ticket {
-            Some(expected) if expected == ticket.step_id => Ok(self.pending.take().unwrap_or_default()),
+            Some(expected) if expected == ticket.step_id => {
+                Ok(self.pending.take().unwrap_or_default())
+            }
             Some(_) => Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "production-apple",
@@ -347,7 +350,9 @@ impl StubAppleBackend {
             Ok(())
         } else {
             Err(RvllmError::apple(
-                AppleError::NotPrepared { backend: "stub-apple" },
+                AppleError::NotPrepared {
+                    backend: "stub-apple",
+                },
                 Self::ctx(op),
             ))
         }
@@ -409,7 +414,9 @@ impl AppleBackend for StubAppleBackend {
     fn collect(&mut self, ticket: AppleLaunchTicket) -> Result<Vec<StepToken>> {
         let expected = self.last_ticket.ok_or_else(|| {
             RvllmError::apple(
-                AppleError::NotPrepared { backend: "stub-apple" },
+                AppleError::NotPrepared {
+                    backend: "stub-apple",
+                },
                 Self::ctx("collect"),
             )
         })?;
@@ -435,10 +442,10 @@ impl AppleBackend for StubAppleBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
     use crate::device::AppleAcceleratorTarget;
     use crate::handoff::HandoffKind;
     use crate::plan::{AppleBackendMode, RolloutBucket};
+    use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
 
     fn plan() -> AppleRuntimePlan {
         AppleRuntimePlan {
@@ -471,14 +478,12 @@ mod tests {
         );
         assert!(backend.launch_prefill(&handoff).is_err());
         assert!(backend.prepare(&plan()).is_ok());
-        let ticket = match backend.launch_rollout(
-            &handoff,
-            Some(RolloutBucket { seqs: 1, tokens: 1 }),
-        ) {
-            Ok(v) => v,
-            Err(e) => panic!("unexpected launch error: {e}"),
-        };
-            assert_eq!(ticket.kind, AppleLaunchKind::Rollout);
+        let ticket =
+            match backend.launch_rollout(&handoff, Some(RolloutBucket { seqs: 1, tokens: 1 })) {
+                Ok(v) => v,
+                Err(e) => panic!("unexpected launch error: {e}"),
+            };
+        assert_eq!(ticket.kind, AppleLaunchKind::Rollout);
     }
 
     #[test]
@@ -511,7 +516,8 @@ mod tests {
             vec![1],
         );
 
-        let err = match backend.launch_rollout(&handoff, Some(RolloutBucket { seqs: 1, tokens: 1 })) {
+        let err = match backend.launch_rollout(&handoff, Some(RolloutBucket { seqs: 1, tokens: 1 }))
+        {
             Ok(v) => {
                 panic!("unexpected rollout success: {v:?}");
             }
