@@ -54,3 +54,6 @@ half = { workspace = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }
 cudarc = { version = "0.19", features = ["driver", "cuda-version-from-build-system"], optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-metal = { version = "0.3", features = ["MTLTypes", "MTLCommandQueue"] }

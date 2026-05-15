@@ -1,7 +1,7 @@
 #[cfg(target_os = "macos")]
 use crate::arena::MetalRegion;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
 #[cfg(target_os = "macos")]
 pub struct Gemma4MetalState {
     pub hidden_size: usize,
@@ -20,6 +20,6 @@ pub struct Gemma4MetalState {
     pub token_ids: MetalRegion,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 #[cfg(not(target_os = "macos"))]
 pub struct Gemma4MetalState;

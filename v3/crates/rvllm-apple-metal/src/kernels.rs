@@ -161,15 +161,22 @@ kernel void embedding_gather_f16(
     device const half *embedding   [[buffer(0)]],
     device const uint *token_ids    [[buffer(1)]],
     device half       *out         [[buffer(2)]],
-    constant uint     &hidden      [[buffer(3)]],
-    constant float    &scale       [[buffer(4)]],
+    constant uint     &num_tokens  [[buffer(3)]],
+    constant uint     &hidden      [[buffer(4)]],
+    constant uint     &vocab       [[buffer(5)]],
+    constant float    &scale       [[buffer(6)]],
     uint2 gid                      [[thread_position_in_grid]]
 ) {
     uint token = gid.x;
     uint dim = gid.y;
-    if (dim >= hidden) return;
+    if (token >= num_tokens || dim >= hidden) return;
 
     uint tok = token_ids[token];
+    if (tok >= vocab) {
+        out[token * hidden + dim] = half(0.0);
+        return;
+    }
+
     out[token * hidden + dim] = half(float(embedding[tok * hidden + dim]) * scale);
 }
 

@@ -88,7 +88,7 @@ impl AppleBackend for RuntimeMetalBackend {
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use rvllm_apple::{RolloutBucket};
 #[cfg(all(feature = "apple", target_os = "macos"))]
-use objc2_metal::MTLSize;
+use objc2_metal::{MTLCommandBuffer, MTLCommandQueue, MTLCommandEncoder, MTLComputeCommandEncoder, MTLSize};
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use rvllm_apple_metal::{
     kernels,
@@ -391,6 +391,16 @@ impl ModelMetalBackend {
                     model_ctx("prepare"),
                 )
             })?;
+        arena_bytes = arena_bytes
+            .checked_add(4096)
+            .ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "model arena byte overflow",
+                    },
+                    model_ctx("prepare"),
+                )
+            })?;
         arena_bytes = max(arena_bytes, METAL_ARENA_BYTES);
 
         let mut ctx = MetalContext::new()?;
@@ -411,7 +421,7 @@ impl ModelMetalBackend {
         let embedding = Self::region_lookup(&mut mapped_refs, &embed_name)?;
         let final_norm = Self::region_lookup(&mut mapped_refs, &final_norm_name)?;
         let lm_head = if tie_embeddings {
-            embedding
+            embedding.clone()
         } else {
             Self::region_lookup(&mut mapped_refs, &lm_head_name)?
         };
@@ -502,11 +512,15 @@ impl ModelMetalBackend {
         })?;
 
         let pso = pipelines.get("embedding_gather_f16")?;
-        encoder.setComputePipelineState(pso);
         let buf = arena.buffer_retained();
-        encoder.setBuffer_offset_atIndex(Some(buf), state.embedding.offset, 0);
-        encoder.setBuffer_offset_atIndex(Some(buf), state.token_ids.offset, 1);
-        encoder.setBuffer_offset_atIndex(Some(buf), state.residual.offset, 2);
+        let num_tokens_u32 = u32::try_from(num_tokens).map_err(|_| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "token count exceeds u32",
+                },
+                model_ctx("embedding_gather"),
+            )
+        })?;
         let hidden = u32::try_from(state.hidden_size).map_err(|_| {
             RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -515,17 +529,41 @@ impl ModelMetalBackend {
                 model_ctx("embedding_gather"),
             )
         })?;
-        encoder.setBytes_length_atIndex(
-            ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
-            4,
-            3,
-        );
+        let vocab = u32::try_from(state.vocab_size).map_err(|_| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "vocab_size does not fit in u32",
+                },
+                model_ctx("embedding_gather"),
+            )
+        })?;
         let scale = state.embedding_scale;
-        encoder.setBytes_length_atIndex(
-            ptr::NonNull::new_unchecked(&scale as *const _ as *mut _),
-            4,
-            4,
-        );
+        unsafe {
+            encoder.setComputePipelineState(pso);
+            encoder.setBuffer_offset_atIndex(Some(buf), state.embedding.offset, 0);
+            encoder.setBuffer_offset_atIndex(Some(buf), state.token_ids.offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(buf), state.residual.offset, 2);
+            encoder.setBytes_length_atIndex(
+                ptr::NonNull::new_unchecked(&num_tokens_u32 as *const _ as *mut _),
+                4,
+                3,
+            );
+            encoder.setBytes_length_atIndex(
+                ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+                4,
+                4,
+            );
+            encoder.setBytes_length_atIndex(
+                ptr::NonNull::new_unchecked(&vocab as *const _ as *mut _),
+                4,
+                5,
+            );
+            encoder.setBytes_length_atIndex(
+                ptr::NonNull::new_unchecked(&scale as *const _ as *mut _),
+                4,
+                6,
+            );
+        }
         let hidden_usize = hidden as usize;
         let threads_per_group = MTLSize {
             width: 1,
@@ -540,6 +578,7 @@ impl ModelMetalBackend {
         encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
         encoder.endEncoding();
         cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
         Ok(())
     }
 
@@ -677,7 +716,7 @@ impl ModelMetalBackend {
             )?;
         }
 
-        let sampled_ptr = arena.host_ptr(&state.sampled) as *const i32;
+        let sampled_ptr = unsafe { arena.host_ptr(&state.sampled) as *const i32 };
         let sampled = unsafe { std::slice::from_raw_parts(sampled_ptr, num_tokens) };
         let mut outputs = Vec::with_capacity(num_tokens);
         for (idx, &req_id) in handoff.req_ids.iter().enumerate() {
@@ -697,6 +736,7 @@ impl ModelMetalBackend {
 impl AppleBackend for ModelMetalBackend {
     fn prepare(&mut self, plan: &rvllm_apple::AppleRuntimePlan) -> Result<()> {
         plan.validate()?;
+        self.prepared = false;
         if !self.model_dir.exists() || !self.model_dir.is_dir() {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -1035,5 +1075,208 @@ impl AppleBackend for RuntimeMetalBackend {
                 ctx("collect"),
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rvllm_apple_metal::weight_loader::scan_safetensor_tensors;
+    use serde_json::{Map, Value};
+    use std::fs::{self, File};
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_fixture_dir() -> std::path::PathBuf {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "rvllm-metal-zero-layer-test-{}-{}",
+            std::process::id(),
+            now
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create fixture dir");
+        dir
+    }
+
+    fn f16_bytes(values: &[f32]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(values.len() * std::mem::size_of::<half::f16>());
+        for value in values {
+            let bits = half::f16::from_f32(*value).to_bits();
+            out.extend_from_slice(&bits.to_le_bytes());
+        }
+        out
+    }
+
+    fn write_tiny_zero_layer_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let embedding = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0,
+            1.0,
+        ];
+        let norm = [1.0, 1.0, 1.0, 1.0];
+        let lm_head = [
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0,
+            0.0,
+        ];
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str, data: &[f32], shape: &[usize], payload: &mut Vec<u8>, header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[4, 4],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor("model.norm.weight", &norm, &[4], &mut payload, &mut header);
+        add_tensor("lm_head.weight", &lm_head, &[4, 4], &mut payload, &mut header);
+
+        let config = r#"{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {
+    "num_hidden_layers": 0,
+    "hidden_size": 4,
+    "intermediate_size": 8,
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": 128,
+    "vocab_size": 4,
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }
+}"#;
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out = File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    fn zero_layer_plan(model_dir: std::path::PathBuf) -> rvllm_apple::AppleRuntimePlan {
+        rvllm_apple::AppleRuntimePlan {
+            target: rvllm_apple::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            mode: rvllm_apple::AppleBackendMode::MetalPrefillMetalDecode,
+            rollout_bucket: None,
+            rollout_tokens: 1,
+            private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: rvllm_core::config::AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: rvllm_core::config::AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 4,
+            ane_intermediate_size: 8,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
+            weights_path: Some(model_dir),
+        }
+    }
+
+    #[test]
+    fn tiny_zero_layer_fixture_has_expected_files() {
+        let dir = write_tiny_zero_layer_fixture();
+        assert!(dir.join("config.json").is_file());
+        assert!(dir.join("model.safetensors").is_file());
+
+        let config_raw = fs::read_to_string(dir.join("config.json")).expect("read config");
+        let config: Value = serde_json::from_str(&config_raw).expect("parse config");
+        assert_eq!(config["architectures"][0], "Gemma4ForCausalLM");
+        assert_eq!(config["text_config"]["num_hidden_layers"], 0);
+        assert_eq!(config["text_config"]["vocab_size"], 4);
+
+        let tensors = scan_safetensor_tensors(&dir).expect("read fixture tensors");
+        let embed = tensors.get("model.embed_tokens.weight").expect("embed tensor");
+        let norm = tensors.get("model.norm.weight").expect("norm tensor");
+        let lm_head = tensors.get("lm_head.weight").expect("lm_head tensor");
+        assert_eq!(embed.shape, vec![4, 4]);
+        assert_eq!(norm.shape, vec![4]);
+        assert_eq!(lm_head.shape, vec![4, 4]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(not(all(feature = "apple", target_os = "macos")))]
+    #[test]
+    fn model_metal_backend_non_macos_fails_closed() {
+        let mut backend = RuntimeMetalBackend::new();
+        let plan = rvllm_apple::AppleRuntimePlan {
+            target: rvllm_apple::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            mode: rvllm_apple::AppleBackendMode::MetalPrefillMetalDecode,
+            rollout_bucket: None,
+            rollout_tokens: 1,
+            private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: rvllm_core::config::AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: rvllm_core::config::AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 4,
+            ane_intermediate_size: 8,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
+            weights_path: None,
+        };
+        assert!(backend.prepare(&plan).is_err());
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_zero_layer_model_backend_decodes_token_2_to_3() {
+        let dir = write_tiny_zero_layer_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = zero_layer_plan(dir.clone());
+        backend.prepare(&plan).expect("prepare tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
     }
 }
