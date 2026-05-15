@@ -17,8 +17,6 @@ use rvllm_core::{
 
 use crate::scheduler::{BatchPlan, Scheduler};
 
-#[cfg(feature = "apple")]
-
 /// Output of one step: (request id, new token, finished flag).
 #[derive(Debug, Clone)]
 pub struct StepOutput {
@@ -112,7 +110,7 @@ impl Engine {
         self.apple_target = Some(target);
         let Some(plan) = plan else {
             return Ok(self);
-        }
+        };
         self.with_apple_runtime_plan(plan)
     }
 
@@ -308,7 +306,7 @@ mod tests {
     #[test]
     #[cfg(feature = "apple")]
     #[cfg(target_os = "macos")]
-    fn e2e_apple_backend_wiring_metal() {
+    fn e2e_apple_backend_wiring_toy_metal() {
         use rvllm_apple::AppleRuntimePlan;
 
         let seed = TokenId(11);

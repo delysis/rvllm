@@ -239,16 +239,20 @@ mod tests {
             positions: vec![7, 8, 9],
             context_lens: vec![8, 9, 10],
         };
-        let capsule = match handoff_from_decode_plan(&plan, HandoffKind::MetalPrefillToAneFfnRollout) {
+        let bucket = match rollout_bucket_for_decode(&plan, 4) {
+            Ok(v) => v,
+            Err(e) => panic!("unexpected bucket error: {e}"),
+        };
+        let capsule = match handoff_from_decode_plan_with_bucket(
+            &plan,
+            HandoffKind::MetalPrefillToAneFfnRollout,
+            Some(bucket),
+        ) {
             Ok(v) => v,
             Err(e) => panic!("unexpected error: {e}"),
         };
         assert!(capsule.is_well_formed());
         assert_eq!(capsule.cu_seqlens, vec![0, 1, 2, 3]);
-        let bucket = match rollout_bucket_for_decode(&plan, 4) {
-            Ok(v) => v,
-            Err(e) => panic!("unexpected bucket error: {e}"),
-        };
         assert_eq!(bucket, RolloutBucket { seqs: 4, tokens: 4 });
     }
 }

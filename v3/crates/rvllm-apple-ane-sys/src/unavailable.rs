@@ -55,3 +55,15 @@ pub fn load_frameworks() -> Result<(), String> {
     Err("private-ane unavailable on non-macOS/aarch64 target".to_string())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_private_ane_fails_closed() {
+        assert!(load_frameworks().is_err());
+        assert!(AneModelHandle::load("/tmp/nope.mlmodelc").is_none());
+        assert!(AneSurface::new(1, 1, 4).is_none());
+        assert!(AneSurface::from_id(1).is_none());
+    }
+}

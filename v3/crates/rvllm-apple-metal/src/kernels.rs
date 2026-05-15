@@ -124,6 +124,37 @@ kernel void gemm_residual_f16(
 }
 
 // ============================================================================
+// Split fused QKV (interleaved) into planar Q/K/V.
+// qkv stores [token][q_dim + 2*kv_dim] while kernels downstream expect
+// contiguous planar Q, K, V regions.
+// ============================================================================
+kernel void split_qkv_f16(
+    device const half *qkv   [[buffer(0)]],  // [num_tokens, q_dim + 2*kv_dim]
+    device half *q           [[buffer(1)]],  // [num_tokens, q_dim]
+    device half *k           [[buffer(2)]],  // [num_tokens, kv_dim]
+    device half *v           [[buffer(3)]],  // [num_tokens, kv_dim]
+    constant uint &num_tokens [[buffer(4)]],
+    constant uint &q_dim      [[buffer(5)]],
+    constant uint &kv_dim     [[buffer(6)]],
+    uint2 gid                [[thread_position_in_grid]]
+) {
+    uint token = gid.x;
+    uint dim = gid.y;
+    if (token >= num_tokens) return;
+
+    uint qkv_dim = q_dim + 2u * kv_dim;
+    if (dim < q_dim) {
+        q[token * q_dim + dim] = qkv[token * qkv_dim + dim];
+    } else if (dim < q_dim + kv_dim) {
+        uint kd = dim - q_dim;
+        k[token * kv_dim + kd] = qkv[token * qkv_dim + q_dim + kd];
+    } else if (dim < q_dim + 2u * kv_dim) {
+        uint vd = dim - q_dim - kv_dim;
+        v[token * kv_dim + vd] = qkv[token * qkv_dim + q_dim + kv_dim + vd];
+    }
+}
+
+// ============================================================================
 // Partial RoPE (Gemma 4 style: only rotate first rope_dim dims)
 // ============================================================================
 kernel void rope_partial_f16(
@@ -494,6 +525,7 @@ pub const KERNEL_NAMES: &[&str] = &[
     "rmsnorm_f16",
     "gemm_f16",
     "gemm_residual_f16",
+    "split_qkv_f16",
     "rope_partial_f16",
     "kv_cache_write_f16",
     "attention_decode_f16",

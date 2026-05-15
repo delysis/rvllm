@@ -190,7 +190,21 @@ pub unsafe fn metal_forward_layer(
         1.0, 0.0,
     )?;
 
-    // 3. RoPE: apply partial RoPE to Q and K portions of qkv_out
+    // 3. Split fused QKV into planar Q/K/V scratch regions.
+    encode_split_qkv(
+        &cmd_buf,
+        pipelines,
+        buf,
+        scratch.qkv_out,
+        scratch.q_offset,
+        scratch.k_offset,
+        scratch.v_offset,
+        num_tokens,
+        q_dim,
+        kv_dim,
+    )?;
+
+    // 4. RoPE: apply partial RoPE to Q and K
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
@@ -636,6 +650,41 @@ pub unsafe fn metal_finalize_logits_blocking(
     Ok(())
 }
 
+unsafe fn encode_split_qkv(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    qkv_offset: usize,
+    q_offset: usize,
+    k_offset: usize,
+    v_offset: usize,
+    num_tokens: u32,
+    q_dim: u32,
+    kv_dim: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx { backend: "metal", op: "split_qkv_encode", device: "apple-silicon" },
+        )
+    })?;
+    let pso = pipelines.get("split_qkv_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), qkv_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), q_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), k_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), v_offset, 3);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _), 4, 4);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&q_dim as *const _ as *mut _), 4, 5);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&kv_dim as *const _ as *mut _), 4, 6);
+    let max_dim = q_dim.saturating_add(2u32.saturating_mul(kv_dim));
+    let groups = MTLSize { width: num_tokens as usize, height: max_dim as usize, depth: 1 };
+    let tpg = MTLSize { width: 1, height: 1, depth: 1 };
+    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -762,6 +811,83 @@ mod tests {
         assert!(validate_qkv_scratch_aliasing(&scratch, 8, 4).is_err());
     }
 
+    fn split_qkv_ref(
+        qkv: &[half::f16],
+        num_tokens: usize,
+        q_dim: usize,
+        kv_dim: usize,
+    ) -> (Vec<half::f16>, Vec<half::f16>, Vec<half::f16>) {
+        let qkv_dim = q_dim + 2 * kv_dim;
+        let mut q = vec![half::f16::from_f32(0.0); num_tokens * q_dim];
+        let mut k = vec![half::f16::from_f32(0.0); num_tokens * kv_dim];
+        let mut v = vec![half::f16::from_f32(0.0); num_tokens * kv_dim];
+
+        for token in 0..num_tokens {
+            let base = token * qkv_dim;
+            for d in 0..q_dim {
+                q[token * q_dim + d] = qkv[base + d];
+            }
+            for d in 0..kv_dim {
+                k[token * kv_dim + d] = qkv[base + q_dim + d];
+                v[token * kv_dim + d] = qkv[base + q_dim + kv_dim + d];
+            }
+        }
+        (q, k, v)
+    }
+
+    #[test]
+    fn split_qkv_reference_matches_interleaved_layout() {
+        let num_tokens = 2usize;
+        let q_dim = 3usize;
+        let kv_dim = 2usize;
+        let qkv: Vec<half::f16> = vec![
+            half::f16::from_f32(1.0),
+            half::f16::from_f32(2.0),
+            half::f16::from_f32(3.0),
+            half::f16::from_f32(4.0),
+            half::f16::from_f32(5.0),
+            half::f16::from_f32(6.0),
+            half::f16::from_f32(7.0),
+            half::f16::from_f32(8.0),
+            half::f16::from_f32(9.0),
+            half::f16::from_f32(10.0),
+            half::f16::from_f32(11.0),
+            half::f16::from_f32(12.0),
+            half::f16::from_f32(13.0),
+            half::f16::from_f32(14.0),
+        ];
+        let (q, k, v) = split_qkv_ref(&qkv, num_tokens, q_dim, kv_dim);
+        assert_eq!(
+            q,
+            vec![
+                half::f16::from_f32(1.0),
+                half::f16::from_f32(2.0),
+                half::f16::from_f32(3.0),
+                half::f16::from_f32(8.0),
+                half::f16::from_f32(9.0),
+                half::f16::from_f32(10.0)
+            ]
+        );
+        assert_eq!(
+            k,
+            vec![
+                half::f16::from_f32(4.0),
+                half::f16::from_f32(5.0),
+                half::f16::from_f32(11.0),
+                half::f16::from_f32(12.0)
+            ]
+        );
+        assert_eq!(
+            v,
+            vec![
+                half::f16::from_f32(6.0),
+                half::f16::from_f32(7.0),
+                half::f16::from_f32(13.0),
+                half::f16::from_f32(14.0)
+            ]
+        );
+    }
+
     fn rmsnorm_ref(input: &[half::f16], gamma: &[half::f16], hidden: usize, eps: f32) -> Vec<half::f16> {
         let mut out = Vec::with_capacity(input.len());
         for token in 0..(input.len() / hidden) {
@@ -842,6 +968,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
     fn final_logits_macos_smoke_matches_cpu() -> rvllm_core::Result<()> {
         let mut ctx = MetalContext::new()?;
         ctx.compile_library(crate::kernels::KERNEL_SOURCE)?;

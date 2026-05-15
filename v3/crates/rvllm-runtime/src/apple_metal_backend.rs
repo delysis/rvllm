@@ -4,10 +4,10 @@ use half::f16;
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
 #[derive(Debug, Default)]
-pub struct RuntimeMetalBackend;
+pub struct ToyMetalBackend;
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
-impl RuntimeMetalBackend {
+impl ToyMetalBackend {
     #[must_use]
     pub const fn new() -> Self {
         Self
@@ -15,7 +15,7 @@ impl RuntimeMetalBackend {
 }
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
-impl AppleBackend for RuntimeMetalBackend {
+impl AppleBackend for ToyMetalBackend {
     fn prepare(&mut self, _plan: &rvllm_apple::AppleRuntimePlan) -> Result<()> {
         Err(RvllmError::apple(
             AppleError::FeatureNotAvailable {
@@ -124,7 +124,7 @@ struct MetalState {
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Debug, Default)]
-pub struct RuntimeMetalBackend {
+pub struct ToyMetalBackend {
     prepared: bool,
     next_step_id: u64,
     last_ticket: Option<u64>,
@@ -136,7 +136,7 @@ pub struct RuntimeMetalBackend {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
-impl RuntimeMetalBackend {
+impl ToyMetalBackend {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -358,7 +358,7 @@ impl RuntimeMetalBackend {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
-impl AppleBackend for RuntimeMetalBackend {
+impl AppleBackend for ToyMetalBackend {
     fn prepare(&mut self, plan: &rvllm_apple::AppleRuntimePlan) -> Result<()> {
         plan.validate()?;
         self.prepared = true;
@@ -406,3 +406,8 @@ impl AppleBackend for RuntimeMetalBackend {
         }
     }
 }
+
+/// Backward-compatible name retained for wiring; this is a toy identity
+/// decode path and must not be treated as a production model decoder.
+#[allow(dead_code)]
+pub type RuntimeMetalBackend = ToyMetalBackend;
