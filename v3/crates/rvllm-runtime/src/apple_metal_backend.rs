@@ -1,13 +1,15 @@
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError, TokenId};
 use rvllm_apple::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, HandoffCapsule, StepToken};
 use half::f16;
+#[cfg(all(feature = "apple", target_os = "macos"))]
+use std::path::PathBuf;
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
 #[derive(Debug, Default)]
-pub struct ToyMetalBackend;
+pub struct RuntimeMetalBackend;
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
-impl ToyMetalBackend {
+impl RuntimeMetalBackend {
     #[must_use]
     pub const fn new() -> Self {
         Self
@@ -15,7 +17,7 @@ impl ToyMetalBackend {
 }
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
-impl AppleBackend for ToyMetalBackend {
+impl AppleBackend for RuntimeMetalBackend {
     fn prepare(&mut self, _plan: &rvllm_apple::AppleRuntimePlan) -> Result<()> {
         Err(RvllmError::apple(
             AppleError::FeatureNotAvailable {
@@ -84,6 +86,7 @@ use rvllm_apple_metal::{
     kernels,
     context::MetalContext,
     layer_forward::metal_finalize_logits_blocking,
+    gemma4_model::Gemma4MetalState,
     pipeline::PipelineCache,
 };
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -124,7 +127,7 @@ struct MetalState {
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Debug, Default)]
-pub struct ToyMetalBackend {
+pub struct RuntimeMetalBackend {
     prepared: bool,
     next_step_id: u64,
     last_ticket: Option<u64>,
@@ -136,7 +139,152 @@ pub struct ToyMetalBackend {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
-impl ToyMetalBackend {
+pub struct ModelMetalBackend {
+    pub model_dir: PathBuf,
+    pub prepared: bool,
+    pub next_step_id: u64,
+    pub last_ticket: Option<u64>,
+    pub pending: Option<Vec<StepToken>>,
+    pub state: Option<Gemma4MetalState>,
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+impl ModelMetalBackend {
+    #[must_use]
+    pub fn new(model_dir: PathBuf) -> Self {
+        Self {
+            model_dir,
+            prepared: false,
+            next_step_id: 0,
+            last_ticket: None,
+            pending: None,
+            state: None,
+        }
+    }
+
+    fn next_ticket(
+        &mut self,
+        kind: AppleLaunchKind,
+        bucket: Option<RolloutBucket>,
+    ) -> AppleLaunchTicket {
+        let step_id = self.next_step_id;
+        self.next_step_id += 1;
+        self.last_ticket = Some(step_id);
+        AppleLaunchTicket {
+            step_id,
+            kind,
+            bucket,
+        }
+    }
+
+    fn ensure_prepared(&self, op: &'static str) -> Result<()> {
+        if self.prepared {
+            Ok(())
+        } else {
+            Err(RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                AppleCtx {
+                    backend: "model-metal-backend",
+                    op,
+                    device: "apple-silicon",
+                },
+            ))
+        }
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+impl AppleBackend for ModelMetalBackend {
+    fn prepare(&mut self, _plan: &rvllm_apple::AppleRuntimePlan) -> Result<()> {
+        self.prepared = true;
+        self.next_step_id = 0;
+        self.last_ticket = None;
+        self.pending = None;
+        Err(RvllmError::apple(
+            AppleError::FeatureNotAvailable {
+                backend: "model-metal-backend",
+                op: "model_metal_backend_not_implemented",
+            },
+            AppleCtx {
+                backend: "model-metal-backend",
+                op: "model_metal_backend_not_implemented",
+                device: "apple-silicon",
+            },
+        ))
+    }
+
+    fn launch_prefill(&mut self, _handoff: &HandoffCapsule) -> Result<AppleLaunchTicket> {
+        self.ensure_prepared("launch_prefill")?;
+        Err(RvllmError::apple(
+            AppleError::FeatureNotAvailable {
+                backend: "model-metal-backend",
+                op: "model_metal_backend_not_implemented",
+            },
+            AppleCtx {
+                backend: "model-metal-backend",
+                op: "launch_prefill",
+                device: "apple-silicon",
+            },
+        ))
+    }
+
+    fn launch_rollout(
+        &mut self,
+        _handoff: &HandoffCapsule,
+        bucket: Option<RolloutBucket>,
+    ) -> Result<AppleLaunchTicket> {
+        self.ensure_prepared("launch_rollout")?;
+        Err(RvllmError::apple(
+            AppleError::FeatureNotAvailable {
+                backend: "model-metal-backend",
+                op: "model_metal_backend_not_implemented",
+            },
+            AppleCtx {
+                backend: "model-metal-backend",
+                op: "launch_rollout",
+                device: "apple-silicon",
+            },
+        ))
+    }
+
+    fn collect(&mut self, ticket: AppleLaunchTicket) -> Result<Vec<StepToken>> {
+        self.ensure_prepared("collect")?;
+        match self.last_ticket {
+            Some(expected) if expected == ticket.step_id => {
+                Ok(self.pending.take().unwrap_or_default())
+            }
+            Some(_) => Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "collect_stale_ticket",
+                },
+                AppleCtx {
+                    backend: "model-metal-backend",
+                    op: "collect",
+                    device: "apple-silicon",
+                },
+            )),
+            None => Err(RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                AppleCtx {
+                    backend: "model-metal-backend",
+                    op: "collect",
+                    device: "apple-silicon",
+                },
+            )),
+        }
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+pub type ToyMetalBackend = RuntimeMetalBackend;
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+impl RuntimeMetalBackend {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -358,7 +506,7 @@ impl ToyMetalBackend {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
-impl AppleBackend for ToyMetalBackend {
+impl AppleBackend for RuntimeMetalBackend {
     fn prepare(&mut self, plan: &rvllm_apple::AppleRuntimePlan) -> Result<()> {
         plan.validate()?;
         self.prepared = true;
@@ -406,8 +554,3 @@ impl AppleBackend for ToyMetalBackend {
         }
     }
 }
-
-/// Backward-compatible name retained for wiring; this is a toy identity
-/// decode path and must not be treated as a production model decoder.
-#[allow(dead_code)]
-pub type RuntimeMetalBackend = ToyMetalBackend;

@@ -80,27 +80,69 @@ pub enum MetalPhase {
     },
 }
 
-fn validate_qkv_scratch_aliasing(
+fn ranges_overlap(a_start: usize, a_len: usize, b_start: usize, b_len: usize) -> bool {
+    let Some(a_end) = a_start.checked_add(a_len) else {
+        return true;
+    };
+    let Some(b_end) = b_start.checked_add(b_len) else {
+        return true;
+    };
+    a_start < b_end && b_start < a_end
+}
+
+fn validate_qkv_scratch_planar(
     scratch: &MetalScratch,
+    num_tokens: usize,
     q_dim: usize,
     kv_dim: usize,
 ) -> Result<()> {
-    let half_bytes = std::mem::size_of::<u16>();
-    let expected_q = scratch.qkv_out;
-    let expected_k = expected_q + q_dim * half_bytes;
-    let expected_v = expected_q + (q_dim + kv_dim) * half_bytes;
-    if scratch.q_offset != expected_q
-        || scratch.k_offset != expected_k
-        || scratch.v_offset != expected_v
-    {
-        return Err(rvllm_core::RvllmError::apple(
+    let elem = std::mem::size_of::<u16>();
+    let qkv_elems = num_tokens
+        .checked_mul(q_dim + 2 * kv_dim)
+        .ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::FeatureNotAvailable {
+                    backend: "metal",
+                    op: "qkv scratch element overflow",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "layer_forward_scratch_planar",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+    let qkv_len = qkv_elems.checked_mul(elem).ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::FeatureNotAvailable {
                 backend: "metal",
-                op: "qkv scratch alias mismatch: qkv_out must be contiguous q/k/v layout",
+                op: "qkv scratch byte overflow",
             },
             rvllm_core::AppleCtx {
                 backend: "metal",
-                op: "layer_forward_scratch_alias",
+                op: "layer_forward_scratch_planar",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let q_len = num_tokens * q_dim * elem;
+    let kv_len = num_tokens * kv_dim * elem;
+
+    let bad = ranges_overlap(scratch.qkv_out, qkv_len, scratch.q_offset, q_len)
+        || ranges_overlap(scratch.qkv_out, qkv_len, scratch.k_offset, kv_len)
+        || ranges_overlap(scratch.qkv_out, qkv_len, scratch.v_offset, kv_len)
+        || ranges_overlap(scratch.q_offset, q_len, scratch.k_offset, kv_len)
+        || ranges_overlap(scratch.q_offset, q_len, scratch.v_offset, kv_len)
+        || ranges_overlap(scratch.k_offset, kv_len, scratch.v_offset, kv_len);
+    if bad {
+        return Err(rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::FeatureNotAvailable {
+                backend: "metal",
+                op: "qkv planar scratch regions overlap",
+            },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "layer_forward_scratch_planar",
                 device: "apple-silicon",
             },
         ));
@@ -147,8 +189,9 @@ pub unsafe fn metal_forward_layer(
     let q_dim = dims.num_heads * dims.head_dim;
     let kv_dim = dims.num_kv_heads * dims.head_dim;
     let qkv_n = q_dim + 2 * kv_dim;
-    validate_qkv_scratch_aliasing(
+    validate_qkv_scratch_planar(
         scratch,
+        num_tokens as usize,
         q_dim as usize,
         kv_dim as usize,
     )?;
@@ -777,7 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn qkv_scratch_aliasing_matches_expected_layout() {
+    fn qkv_scratch_planar_layout_rejects_canonical_aliasing() {
         let scratch = MetalScratch {
             normed_hidden: 0,
             qkv_out: 64,
@@ -789,14 +832,11 @@ mod tests {
             activated: 0,
             mlp_out: 0,
         };
-        assert!(
-            validate_qkv_scratch_aliasing(&scratch, 8, 4).is_ok(),
-            "canonical q/k/v offsets should be accepted"
-        );
+        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4).is_err());
     }
 
     #[test]
-    fn qkv_scratch_aliasing_rejects_noncontiguous_layout() {
+    fn qkv_scratch_planar_layout_rejects_aliasing() {
         let scratch = MetalScratch {
             normed_hidden: 0,
             qkv_out: 64,
@@ -808,7 +848,26 @@ mod tests {
             activated: 0,
             mlp_out: 0,
         };
-        assert!(validate_qkv_scratch_aliasing(&scratch, 8, 4).is_err());
+        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4).is_err());
+    }
+
+    #[test]
+    fn qkv_scratch_planar_layout_accepts_non_overlapping_offsets() {
+        let scratch = MetalScratch {
+            normed_hidden: 0,
+            qkv_out: 0,
+            q_offset: 1024,
+            k_offset: 2048,
+            v_offset: 3072,
+            attn_out: 0,
+            gate_up_out: 0,
+            activated: 0,
+            mlp_out: 0,
+        };
+        assert!(
+            validate_qkv_scratch_planar(&scratch, 1, 8, 4).is_ok(),
+            "non-overlapping planar scratch regions should be accepted"
+        );
     }
 
     fn split_qkv_ref(

@@ -307,7 +307,7 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
         let offset = 8 + header_bytes + start;
         if offset
             .checked_add(nbytes)
-            .is_none_or(|v| v > bytes.len())
+            .map_or(true, |v| v > bytes.len())
         {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {

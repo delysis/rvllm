@@ -33,7 +33,7 @@ use rvllm_apple::{
 #[cfg(feature = "apple")]
 use rvllm_apple::{ProductionAppleBackend, StubAppleBackend};
 #[cfg(all(feature = "apple", target_os = "macos"))]
-use crate::apple_metal_backend::RuntimeMetalBackend;
+use crate::apple_metal_backend::{ModelMetalBackend, RuntimeMetalBackend, ToyMetalBackend};
 
 fn apple_ctx(op: &'static str) -> AppleCtx {
     AppleCtx {
@@ -89,7 +89,7 @@ impl Engine {
     pub fn with_apple_runtime_plan(mut self, plan: AppleRuntimePlan) -> Result<Self> {
         plan.validate()?;
         if self.apple_backend.is_none() {
-            self.apple_backend = Some(default_apple_backend_for_plan(&plan));
+            self.apple_backend = Some(default_apple_backend_for_plan(&plan)?);
         }
         self.apple_runtime_plan = Some(plan);
         if let Some(backend) = self.apple_backend.as_mut() {
@@ -326,7 +326,10 @@ mod tests {
             weights_path: None,
         };
 
-        let e = match Engine::new().with_apple_runtime_plan(plan) {
+        let e = match Engine::new()
+            .with_apple_backend(Box::new(ToyMetalBackend::new()))
+            .with_apple_runtime_plan(plan)
+        {
             Ok(v) => v,
             Err(e) => panic!("unexpected runtime plan error: {e}"),
         };
@@ -455,18 +458,24 @@ fn runtime_to_apple_plan(
 }
 
 #[cfg(feature = "apple")]
-fn default_apple_backend_for_plan(plan: &AppleRuntimePlan) -> Box<dyn AppleBackend> {
+fn default_apple_backend_for_plan(plan: &AppleRuntimePlan) -> Result<Box<dyn AppleBackend>> {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     {
         if plan.mode.requires_private_ane() {
-            return Box::new(ProductionAppleBackend::new());
+            return Ok(Box::new(ProductionAppleBackend::new()));
         }
-        return Box::new(RuntimeMetalBackend::new());
+        if let Some(model_dir) = plan.weights_path.clone() {
+            return Ok(Box::new(ModelMetalBackend::new(model_dir)));
+        }
+        if std::env::var("RVLLM_APPLE_TOY_METAL").ok().as_deref() == Some("1") {
+            return Ok(Box::new(ToyMetalBackend::new()));
+        }
+        Err(apple_unavailable_error("metal_model_dir_required", "apple-metal"))
     }
     #[cfg(not(all(feature = "apple", target_os = "macos")))]
     {
         let _ = plan;
-        return Box::new(StubAppleBackend::new());
+        return Ok(Box::new(StubAppleBackend::new()));
     }
 }
 

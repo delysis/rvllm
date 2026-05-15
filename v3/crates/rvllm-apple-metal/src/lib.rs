@@ -21,6 +21,8 @@ pub mod kernels;
 pub mod layer_forward;
 #[cfg(target_os = "macos")]
 pub mod weight_loader;
+#[cfg(target_os = "macos")]
+pub mod gemma4_model;
 #[cfg(not(target_os = "macos"))]
 mod unavailable;
 
