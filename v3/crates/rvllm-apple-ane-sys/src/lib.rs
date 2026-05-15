@@ -1,11 +1,16 @@
-#[cfg(apple_silicon)]
-pub mod ffi;
-
-#[cfg(apple_silicon)]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+mod ffi;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub use ffi::*;
-
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use objc2::rc::Retained;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use objc2::runtime::AnyObject;
+
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+mod unavailable;
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+pub use unavailable::*;
 
 #[derive(Clone)]
 pub struct AneRequest {

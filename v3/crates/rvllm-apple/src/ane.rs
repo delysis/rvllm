@@ -5,8 +5,12 @@ use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
 use prost::Message;
+#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
 use std::process::Command;
+#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+use rvllm_core::error::AneCompileError;
 use std::hash::{Hash, Hasher};
 use std::ffi::OsStr;
 
@@ -187,6 +191,7 @@ impl AneProgramPlan {
     }
 }
 
+#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
 pub fn compile_private_ane_program(
     plan: &AneProgramPlan,
     weights_path: &Path,
@@ -220,7 +225,7 @@ pub fn compile_private_ane_program(
                 push_diagnostic(format!("create weights dir failed: {e}"));
                 RvllmError::apple(
                     AppleError::CompileAneModel {
-                        err: rvllm_core::AneCompileError::CompileIo { detail: e.to_string() },
+                        err: AneCompileError::CompileIo { detail: e.to_string() },
                     },
                     ctx("create_weights_dir"),
                 )
@@ -231,7 +236,7 @@ pub fn compile_private_ane_program(
                 push_diagnostic(format!("copy weights failed: {e}"));
                 RvllmError::apple(
                     AppleError::CompileAneModel {
-                        err: rvllm_core::AneCompileError::CompileIo { detail: e.to_string() },
+                        err: AneCompileError::CompileIo { detail: e.to_string() },
                     },
                     ctx("copy_weights"),
                 )
@@ -241,7 +246,7 @@ pub fn compile_private_ane_program(
 
         std::fs::create_dir_all(&workspace).map_err(|e| {
             push_diagnostic(format!("create workspace failed: {e}"));
-            RvllmError::apple(AppleError::CompileAneModel { err: rvllm_core::AneCompileError::CompileIo { detail: e.to_string() } }, ctx("create_workspace"))
+            RvllmError::apple(AppleError::CompileAneModel { err: AneCompileError::CompileIo { detail: e.to_string() } }, ctx("create_workspace"))
         })?;
 
         let mil_path = workspace.join("model.mlmodel");
@@ -250,7 +255,7 @@ pub fn compile_private_ane_program(
             push_diagnostic(format!("create weights dir failed: {e}"));
             RvllmError::apple(
                 AppleError::CompileAneModel {
-                    err: rvllm_core::AneCompileError::CompileIo { detail: e.to_string() },
+                    err: AneCompileError::CompileIo { detail: e.to_string() },
                 },
                 ctx("create_weights_dir"),
             )
@@ -261,7 +266,7 @@ pub fn compile_private_ane_program(
             push_diagnostic(format!("copy weights failed: {e}"));
             RvllmError::apple(
                 AppleError::CompileAneModel {
-                    err: rvllm_core::AneCompileError::CompileIo { detail: e.to_string() },
+                    err: AneCompileError::CompileIo { detail: e.to_string() },
                 },
                 ctx("copy_weights"),
             )
@@ -308,7 +313,7 @@ pub fn compile_private_ane_program(
             push_diagnostic(format!("write mlmodel failed: {e}"));
             RvllmError::apple(
                 AppleError::CompileAneModel {
-                    err: rvllm_core::AneCompileError::CompileIo { detail: e.to_string() },
+                    err: AneCompileError::CompileIo { detail: e.to_string() },
                 },
                 ctx("write_mlmodel"),
             )
@@ -332,7 +337,7 @@ pub fn compile_private_ane_program(
             .map_err(|_| {
                 RvllmError::apple(
                     AppleError::CompileAneModel {
-                        err: rvllm_core::AneCompileError::CompileIo {
+                        err: AneCompileError::CompileIo {
                             detail: "xcrun coremlcompiler invocation failed".into(),
                         },
                     },
@@ -344,7 +349,7 @@ pub fn compile_private_ane_program(
             push_diagnostic(format!("xcrun failed: {}", String::from_utf8_lossy(&output.stderr)));
             return Err(RvllmError::apple(
                 AppleError::CompileAneModel {
-                    err: rvllm_core::AneCompileError::CompileIo {
+                    err: AneCompileError::CompileIo {
                         detail: String::from_utf8_lossy(&output.stderr).into_owned(),
                     },
                 },
@@ -355,7 +360,7 @@ pub fn compile_private_ane_program(
         if locate_compiled_bundle(&workspace).is_none() {
             return Err(RvllmError::apple(
                 AppleError::CompileAneModel {
-                    err: rvllm_core::AneCompileError::CacheMissOrCorrupt {
+                    err: AneCompileError::CacheMissOrCorrupt {
                         cache_path: workspace.to_string_lossy().into_owned(),
                     },
                 },
@@ -370,7 +375,7 @@ pub fn compile_private_ane_program(
     let compiled = locate_compiled_bundle(&workspace).ok_or_else(|| {
         RvllmError::apple(
             AppleError::CompileAneModel {
-                err: rvllm_core::AneCompileError::CacheMissOrCorrupt {
+                err: AneCompileError::CacheMissOrCorrupt {
                     cache_path: workspace.to_string_lossy().into_owned(),
                 },
             },
@@ -379,6 +384,20 @@ pub fn compile_private_ane_program(
     })?;
 
     Ok(compiled)
+}
+
+#[cfg(not(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64")))]
+pub fn compile_private_ane_program(
+    _plan: &AneProgramPlan,
+    _weights_path: &Path,
+) -> Result<PathBuf> {
+    Err(RvllmError::apple(
+        AppleError::FeatureNotAvailable {
+            backend: "private-ane",
+            op: "compile_private_ane_program requires macOS+aarch64+private-ane",
+        },
+        ctx("compile_private_ane_program"),
+    ))
 }
 
 #[cfg(test)]

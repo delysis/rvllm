@@ -9,7 +9,7 @@ use objc2_metal::{
     MTLBuffer, MTLCommandBuffer, MTLComputeCommandEncoder, MTLSize,
     MTLCommandQueue, MTLCommandEncoder,
 };
-use crate::arena::{MetalBufferArena, MetalRegion};
+use crate::arena::MetalBufferArena;
 use crate::pipeline::PipelineCache;
 use crate::context::MetalContext;
 use rvllm_core::Result;
@@ -80,6 +80,34 @@ pub enum MetalPhase {
     },
 }
 
+fn validate_qkv_scratch_aliasing(
+    scratch: &MetalScratch,
+    q_dim: usize,
+    kv_dim: usize,
+) -> Result<()> {
+    let half_bytes = std::mem::size_of::<u16>();
+    let expected_q = scratch.qkv_out;
+    let expected_k = expected_q + q_dim * half_bytes;
+    let expected_v = expected_q + (q_dim + kv_dim) * half_bytes;
+    if scratch.q_offset != expected_q
+        || scratch.k_offset != expected_k
+        || scratch.v_offset != expected_v
+    {
+        return Err(rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::FeatureNotAvailable {
+                backend: "metal",
+                op: "qkv scratch alias mismatch: qkv_out must be contiguous q/k/v layout",
+            },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "layer_forward_scratch_alias",
+                device: "apple-silicon",
+            },
+        ));
+    }
+    Ok(())
+}
+
 /// Execute one decoder layer on Metal.
 ///
 /// All buffers are pre-allocated in the arena. This function only
@@ -119,6 +147,11 @@ pub unsafe fn metal_forward_layer(
     let q_dim = dims.num_heads * dims.head_dim;
     let kv_dim = dims.num_kv_heads * dims.head_dim;
     let qkv_n = q_dim + 2 * kv_dim;
+    validate_qkv_scratch_aliasing(
+        scratch,
+        q_dim as usize,
+        kv_dim as usize,
+    )?;
 
     // 1. RMSNorm(residual) → normed_hidden
     {
@@ -233,7 +266,7 @@ pub unsafe fn metal_forward_layer(
             encoder.setBytes_length_atIndex(std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _), 4, 12);
             let total_heads = num_tokens * dims.num_heads;
             let groups = MTLSize { width: total_heads as usize, height: 1, depth: 1 };
-            let tpg = MTLSize { width: 256.min(dims.head_dim as usize), height: 1, depth: 1 };
+            let tpg = MTLSize { width: 1, height: 1, depth: 1 };
             encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
             encoder.endEncoding();
         }
@@ -338,6 +371,766 @@ pub unsafe fn metal_forward_layer(
     cmd_buf.commit();
 
     Ok(())
+}
+
+unsafe fn encode_logits_head(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+    rms_eps: f32,
+    softcap: f32,
+    residual_offset: usize,
+    final_norm_offset: usize,
+    lm_head_offset: usize,
+    logits_offset: usize,
+    normed_hidden_offset: usize,
+    sampled_tokens_offset: usize,
+) -> Result<()> {
+    let buf = arena.buffer_retained();
+
+    // 1) final RMSNorm -> normed_hidden
+    {
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "final_rmsnorm_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let pso = pipelines.get("rmsnorm_f16")?;
+        encoder.setComputePipelineState(pso);
+        encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
+        encoder.setBuffer_offset_atIndex(Some(buf), normed_hidden_offset, 1);
+        encoder.setBuffer_offset_atIndex(Some(buf), final_norm_offset, 2);
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+            4,
+            3,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&rms_eps as *const _ as *mut _),
+            4,
+            4,
+        );
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        };
+        encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+        encoder.endEncoding();
+    }
+
+    // 2) LM-head projection
+    encode_gemm(
+        cmd_buf,
+        pipelines,
+        buf,
+        normed_hidden_offset,
+        lm_head_offset,
+        logits_offset,
+        num_tokens,
+        vocab,
+        hidden,
+        1.0,
+        0.0,
+    )?;
+
+    // 3) optional softcap
+    if softcap > 0.0 {
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "final_softcap_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let pso = pipelines.get("softcap_f16")?;
+        encoder.setComputePipelineState(pso);
+        encoder.setBuffer_offset_atIndex(Some(buf), logits_offset, 0);
+        let count = num_tokens.saturating_mul(vocab);
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
+            4,
+            1,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&softcap as *const _ as *mut _),
+            4,
+            2,
+        );
+        let groups = MTLSize {
+            width: (count as usize + 255) / 256,
+            height: 1,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        };
+        encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+        encoder.endEncoding();
+    }
+
+    // 4) argmax -> sampled token IDs
+    {
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "final_argmax_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let pso = pipelines.get("argmax_f16")?;
+        encoder.setComputePipelineState(pso);
+        encoder.setBuffer_offset_atIndex(Some(buf), logits_offset, 0);
+        encoder.setBuffer_offset_atIndex(Some(buf), sampled_tokens_offset, 1);
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+            4,
+            2,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&vocab as *const _ as *mut _),
+            4,
+            3,
+        );
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        };
+        encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+        encoder.endEncoding();
+    }
+
+    Ok(())
+}
+
+/// Run final normalization + LM head projection + optional softcap + argmax.
+///
+/// This path is intentionally non-allocating in the hot path; all buffers
+/// are pre-allocated in the arena.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn metal_finalize_logits(
+    ctx: &MetalContext,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+    rms_eps: f32,
+    softcap: f32,
+    residual_offset: usize,
+    final_norm_offset: usize,
+    lm_head_offset: usize,
+    logits_offset: usize,
+    normed_hidden_offset: usize,
+    sampled_tokens_offset: usize,
+) -> Result<()> {
+    let queue = ctx.queue_retained();
+    let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "final_logits_encode",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+
+    encode_logits_head(
+        &cmd_buf,
+        pipelines,
+        arena,
+        num_tokens,
+        hidden,
+        vocab,
+        rms_eps,
+        softcap,
+        residual_offset,
+        final_norm_offset,
+        lm_head_offset,
+        logits_offset,
+        normed_hidden_offset,
+        sampled_tokens_offset,
+    )?;
+
+    cmd_buf.commit();
+    Ok(())
+}
+
+/// Same as `metal_finalize_logits`, but blocks until completion.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn metal_finalize_logits_blocking(
+    ctx: &MetalContext,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+    rms_eps: f32,
+    softcap: f32,
+    residual_offset: usize,
+    final_norm_offset: usize,
+    lm_head_offset: usize,
+    logits_offset: usize,
+    normed_hidden_offset: usize,
+    sampled_tokens_offset: usize,
+) -> Result<()> {
+    let queue = ctx.queue_retained();
+    let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "final_logits_encode_blocking",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+
+    encode_logits_head(
+        &cmd_buf,
+        pipelines,
+        arena,
+        num_tokens,
+        hidden,
+        vocab,
+        rms_eps,
+        softcap,
+        residual_offset,
+        final_norm_offset,
+        lm_head_offset,
+        logits_offset,
+        normed_hidden_offset,
+        sampled_tokens_offset,
+    )?;
+
+    cmd_buf.commit();
+    cmd_buf.waitUntilCompleted();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn attention_decode_reference(
+        q: &[half::f16],
+        k_cache: &[half::f16],
+        v_cache: &[half::f16],
+        block_tables: &[i32],
+        context_lens: &[i32],
+        num_seqs: u32,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        block_size: u32,
+        max_blocks: u32,
+        scale: f32,
+    ) -> Vec<f32> {
+        let num_seqs = num_seqs as usize;
+        let num_heads = num_heads as usize;
+        let num_kv_heads = num_kv_heads as usize;
+        let head_dim = head_dim as usize;
+        let kv_dim = num_kv_heads * head_dim;
+        let q_dim = num_heads * head_dim;
+
+        let mut out = vec![0f32; num_seqs * q_dim];
+        for seq in 0..num_seqs {
+            let ctx_len = context_lens[seq] as usize;
+            if ctx_len == 0 {
+                continue;
+            }
+
+            for head in 0..num_heads {
+                let kv_head = head / (num_heads / num_kv_heads);
+                let mut q_local = vec![0f32; head_dim];
+                for d in 0..head_dim {
+                    q_local[d] = q[seq * q_dim + head * head_dim + d].to_f32();
+                }
+
+                let mut scores = vec![f32::NEG_INFINITY; ctx_len];
+                for t in 0..ctx_len {
+                    let block_idx = t / block_size as usize;
+                    let block_offset = t % block_size as usize;
+                    let block_id = block_tables[seq * max_blocks as usize + block_idx];
+                    if block_id < 0 {
+                        continue;
+                    }
+
+                    let block_base = block_id as usize * block_size as usize * kv_dim;
+                    let mut score = 0f32;
+                    for d in 0..head_dim {
+                        let k_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+                        score += q_local[d] * k_cache[k_idx].to_f32();
+                    }
+                    scores[t] = score * scale;
+                }
+
+                let max_score = scores.iter().fold(f32::NEG_INFINITY, |acc, &s| acc.max(s));
+                let mut sum_exp = 0f32;
+                for &score in &scores {
+                    if score > f32::NEG_INFINITY {
+                        sum_exp += (score - max_score).exp();
+                    }
+                }
+
+                for t in 0..ctx_len {
+                    if scores[t] <= f32::NEG_INFINITY {
+                        continue;
+                    }
+                    let block_idx = t / block_size as usize;
+                    let block_offset = t % block_size as usize;
+                    let block_id = block_tables[seq * max_blocks as usize + block_idx];
+                    if block_id < 0 {
+                        continue;
+                    }
+
+                    let block_base = block_id as usize * block_size as usize * kv_dim;
+                    let weight = (scores[t] - max_score).exp() / sum_exp;
+
+                    for d in 0..head_dim {
+                        let v_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+                        out[seq * q_dim + head * head_dim + d] +=
+                            weight * v_cache[v_idx].to_f32();
+                    }
+                }
+            }
+        }
+
+        out
+    }
+
+    #[test]
+    fn qkv_scratch_aliasing_matches_expected_layout() {
+        let scratch = MetalScratch {
+            normed_hidden: 0,
+            qkv_out: 64,
+            q_offset: 64,
+            k_offset: 80,
+            v_offset: 88,
+            attn_out: 0,
+            gate_up_out: 0,
+            activated: 0,
+            mlp_out: 0,
+        };
+        assert!(
+            validate_qkv_scratch_aliasing(&scratch, 8, 4).is_ok(),
+            "canonical q/k/v offsets should be accepted"
+        );
+    }
+
+    #[test]
+    fn qkv_scratch_aliasing_rejects_noncontiguous_layout() {
+        let scratch = MetalScratch {
+            normed_hidden: 0,
+            qkv_out: 64,
+            q_offset: 68,
+            k_offset: 80,
+            v_offset: 96,
+            attn_out: 0,
+            gate_up_out: 0,
+            activated: 0,
+            mlp_out: 0,
+        };
+        assert!(validate_qkv_scratch_aliasing(&scratch, 8, 4).is_err());
+    }
+
+    fn rmsnorm_ref(input: &[half::f16], gamma: &[half::f16], hidden: usize, eps: f32) -> Vec<half::f16> {
+        let mut out = Vec::with_capacity(input.len());
+        for token in 0..(input.len() / hidden) {
+            let base = token * hidden;
+            let mut sum_sq = 0.0f32;
+            for d in 0..hidden {
+                let v = input[base + d].to_f32();
+                sum_sq += v * v;
+            }
+            let inv_rms = 1.0f32 / (sum_sq / hidden as f32 + eps).sqrt();
+            for d in 0..hidden {
+                out.push(half::f16::from_f32(
+                    input[base + d].to_f32() * inv_rms * gamma[d].to_f32(),
+                ));
+            }
+        }
+        out
+    }
+
+    fn softcap_ref(logits: &mut [f32], cap: f32) {
+        for v in logits {
+            *v = cap * (*v / cap).tanh();
+        }
+    }
+
+    fn lm_head_ref(
+        residual: &[half::f16],
+        final_norm: &[half::f16],
+        lm_head: &[half::f16],
+        num_tokens: usize,
+        hidden: usize,
+        vocab: usize,
+        eps: f32,
+        softcap: f32,
+    ) -> Vec<i32> {
+        let normed = rmsnorm_ref(residual, final_norm, hidden, eps);
+        let mut logits = vec![0f32; num_tokens * vocab];
+        for t in 0..num_tokens {
+            for v in 0..vocab {
+                let mut acc = 0.0f32;
+                for d in 0..hidden {
+                    acc += normed[t * hidden + d].to_f32() * lm_head[v * hidden + d].to_f32();
+                }
+                logits[t * vocab + v] = acc;
+            }
+        }
+        if softcap > 0.0 {
+            softcap_ref(&mut logits, softcap);
+        }
+
+        let mut out = vec![0i32; num_tokens];
+        for t in 0..num_tokens {
+            let mut best_idx = 0usize;
+            let mut best_val = -f32::INFINITY;
+            for v in 0..vocab {
+                let val = logits[t * vocab + v];
+                if val > best_val {
+                    best_val = val;
+                    best_idx = v;
+                }
+            }
+            out[t] = best_idx as i32;
+        }
+        out
+    }
+
+    #[test]
+    fn softcap_ref_matches_definition() {
+        let cap = 30.0f32;
+        let mut logits = vec![-60.0f32, -30.0, -15.0, -1.0, 0.0, 1.0, 15.0, 30.0, 60.0];
+        let expected: Vec<f32> = logits.iter().map(|x| cap * (x / cap).tanh()).collect();
+
+        softcap_ref(&mut logits, cap);
+        for (got, exp) in logits.iter().zip(expected.iter()) {
+            assert!((got - exp).abs() < 1e-5);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn final_logits_macos_smoke_matches_cpu() -> rvllm_core::Result<()> {
+        let mut ctx = MetalContext::new()?;
+        ctx.compile_library(crate::kernels::KERNEL_SOURCE)?;
+        let mut pipelines = PipelineCache::new();
+        pipelines.compile_all(&ctx)?;
+        let mut arena = MetalBufferArena::new(ctx.device(), 16 * 1024)?;
+
+        const NUM_TOKENS: u32 = 2;
+        const HIDDEN: u32 = 4;
+        const VOCAB: u32 = 3;
+        const EPS: f32 = 1e-5;
+        const SOFTCAP: f32 = 30.0;
+        let residual = vec![
+            half::f16::from_f32(0.2),
+            half::f16::from_f32(0.4),
+            half::f16::from_f32(0.6),
+            half::f16::from_f32(0.8),
+            half::f16::from_f32(0.1),
+            half::f16::from_f32(-0.2),
+            half::f16::from_f32(0.5),
+            half::f16::from_f32(0.3),
+        ];
+        let final_norm = vec![
+            half::f16::from_f32(1.0),
+            half::f16::from_f32(1.0),
+            half::f16::from_f32(1.0),
+            half::f16::from_f32(1.0),
+        ];
+        let lm_head = vec![
+            half::f16::from_f32(0.2),
+            half::f16::from_f32(0.1),
+            half::f16::from_f32(-0.1),
+            half::f16::from_f32(0.0),
+            half::f16::from_f32(-0.2),
+            half::f16::from_f32(0.3),
+            half::f16::from_f32(0.25),
+            half::f16::from_f32(-0.4),
+            half::f16::from_f32(0.15),
+            half::f16::from_f32(0.05),
+            half::f16::from_f32(0.6),
+            half::f16::from_f32(-0.3),
+        ];
+
+        let half_bytes = std::mem::size_of::<half::f16>();
+        let i32_bytes = std::mem::size_of::<i32>();
+        let residual_region = arena.region("residual", residual.len() * half_bytes, 2)?;
+        let final_norm_region = arena.region("final_norm", final_norm.len() * half_bytes, 2)?;
+        let lm_head_region = arena.region("lm_head", lm_head.len() * half_bytes, 2)?;
+        let normed_region = arena.region("normed", residual.len() * half_bytes, 2)?;
+        let logits_region = arena.region("logits", (NUM_TOKENS as usize * VOCAB as usize) * half_bytes, 2)?;
+        let token_region = arena.region("tokens", (NUM_TOKENS as usize) * i32_bytes, 4)?;
+
+        unsafe {
+            let residual_ptr = arena.host_ptr(&residual_region) as *mut half::f16;
+            for (idx, value) in residual.iter().enumerate() {
+                *residual_ptr.add(idx) = *value;
+            }
+            let final_norm_ptr = arena.host_ptr(&final_norm_region) as *mut half::f16;
+            for (idx, value) in final_norm.iter().enumerate() {
+                *final_norm_ptr.add(idx) = *value;
+            }
+            let lm_head_ptr = arena.host_ptr(&lm_head_region) as *mut half::f16;
+            for (idx, value) in lm_head.iter().enumerate() {
+                *lm_head_ptr.add(idx) = *value;
+            }
+        }
+
+        let queue = ctx.queue_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "final_logits_smoke_cmdbuf",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        unsafe {
+            encode_logits_head(
+                &cmd_buf,
+                &pipelines,
+                &arena,
+                NUM_TOKENS,
+                HIDDEN,
+                VOCAB,
+                EPS,
+                SOFTCAP,
+                residual_region.offset,
+                final_norm_region.offset,
+                lm_head_region.offset,
+                logits_region.offset,
+                normed_region.offset,
+                token_region.offset,
+            )?;
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let got = unsafe {
+            let ptr = arena.host_ptr(&token_region) as *const i32;
+            std::slice::from_raw_parts(ptr, NUM_TOKENS as usize).to_vec()
+        };
+        let expected = lm_head_ref(
+            &residual,
+            &final_norm,
+            &lm_head,
+            NUM_TOKENS as usize,
+            HIDDEN as usize,
+            VOCAB as usize,
+            EPS,
+            SOFTCAP,
+        );
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn attention_decode_macos_smoke_matches_cpu() -> rvllm_core::Result<()> {
+        let mut ctx = MetalContext::new()?;
+        ctx.compile_library(crate::kernels::KERNEL_SOURCE)?;
+        let mut pipelines = PipelineCache::new();
+        pipelines.compile_all(&ctx)?;
+        let mut arena = MetalBufferArena::new(ctx.device(), 64 * 1024)?;
+
+        const NUM_TOKENS: u32 = 1;
+        const NUM_HEADS: u32 = 2;
+        const NUM_KV_HEADS: u32 = 1;
+        const HEAD_DIM: u32 = 8;
+        const BLOCK_SIZE: u32 = 4;
+        const MAX_BLOCKS_PER_SEQ: u32 = 1;
+        let attn_scale = 1.0 / (HEAD_DIM as f32).sqrt();
+
+        let q_dim = NUM_HEADS * HEAD_DIM;
+        let kv_dim = NUM_KV_HEADS * HEAD_DIM;
+
+        let q: Vec<half::f16> = (0..q_dim)
+            .map(|i| half::f16::from_f32(((i as f32) + 1.0) * 0.03))
+            .collect();
+        let k_cache: Vec<half::f16> = (0..(BLOCK_SIZE * kv_dim) as usize)
+            .map(|i| half::f16::from_f32(((i as f32) + 1.0) * 0.01))
+            .collect();
+        let v_cache: Vec<half::f16> = (0..(BLOCK_SIZE * kv_dim) as usize)
+            .map(|i| half::f16::from_f32(((i as f32) + 1.0) * 0.02))
+            .collect();
+        let block_tables = vec![0_i32];
+        let context_lens = vec![4_i32];
+
+        let half_bytes = std::mem::size_of::<half::f16>();
+        let i32_bytes = std::mem::size_of::<i32>();
+
+        let q_region = arena.region("attn_decode_q", q.len() * half_bytes, 2)?;
+        let k_cache_region = arena.region("attn_decode_k", k_cache.len() * half_bytes, 2)?;
+        let v_cache_region = arena.region("attn_decode_v", v_cache.len() * half_bytes, 2)?;
+        let out_region = arena.region("attn_decode_out", q.len() * half_bytes, 2)?;
+        let block_table_region = arena.region("attn_decode_block_tables", block_tables.len() * i32_bytes, 4)?;
+        let context_region = arena.region("attn_decode_context", context_lens.len() * i32_bytes, 4)?;
+
+        unsafe {
+            let q_ptr = arena.host_ptr(&q_region) as *mut half::f16;
+            for (idx, value) in q.iter().enumerate() {
+                *q_ptr.add(idx) = *value;
+            }
+
+            let k_ptr = arena.host_ptr(&k_cache_region) as *mut half::f16;
+            for (idx, value) in k_cache.iter().enumerate() {
+                *k_ptr.add(idx) = *value;
+            }
+
+            let v_ptr = arena.host_ptr(&v_cache_region) as *mut half::f16;
+            for (idx, value) in v_cache.iter().enumerate() {
+                *v_ptr.add(idx) = *value;
+            }
+
+            let slot_ptr = arena.host_ptr(&block_table_region) as *mut i32;
+            for (idx, value) in block_tables.iter().enumerate() {
+                *slot_ptr.add(idx) = *value;
+            }
+
+            let ctx_ptr = arena.host_ptr(&context_region) as *mut i32;
+            for (idx, value) in context_lens.iter().enumerate() {
+                *ctx_ptr.add(idx) = *value;
+            }
+        }
+
+        let queue = ctx.queue_retained();
+        let buf = arena.buffer_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "attn_decode_smoke",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "attn_decode_smoke_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let pso = pipelines.get("attention_decode_f16")?;
+        unsafe {
+            encoder.setComputePipelineState(pso);
+            encoder.setBuffer_offset_atIndex(Some(buf), q_region.offset, 0);
+            encoder.setBuffer_offset_atIndex(Some(buf), k_cache_region.offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(buf), v_cache_region.offset, 2);
+            encoder.setBuffer_offset_atIndex(Some(buf), out_region.offset, 3);
+            encoder.setBuffer_offset_atIndex(Some(buf), block_table_region.offset, 4);
+            encoder.setBuffer_offset_atIndex(Some(buf), context_region.offset, 5);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&NUM_TOKENS as *const _ as *mut _),
+                4,
+                6,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&NUM_HEADS as *const _ as *mut _),
+                4,
+                7,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&NUM_KV_HEADS as *const _ as *mut _),
+                4,
+                8,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&HEAD_DIM as *const _ as *mut _),
+                4,
+                9,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&BLOCK_SIZE as *const _ as *mut _),
+                4,
+                10,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&MAX_BLOCKS_PER_SEQ as *const _ as *mut _),
+                4,
+                11,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&attn_scale as *const _ as *mut _),
+                4,
+                12,
+            );
+
+            let groups = MTLSize {
+                width: (NUM_TOKENS * NUM_HEADS) as usize,
+                height: 1,
+                depth: 1,
+            };
+            let tpg = MTLSize {
+                width: 1,
+                height: 1,
+                depth: 1,
+            };
+            encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+            encoder.endEncoding();
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let expected = attention_decode_reference(
+            &q,
+            &k_cache,
+            &v_cache,
+            &block_tables,
+            &context_lens,
+            NUM_TOKENS,
+            NUM_HEADS,
+            NUM_KV_HEADS,
+            HEAD_DIM,
+            BLOCK_SIZE,
+            MAX_BLOCKS_PER_SEQ,
+            attn_scale,
+        );
+
+        let got = unsafe { std::slice::from_raw_parts(arena.host_ptr(&out_region) as *const half::f16, q.len()) };
+        for i in 0..got.len() {
+            assert!((got[i].to_f32() - expected[i]).abs() < 1e-2);
+        }
+        Ok(())
+    }
 }
 
 /// Encode a GEMM operation into the command buffer.

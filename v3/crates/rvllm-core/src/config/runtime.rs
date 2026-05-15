@@ -2,8 +2,9 @@
 //! `RuntimeConfigBuilder::build(&model)` in `builder.rs`.
 
 use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AneComputeProfile {
     /// Use any available compute backend that can execute the ANE-friendly
     /// graph (MLKit default behavior).
@@ -25,7 +26,7 @@ impl AneComputeProfile {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AneFallbackPolicy {
     /// Never fallback from a strict ANE request.
     FailFast,
@@ -42,7 +43,7 @@ impl AneFallbackPolicy {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AppleBackendMode {
     Disabled,
     MetalOnly,

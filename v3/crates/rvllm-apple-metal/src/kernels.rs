@@ -217,10 +217,9 @@ kernel void attention_decode_f16(
     constant uint     &block_size [[buffer(10)]],
     constant uint     &max_blocks [[buffer(11)]],
     constant float    &scale      [[buffer(12)]],
-    uint gid                      [[threadgroup_position_in_grid]],
-    uint tid                      [[thread_index_in_threadgroup]]
+    uint gid                      [[threadgroup_position_in_grid]]
 ) {
-    // One threadgroup per (seq, head) pair
+    // One thread per (seq, head) pair
     uint seq = gid / num_heads;
     uint head = gid % num_heads;
     if (seq >= num_seqs) return;
@@ -233,30 +232,29 @@ kernel void attention_decode_f16(
     uint kv_dim = num_kv_heads * head_dim;
 
     // Load Q vector for this head
-    threadgroup float q_shared[512]; // max head_dim
-    for (uint d = tid; d < head_dim; d += 256) {
+    float q_shared[512]; // max head_dim
+    for (uint d = 0; d < head_dim; d++) {
         q_shared[d] = float(q[seq * q_dim + head * head_dim + d]);
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Compute attention scores and weighted sum (online softmax)
     float max_score = -INFINITY;
     float sum_exp = 0.0f;
     threadgroup float out_accum[512];
-    for (uint d = tid; d < head_dim; d += 256) {
+    for (uint d = 0; d < head_dim; d++) {
         out_accum[d] = 0.0f;
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Process each KV token
     for (int t = 0; t < ctx_len; t++) {
         uint block_idx = t / block_size;
         uint block_offset = t % block_size;
         int block_id = block_tables[seq * max_blocks + block_idx];
+        if (block_id < 0) continue;
 
         // Dot product Q·K
         float score = 0.0f;
-        for (uint d = tid; d < head_dim; d += 256) {
+        for (uint d = 0; d < head_dim; d++) {
             uint k_idx = uint(block_id) * block_size * kv_dim
                        + block_offset * kv_dim
                        + kv_head * head_dim + d;
@@ -273,7 +271,7 @@ kernel void attention_decode_f16(
 
         // Accumulate V weighted by attention
         float weight = exp(score - max_score);
-        for (uint d = tid; d < head_dim; d += 256) {
+        for (uint d = 0; d < head_dim; d++) {
             uint v_idx = uint(block_id) * block_size * kv_dim
                        + block_offset * kv_dim
                        + kv_head * head_dim + d;
@@ -281,11 +279,9 @@ kernel void attention_decode_f16(
         }
     }
 
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
     // Write output
     float inv_sum = 1.0f / sum_exp;
-    for (uint d = tid; d < head_dim; d += 256) {
+    for (uint d = 0; d < head_dim; d++) {
         output[seq * q_dim + head * head_dim + d] = half(out_accum[d] * inv_sum);
     }
 }
@@ -491,7 +487,7 @@ kernel void bf16_to_f16(
 "#;
 
 /// Number of kernels defined in the source.
-pub const KERNEL_COUNT: usize = 11;
+pub const KERNEL_COUNT: usize = KERNEL_NAMES.len();
 
 /// List of all kernel function names.
 pub const KERNEL_NAMES: &[&str] = &[
@@ -508,3 +504,396 @@ pub const KERNEL_NAMES: &[&str] = &[
     "softcap_f16",
     "bf16_to_f16",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use half::f16;
+
+    fn rmsnorm_ref(input: &[f32], gamma: &[f32], hidden: u32, eps: f32) -> Vec<f32> {
+        let denom = (input
+            .iter()
+            .take(hidden as usize)
+            .map(|&v| v * v)
+            .sum::<f32>()
+            / hidden as f32
+            + eps)
+        .sqrt();
+        input
+            .iter()
+            .take(hidden as usize)
+            .zip(gamma.iter())
+            .map(|(&x, &g)| x / denom * g)
+            .collect()
+    }
+
+    fn gelu_tanh_ref(x: f32) -> f32 {
+        let c = 0.7978845608f32;
+        0.5f32 * x * (1.0f32 + f32::tanh(c * (x + 0.044715f32 * x * x * x)))
+    }
+
+    fn gelu_mul_ref(gate_up: &[f32], intermediate: u32) -> Vec<f32> {
+        let inter = intermediate as usize;
+        let mut out = vec![0.0f32; inter];
+        for d in 0..inter {
+            let gate = gate_up[d];
+            let up = gate_up[inter + d];
+            out[d] = gelu_tanh_ref(gate) * up;
+        }
+        out
+    }
+
+    fn rope_partial_ref(
+        q: &mut [f32],
+        k: &mut [f32],
+        cos: &[f32],
+        sin: &[f32],
+        positions: &[i32],
+        num_tokens: u32,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        rope_dim: u32,
+    ) {
+        let half_rope = (rope_dim / 2) as usize;
+        let num_tokens = num_tokens as usize;
+        let num_heads = num_heads as usize;
+        let num_kv_heads = num_kv_heads as usize;
+        let head_dim = head_dim as usize;
+        let q_dim = num_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+
+        for token in 0..num_tokens {
+            let pos = positions[token] as usize;
+            for pair in 0..half_rope {
+                let cos_val = cos[pos * half_rope + pair];
+                let sin_val = sin[pos * half_rope + pair];
+
+                for h in 0..num_heads {
+                    let base = token * q_dim + h * head_dim;
+                    let i0 = base + pair;
+                    let i1 = base + pair + half_rope;
+                    let x0 = q[i0];
+                    let x1 = q[i1];
+                    q[i0] = x0 * cos_val - x1 * sin_val;
+                    q[i1] = x0 * sin_val + x1 * cos_val;
+                }
+
+                for h in 0..num_kv_heads {
+                    let base = token * kv_dim + h * head_dim;
+                    let i0 = base + pair;
+                    let i1 = base + pair + half_rope;
+                    let x0 = k[i0];
+                    let x1 = k[i1];
+                    k[i0] = x0 * cos_val - x1 * sin_val;
+                    k[i1] = x0 * sin_val + x1 * cos_val;
+                }
+            }
+        }
+    }
+
+    fn argmax_ref(logits: &[f16], num_seqs: u32, vocab: u32) -> Vec<i32> {
+        let mut out = vec![0i32; num_seqs as usize];
+        for s in 0..num_seqs as usize {
+            let base = s * vocab as usize;
+            let mut best_idx = 0usize;
+            let mut best_val = -f32::INFINITY;
+            for i in 0..vocab as usize {
+                let v = logits[base + i].to_f32();
+                if v > best_val {
+                    best_val = v;
+                    best_idx = i;
+                }
+            }
+            out[s] = best_idx as i32;
+        }
+        out
+    }
+
+    fn attention_decode_ref(
+        q: &[f16],
+        k_cache: &[f16],
+        v_cache: &[f16],
+        block_tables: &[i32],
+        context_lens: &[i32],
+        num_seqs: u32,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        block_size: u32,
+        max_blocks: u32,
+        scale: f32,
+    ) -> Vec<f32> {
+        let num_seqs = num_seqs as usize;
+        let num_heads = num_heads as usize;
+        let num_kv_heads = num_kv_heads as usize;
+        let head_dim = head_dim as usize;
+        let kv_dim = num_kv_heads * head_dim;
+        let q_dim = num_heads * head_dim;
+
+        let mut out = vec![0f32; num_seqs * q_dim];
+
+        for seq in 0..num_seqs {
+            let ctx_len = context_lens[seq] as usize;
+            if ctx_len == 0 {
+                continue;
+            }
+
+            for head in 0..num_heads {
+                let kv_head = head / (num_heads / num_kv_heads);
+
+                let mut q_local = vec![0f32; head_dim];
+                for d in 0..head_dim {
+                    q_local[d] = q[seq * q_dim + head * head_dim + d].to_f32();
+                }
+
+                let mut out_accum = vec![0f32; head_dim];
+                let mut max_score = -f32::INFINITY;
+                let mut sum_exp = 0.0f32;
+
+                for t in 0..ctx_len {
+                    let block_idx = t / block_size as usize;
+                    let block_offset = t % block_size as usize;
+                    let block_id = block_tables[seq * max_blocks as usize + block_idx];
+                    if block_id < 0 {
+                        continue;
+                    }
+
+                    let mut score = 0.0f32;
+                    let block_base = block_id as usize * block_size as usize * kv_dim;
+                    for d in 0..head_dim {
+                        let k_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+                        score += q_local[d] * k_cache[k_idx].to_f32();
+                    }
+                    score *= scale;
+
+                    let old_max = max_score;
+                    max_score = max_score.max(score);
+                    let correction = (old_max - max_score).exp();
+                    sum_exp = sum_exp * correction + (score - max_score).exp();
+                    let weight = (score - max_score).exp();
+
+                    for d in 0..head_dim {
+                        let v_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+                        out_accum[d] = out_accum[d] * correction + weight * v_cache[v_idx].to_f32();
+                    }
+                }
+
+                let inv_sum = if sum_exp > 0.0 { 1.0 / sum_exp } else { 0.0 };
+                for d in 0..head_dim {
+                    out[seq * q_dim + head * head_dim + d] = out_accum[d] * inv_sum;
+                }
+            }
+        }
+
+        out
+    }
+
+    fn attention_decode_naive_ref(
+        q: &[f16],
+        k_cache: &[f16],
+        v_cache: &[f16],
+        block_tables: &[i32],
+        context_lens: &[i32],
+        num_seqs: u32,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        block_size: u32,
+        max_blocks: u32,
+        scale: f32,
+    ) -> Vec<f32> {
+        let num_seqs = num_seqs as usize;
+        let num_heads = num_heads as usize;
+        let num_kv_heads = num_kv_heads as usize;
+        let head_dim = head_dim as usize;
+        let kv_dim = num_kv_heads * head_dim;
+        let q_dim = num_heads * head_dim;
+
+        let mut out = vec![0f32; num_seqs * q_dim];
+        for seq in 0..num_seqs {
+            let ctx_len = context_lens[seq] as usize;
+            if ctx_len == 0 {
+                continue;
+            }
+
+            for head in 0..num_heads {
+                let kv_head = head / (num_heads / num_kv_heads);
+                let mut q_local = vec![0f32; head_dim];
+                for d in 0..head_dim {
+                    q_local[d] = q[seq * q_dim + head * head_dim + d].to_f32();
+                }
+
+                let mut scores = vec![0f32; ctx_len];
+                for t in 0..ctx_len {
+                    let block_idx = t / block_size as usize;
+                    let block_offset = t % block_size as usize;
+                    let block_id = block_tables[seq * max_blocks as usize + block_idx];
+                    if block_id < 0 {
+                        continue;
+                    }
+
+                    let block_base = block_id as usize * block_size as usize * kv_dim;
+                    let mut score = 0f32;
+                    for d in 0..head_dim {
+                        let k_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+                        score += q_local[d] * k_cache[k_idx].to_f32();
+                    }
+                    scores[t] = score * scale;
+                }
+
+                let max_score = scores.iter().fold(f32::NEG_INFINITY, |acc, &s| acc.max(s));
+                let mut sum_exp = 0f32;
+                for &score in &scores {
+                    sum_exp += (score - max_score).exp();
+                }
+
+                for t in 0..ctx_len {
+                    if scores[t] <= f32::NEG_INFINITY {
+                        continue;
+                    }
+                    let block_idx = t / block_size as usize;
+                    let block_offset = t % block_size as usize;
+                    let block_id = block_tables[seq * max_blocks as usize + block_idx];
+                    if block_id < 0 {
+                        continue;
+                    }
+
+                    let block_base = block_id as usize * block_size as usize * kv_dim;
+                    let weight = (scores[t] - max_score).exp() / sum_exp;
+
+                    for d in 0..head_dim {
+                        let v_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+                        out[seq * q_dim + head * head_dim + d] +=
+                            weight * v_cache[v_idx].to_f32();
+                    }
+                }
+            }
+        }
+
+        out
+    }
+
+    #[test]
+    fn kernel_attention_decode_cpu_reference_matches_naive() {
+        let q = vec![
+            f16::from_f32(0.15), f16::from_f32(-0.1), f16::from_f32(0.2), f16::from_f32(0.05),
+            f16::from_f32(-0.15), f16::from_f32(0.12), f16::from_f32(0.08), f16::from_f32(-0.04),
+            f16::from_f32(0.25), f16::from_f32(-0.2), f16::from_f32(0.18), f16::from_f32(0.11),
+            f16::from_f32(0.03), f16::from_f32(0.22), f16::from_f32(-0.07), f16::from_f32(0.09),
+            f16::from_f32(0.19), f16::from_f32(-0.06), f16::from_f32(0.02), f16::from_f32(0.13),
+            f16::from_f32(-0.09), f16::from_f32(0.16), f16::from_f32(0.05), f16::from_f32(0.01),
+            f16::from_f32(0.02), f16::from_f32(0.01), f16::from_f32(-0.11), f16::from_f32(0.04),
+            f16::from_f32(0.05), f16::from_f32(0.06), f16::from_f32(-0.07), f16::from_f32(0.08),
+            f16::from_f32(0.09), f16::from_f32(0.07), f16::from_f32(-0.12), f16::from_f32(0.03),
+            f16::from_f32(-0.01), f16::from_f32(0.02), f16::from_f32(0.04), f16::from_f32(0.06),
+            f16::from_f32(0.08), f16::from_f32(0.1), f16::from_f32(-0.03), f16::from_f32(0.05),
+            f16::from_f32(0.07), f16::from_f32(-0.08), f16::from_f32(0.06), f16::from_f32(0.03),
+            f16::from_f32(0.02), f16::from_f32(0.05), f16::from_f32(-0.06), f16::from_f32(0.07),
+            f16::from_f32(0.09), f16::from_f32(0.01), f16::from_f32(-0.02), f16::from_f32(0.04),
+        ];
+        let mut k_cache = vec![f16::from_f32(0.0); 3 * 8];
+        let mut v_cache = vec![f16::from_f32(0.0); 3 * 8];
+        for i in 0..k_cache.len() {
+            k_cache[i] = f16::from_f32(0.01 * (i as f32 + 1.0));
+            v_cache[i] = f16::from_f32(0.02 * (i as f32 + 1.0));
+        }
+        let block_tables = vec![0_i32, 0, 0, 0];
+        let context_lens = vec![3_i32];
+
+        let got = attention_decode_ref(
+            &q,
+            &k_cache,
+            &v_cache,
+            &block_tables,
+            &context_lens,
+            1,
+            2,
+            1,
+            8,
+            4,
+            1,
+            0.125,
+        );
+
+        let expected = attention_decode_naive_ref(
+            &q,
+            &k_cache,
+            &v_cache,
+            &block_tables,
+            &context_lens,
+            1,
+            2,
+            1,
+            8,
+            4,
+            1,
+            0.125,
+        );
+        assert_eq!(got.len(), expected.len());
+        for i in 0..got.len() {
+            assert!((got[i] - expected[i]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn kernel_rmsnorm_reference_matches_definition() {
+        let input = vec![f32::from(1.0_f32), 2.0, 3.0];
+        let gamma = vec![1.0_f32, 1.0, 1.0];
+        let got = rmsnorm_ref(&input, &gamma, 3, 1e-6);
+        let expected = {
+            let v0 = 1f32 / f32::sqrt((1f32 + 4.0 + 9.0) / 3.0 + 1e-6);
+            vec![v0, 2.0 * v0, 3.0 * v0]
+        };
+        for i in 0..got.len() {
+            assert!((got[i] - expected[i]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn kernel_gelu_reference_matches_definition() {
+        let got_single = gelu_tanh_ref(0.5);
+        let got_pair = gelu_mul_ref(
+            &[1.0, 0.5, -0.5, 2.0, 1.5, -1.0, 0.25, 3.0],
+            4,
+        );
+        let expected = {
+            let c = 0.7978845608f32;
+            0.5f32 * 0.5 * (1.0f32 + f32::tanh(c * (0.5 + 0.044715f32 * 0.5f32.powi(3))))
+        };
+        assert!((got_single - expected).abs() < 1e-6);
+        assert_eq!(got_pair.len(), 4);
+    }
+
+    #[test]
+    fn kernel_rope_reference_matches_definition() {
+        let mut q = vec![f32::from(1.0); 2 * 8];
+        let mut k = vec![f32::from(2.0); 1 * 8];
+        let cos = vec![0.5f32, 0.6, 0.7, 0.8];
+        let sin = vec![0.5f32, 0.6, 0.7, 0.8];
+        let pos = vec![0_i32];
+        rope_partial_ref(&mut q, &mut k, &cos, &sin, &pos, 1, 2, 1, 8, 8);
+        assert_ne!(q, vec![1.0; 16]);
+        assert_ne!(k, vec![2.0; 8]);
+    }
+
+    #[test]
+    fn kernel_argmax_reference_matches_definition() {
+        let logits = vec![
+            f16::from_f32(0.2),
+            f16::from_f32(-0.4),
+            f16::from_f32(0.7),
+            f16::from_f32(-0.1),
+            f16::from_f32(0.9),
+            f16::from_f32(0.1),
+        ];
+        let got = argmax_ref(&logits, 2, 3);
+        assert_eq!(got, vec![2, 1]);
+    }
+
+    #[test]
+    fn kernel_count_matches_names() {
+        assert_eq!(KERNEL_COUNT, KERNEL_NAMES.len());
+    }
+}

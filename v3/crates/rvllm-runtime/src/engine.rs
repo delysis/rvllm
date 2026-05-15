@@ -32,6 +32,10 @@ use rvllm_apple::{
     AppleAcceleratorTarget, AppleBackend, AppleBackendMode as AppleBackendModeImpl,
     AppleLaunchTicket, AppleRuntimePlan, HandoffKind,
 };
+#[cfg(feature = "apple")]
+use rvllm_apple::{ProductionAppleBackend, StubAppleBackend};
+#[cfg(all(feature = "apple", target_os = "macos"))]
+use crate::apple_metal_backend::RuntimeMetalBackend;
 
 fn apple_ctx(op: &'static str) -> AppleCtx {
     AppleCtx {
@@ -86,7 +90,15 @@ impl Engine {
     #[cfg(feature = "apple")]
     pub fn with_apple_runtime_plan(mut self, plan: AppleRuntimePlan) -> Result<Self> {
         plan.validate()?;
+        if self.apple_backend.is_none() {
+            self.apple_backend = Some(default_apple_backend_for_plan(&plan));
+        }
         self.apple_runtime_plan = Some(plan);
+        if let Some(backend) = self.apple_backend.as_mut() {
+            if let Some(runtime_plan) = self.apple_runtime_plan.as_ref() {
+                backend.prepare(runtime_plan)?;
+            }
+        }
         Ok(self)
     }
 
@@ -97,12 +109,11 @@ impl Engine {
         runtime: &RuntimeConfig,
     ) -> Result<Self> {
         let plan = runtime_to_apple_plan(&target, runtime)?;
-        if let Some(plan) = &plan {
-            plan.validate()?;
-        }
-        self.apple_runtime_plan = plan;
         self.apple_target = Some(target);
-        Ok(self)
+        let Some(plan) = plan else {
+            return Ok(self);
+        }
+        self.with_apple_runtime_plan(plan)
     }
 
     pub fn has_pending_work(&self) -> bool {
@@ -233,6 +244,7 @@ mod tests {
     use super::*;
     use crate::sched_state::Request;
     use rvllm_core::{ReqId, TokenId};
+    use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
 
     #[test]
     fn empty_engine_has_no_pending_work() {
@@ -254,10 +266,10 @@ mod tests {
     }
     #[test]
     #[cfg(feature = "apple")]
+    #[cfg(not(target_os = "macos"))]
     fn e2e_apple_backend_wiring() {
-        use rvllm_apple::{AppleRuntimePlan, StubAppleBackend};
+        use rvllm_apple::AppleRuntimePlan;
 
-        let mut backend = Box::new(StubAppleBackend::new());
         let plan = AppleRuntimePlan {
             target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
             mode: rvllm_apple::plan::AppleBackendMode::MetalPrefillMetalDecode,
@@ -265,17 +277,16 @@ mod tests {
             rollout_tokens: 1,
             private_ane_opt_in: true,
             strict_ane: false,
-            ane_compute_profile: rvllm_core::AneComputeProfile::AnyAvailable,
-            ane_fallback_policy: rvllm_core::AneFallbackPolicy::AllowMetal,
+            ane_compute_profile: AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: AneFallbackPolicy::AllowMetal,
             ane_hidden_size: 1,
             ane_intermediate_size: 1,
             ane_num_layers: 1,
             model_layout_hash: [0u8; 32],
+            weights_path: None,
         };
-        backend.prepare(&plan).unwrap();
 
-        let e = Engine::new().with_apple_backend(backend);
-        let e = match e.with_apple_runtime_plan(plan) {
+        let e = match Engine::new().with_apple_runtime_plan(plan) {
             Ok(v) => v,
             Err(e) => panic!("unexpected runtime plan error: {e}"),
         };
@@ -296,9 +307,49 @@ mod tests {
 
     #[test]
     #[cfg(feature = "apple")]
+    #[cfg(target_os = "macos")]
+    fn e2e_apple_backend_wiring_metal() {
+        use rvllm_apple::AppleRuntimePlan;
+
+        let seed = TokenId(11);
+        let plan = AppleRuntimePlan {
+            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            mode: rvllm_apple::plan::AppleBackendMode::MetalPrefillMetalDecode,
+            rollout_bucket: None,
+            rollout_tokens: 1,
+            private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 1,
+            ane_intermediate_size: 1,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
+            weights_path: None,
+        };
+
+        let e = match Engine::new().with_apple_runtime_plan(plan) {
+            Ok(v) => v,
+            Err(e) => panic!("unexpected runtime plan error: {e}"),
+        };
+        let mut e = e;
+        e.scheduler
+            .enqueue(Request::new(ReqId(1), vec![seed], 2));
+
+        let t1 = e.step_launch().unwrap();
+        let outputs1 = t1.collect().unwrap();
+        assert!(outputs1.is_empty(), "Prefill returns empty tokens");
+
+        let t2 = e.step_launch().unwrap();
+        let outputs2 = t2.collect().unwrap();
+        assert_eq!(outputs2.len(), 1, "Decode should return tokens from Metal backend");
+        assert_eq!(outputs2[0].new_token, seed);
+    }
+
+    #[test]
+    #[cfg(feature = "apple")]
     #[cfg(not(target_os = "macos"))]
     fn private_ane_mode_fails_closed_without_ane_target() {
-        let mut backend = Box::new(StubAppleBackend::new());
         let plan = AppleRuntimePlan {
             target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
             mode: rvllm_apple::plan::AppleBackendMode::MetalPrefillAneFfnRollout,
@@ -306,15 +357,15 @@ mod tests {
             rollout_tokens: 1,
             private_ane_opt_in: true,
             strict_ane: false,
-            ane_compute_profile: rvllm_core::AneComputeProfile::AnyAvailable,
-            ane_fallback_policy: rvllm_core::AneFallbackPolicy::AllowMetal,
+            ane_compute_profile: AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: AneFallbackPolicy::AllowMetal,
             ane_hidden_size: 1,
             ane_intermediate_size: 1,
             ane_num_layers: 1,
             model_layout_hash: [0u8; 32],
+            weights_path: None,
         };
-        let e = Engine::new().with_apple_backend(backend);
-        let e = match e.with_apple_runtime_plan(plan) {
+        let e = match Engine::new().with_apple_runtime_plan(plan) {
             Ok(v) => v,
             Err(e) => panic!("unexpected runtime plan error: {e}"),
         };
@@ -403,6 +454,22 @@ fn runtime_to_apple_plan(
         weights_path: runtime.weights_path().map(|p| p.to_path_buf()),
     };
     Ok(Some(plan))
+}
+
+#[cfg(feature = "apple")]
+fn default_apple_backend_for_plan(plan: &AppleRuntimePlan) -> Box<dyn AppleBackend> {
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    {
+        if plan.mode.requires_private_ane() {
+            return Box::new(ProductionAppleBackend::new());
+        }
+        return Box::new(RuntimeMetalBackend::new());
+    }
+    #[cfg(not(all(feature = "apple", target_os = "macos")))]
+    {
+        let _ = plan;
+        return Box::new(StubAppleBackend::new());
+    }
 }
 
 #[cfg(feature = "apple")]

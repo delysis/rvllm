@@ -1,8 +1,9 @@
 use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
+use rvllm_core::error::AneRuntimeError;
 use serde::{Deserialize, Serialize};
 
 use crate::ane::{compile_private_ane_program, AneProgramPlan, AneRolloutConfig};
-use crate::handoff::HandoffCapsule;
+use crate::handoff::{HandoffCapsule, HandoffKind};
 use crate::plan::{AppleRuntimePlan, RolloutBucket};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -40,6 +41,7 @@ pub trait AppleBackend {
 pub struct ProductionAppleBackend {
     compiled: bool,
     prepared: bool,
+    requires_private_ane: bool,
     next_step_id: u64,
     last_ticket: Option<u64>,
     pending: Option<Vec<StepToken>>,
@@ -158,7 +160,7 @@ impl ProductionAppleBackend {
             }
             return Err(RvllmError::apple(
                 AppleError::RuntimeAneModel {
-                    err: rvllm_core::AneRuntimeError::CacheMissOrCorrupt {
+                    err: AneRuntimeError::CacheMissOrCorrupt {
                         cache_key: cache_key.clone(),
                     },
                 },
@@ -178,6 +180,7 @@ impl AppleBackend for ProductionAppleBackend {
         self.compiled = false;
         self.last_ticket = None;
         self.pending = None;
+        self.requires_private_ane = plan.mode.requires_private_ane();
         self.compile_if_needed(plan)?;
         Ok(())
     }
@@ -196,6 +199,16 @@ impl AppleBackend for ProductionAppleBackend {
     ) -> Result<AppleLaunchTicket> {
         self.ensure_prepared("launch_rollout")?;
         handoff.validate()?;
+
+        if !self.requires_private_ane || handoff.kind == HandoffKind::MetalPrefillToMetalDecode {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "production-apple",
+                    op: "metal_rollout_not_implemented",
+                },
+                Self::ctx("launch_rollout"),
+            ));
+        }
 
         #[cfg(target_os = "macos")]
         if let Some(ref handle) = self.handle {
@@ -422,6 +435,7 @@ impl AppleBackend for StubAppleBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
     use crate::device::AppleAcceleratorTarget;
     use crate::handoff::HandoffKind;
     use crate::plan::{AppleBackendMode, RolloutBucket};
@@ -434,8 +448,8 @@ mod tests {
             rollout_tokens: 1,
             private_ane_opt_in: false,
             strict_ane: false,
-            ane_compute_profile: rvllm_core::AneComputeProfile::AnyAvailable,
-            ane_fallback_policy: rvllm_core::AneFallbackPolicy::AllowMetal,
+            ane_compute_profile: AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: AneFallbackPolicy::AllowMetal,
             ane_hidden_size: 1,
             ane_intermediate_size: 1,
             ane_num_layers: 1,
@@ -464,6 +478,46 @@ mod tests {
             Ok(v) => v,
             Err(e) => panic!("unexpected launch error: {e}"),
         };
-        assert_eq!(ticket.kind, AppleLaunchKind::Rollout);
+            assert_eq!(ticket.kind, AppleLaunchKind::Rollout);
+    }
+
+    #[test]
+    fn production_backend_non_ane_rollout_returns_not_implemented() {
+        let mut backend = ProductionAppleBackend::new();
+        let mut plan = AppleRuntimePlan {
+            target: AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            mode: AppleBackendMode::MetalPrefillMetalDecode,
+            rollout_bucket: None,
+            rollout_tokens: 1,
+            private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 1,
+            ane_intermediate_size: 1,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
+            weights_path: None,
+        };
+
+        assert!(backend.prepare(&plan).is_ok());
+
+        let handoff = HandoffCapsule::new(
+            HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(10)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let err = match backend.launch_rollout(&handoff, Some(RolloutBucket { seqs: 1, tokens: 1 })) {
+            Ok(v) => {
+                panic!("unexpected rollout success: {v:?}");
+            }
+            Err(e) => e,
+        };
+        let s = format!("{err}");
+        assert!(s.contains("FeatureNotAvailable"));
     }
 }

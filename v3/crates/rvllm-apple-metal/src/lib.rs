@@ -10,16 +10,32 @@
 //! All Metal FFI is isolated here. The parent `rvllm-apple` crate
 //! remains safe and host-testable.
 
-#[cfg(not(target_os = "macos"))]
-compile_error!("rvllm-apple-metal requires macOS (Apple Silicon)");
-
+#[cfg(target_os = "macos")]
 pub mod context;
+#[cfg(target_os = "macos")]
 pub mod arena;
+#[cfg(target_os = "macos")]
 pub mod pipeline;
 pub mod kernels;
+#[cfg(target_os = "macos")]
 pub mod layer_forward;
+#[cfg(target_os = "macos")]
 pub mod weight_loader;
+#[cfg(not(target_os = "macos"))]
+mod unavailable;
 
+#[cfg(target_os = "macos")]
 pub use context::MetalContext;
+#[cfg(not(target_os = "macos"))]
+pub use unavailable::MetalContext;
+#[cfg(target_os = "macos")]
 pub use arena::MetalBufferArena;
+#[cfg(not(target_os = "macos"))]
+pub use unavailable::MetalBufferArena;
+#[cfg(target_os = "macos")]
 pub use pipeline::PipelineCache;
+#[cfg(not(target_os = "macos"))]
+pub use unavailable::PipelineCache;
+
+#[cfg(not(target_os = "macos"))]
+pub use unavailable::MetalRegion;

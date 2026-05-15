@@ -1,4 +1,5 @@
-use rvllm_core::{AneComputeProfile, AneFallbackPolicy, AppleCtx, AppleError, Result, RvllmError};
+use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
+use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::device::AppleAcceleratorTarget;

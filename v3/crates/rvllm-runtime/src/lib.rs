@@ -11,6 +11,8 @@
 
 #[cfg(feature = "apple")]
 pub mod apple_bridge;
+#[cfg(feature = "apple")]
+pub mod apple_metal_backend;
 pub mod bring_up;
 pub mod engine;
 pub mod gemma4_bring_up;
@@ -23,6 +25,8 @@ pub use bring_up::{Bringup, EnginePaths, FusedModules, PplResult};
 pub use engine::{Engine, PendingStep, StepOutput};
 #[cfg(feature = "apple")]
 pub use apple_bridge::{handoff_from_decode_plan, handoff_from_prefill_plan, rollout_bucket_for_decode};
+#[cfg(feature = "apple")]
+pub use apple_metal_backend::RuntimeMetalBackend;
 pub use layer_exec::{forward, LayerDims};
 pub use sched_state::{ReqState, Request};
 pub use scheduler::{bucket_for, BatchPlan, Scheduler, DECODE_BUCKETS};
