@@ -96,9 +96,12 @@ use rvllm_apple_metal::arena::{MetalBufferArena, MetalRegion};
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use rvllm_apple_metal::{
     context::MetalContext,
-    gemma4_model::Gemma4MetalState,
+    gemma4_model::{Gemma4MetalState, MetalOneLayerState},
     kernels,
-    layer_forward::metal_finalize_logits_blocking,
+    layer_forward::{
+        metal_finalize_logits_blocking, metal_forward_layer, MetalLayerDims, MetalLayerWeights,
+        MetalMetadata, MetalPhase, MetalScratch,
+    },
     pipeline::PipelineCache,
     weight_loader::{map_safetensor_to_arena, scan_safetensor_tensors},
 };
@@ -245,9 +248,33 @@ impl ModelMetalBackend {
         Ok(refs.swap_remove(idx).1)
     }
 
+    fn write_i32_region(
+        arena: &MetalBufferArena,
+        region: &MetalRegion,
+        values: &[i32],
+    ) -> Result<()> {
+        unsafe {
+            let dst = arena.host_ptr(region) as *mut i32;
+            ptr::copy_nonoverlapping(values.as_ptr(), dst, values.len());
+        }
+        Ok(())
+    }
+
+    fn write_f32_region(
+        arena: &MetalBufferArena,
+        region: &MetalRegion,
+        values: &[f32],
+    ) -> Result<()> {
+        unsafe {
+            let dst = arena.host_ptr(region) as *mut f32;
+            ptr::copy_nonoverlapping(values.as_ptr(), dst, values.len());
+        }
+        Ok(())
+    }
+
     fn initialize_model_resources(&mut self) -> Result<Gemma4MetalState> {
         let arch = ModelArch::from_dir(&self.model_dir)?;
-        if arch.num_hidden_layers > 0 {
+        if arch.num_hidden_layers > 1 {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
@@ -346,8 +373,39 @@ impl ModelMetalBackend {
             }
         }
 
+        let mut names = vec![embed_name.clone(), final_norm_name.clone()];
+        if lm_head_name != embed_name {
+            names.push(lm_head_name.clone());
+        }
+
+        let mut layer_weight_bytes = 0;
+        if arch.num_hidden_layers == 1 {
+            let lprefix = format!("{wprefix}.layers.0");
+            let layer_names = vec![
+                format!("{lprefix}.input_layernorm.weight"),
+                format!("{lprefix}.self_attn.qkv.weight"),
+                format!("{lprefix}.self_attn.o_proj.weight"),
+                format!("{lprefix}.mlp_norm.weight"),
+                format!("{lprefix}.mlp.gate_up.weight"),
+                format!("{lprefix}.mlp.down_proj.weight"),
+            ];
+            for name in &layer_names {
+                let info = tensors.get(name).ok_or_else(|| {
+                    RvllmError::apple(
+                        AppleError::InvalidWeightBlob {
+                            reason: "missing layer weight",
+                        },
+                        model_ctx("prepare"),
+                    )
+                })?;
+                layer_weight_bytes += info.nbytes;
+                names.push(name.clone());
+            }
+        }
+
         let half_bytes = std::mem::size_of::<f16>();
         let i32_bytes = std::mem::size_of::<i32>();
+        let f32_bytes = std::mem::size_of::<f32>();
         let embed_bytes = embed_info.nbytes;
         let final_norm_bytes = final_norm_info.nbytes;
         let lm_head_bytes = if tie_embeddings {
@@ -375,14 +433,57 @@ impl ModelMetalBackend {
         let sampled_bytes = i32_bytes;
         let token_ids_bytes = 4;
 
+        let mut scratch_bytes = 0;
+        if arch.num_hidden_layers == 1 {
+            let hidden = arch.hidden_size;
+            let intermediate = arch.intermediate_size;
+            let num_heads = arch.num_attention_heads;
+            let num_kv_heads = arch.num_key_value_heads;
+            let head_dim = arch.head_dim;
+            let q_dim = num_heads * head_dim;
+            let kv_dim = num_kv_heads * head_dim;
+            let qkv_rows = q_dim + 2 * kv_dim;
+
+            let qkv_out_bytes = qkv_rows * half_bytes;
+            let q_bytes = q_dim * half_bytes;
+            let k_bytes = kv_dim * half_bytes;
+            let v_bytes = kv_dim * half_bytes;
+            let attn_out_bytes = q_dim * half_bytes;
+            let gate_up_out_bytes = 2 * intermediate * half_bytes;
+            let activated_bytes = intermediate * half_bytes;
+            let mlp_out_bytes = hidden * half_bytes;
+
+            let block_size = 1usize;
+            let num_blocks_total = 1usize;
+            let kv_cache_bytes = num_blocks_total * block_size * kv_dim * half_bytes * 2;
+
+            let half_rope = head_dim / 2;
+            let max_pos = 16usize;
+            let rope_table_bytes = max_pos * half_rope * f32_bytes;
+
+            scratch_bytes = qkv_out_bytes
+                + q_bytes
+                + k_bytes
+                + v_bytes
+                + attn_out_bytes
+                + gate_up_out_bytes
+                + activated_bytes
+                + mlp_out_bytes
+                + kv_cache_bytes
+                + rope_table_bytes * 2 // cos + sin
+                + 64; // metadata
+        }
+
         let mut arena_bytes = embed_bytes
             .checked_add(final_norm_bytes)
             .and_then(|v| v.checked_add(lm_head_bytes))
+            .and_then(|v| v.checked_add(layer_weight_bytes))
             .and_then(|v| v.checked_add(residual_bytes))
             .and_then(|v| v.checked_add(logits_bytes))
             .and_then(|v| v.checked_add(normed_hidden_bytes))
             .and_then(|v| v.checked_add(sampled_bytes))
             .and_then(|v| v.checked_add(token_ids_bytes))
+            .and_then(|v| v.checked_add(scratch_bytes))
             .ok_or_else(|| {
                 RvllmError::apple(
                     AppleError::InvalidWeightBlob {
@@ -391,7 +492,7 @@ impl ModelMetalBackend {
                     model_ctx("prepare"),
                 )
             })?;
-        arena_bytes = arena_bytes.checked_add(4096).ok_or_else(|| {
+        arena_bytes = arena_bytes.checked_add(64 * 1024).ok_or_else(|| {
             RvllmError::apple(
                 AppleError::InvalidWeightBlob {
                     reason: "model arena byte overflow",
@@ -407,14 +508,10 @@ impl ModelMetalBackend {
         pipelines.compile_all(&ctx)?;
         let mut arena = MetalBufferArena::new(ctx.device(), arena_bytes)?;
 
-        let mut names = vec![embed_name.as_str(), final_norm_name.as_str()];
-        if lm_head_name != embed_name {
-            names.push(lm_head_name.as_str());
-        }
         let mut mapped_refs = map_safetensor_to_arena(
             &mut arena,
             &self.model_dir,
-            &names.iter().map(|name| *name).collect::<Vec<_>>(),
+            &names.iter().map(|name| name.as_str()).collect::<Vec<_>>(),
         )?;
         let embedding = Self::region_lookup(&mut mapped_refs, &embed_name)?;
         let final_norm = Self::region_lookup(&mut mapped_refs, &final_norm_name)?;
@@ -423,6 +520,107 @@ impl ModelMetalBackend {
         } else {
             Self::region_lookup(&mut mapped_refs, &lm_head_name)?
         };
+
+        let mut one_layer = None;
+        if arch.num_hidden_layers == 1 {
+            let lprefix = format!("{wprefix}.layers.0");
+            let attn_norm = Self::region_lookup(
+                &mut mapped_refs,
+                &format!("{lprefix}.input_layernorm.weight"),
+            )?;
+            let qkv =
+                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.self_attn.qkv.weight"))?;
+            let o_proj = Self::region_lookup(
+                &mut mapped_refs,
+                &format!("{lprefix}.self_attn.o_proj.weight"),
+            )?;
+            let mlp_norm =
+                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp_norm.weight"))?;
+            let gate_up =
+                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp.gate_up.weight"))?;
+            let down_proj =
+                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp.down_proj.weight"))?;
+
+            let hidden = arch.hidden_size;
+            let intermediate = arch.intermediate_size;
+            let num_heads = arch.num_attention_heads;
+            let num_kv_heads = arch.num_key_value_heads;
+            let head_dim = arch.head_dim;
+            let q_dim = num_heads * head_dim;
+            let kv_dim = num_kv_heads * head_dim;
+            let qkv_rows = q_dim + 2 * kv_dim;
+
+            let qkv_out = arena.region("metal_qkv_out", qkv_rows * half_bytes, 16)?;
+            let q = arena.region("metal_q", q_dim * half_bytes, 16)?;
+            let k = arena.region("metal_k", kv_dim * half_bytes, 16)?;
+            let v = arena.region("metal_v", kv_dim * half_bytes, 16)?;
+            let attn_out = arena.region("metal_attn_out", q_dim * half_bytes, 16)?;
+            let gate_up_out =
+                arena.region("metal_gate_up_out", 2 * intermediate * half_bytes, 16)?;
+            let activated = arena.region("metal_activated", intermediate * half_bytes, 16)?;
+            let mlp_out = arena.region("metal_mlp_out", hidden * half_bytes, 16)?;
+
+            let block_size = 1u32;
+            let num_blocks_total = 1u32;
+            let max_blocks_per_seq = 1u32;
+            let kv_cache_k = arena.region(
+                "metal_kv_cache_k",
+                (num_blocks_total as usize) * (block_size as usize) * kv_dim * half_bytes,
+                16,
+            )?;
+            let kv_cache_v = arena.region(
+                "metal_kv_cache_v",
+                (num_blocks_total as usize) * (block_size as usize) * kv_dim * half_bytes,
+                16,
+            )?;
+
+            let positions = arena.region("metal_meta_positions", 4, 4)?;
+            let slot_mapping = arena.region("metal_meta_slot_mapping", 4, 4)?;
+            let context_lens = arena.region("metal_meta_context_lens", 4, 4)?;
+            let block_tables = arena.region("metal_meta_block_tables", 4, 4)?;
+
+            let half_rope = head_dim / 2;
+            let max_pos = 16usize;
+            let cos = arena.region("metal_rope_cos", max_pos * half_rope * f32_bytes, 16)?;
+            let sin = arena.region("metal_rope_sin", max_pos * half_rope * f32_bytes, 16)?;
+
+            Self::write_i32_region(&arena, &positions, &[0])?;
+            Self::write_i32_region(&arena, &slot_mapping, &[0])?;
+            Self::write_i32_region(&arena, &context_lens, &[1])?;
+            Self::write_i32_region(&arena, &block_tables, &[0])?;
+            Self::write_f32_region(&arena, &cos, &vec![1.0; max_pos * half_rope])?;
+            Self::write_f32_region(&arena, &sin, &vec![0.0; max_pos * half_rope])?;
+
+            one_layer = Some(MetalOneLayerState {
+                layer_idx: 0,
+                attn_norm,
+                qkv,
+                o_proj,
+                mlp_norm,
+                gate_up,
+                down_proj,
+                qkv_out,
+                q,
+                k,
+                v,
+                attn_out,
+                gate_up_out,
+                activated,
+                mlp_out,
+                positions,
+                slot_mapping,
+                cos,
+                sin,
+                block_tables,
+                context_lens,
+                kv_cache_k,
+                kv_cache_v,
+                block_size,
+                max_blocks_per_seq,
+                num_blocks_total,
+            });
+        }
+
         if !mapped_refs.is_empty() {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -453,6 +651,7 @@ impl ModelMetalBackend {
             normed_hidden,
             sampled,
             token_ids,
+            one_layer,
         };
 
         self.ctx = Some(ctx);
@@ -608,7 +807,7 @@ impl ModelMetalBackend {
                 model_ctx("launch_rollout"),
             )
         })?;
-        if state.num_layers > 0 {
+        if state.num_layers > 1 {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
@@ -661,6 +860,85 @@ impl ModelMetalBackend {
         }
 
         self.enqueue_embedding_gather(state, num_tokens)?;
+
+        if state.num_layers == 1 {
+            let one = state.one_layer.as_ref().ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::NotPrepared {
+                        backend: "model-metal-backend",
+                    },
+                    model_ctx("launch_rollout"),
+                )
+            })?;
+
+            let hidden = state.hidden_size;
+            let half_bytes = std::mem::size_of::<f16>();
+            let intermediate = one.gate_up.size / 2 / half_bytes / hidden;
+
+            let dims = MetalLayerDims {
+                num_tokens: 1,
+                hidden: state.hidden_size as u32,
+                num_heads: 1,
+                num_kv_heads: 1,
+                head_dim: state.hidden_size as u32,
+                intermediate: intermediate as u32,
+                block_size: one.block_size,
+                max_blocks_per_seq: one.max_blocks_per_seq,
+                num_blocks_total: one.num_blocks_total,
+                attn_scale: 1.0 / (state.hidden_size as f32).sqrt(),
+                rms_eps: state.rms_norm_eps,
+                rope_dim: state.hidden_size as u32,
+                softcap: state.final_logit_softcap,
+            };
+
+            let weights = MetalLayerWeights {
+                attn_norm_offset: one.attn_norm.offset,
+                qkv_offset: one.qkv.offset,
+                qkv_bias_offset: None,
+                o_proj_offset: one.o_proj.offset,
+                mlp_norm_offset: one.mlp_norm.offset,
+                gate_up_offset: one.gate_up.offset,
+                down_proj_offset: one.down_proj.offset,
+            };
+
+            let scratch = MetalScratch {
+                normed_hidden: state.normed_hidden.offset,
+                qkv_out: one.qkv_out.offset,
+                q_offset: one.q.offset,
+                k_offset: one.k.offset,
+                v_offset: one.v.offset,
+                attn_out: one.attn_out.offset,
+                gate_up_out: one.gate_up_out.offset,
+                activated: one.activated.offset,
+                mlp_out: one.mlp_out.offset,
+            };
+
+            let meta = MetalMetadata {
+                positions_offset: one.positions.offset,
+                slot_mapping_offset: one.slot_mapping.offset,
+                cos_offset: one.cos.offset,
+                sin_offset: one.sin.offset,
+                block_tables_offset: one.block_tables.offset,
+                context_lens_offset: one.context_lens.offset,
+                cu_seqlens_offset: None,
+            };
+
+            unsafe {
+                metal_forward_layer(
+                    ctx,
+                    pipelines,
+                    arena,
+                    &dims,
+                    &weights,
+                    &scratch,
+                    &meta,
+                    state.residual.offset,
+                    MetalPhase::Decode,
+                    one.kv_cache_k.offset,
+                    one.kv_cache_v.offset,
+                )?;
+            }
+        }
 
         let num_tokens_u32 = u32::try_from(num_tokens).map_err(|_| {
             RvllmError::apple(
@@ -761,7 +1039,7 @@ impl AppleBackend for ModelMetalBackend {
             )
         })?;
 
-        if state.num_layers > 0 {
+        if state.num_layers > 1 {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
@@ -776,6 +1054,16 @@ impl AppleBackend for ModelMetalBackend {
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
                     op: "unsupported_batch_size",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+
+        if handoff.tokens_flat.len() != 1 {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_prefill_length",
                 },
                 model_ctx("launch_prefill"),
             ));
@@ -1356,6 +1644,239 @@ mod tests {
             !engine.has_pending_work(),
             "request should finish after one decoded token"
         );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_one_layer_noop_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let intermediate = 256;
+        let vocab = 8;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        // token 3 should be chosen if dim 7 is high
+        for d in 0..hidden {
+            lm_head[3 * hidden + d] = if d == 7 { 2.0 } else { 0.0 };
+            lm_head[2 * hidden + d] = if d == 7 { 1.0 } else { 0.0 };
+        }
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        // One layer tensors
+        let ones = vec![1.0f32; hidden];
+        let zeros_qkv = vec![0.0f32; 3 * hidden * hidden];
+        let zeros_o = vec![0.0f32; hidden * hidden];
+        let zeros_gate = vec![0.0f32; 2 * intermediate * hidden];
+        let zeros_down = vec![0.0f32; hidden * intermediate];
+
+        add_tensor(
+            "model.layers.0.input_layernorm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.qkv.weight",
+            &zeros_qkv,
+            &[3 * hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.o_proj.weight",
+            &zeros_o,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp_norm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.gate_up.weight",
+            &zeros_gate,
+            &[2 * intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.down_proj.weight",
+            &zeros_down,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, hidden, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    fn one_layer_plan(model_dir: std::path::PathBuf) -> rvllm_apple::AppleRuntimePlan {
+        rvllm_apple::AppleRuntimePlan {
+            target: rvllm_apple::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            mode: rvllm_apple::AppleBackendMode::MetalPrefillMetalDecode,
+            rollout_bucket: None,
+            rollout_tokens: 1,
+            private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: rvllm_core::config::AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: rvllm_core::config::AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 128,
+            ane_intermediate_size: 256,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
+            weights_path: Some(model_dir),
+        }
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_one_layer_noop_model_backend_decodes_token_2_to_3() {
+        let dir = write_tiny_one_layer_noop_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare one-layer tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_one_layer_noop_model_backend_prefill_then_decode_token_2_to_3() {
+        let dir = write_tiny_one_layer_noop_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny one-layer model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
 
         let _ = fs::remove_dir_all(dir);
     }
