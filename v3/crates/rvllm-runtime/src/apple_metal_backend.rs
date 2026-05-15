@@ -1,14 +1,14 @@
-use rvllm_core::{AppleCtx, AppleError, Result, RvllmError, TokenId};
-use rvllm_apple::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, HandoffCapsule, StepToken};
 use half::f16;
+use rvllm_apple::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, HandoffCapsule, StepToken};
+use rvllm_core::{AppleCtx, AppleError, Result, RvllmError, TokenId};
+#[cfg(all(feature = "apple", target_os = "macos"))]
+use rvllm_loader::load::ModelArch;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use std::cmp::max;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use std::path::PathBuf;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use std::ptr;
-#[cfg(all(feature = "apple", target_os = "macos"))]
-use rvllm_loader::load::ModelArch;
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
 #[derive(Debug, Default)]
@@ -86,20 +86,22 @@ impl AppleBackend for RuntimeMetalBackend {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
-use rvllm_apple::{RolloutBucket};
+use objc2_metal::{
+    MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder, MTLSize,
+};
 #[cfg(all(feature = "apple", target_os = "macos"))]
-use objc2_metal::{MTLCommandBuffer, MTLCommandQueue, MTLCommandEncoder, MTLComputeCommandEncoder, MTLSize};
+use rvllm_apple::RolloutBucket;
+#[cfg(all(feature = "apple", target_os = "macos"))]
+use rvllm_apple_metal::arena::{MetalBufferArena, MetalRegion};
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use rvllm_apple_metal::{
-    kernels,
     context::MetalContext,
-    layer_forward::metal_finalize_logits_blocking,
     gemma4_model::Gemma4MetalState,
+    kernels,
+    layer_forward::metal_finalize_logits_blocking,
     pipeline::PipelineCache,
     weight_loader::{map_safetensor_to_arena, scan_safetensor_tensors},
 };
-#[cfg(all(feature = "apple", target_os = "macos"))]
-use rvllm_apple_metal::arena::{MetalBufferArena, MetalRegion};
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 const METAL_HIDDEN: usize = 256;
@@ -215,7 +217,10 @@ impl ModelMetalBackend {
     }
 
     fn resolve_weight_prefix(
-        tensors: &std::collections::BTreeMap<String, rvllm_apple_metal::weight_loader::SafetensorTensorInfo>,
+        tensors: &std::collections::BTreeMap<
+            String,
+            rvllm_apple_metal::weight_loader::SafetensorTensorInfo,
+        >,
     ) -> String {
         if tensors.contains_key("model.embed_tokens.weight") {
             "model".to_owned()
@@ -228,10 +233,7 @@ impl ModelMetalBackend {
         }
     }
 
-    fn region_lookup(
-        refs: &mut Vec<(String, MetalRegion)>,
-        name: &str,
-    ) -> Result<MetalRegion> {
+    fn region_lookup(refs: &mut Vec<(String, MetalRegion)>, name: &str) -> Result<MetalRegion> {
         let idx = refs.iter().position(|(n, _)| n == name).ok_or_else(|| {
             RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -268,8 +270,8 @@ impl ModelMetalBackend {
         let embed_name = format!("{wprefix}.embed_tokens.weight");
         let final_norm_name = format!("{wprefix}.norm.weight");
         let prefixed_lm_head_name = format!("{wprefix}.lm_head.weight");
-        let tie_embeddings =
-            !tensors.contains_key("lm_head.weight") && !tensors.contains_key(&prefixed_lm_head_name);
+        let tie_embeddings = !tensors.contains_key("lm_head.weight")
+            && !tensors.contains_key(&prefixed_lm_head_name);
         let lm_head_name = if tie_embeddings {
             embed_name.clone()
         } else if tensors.contains_key("lm_head.weight") {
@@ -348,29 +350,27 @@ impl ModelMetalBackend {
         let i32_bytes = std::mem::size_of::<i32>();
         let embed_bytes = embed_info.nbytes;
         let final_norm_bytes = final_norm_info.nbytes;
-        let lm_head_bytes = if tie_embeddings { 0 } else { lm_head_info.nbytes };
-        let residual_bytes = arch
-            .hidden_size
-            .checked_mul(half_bytes)
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "residual buffer size overflow",
-                    },
-                    model_ctx("prepare"),
-                )
-            })?;
-        let logits_bytes = arch
-            .vocab_size
-            .checked_mul(half_bytes)
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "logits buffer size overflow",
-                    },
-                    model_ctx("prepare"),
-                )
-            })?;
+        let lm_head_bytes = if tie_embeddings {
+            0
+        } else {
+            lm_head_info.nbytes
+        };
+        let residual_bytes = arch.hidden_size.checked_mul(half_bytes).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "residual buffer size overflow",
+                },
+                model_ctx("prepare"),
+            )
+        })?;
+        let logits_bytes = arch.vocab_size.checked_mul(half_bytes).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "logits buffer size overflow",
+                },
+                model_ctx("prepare"),
+            )
+        })?;
         let normed_hidden_bytes = residual_bytes;
         let sampled_bytes = i32_bytes;
         let token_ids_bytes = 4;
@@ -391,16 +391,14 @@ impl ModelMetalBackend {
                     model_ctx("prepare"),
                 )
             })?;
-        arena_bytes = arena_bytes
-            .checked_add(4096)
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "model arena byte overflow",
-                    },
-                    model_ctx("prepare"),
-                )
-            })?;
+        arena_bytes = arena_bytes.checked_add(4096).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "model arena byte overflow",
+                },
+                model_ctx("prepare"),
+            )
+        })?;
         arena_bytes = max(arena_bytes, METAL_ARENA_BYTES);
 
         let mut ctx = MetalContext::new()?;
@@ -434,11 +432,7 @@ impl ModelMetalBackend {
             ));
         }
 
-        let residual = arena.region(
-            "metal_model_residual",
-            residual_bytes,
-            16,
-        )?;
+        let residual = arena.region("metal_model_residual", residual_bytes, 16)?;
         let logits = arena.region("metal_model_logits", logits_bytes, 16)?;
         let normed_hidden = arena.region("metal_model_normed_hidden", normed_hidden_bytes, 16)?;
         let sampled = arena.region("metal_model_sampled", sampled_bytes, 4)?;
@@ -467,11 +461,7 @@ impl ModelMetalBackend {
         Ok(state)
     }
 
-    fn enqueue_embedding_gather(
-        &self,
-        state: &Gemma4MetalState,
-        num_tokens: usize,
-    ) -> Result<()> {
+    fn enqueue_embedding_gather(&self, state: &Gemma4MetalState, num_tokens: usize) -> Result<()> {
         let ctx = self.ctx.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::NotPrepared {
@@ -758,15 +748,41 @@ impl AppleBackend for ModelMetalBackend {
         Ok(())
     }
 
-    fn launch_prefill(&mut self, _handoff: &HandoffCapsule) -> Result<AppleLaunchTicket> {
+    fn launch_prefill(&mut self, handoff: &HandoffCapsule) -> Result<AppleLaunchTicket> {
         self.ensure_prepared("launch_prefill")?;
-        Err(RvllmError::apple(
-            AppleError::FeatureNotAvailable {
-                backend: "model-metal-backend",
-                op: "unsupported_mode",
-            },
-            model_ctx("launch_prefill"),
-        ))
+        handoff.validate()?;
+
+        let state = self.state.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("launch_prefill"),
+            )
+        })?;
+
+        if state.num_layers > 0 {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "prefill_requires_transformer_layers",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+
+        if handoff.num_sequences() != 1 {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_batch_size",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+
+        self.pending = Some(Vec::new());
+        Ok(self.next_ticket(AppleLaunchKind::Prefill, None))
     }
 
     fn launch_rollout(
@@ -826,7 +842,11 @@ impl RuntimeMetalBackend {
         }
     }
 
-    fn next_ticket(&mut self, kind: AppleLaunchKind, bucket: Option<RolloutBucket>) -> AppleLaunchTicket {
+    fn next_ticket(
+        &mut self,
+        kind: AppleLaunchKind,
+        bucket: Option<RolloutBucket>,
+    ) -> AppleLaunchTicket {
         let step_id = self.next_step_id;
         self.next_step_id += 1;
         self.last_ticket = Some(step_id);
@@ -838,7 +858,10 @@ impl RuntimeMetalBackend {
     }
 
     fn initialize_metal_resources(&mut self) -> Result<()> {
-        if self.ctx.is_some() && self.pipelines.is_some() && self.arena.is_some() && self.state.is_some()
+        if self.ctx.is_some()
+            && self.pipelines.is_some()
+            && self.arena.is_some()
+            && self.state.is_some()
         {
             return Ok(());
         }
@@ -856,11 +879,19 @@ impl RuntimeMetalBackend {
         let vocab = METAL_VOCAB;
         let max_tokens = METAL_MAX_TOKENS;
 
-        let residual = arena.region("metal_decode_residual", max_tokens * hidden * half_bytes, 16)?;
+        let residual = arena.region(
+            "metal_decode_residual",
+            max_tokens * hidden * half_bytes,
+            16,
+        )?;
         let final_norm = arena.region("metal_decode_final_norm", hidden * half_bytes, 16)?;
         let lm_head = arena.region("metal_decode_lm_head", vocab * hidden * half_bytes, 16)?;
         let logits = arena.region("metal_decode_logits", max_tokens * vocab * half_bytes, 16)?;
-        let normed_hidden = arena.region("metal_decode_normed_hidden", max_tokens * hidden * half_bytes, 16)?;
+        let normed_hidden = arena.region(
+            "metal_decode_normed_hidden",
+            max_tokens * hidden * half_bytes,
+            16,
+        )?;
         let sampled = arena.region("metal_decode_sampled", max_tokens * i32_bytes, 4)?;
 
         let state = MetalState {
@@ -922,17 +953,14 @@ impl RuntimeMetalBackend {
     }
 
     fn enqueue_rollout(&mut self, handoff: &HandoffCapsule) -> Result<()> {
-        let ctx_ref = self
-            .ctx
-            .as_ref()
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::NotPrepared {
-                        backend: "runtime-metal-backend",
-                    },
-                    ctx("enqueue_rollout"),
-                )
-            })?;
+        let ctx_ref = self.ctx.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "runtime-metal-backend",
+                },
+                ctx("enqueue_rollout"),
+            )
+        })?;
         let pipelines = self.pipelines.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::NotPrepared {
@@ -1060,7 +1088,9 @@ impl AppleBackend for RuntimeMetalBackend {
 
     fn collect(&mut self, ticket: AppleLaunchTicket) -> Result<Vec<StepToken>> {
         match self.last_ticket {
-            Some(expected) if expected == ticket.step_id => Ok(self.pending.take().unwrap_or_default()),
+            Some(expected) if expected == ticket.step_id => {
+                Ok(self.pending.take().unwrap_or_default())
+            }
             Some(_) => Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "runtime-metal-backend",
@@ -1081,6 +1111,7 @@ impl AppleBackend for RuntimeMetalBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
     use rvllm_apple_metal::weight_loader::scan_safetensor_tensors;
     use serde_json::{Map, Value};
     use std::fs::{self, File};
@@ -1114,19 +1145,21 @@ mod tests {
     fn write_tiny_zero_layer_fixture() -> std::path::PathBuf {
         let dir = temp_fixture_dir();
         let embedding = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0,
-            1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
         let norm = [1.0, 1.0, 1.0, 1.0];
         let lm_head = [
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0,
-            0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0,
         ];
 
         let mut header = Map::<String, Value>::new();
         let mut payload = Vec::new();
 
-        let mut add_tensor = |name: &str, data: &[f32], shape: &[usize], payload: &mut Vec<u8>, header: &mut Map<String, Value>| {
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
             let start = payload.len();
             let bytes = f16_bytes(data);
             payload.extend_from_slice(&bytes);
@@ -1160,7 +1193,13 @@ mod tests {
             &mut header,
         );
         add_tensor("model.norm.weight", &norm, &[4], &mut payload, &mut header);
-        add_tensor("lm_head.weight", &lm_head, &[4, 4], &mut payload, &mut header);
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[4, 4],
+            &mut payload,
+            &mut header,
+        );
 
         let config = r#"{
   "architectures": ["Gemma4ForCausalLM"],
@@ -1182,7 +1221,8 @@ mod tests {
         fs::write(dir.join("config.json"), config).expect("write config");
 
         let header_json = serde_json::to_string(&header).expect("serialize fixture header");
-        let mut out = File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
         out.write_all(&(header_json.len() as u64).to_le_bytes())
             .expect("write header len");
         out.write_all(header_json.as_bytes())
@@ -1221,13 +1261,18 @@ mod tests {
         assert_eq!(config["text_config"]["num_hidden_layers"], 0);
         assert_eq!(config["text_config"]["vocab_size"], 4);
 
-        let tensors = scan_safetensor_tensors(&dir).expect("read fixture tensors");
-        let embed = tensors.get("model.embed_tokens.weight").expect("embed tensor");
-        let norm = tensors.get("model.norm.weight").expect("norm tensor");
-        let lm_head = tensors.get("lm_head.weight").expect("lm_head tensor");
-        assert_eq!(embed.shape, vec![4, 4]);
-        assert_eq!(norm.shape, vec![4]);
-        assert_eq!(lm_head.shape, vec![4, 4]);
+        #[cfg(target_os = "macos")]
+        {
+            let tensors = scan_safetensor_tensors(&dir).expect("read fixture tensors");
+            let embed = tensors
+                .get("model.embed_tokens.weight")
+                .expect("embed tensor");
+            let norm = tensors.get("model.norm.weight").expect("norm tensor");
+            let lm_head = tensors.get("lm_head.weight").expect("lm_head tensor");
+            assert_eq!(embed.shape, vec![4, 4]);
+            assert_eq!(norm.shape, vec![4]);
+            assert_eq!(lm_head.shape, vec![4, 4]);
+        }
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1278,5 +1323,53 @@ mod tests {
         assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_zero_layer_model_backend_prefill_then_decode_token_2_to_3() {
+        let dir = write_tiny_zero_layer_fixture();
+        let plan = zero_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty(), "zero-layer prefill returns no tokens");
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+
+        assert!(
+            !engine.has_pending_work(),
+            "request should finish after one decoded token"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    fn model_metal_backend_prepare_rejects_missing_dir() {
+        let dir = std::env::temp_dir().join("rvllm-definitely-missing-model-dir");
+        let _ = fs::remove_dir_all(&dir);
+
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = zero_layer_plan(dir);
+        let err = backend.prepare(&plan).expect_err("missing dir should fail");
+        let s = format!("{err}");
+        assert!(s.contains("InvalidWeightBlob") || s.contains("missing model path"));
     }
 }
