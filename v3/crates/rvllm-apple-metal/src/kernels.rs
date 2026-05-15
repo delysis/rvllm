@@ -155,6 +155,25 @@ kernel void split_qkv_f16(
 }
 
 // ============================================================================
+// Embedding gather (row lookup) f16
+// ==========================================================================
+kernel void embedding_gather_f16(
+    device const half *embedding   [[buffer(0)]],
+    device const uint *token_ids    [[buffer(1)]],
+    device half       *out         [[buffer(2)]],
+    constant uint     &hidden      [[buffer(3)]],
+    constant float    &scale       [[buffer(4)]],
+    uint2 gid                      [[thread_position_in_grid]]
+) {
+    uint token = gid.x;
+    uint dim = gid.y;
+    if (dim >= hidden) return;
+
+    uint tok = token_ids[token];
+    out[token * hidden + dim] = half(float(embedding[tok * hidden + dim]) * scale);
+}
+
+// ============================================================================
 // Partial RoPE (Gemma 4 style: only rotate first rope_dim dims)
 // ============================================================================
 kernel void rope_partial_f16(
@@ -530,6 +549,7 @@ pub const KERNEL_NAMES: &[&str] = &[
     "kv_cache_write_f16",
     "attention_decode_f16",
     "attention_prefill_f16",
+    "embedding_gather_f16",
     "gelu_mul_f16",
     "residual_add_f16",
     "argmax_f16",
