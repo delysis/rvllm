@@ -2226,6 +2226,35 @@ mod tests {
 
         let _ = fs::remove_dir_all(dir);
     }
+
+    #[test]
+    #[ignore = "set RVLLM_GEMMA4_MODEL_DIR to validate a real Gemma4 model directory"]
+    fn real_gemma4_model_dir_dry_run_validates_when_env_is_set() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let model_dir = PathBuf::from(model_dir);
+        let validation = Gemma4DryRunValidation::from_model_dir(&model_dir).unwrap_or_else(|err| {
+            panic!(
+                "Gemma4 dry-run validation failed for {}: {err}",
+                model_dir.display()
+            )
+        });
+
+        assert!(validation.num_layers > 0);
+        assert!(validation.hidden_size > 0);
+        assert!(validation.vocab_size > 0);
+        assert_eq!(validation.layers.len(), validation.num_layers);
+        eprintln!(
+            "validated Gemma4 dry-run shapes: dir={} prefix={} layers={} hidden={} vocab={}",
+            model_dir.display(),
+            validation.weight_prefix,
+            validation.num_layers,
+            validation.hidden_size,
+            validation.vocab_size
+        );
+    }
 }
 
 #[derive(Debug, Default, Clone)]
