@@ -1100,6 +1100,8 @@ fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryRunVa
     validate_required_shape(model_dir, &tensors, &final_norm, &[arch.hidden_size])?;
 
     let prefixed_lm_head = join_weight_name(&weight_prefix, "lm_head.weight");
+    let tie_word_embeddings = arch.tie_word_embeddings
+        || (!tensors.contains_key("lm_head.weight") && !tensors.contains_key(&prefixed_lm_head));
     let lm_head = resolve_optional_dry_run_alias(
         &tensors,
         vec![prefixed_lm_head.clone(), "lm_head.weight".to_owned()],
@@ -1111,7 +1113,7 @@ fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryRunVa
             name,
             &[arch.vocab_size, arch.hidden_size],
         )?;
-    } else if !arch.tie_word_embeddings {
+    } else if !tie_word_embeddings {
         return Err(missing_tensor_error(model_dir, &prefixed_lm_head));
     }
 
@@ -1127,7 +1129,7 @@ fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryRunVa
         num_layers: arch.num_hidden_layers,
         hidden_size: arch.hidden_size,
         vocab_size: arch.vocab_size,
-        tie_word_embeddings: arch.tie_word_embeddings,
+        tie_word_embeddings,
         embed_tokens,
         final_norm,
         lm_head,

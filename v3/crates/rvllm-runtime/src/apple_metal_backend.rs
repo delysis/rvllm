@@ -3621,12 +3621,16 @@ mod tests {
         cpu_full_nonzero_argmax(&logits)
     }
 
-    fn cpu_reference_generated_tiny_hf_end_to_end_sequence() -> Vec<usize> {
+    fn cpu_reference_generated_tiny_gemma4_hf_sequence(
+        prompt: &[usize],
+        steps: usize,
+    ) -> Vec<usize> {
         let hidden = 128usize;
         let intermediate = 256usize;
         let vocab = 8usize;
         let eps = 0.000001f32;
         let scale = (hidden as f32).sqrt();
+        let softcap = 30.0f32;
 
         let mut embedding = vec![0.0f32; vocab * hidden];
         embedding[2 * hidden + 7] = 10.0;
@@ -3634,6 +3638,9 @@ mod tests {
         embedding[4 * hidden + 5] = 10.0;
 
         let norm = vec![1.0f32; hidden];
+        let q_norm = vec![1.0f32; hidden];
+        let k_norm = vec![1.0f32; hidden];
+        let layer_scalar = vec![1.0f32; hidden];
         let mut q_proj = vec![0.0f32; hidden * hidden];
         let mut k_proj = vec![0.0f32; hidden * hidden];
         let mut v_proj = vec![0.0f32; hidden * hidden];
@@ -3665,27 +3672,35 @@ mod tests {
         let project_kv = |token: usize| -> (Vec<f32>, Vec<f32>) {
             let residual = token_residual(token);
             let normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
-            (
-                cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &normed),
-                cpu_full_nonzero_matvec(&v_proj, hidden, hidden, &normed),
-            )
+            let k = cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &normed);
+            let v = cpu_full_nonzero_matvec(&v_proj, hidden, hidden, &normed);
+            (cpu_full_nonzero_rms_norm(&k, &k_norm, eps), v)
         };
 
         let mut k_cache = Vec::new();
         let mut v_cache = Vec::new();
-        for token in [2usize, 4usize] {
+        for &token in prompt {
             let (k, v) = project_kv(token);
             k_cache.push(k);
             v_cache.push(v);
         }
 
-        let mut current = 4usize;
+        let mut current = *prompt.last().expect("nonempty prompt");
         let mut generated = Vec::new();
-        for position in [1usize, 2usize] {
+        for step in 0..steps {
+            let position = prompt.len() - 1 + step;
             let mut residual = token_residual(current);
             let normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
-            let q = cpu_full_nonzero_matvec(&q_proj, hidden, hidden, &normed);
-            let k = cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &normed);
+            let q = cpu_full_nonzero_rms_norm(
+                &cpu_full_nonzero_matvec(&q_proj, hidden, hidden, &normed),
+                &q_norm,
+                eps,
+            );
+            let k = cpu_full_nonzero_rms_norm(
+                &cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &normed),
+                &k_norm,
+                eps,
+            );
             let v = cpu_full_nonzero_matvec(&v_proj, hidden, hidden, &normed);
 
             if position < k_cache.len() {
@@ -3722,8 +3737,9 @@ mod tests {
 
             let projected = cpu_full_nonzero_matvec(&o_proj, hidden, hidden, &attn_out);
             for dim in 0..hidden {
-                residual[dim] += projected[dim];
+                residual[dim] += projected[dim] * layer_scalar[dim];
             }
+            residual = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
 
             let mlp_normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
             let gate = cpu_full_nonzero_matvec(&gate_proj, intermediate, hidden, &mlp_normed);
@@ -3735,17 +3751,25 @@ mod tests {
                 .collect::<Vec<_>>();
             let mlp_out = cpu_full_nonzero_matvec(&down_proj, hidden, intermediate, &activated);
             for dim in 0..hidden {
-                residual[dim] += mlp_out[dim];
+                residual[dim] += mlp_out[dim] * layer_scalar[dim];
             }
+            residual = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
 
             let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
-            let logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
+            let mut logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
+            for logit in &mut logits {
+                *logit = softcap * (*logit / softcap).tanh();
+            }
             let next = cpu_full_nonzero_argmax(&logits);
             generated.push(next);
             current = next;
         }
 
         generated
+    }
+
+    fn cpu_reference_generated_tiny_hf_end_to_end_sequence() -> Vec<usize> {
+        cpu_reference_generated_tiny_gemma4_hf_sequence(&[2, 4], 2)
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -5170,6 +5194,7 @@ mod tests {
         let hidden = 128;
         let intermediate = 256;
         let vocab = 8;
+        let prefix = "model.language_model";
 
         let mut embedding = vec![0.0f32; vocab * hidden];
         embedding[2 * hidden + 7] = 10.0;
@@ -5177,6 +5202,7 @@ mod tests {
         embedding[4 * hidden + 5] = 10.0;
 
         let norm = vec![1.0f32; hidden];
+        let layer_scalar = vec![1.0f32; hidden];
         let mut lm_head = vec![0.0f32; vocab * hidden];
         lm_head[2 * hidden + 10] = 0.25;
         lm_head[3 * hidden + 5] = 3.0;
@@ -5216,21 +5242,21 @@ mod tests {
         };
 
         add_tensor(
-            "model.embed_tokens.weight",
+            &format!("{prefix}.embed_tokens.weight"),
             &embedding,
             &[vocab, hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.norm.weight",
+            &format!("{prefix}.norm.weight"),
             &norm,
             &[hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "lm_head.weight",
+            &format!("{prefix}.lm_head.weight"),
             &lm_head,
             &[vocab, hidden],
             &mut payload,
@@ -5254,63 +5280,98 @@ mod tests {
         down_proj[10 * intermediate] = 0.5;
 
         add_tensor(
-            "model.layers.0.input_layernorm.weight",
+            &format!("{prefix}.layers.0.input_layernorm.weight"),
             &norm,
             &[hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.self_attn.q_proj.weight",
+            &format!("{prefix}.layers.0.self_attn.q_proj.weight"),
             &q_proj,
             &[hidden, hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.self_attn.k_proj.weight",
+            &format!("{prefix}.layers.0.self_attn.k_proj.weight"),
             &k_proj,
             &[hidden, hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.self_attn.v_proj.weight",
+            &format!("{prefix}.layers.0.self_attn.v_proj.weight"),
             &v_proj,
             &[hidden, hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.self_attn.o_proj.weight",
+            &format!("{prefix}.layers.0.self_attn.o_proj.weight"),
             &o_proj,
             &[hidden, hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.mlp_norm.weight",
+            &format!("{prefix}.layers.0.self_attn.q_norm.weight"),
             &norm,
             &[hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.mlp.gate_proj.weight",
+            &format!("{prefix}.layers.0.self_attn.k_norm.weight"),
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{prefix}.layers.0.post_attention_layernorm.weight"),
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{prefix}.layers.0.pre_feedforward_layernorm.weight"),
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{prefix}.layers.0.post_feedforward_layernorm.weight"),
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{prefix}.layers.0.layer_scalar"),
+            &layer_scalar,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{prefix}.layers.0.mlp.gate_proj.weight"),
             &gate_proj,
             &[intermediate, hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.mlp.up_proj.weight",
+            &format!("{prefix}.layers.0.mlp.up_proj.weight"),
             &up_proj,
             &[intermediate, hidden],
             &mut payload,
             &mut header,
         );
         add_tensor(
-            "model.layers.0.mlp.down_proj.weight",
+            &format!("{prefix}.layers.0.mlp.down_proj.weight"),
             &down_proj,
             &[hidden, intermediate],
             &mut payload,
@@ -5319,22 +5380,31 @@ mod tests {
 
         let config = format!(
             r#"{{
-  "architectures": ["Gemma4ForCausalLM"],
+  "architectures": ["Gemma4ForConditionalGeneration"],
   "text_config": {{
     "num_hidden_layers": 1,
     "hidden_size": {},
     "intermediate_size": {},
     "num_attention_heads": 1,
     "num_key_value_heads": 1,
+    "num_global_key_value_heads": 1,
     "head_dim": {},
+    "global_head_dim": {},
+    "layer_types": ["full_attention"],
     "vocab_size": {},
     "max_position_embeddings": 16,
+    "sliding_window": 8,
     "rms_norm_eps": 0.000001,
-    "final_logit_softcapping": 0.0,
-    "tie_word_embeddings": false
+    "final_logit_softcapping": 30.0,
+    "tie_word_embeddings": false,
+    "attention_k_eq_v": false,
+    "rope_parameters": {{
+      "sliding_attention": {{"rope_theta": 10000.0}},
+      "full_attention": {{"rope_theta": 1000000.0}}
+    }}
   }}
 }}"#,
-            hidden, intermediate, hidden, vocab
+            hidden, intermediate, hidden, hidden, vocab
         );
 
         fs::write(dir.join("config.json"), config).expect("write config");
@@ -5905,7 +5975,37 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
-    fn tiny_generated_hf_end_to_end_model_backend_generates_cpu_sequence() {
+    fn tiny_generated_gemma4_hf_model_backend_one_prompt_token_matches_cpu_token() {
+        let expected =
+            rvllm_core::TokenId(cpu_reference_generated_tiny_gemma4_hf_sequence(&[2], 1)[0] as u32);
+        let dir = write_generated_tiny_hf_end_to_end_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare generated tiny Gemma4 HF-named model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, expected);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_generated_gemma4_hf_end_to_end_model_backend_matches_cpu_tokens() {
         let expected = cpu_reference_generated_tiny_hf_end_to_end_sequence()
             .into_iter()
             .map(|token| rvllm_core::TokenId(token as u32))
@@ -5915,7 +6015,7 @@ mod tests {
         let plan = one_layer_plan(dir.clone());
         backend
             .prepare(&plan)
-            .expect("prepare generated tiny HF-named model");
+            .expect("prepare generated tiny Gemma4 HF-named model");
 
         let prefill = rvllm_apple::HandoffCapsule::new(
             rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
@@ -5956,7 +6056,7 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
-    fn engine_generated_hf_end_to_end_generates_cpu_sequence() {
+    fn engine_generated_gemma4_hf_end_to_end_matches_cpu_tokens() {
         let expected = cpu_reference_generated_tiny_hf_end_to_end_sequence()
             .into_iter()
             .map(|token| rvllm_core::TokenId(token as u32))
@@ -5966,7 +6066,7 @@ mod tests {
 
         let mut engine = crate::engine::Engine::new()
             .with_apple_runtime_plan(plan)
-            .expect("engine with generated tiny HF-named model plan");
+            .expect("engine with generated tiny Gemma4 HF-named model plan");
 
         engine.scheduler.enqueue(crate::sched_state::Request::new(
             rvllm_core::ReqId(1),
@@ -6167,6 +6267,51 @@ mod tests {
         assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
         assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
         assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    fn generated_tiny_gemma4_hf_fixture_uses_real_names_and_dry_run_validates() {
+        let dir = write_generated_tiny_hf_end_to_end_fixture();
+        let tensors =
+            rvllm_apple_metal::weight_loader::scan_safetensor_tensors(&dir).expect("scan");
+        let prefix = "model.language_model";
+
+        assert!(tensors.contains_key(&format!("{prefix}.embed_tokens.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.norm.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.lm_head.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.self_attn.q_proj.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.self_attn.k_proj.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.self_attn.v_proj.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.self_attn.q_norm.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.self_attn.k_norm.weight")));
+        assert!(tensors.contains_key(&format!(
+            "{prefix}.layers.0.post_attention_layernorm.weight"
+        )));
+        assert!(tensors.contains_key(&format!(
+            "{prefix}.layers.0.pre_feedforward_layernorm.weight"
+        )));
+        assert!(tensors.contains_key(&format!(
+            "{prefix}.layers.0.post_feedforward_layernorm.weight"
+        )));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.layer_scalar")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.mlp.gate_proj.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.mlp.up_proj.weight")));
+        assert!(tensors.contains_key(&format!("{prefix}.layers.0.mlp.down_proj.weight")));
+        assert!(!tensors.contains_key("model.layers.0.self_attn.qkv.weight"));
+        assert!(!tensors.contains_key("model.layers.0.mlp.gate_up.weight"));
+
+        let validation = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
+            .expect("generated Gemma4 fixture dry-run validates");
+        assert_eq!(validation.weight_prefix, prefix);
+        assert_eq!(validation.final_logit_softcap, Some(30.0));
+        assert_eq!(
+            validation.layers[0].attention_kind,
+            rvllm_apple_metal::gemma4_model::MetalProbeLayerAttentionKind::Full
+        );
+        assert_eq!(validation.layers[0].layer_scalar_dim, 128);
 
         let _ = fs::remove_dir_all(dir);
     }
