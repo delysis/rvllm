@@ -243,4 +243,46 @@ mod tests {
         s.commit_decode(&[(ReqId(1), TokenId(5))]);
         assert!(matches!(s.schedule(), BatchPlan::Idle));
     }
+
+    #[test]
+    fn decode_plan_bucket_four_preserves_independent_context_lens() {
+        let mut s = Scheduler::new();
+        s.enqueue(Request::new(ReqId(1), vec![TokenId(2)], 1));
+        s.enqueue(Request::new(ReqId(2), vec![TokenId(0), TokenId(3)], 1));
+        s.enqueue(Request::new(
+            ReqId(3),
+            vec![TokenId(0), TokenId(1), TokenId(4)],
+            1,
+        ));
+        s.enqueue(Request::new(ReqId(4), vec![TokenId(2)], 1));
+
+        assert!(matches!(s.schedule(), BatchPlan::Prefill { .. }));
+        match s.schedule() {
+            BatchPlan::Decode {
+                req_ids,
+                bucket,
+                last_tokens,
+                positions,
+                context_lens,
+            } => {
+                assert_eq!(bucket, 4);
+                assert_eq!(req_ids, vec![ReqId(1), ReqId(2), ReqId(3), ReqId(4)]);
+                assert_eq!(
+                    last_tokens,
+                    vec![TokenId(2), TokenId(3), TokenId(4), TokenId(2)]
+                );
+                assert_eq!(positions, vec![0, 1, 2, 0]);
+                assert_eq!(context_lens, vec![1, 2, 3, 1]);
+            }
+            other => panic!("expected Decode, got {other:?}"),
+        }
+
+        s.commit_decode(&[
+            (ReqId(1), TokenId(3)),
+            (ReqId(2), TokenId(4)),
+            (ReqId(3), TokenId(5)),
+            (ReqId(4), TokenId(3)),
+        ]);
+        assert!(matches!(s.schedule(), BatchPlan::Idle));
+    }
 }

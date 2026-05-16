@@ -696,9 +696,9 @@ impl ProbeModelPlan {
                 let mlp_out_bytes = max_probe_tokens * hidden * half_bytes;
 
                 let block_size = max_probe_tokens;
-                let num_blocks_total = 1usize;
+                let num_blocks_total = max_probe_tokens;
                 let kv_cache_bytes = num_blocks_total * block_size * dims.kv_dim * half_bytes * 2;
-                let metadata_bytes = max_probe_tokens * i32_bytes * 2 + 4 * i32_bytes;
+                let metadata_bytes = (5 * max_probe_tokens + 1) * i32_bytes;
 
                 let half_rope = dims.rope_dim / 2;
                 let max_pos = 16usize;
@@ -936,7 +936,7 @@ impl Gemma4MetalState {
             )?;
 
             let block_size = max_probe_tokens as u32;
-            let num_blocks_total = 1u32;
+            let num_blocks_total = max_probe_tokens as u32;
             let max_blocks_per_seq = 1u32;
             let kv_cache_k = arena.region(
                 &format!("metal_layer_{layer_idx}_kv_cache_k"),
@@ -959,11 +959,21 @@ impl Gemma4MetalState {
                 max_probe_tokens * 4,
                 4,
             )?;
-            let context_lens =
-                arena.region(&format!("metal_layer_{layer_idx}_context_lens"), 4, 4)?;
-            let block_tables =
-                arena.region(&format!("metal_layer_{layer_idx}_block_tables"), 4, 4)?;
-            let cu_seqlens = arena.region(&format!("metal_layer_{layer_idx}_cu_seqlens"), 8, 4)?;
+            let context_lens = arena.region(
+                &format!("metal_layer_{layer_idx}_context_lens"),
+                max_probe_tokens * 4,
+                4,
+            )?;
+            let block_tables = arena.region(
+                &format!("metal_layer_{layer_idx}_block_tables"),
+                max_probe_tokens * (max_blocks_per_seq as usize) * 4,
+                4,
+            )?;
+            let cu_seqlens = arena.region(
+                &format!("metal_layer_{layer_idx}_cu_seqlens"),
+                (max_probe_tokens + 1) * 4,
+                4,
+            )?;
 
             let half_rope = dims.rope_dim / 2;
             let max_pos = 16usize;
@@ -980,9 +990,9 @@ impl Gemma4MetalState {
 
             write_i32_region(arena, &positions, &vec![0; max_probe_tokens])?;
             write_i32_region(arena, &slot_mapping, &vec![0; max_probe_tokens])?;
-            write_i32_region(arena, &context_lens, &[1])?;
-            write_i32_region(arena, &block_tables, &[0])?;
-            write_i32_region(arena, &cu_seqlens, &[0, 1])?;
+            write_i32_region(arena, &context_lens, &vec![0; max_probe_tokens])?;
+            write_i32_region(arena, &block_tables, &vec![0; max_probe_tokens])?;
+            write_i32_region(arena, &cu_seqlens, &vec![0; max_probe_tokens + 1])?;
             write_f32_region(arena, &cos, &vec![1.0; max_pos * half_rope])?;
             write_f32_region(arena, &sin, &vec![0.0; max_pos * half_rope])?;
 

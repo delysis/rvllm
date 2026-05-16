@@ -441,11 +441,25 @@ impl ModelMetalBackend {
         state: &Gemma4MetalState,
         handoff: &HandoffCapsule,
     ) -> Result<()> {
-        let position = handoff.positions[0] as usize;
-        let context_len = handoff.context_lens[0] as usize;
-        if position >= state.max_probe_tokens
-            || context_len == 0
-            || context_len > state.max_probe_tokens
+        let num_seqs = handoff.num_sequences();
+        if num_seqs == 0 || num_seqs > state.max_probe_tokens {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_decode_batch_size",
+                },
+                model_ctx("launch_rollout"),
+            ));
+        }
+        if handoff
+            .positions
+            .iter()
+            .zip(&handoff.context_lens)
+            .any(|(&position, &context_len)| {
+                position as usize >= state.max_probe_tokens
+                    || context_len == 0
+                    || context_len as usize > state.max_probe_tokens
+            })
         {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
@@ -464,11 +478,24 @@ impl ModelMetalBackend {
             )
         })?;
 
-        let positions = [position as i32];
-        let slot_mapping = [position as i32];
-        let context_lens = [context_len as i32];
-        let block_tables = [0_i32];
-        let cu_seqlens = [0_i32, 1_i32];
+        let positions = handoff
+            .positions
+            .iter()
+            .map(|&position| position as i32)
+            .collect::<Vec<_>>();
+        let context_lens = handoff
+            .context_lens
+            .iter()
+            .map(|&context_len| context_len as i32)
+            .collect::<Vec<_>>();
+        let slot_mapping = handoff
+            .positions
+            .iter()
+            .enumerate()
+            .map(|(seq, &position)| (seq * state.max_probe_tokens + position as usize) as i32)
+            .collect::<Vec<_>>();
+        let block_tables = (0..num_seqs).map(|seq| seq as i32).collect::<Vec<_>>();
+        let cu_seqlens = (0..=num_seqs).map(|idx| idx as i32).collect::<Vec<_>>();
 
         for layer in &state.layers {
             Self::write_i32_metadata_region(arena, &layer.positions, &positions, "launch_rollout")?;
@@ -668,16 +695,6 @@ impl ModelMetalBackend {
     }
 
     fn run_prefill_step(&mut self, handoff: &HandoffCapsule) -> Result<()> {
-        if handoff.num_sequences() != 1 {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "unsupported_batch_size",
-                },
-                model_ctx("launch_prefill"),
-            ));
-        }
-
         let state = self.state.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::NotPrepared {
@@ -686,6 +703,15 @@ impl ModelMetalBackend {
                 model_ctx("launch_prefill"),
             )
         })?;
+        if handoff.num_sequences() != 1 && state.num_layers > 0 {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_prefill_batch_size_for_layers",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
         const MAX_SYNTHETIC_PROBE_LAYERS: usize = 8;
         if state.num_layers > MAX_SYNTHETIC_PROBE_LAYERS {
             return Err(RvllmError::apple(
@@ -748,15 +774,6 @@ impl ModelMetalBackend {
     }
 
     fn run_decode_step(&mut self, handoff: &HandoffCapsule) -> Result<()> {
-        if handoff.num_sequences() > 1 {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "unsupported_batch_size",
-                },
-                model_ctx("launch_rollout"),
-            ));
-        }
         if handoff.tokens_flat.is_empty() {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -5797,6 +5814,169 @@ mod tests {
         }
 
         assert_eq!(generated, expected);
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_zero_layer_decode_batch_two_returns_independent_tokens() {
+        let dir = write_tiny_zero_layer_decode_loop_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = zero_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare zero-layer decode-loop tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1), rvllm_core::ReqId(2)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(3)],
+            vec![0, 1, 2],
+            vec![0, 1],
+            vec![1, 2],
+        );
+        let ticket = backend
+            .launch_rollout(&handoff, None)
+            .expect("run batched rollout");
+        let out = backend.collect(ticket).expect("collect batched rollout");
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+        assert_eq!(out[1].req_id, rvllm_core::ReqId(2));
+        assert_eq!(out[1].token_id, rvllm_core::TokenId(4));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_zero_layer_decode_batch_two_returns_exact_tokens() {
+        let dir = write_tiny_zero_layer_decode_loop_fixture();
+        let plan = zero_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with zero-layer decode-loop tiny model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(2),
+            vec![rvllm_core::TokenId(0), rvllm_core::TokenId(3)],
+            1,
+        ));
+
+        let prefill = engine.step_launch().expect("launch batched prefill");
+        match prefill.plan().expect("prefill plan") {
+            crate::scheduler::BatchPlan::Prefill { req_ids, .. } => {
+                assert_eq!(req_ids, &vec![rvllm_core::ReqId(1), rvllm_core::ReqId(2)]);
+            }
+            other => panic!("expected Prefill, got {other:?}"),
+        }
+        assert!(prefill
+            .collect()
+            .expect("collect batched prefill")
+            .is_empty());
+
+        let decode = engine.step_launch().expect("launch batched decode");
+        match decode.plan().expect("decode plan") {
+            crate::scheduler::BatchPlan::Decode {
+                req_ids,
+                bucket,
+                positions,
+                context_lens,
+                ..
+            } => {
+                assert_eq!(req_ids, &vec![rvllm_core::ReqId(1), rvllm_core::ReqId(2)]);
+                assert_eq!(*bucket, 2);
+                assert_eq!(positions, &vec![0, 1]);
+                assert_eq!(context_lens, &vec![1, 2]);
+            }
+            other => panic!("expected Decode, got {other:?}"),
+        }
+        let out = decode.collect().expect("collect batched decode");
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out[0].new_token, rvllm_core::TokenId(3));
+        assert_eq!(out[1].req_id, rvllm_core::ReqId(2));
+        assert_eq!(out[1].new_token, rvllm_core::TokenId(4));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_zero_layer_decode_batch_four_returns_exact_tokens() {
+        let dir = write_tiny_zero_layer_decode_loop_fixture();
+        let plan = zero_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with zero-layer decode-loop tiny model plan");
+
+        for (req_id, prompt) in [
+            (1, vec![rvllm_core::TokenId(2)]),
+            (2, vec![rvllm_core::TokenId(0), rvllm_core::TokenId(3)]),
+            (
+                3,
+                vec![
+                    rvllm_core::TokenId(0),
+                    rvllm_core::TokenId(1),
+                    rvllm_core::TokenId(4),
+                ],
+            ),
+            (4, vec![rvllm_core::TokenId(2)]),
+        ] {
+            engine.scheduler.enqueue(crate::sched_state::Request::new(
+                rvllm_core::ReqId(req_id),
+                prompt,
+                1,
+            ));
+        }
+
+        let prefill = engine.step_launch().expect("launch batched prefill");
+        assert!(prefill
+            .collect()
+            .expect("collect batched prefill")
+            .is_empty());
+
+        let decode = engine.step_launch().expect("launch batched decode");
+        match decode.plan().expect("decode plan") {
+            crate::scheduler::BatchPlan::Decode {
+                bucket,
+                positions,
+                context_lens,
+                ..
+            } => {
+                assert_eq!(*bucket, 4);
+                assert_eq!(positions, &vec![0, 1, 2, 0]);
+                assert_eq!(context_lens, &vec![1, 2, 3, 1]);
+            }
+            other => panic!("expected Decode, got {other:?}"),
+        }
+        let out = decode.collect().expect("collect batched decode");
+        let got = out
+            .iter()
+            .map(|step| (step.req_id, step.new_token))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            got,
+            vec![
+                (rvllm_core::ReqId(1), rvllm_core::TokenId(3)),
+                (rvllm_core::ReqId(2), rvllm_core::TokenId(4)),
+                (rvllm_core::ReqId(3), rvllm_core::TokenId(5)),
+                (rvllm_core::ReqId(4), rvllm_core::TokenId(3)),
+            ]
+        );
         assert!(!engine.has_pending_work());
 
         let _ = fs::remove_dir_all(dir);
