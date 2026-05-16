@@ -4105,10 +4105,16 @@ mod tests {
         ))
     }
 
-    fn cpu_reference_generated_tiny_gemma4_hf_sequence(
+    #[derive(Debug)]
+    struct GeneratedTinyGemma4HfDecodeLoopReference {
+        generated: Vec<usize>,
+        logits_by_step: Vec<Vec<f32>>,
+    }
+
+    fn cpu_reference_generated_tiny_gemma4_hf_decode_loop(
         prompt: &[usize],
         steps: usize,
-    ) -> Vec<usize> {
+    ) -> GeneratedTinyGemma4HfDecodeLoopReference {
         let hidden = 128usize;
         let intermediate = 256usize;
         let vocab = 8usize;
@@ -4171,6 +4177,7 @@ mod tests {
 
         let mut current = *prompt.last().expect("nonempty prompt");
         let mut generated = Vec::new();
+        let mut logits_by_step = Vec::new();
         for step in 0..steps {
             let position = prompt.len() - 1 + step;
             let mut residual = token_residual(current);
@@ -4245,15 +4252,31 @@ mod tests {
                 *logit = softcap * (*logit / softcap).tanh();
             }
             let next = cpu_full_nonzero_argmax(&logits);
+            logits_by_step.push(logits);
             generated.push(next);
             current = next;
         }
 
-        generated
+        GeneratedTinyGemma4HfDecodeLoopReference {
+            generated,
+            logits_by_step,
+        }
+    }
+
+    fn cpu_reference_generated_tiny_gemma4_hf_sequence(
+        prompt: &[usize],
+        steps: usize,
+    ) -> Vec<usize> {
+        cpu_reference_generated_tiny_gemma4_hf_decode_loop(prompt, steps).generated
+    }
+
+    fn cpu_reference_generated_tiny_hf_end_to_end_decode_loop(
+    ) -> GeneratedTinyGemma4HfDecodeLoopReference {
+        cpu_reference_generated_tiny_gemma4_hf_decode_loop(&[2, 4], 2)
     }
 
     fn cpu_reference_generated_tiny_hf_end_to_end_sequence() -> Vec<usize> {
-        cpu_reference_generated_tiny_gemma4_hf_sequence(&[2, 4], 2)
+        cpu_reference_generated_tiny_hf_end_to_end_decode_loop().generated
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -4615,6 +4638,69 @@ mod tests {
         assert_eq!(
             cpu_reference_generated_tiny_hf_end_to_end_sequence(),
             vec![3, 5]
+        );
+    }
+
+    #[test]
+    fn cpu_reference_decode_loop_selected_logits_sequence_is_expected() {
+        let reference = cpu_reference_generated_tiny_hf_end_to_end_decode_loop();
+        assert_eq!(reference.generated, vec![3, 5]);
+        assert_eq!(reference.logits_by_step.len(), 2);
+
+        let expected_selected_logits = [
+            [
+                (3usize, 24.286_85f32),
+                (2usize, 0.281_43f32),
+                (0usize, 0.0f32),
+            ],
+            [
+                (5usize, 24.338_19f32),
+                (2usize, 0.094_23f32),
+                (0usize, 0.0f32),
+            ],
+        ];
+
+        for (step_idx, selected_logits) in expected_selected_logits.iter().enumerate() {
+            let logits = &reference.logits_by_step[step_idx];
+            let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(logits);
+            let low_idx = 0usize;
+
+            assert_eq!(logits.len(), 8);
+            assert_eq!(expected_idx, reference.generated[step_idx]);
+            assert_eq!(runner_up_idx, 2);
+            assert_eq!(logits[low_idx], 0.0);
+            assert!(logits[expected_idx] > logits[runner_up_idx]);
+            assert!(logits[runner_up_idx] > logits[low_idx]);
+
+            for &(idx, expected_logit) in selected_logits {
+                assert_f32_close(
+                    &format!("decode step {} logit[{idx}]", step_idx + 1),
+                    logits[idx],
+                    expected_logit,
+                    0.05,
+                );
+            }
+        }
+
+        let max_step_diff = reference.logits_by_step[0]
+            .iter()
+            .zip(reference.logits_by_step[1].iter())
+            .map(|(left, right)| (left - right).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_step_diff > 1.0,
+            "decode steps should produce different logits, max_diff={max_step_diff}"
+        );
+
+        let cold_token_three = cpu_reference_generated_tiny_gemma4_hf_decode_loop(&[3], 1);
+        let max_context_diff = reference.logits_by_step[1]
+            .iter()
+            .zip(cold_token_three.logits_by_step[0].iter())
+            .map(|(persistent, cold)| (persistent - cold).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_context_diff > 0.05,
+            "second decode step should depend on retained KV/context, max_diff={max_context_diff}"
         );
     }
 
@@ -7098,6 +7184,74 @@ mod tests {
             generated.push(out[0].new_token);
         }
 
+        assert_eq!(generated, expected);
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_decode_loop_selected_logits_match_cpu() {
+        let cpu_reference = cpu_reference_generated_tiny_hf_end_to_end_decode_loop();
+        assert_eq!(cpu_reference.generated, vec![3, 5]);
+
+        let dir = write_generated_tiny_hf_end_to_end_fixture();
+        let plan = one_layer_plan(dir.clone());
+        let shared_backend = SharedModelMetalBackend::new(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_backend(Box::new(shared_backend.clone()))
+            .with_apple_runtime_plan(plan)
+            .expect("engine with shared generated tiny Gemma4 HF-named model backend");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            cpu_reference.generated.len() as u32,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let mut generated = Vec::new();
+        for (step_idx, expected_token) in cpu_reference.generated.iter().enumerate() {
+            let step = engine.step_launch().expect("launch decode");
+            let out = step.collect().expect("collect decode");
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].req_id, rvllm_core::ReqId(1));
+            assert_eq!(
+                out[0].new_token,
+                rvllm_core::TokenId(*expected_token as u32)
+            );
+            generated.push(out[0].new_token);
+
+            let metal_logits = shared_backend
+                .debug_read_decode_logits_f32(1)
+                .expect("read shared backend decode logits");
+            let cpu_logits = &cpu_reference.logits_by_step[step_idx];
+            let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(cpu_logits);
+            let low_idx = 0usize;
+            assert_eq!(expected_idx, *expected_token);
+            assert_eq!(metal_logits.len(), cpu_logits.len());
+
+            const LOGIT_TOLERANCE: f32 = 0.05;
+            assert_selected_logits_close(
+                &format!("generated tiny HF engine decode step {}", step_idx + 1),
+                &metal_logits,
+                cpu_logits,
+                &[expected_idx, runner_up_idx, low_idx],
+                LOGIT_TOLERANCE,
+            );
+        }
+
+        let expected = cpu_reference
+            .generated
+            .iter()
+            .map(|token| rvllm_core::TokenId(*token as u32))
+            .collect::<Vec<_>>();
         assert_eq!(generated, expected);
         assert!(!engine.has_pending_work());
 
