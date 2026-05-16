@@ -18,3 +18,11 @@ The output directory contains:
 | `expected_reference.json` | Prompt tokens, expected generated tokens, and full CPU logits per decode step |
 
 External comparison code should load `config.json` and `model.safetensors`, run prompt `[2, 4]` for two decode steps, and compare every logit in each step against `expected_reference.json`.
+
+A bounded standalone verifier for this synthetic bundle lives at:
+
+```bash
+python3 scripts/verify_generated_tiny_reference.py /tmp/rvllm-generated-tiny-reference
+```
+
+The verifier parses safetensors directly and has no PyTorch dependency. It is intentionally scoped to this one-layer generated tiny export.
