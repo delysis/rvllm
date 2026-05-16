@@ -379,11 +379,12 @@ impl ModelMetalBackend {
                 model_ctx("launch_rollout"),
             )
         })?;
-        if state.num_layers > 2 {
+        const MAX_SYNTHETIC_PROBE_LAYERS: usize = 8;
+        if state.num_layers > MAX_SYNTHETIC_PROBE_LAYERS {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
-                    op: "unsupported_num_layers",
+                    op: "unsupported_synthetic_probe_num_layers",
                 },
                 model_ctx("launch_rollout"),
             ));
@@ -620,11 +621,12 @@ impl AppleBackend for ModelMetalBackend {
             )
         })?;
 
-        if state.num_layers > 2 {
+        const MAX_SYNTHETIC_PROBE_LAYERS: usize = 8;
+        if state.num_layers > MAX_SYNTHETIC_PROBE_LAYERS {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
-                    op: "prefill_requires_transformer_layers",
+                    op: "unsupported_synthetic_probe_num_layers",
                 },
                 model_ctx("launch_prefill"),
             ));
@@ -1404,14 +1406,29 @@ mod tests {
     }
 
     fn two_layer_plan(model_dir: std::path::PathBuf) -> rvllm_apple::AppleRuntimePlan {
+        n_layer_plan(model_dir, 2)
+    }
+
+    fn n_layer_plan(
+        model_dir: std::path::PathBuf,
+        num_layers: usize,
+    ) -> rvllm_apple::AppleRuntimePlan {
         rvllm_apple::AppleRuntimePlan {
-            ane_num_layers: 2,
+            ane_num_layers: num_layers,
             ..one_layer_plan(model_dir)
         }
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_two_layer_fixture(first_layer_ffn_nonzero: bool) -> std::path::PathBuf {
+        write_tiny_n_layer_fixture(2, first_layer_ffn_nonzero)
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_n_layer_fixture(
+        num_layers: usize,
+        first_layer_ffn_nonzero: bool,
+    ) -> std::path::PathBuf {
         let dir = temp_fixture_dir();
         let hidden = 128;
         let intermediate = 256;
@@ -1489,7 +1506,7 @@ mod tests {
         let zeros_qkv = vec![0.0f32; 3 * hidden * hidden];
         let zeros_o = vec![0.0f32; hidden * hidden];
 
-        for layer_idx in 0..2 {
+        for layer_idx in 0..num_layers {
             let mut gate_up = vec![0.0f32; 2 * intermediate * hidden];
             let mut down_proj = vec![0.0f32; hidden * intermediate];
             if first_layer_ffn_nonzero && layer_idx == 0 {
@@ -1546,7 +1563,7 @@ mod tests {
             r#"{{
   "architectures": ["Gemma4ForCausalLM"],
   "text_config": {{
-    "num_hidden_layers": 2,
+    "num_hidden_layers": {},
     "hidden_size": {},
     "intermediate_size": {},
     "num_attention_heads": 1,
@@ -1559,7 +1576,7 @@ mod tests {
     "tie_word_embeddings": false
   }}
 }}"#,
-            hidden, intermediate, hidden, vocab
+            num_layers, hidden, intermediate, hidden, vocab
         );
 
         fs::write(dir.join("config.json"), config).expect("write config");
@@ -1583,6 +1600,11 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_two_layer_first_ffn_nonzero_fixture() -> std::path::PathBuf {
         write_tiny_two_layer_fixture(true)
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_n_layer_noop_fixture(num_layers: usize) -> std::path::PathBuf {
+        write_tiny_n_layer_fixture(num_layers, false)
     }
 
     fn rmsnorm_f32(input: &[f32], gamma: &[f32], eps: f32) -> Vec<f32> {
@@ -1847,6 +1869,65 @@ mod tests {
         let mut engine = crate::engine::Engine::new()
             .with_apple_runtime_plan(plan)
             .expect("engine with tiny two-layer first-ffn-nonzero model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_three_layer_noop_model_backend_decodes_token_2_to_3() {
+        let dir = write_tiny_n_layer_noop_fixture(3);
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = n_layer_plan(dir.clone(), 3);
+        backend
+            .prepare(&plan)
+            .expect("prepare three-layer no-op tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_four_layer_noop_model_backend_prefill_then_decode_token_2_to_3() {
+        let dir = write_tiny_n_layer_noop_fixture(4);
+        let plan = n_layer_plan(dir.clone(), 4);
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny four-layer no-op model plan");
 
         engine.scheduler.enqueue(crate::sched_state::Request::new(
             rvllm_core::ReqId(1),

@@ -21,6 +21,8 @@ use crate::{
 const PROBE_METAL_ARENA_BYTES: usize = 1024 * 1024;
 #[cfg(target_os = "macos")]
 const PROBE_METAL_SOFTCAP: f32 = 0.0;
+#[cfg(target_os = "macos")]
+const PROBE_METAL_MAX_SYNTHETIC_LAYERS: usize = 8;
 
 #[cfg(target_os = "macos")]
 fn probe_ctx(op: &'static str) -> AppleCtx {
@@ -105,11 +107,11 @@ struct ProbeModelPlan {
 impl ProbeModelPlan {
     fn new(model_dir: &Path) -> Result<Self> {
         let arch = ModelArch::from_dir(model_dir)?;
-        if arch.num_hidden_layers > 2 {
+        if arch.num_hidden_layers > PROBE_METAL_MAX_SYNTHETIC_LAYERS {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
-                    op: "unsupported_num_layers",
+                    op: "unsupported_synthetic_probe_num_layers",
                 },
                 probe_ctx("prepare"),
             ));
