@@ -86,15 +86,42 @@ pub fn load_gemma4_model(
         })
     };
 
+    let resolve_required_alias = |names: &[String]| -> Result<(usize, TensorEntry)> {
+        names
+            .iter()
+            .find_map(|name| get_tensor(name))
+            .ok_or_else(|| {
+                let name = names.first().cloned().unwrap_or_default();
+                RvllmError::Loader {
+                    err: LoaderError::MissingTensor { name: name.clone() },
+                    ctx: LoaderCtx {
+                        path: model_dir.to_path_buf(),
+                        tensor: Some(name),
+                    },
+                    bt: std::backtrace::Backtrace::capture(),
+                }
+            })
+    };
+
+    let upload_f16_entry =
+        |name: &'static str, (si, e): &(usize, TensorEntry)| -> Result<F16Weight> {
+            let buf = tensor_to_f16_bytes(e, bytes_of(*si, e), model_dir)?;
+            let region = arena.region(name, buf.len(), 16)?;
+            unsafe { region.copy_from_host(&buf)? };
+            Ok(F16Weight {
+                offset_bytes: region.device_ptr(),
+                shape: e.shape.clone(),
+            })
+        };
+
     let upload_f16 = |name: &'static str, hf_name: &str| -> Result<F16Weight> {
-        let (si, e) = must_get(hf_name)?;
-        let buf = tensor_to_f16_bytes(&e, bytes_of(si, &e), model_dir)?;
-        let region = arena.region(name, buf.len(), 16)?;
-        unsafe { region.copy_from_host(&buf)? };
-        Ok(F16Weight {
-            offset_bytes: region.device_ptr(),
-            shape: e.shape.clone(),
-        })
+        let entry = must_get(hf_name)?;
+        upload_f16_entry(name, &entry)
+    };
+
+    let upload_f16_alias = |name: &'static str, names: &[String]| -> Result<F16Weight> {
+        let entry = resolve_required_alias(names)?;
+        upload_f16_entry(name, &entry)
     };
 
     let embed_name = format!("{prefix}.embed_tokens.weight");
@@ -149,9 +176,12 @@ pub fn load_gemma4_model(
         eprintln!("[loader] Gemma 4 BF16 mode: CPU-quantizing to FP8 at load time");
     }
 
-    let lm_head_fp8 = if let Some((si, e)) = get_tensor("lm_head.weight") {
+    let lm_head_name = format!("{prefix}.lm_head.weight");
+    let lm_head_entry = get_tensor(&lm_head_name).or_else(|| get_tensor("lm_head.weight"));
+
+    let lm_head_fp8 = if let Some((si, e)) = lm_head_entry.clone() {
         if e.dtype == DType::Fp8E4M3 {
-            let scale_entry = get_tensor("lm_head.weight_scale");
+            let scale_entry = get_tensor(&format!("{}_scale", e.name));
             upload_fp8_direct_channelscale(
                 arena,
                 "lm_head",
@@ -165,11 +195,11 @@ pub fn load_gemma4_model(
                 "lm_head",
                 &tensor_to_f16_bytes(&e, bytes_of(si, &e), model_dir)?,
                 &e.shape,
-                "lm_head.weight",
+                &e.name,
                 model_dir,
             )?
         }
-    } else {
+    } else if arch.tie_word_embeddings {
         let (si, e) = must_get(&embed_name)?;
         eprintln!("[loader] tied embeddings: CPU-quantizing BF16 embed_tokens ({} elements) to FP8 for lm_head",
             e.shape.iter().product::<usize>());
@@ -182,13 +212,25 @@ pub fn load_gemma4_model(
             "lm_head(tied_embed)",
             model_dir,
         )?
+    } else {
+        let (si, e) = must_get(&lm_head_name)?;
+        upload_fp8(
+            arena,
+            "lm_head",
+            &tensor_to_f16_bytes(&e, bytes_of(si, &e), model_dir)?,
+            &e.shape,
+            &e.name,
+            model_dir,
+        )?
     };
 
     let lm_head_f16 = {
-        let (si, e) = if let Some(t) = get_tensor("lm_head.weight") {
+        let (si, e) = if let Some(t) = lm_head_entry {
             t
-        } else {
+        } else if arch.tie_word_embeddings {
             must_get(&embed_name)?
+        } else {
+            must_get(&lm_head_name)?
         };
         let buf = tensor_to_f16_bytes(&e, bytes_of(si, &e), model_dir)?;
         eprintln!(
@@ -624,7 +666,13 @@ pub fn load_gemma4_model(
             (None, None, None, None)
         };
 
-        let input_layernorm = upload_f16("input_ln", &ln("input_layernorm.weight"))?;
+        let input_layernorm = upload_f16_alias(
+            "input_ln",
+            &[
+                ln("input_layernorm.weight"),
+                ln("pre_attention_layernorm.weight"),
+            ],
+        )?;
         let post_attention_layernorm =
             upload_f16("post_attn_ln", &ln("post_attention_layernorm.weight"))?;
         let pre_feedforward_layernorm =
@@ -635,7 +683,10 @@ pub fn load_gemma4_model(
         let q_norm = upload_f16("q_norm", &ln("self_attn.q_norm.weight"))?;
         let k_norm = upload_f16("k_norm", &ln("self_attn.k_norm.weight"))?;
 
-        let layer_scalar = upload_f16("layer_scalar", &ln("layer_scalar"))?;
+        let layer_scalar = upload_f16_alias(
+            "layer_scalar",
+            &[ln("layer_scalar"), ln("layer_scalar.weight")],
+        )?;
 
         if l < 2 {
             eprintln!(
@@ -1292,11 +1343,35 @@ mod gemma4_load_tests {
         header.insert(name.to_owned(), Value::Object(meta));
     }
 
-    fn write_one_layer_gemma4_load_fixture(
-        layer_type: &str,
+    struct Gemma4LoadFixtureOptions {
+        layer_type: &'static str,
         attention_k_eq_v: bool,
         omit_v_proj: bool,
-    ) -> PathBuf {
+        tie_word_embeddings: bool,
+        include_prefixed_lm_head: bool,
+        include_unprefixed_lm_head: bool,
+        unprefixed_lm_head_vocab_extra: usize,
+        input_norm_suffix: &'static str,
+        layer_scalar_suffix: Option<&'static str>,
+    }
+
+    impl Default for Gemma4LoadFixtureOptions {
+        fn default() -> Self {
+            Self {
+                layer_type: "full_attention",
+                attention_k_eq_v: false,
+                omit_v_proj: false,
+                tie_word_embeddings: true,
+                include_prefixed_lm_head: false,
+                include_unprefixed_lm_head: false,
+                unprefixed_lm_head_vocab_extra: 0,
+                input_norm_suffix: "input_layernorm.weight",
+                layer_scalar_suffix: Some("layer_scalar"),
+            }
+        }
+    }
+
+    fn write_one_layer_gemma4_load_fixture(options: Gemma4LoadFixtureOptions) -> PathBuf {
         let dir = test_fixture_dir("gemma4-load-v-proj");
         let hidden = 8usize;
         let intermediate = 16usize;
@@ -1319,10 +1394,26 @@ mod gemma4_load_tests {
             &format!("{prefix}.norm.weight"),
             &[hidden],
         );
+        if options.include_prefixed_lm_head {
+            add_zero_f16_tensor(
+                &mut header,
+                &mut payload,
+                &format!("{prefix}.lm_head.weight"),
+                &[vocab, hidden],
+            );
+        }
+        if options.include_unprefixed_lm_head {
+            add_zero_f16_tensor(
+                &mut header,
+                &mut payload,
+                "lm_head.weight",
+                &[vocab + options.unprefixed_lm_head_vocab_extra, hidden],
+            );
+        }
 
         let lprefix = format!("{prefix}.layers.0");
         for suffix in [
-            "input_layernorm.weight",
+            options.input_norm_suffix,
             "post_attention_layernorm.weight",
             "pre_feedforward_layernorm.weight",
             "post_feedforward_layernorm.weight",
@@ -1346,7 +1437,7 @@ mod gemma4_load_tests {
             &format!("{lprefix}.self_attn.k_proj.weight"),
             &[head_dim, hidden],
         );
-        if !omit_v_proj {
+        if !options.omit_v_proj {
             add_zero_f16_tensor(
                 &mut header,
                 &mut payload,
@@ -1372,12 +1463,14 @@ mod gemma4_load_tests {
             &format!("{lprefix}.self_attn.k_norm.weight"),
             &[head_dim],
         );
-        add_zero_f16_tensor(
-            &mut header,
-            &mut payload,
-            &format!("{lprefix}.layer_scalar"),
-            &[hidden],
-        );
+        if let Some(suffix) = options.layer_scalar_suffix {
+            add_zero_f16_tensor(
+                &mut header,
+                &mut payload,
+                &format!("{lprefix}.{suffix}"),
+                &[hidden],
+            );
+        }
         add_zero_f16_tensor(
             &mut header,
             &mut payload,
@@ -1411,19 +1504,20 @@ mod gemma4_load_tests {
     "head_dim": {head_dim},
     "global_head_dim": {head_dim},
     "num_global_key_value_heads": 1,
-    "layer_types": ["{layer_type}"],
+    "layer_types": ["{}"],
     "vocab_size": {vocab},
     "max_position_embeddings": 8,
     "sliding_window": 4,
     "rms_norm_eps": 0.000001,
-    "tie_word_embeddings": true,
-    "attention_k_eq_v": {attention_k_eq_v},
+    "tie_word_embeddings": {},
+    "attention_k_eq_v": {},
     "rope_parameters": {{
       "sliding_attention": {{"rope_theta": 10000.0}},
       "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 1.0}}
     }}
   }}
-}}"#
+}}"#,
+                options.layer_type, options.tie_word_embeddings, options.attention_k_eq_v,
             ),
         )
         .expect("write config");
@@ -1439,7 +1533,12 @@ mod gemma4_load_tests {
 
     #[test]
     fn gemma4_load_rejects_missing_sliding_v_proj_when_attention_k_eq_v() {
-        let dir = write_one_layer_gemma4_load_fixture("sliding_attention", true, true);
+        let dir = write_one_layer_gemma4_load_fixture(Gemma4LoadFixtureOptions {
+            layer_type: "sliding_attention",
+            attention_k_eq_v: true,
+            omit_v_proj: true,
+            ..Default::default()
+        });
         let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
         let arena = HbmArena::new_host_stub(1 << 20);
         let err = match load_gemma4_model(&dir, &arena, &arch) {
@@ -1456,7 +1555,12 @@ mod gemma4_load_tests {
 
     #[test]
     fn gemma4_load_rejects_missing_global_v_proj_without_attention_k_eq_v() {
-        let dir = write_one_layer_gemma4_load_fixture("full_attention", false, true);
+        let dir = write_one_layer_gemma4_load_fixture(Gemma4LoadFixtureOptions {
+            layer_type: "full_attention",
+            attention_k_eq_v: false,
+            omit_v_proj: true,
+            ..Default::default()
+        });
         let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
         let arena = HbmArena::new_host_stub(1 << 20);
         let err = match load_gemma4_model(&dir, &arena, &arch) {
@@ -1473,7 +1577,12 @@ mod gemma4_load_tests {
 
     #[test]
     fn gemma4_load_allows_missing_global_v_proj_when_attention_k_eq_v() {
-        let dir = write_one_layer_gemma4_load_fixture("full_attention", true, true);
+        let dir = write_one_layer_gemma4_load_fixture(Gemma4LoadFixtureOptions {
+            layer_type: "full_attention",
+            attention_k_eq_v: true,
+            omit_v_proj: true,
+            ..Default::default()
+        });
         let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
         let arena = HbmArena::new_host_stub(1 << 20);
         let model = load_gemma4_model(&dir, &arena, &arch)
@@ -1481,6 +1590,64 @@ mod gemma4_load_tests {
 
         assert_eq!(model.layers.len(), 1);
         assert_eq!(model.layers[0].qkv.shape, vec![12, 8]);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_load_prefers_prefixed_lm_head_when_embeddings_are_not_tied() {
+        let dir = write_one_layer_gemma4_load_fixture(Gemma4LoadFixtureOptions {
+            tie_word_embeddings: false,
+            include_prefixed_lm_head: true,
+            include_unprefixed_lm_head: true,
+            unprefixed_lm_head_vocab_extra: 1,
+            ..Default::default()
+        });
+        let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
+        let arena = HbmArena::new_host_stub(1 << 20);
+        let model =
+            load_gemma4_model(&dir, &arena, &arch).expect("prefixed untied lm_head should load");
+
+        assert_eq!(model.lm_head_f16.shape, vec![8, 8]);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_load_rejects_missing_lm_head_when_embeddings_are_not_tied() {
+        let dir = write_one_layer_gemma4_load_fixture(Gemma4LoadFixtureOptions {
+            tie_word_embeddings: false,
+            ..Default::default()
+        });
+        let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
+        let arena = HbmArena::new_host_stub(1 << 20);
+        let err = match load_gemma4_model(&dir, &arena, &arch) {
+            Ok(_) => panic!("untied embeddings require lm_head"),
+            Err(err) => err,
+        };
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.lm_head.weight"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_load_accepts_input_norm_and_layer_scalar_aliases() {
+        let dir = write_one_layer_gemma4_load_fixture(Gemma4LoadFixtureOptions {
+            input_norm_suffix: "pre_attention_layernorm.weight",
+            layer_scalar_suffix: Some("layer_scalar.weight"),
+            ..Default::default()
+        });
+        let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
+        let arena = HbmArena::new_host_stub(1 << 20);
+        let model =
+            load_gemma4_model(&dir, &arena, &arch).expect("loader should accept dry-run aliases");
+
+        assert_eq!(model.layers.len(), 1);
+        assert_eq!(model.layers[0].input_layernorm.shape, vec![8]);
+        assert_eq!(model.layers[0].layer_scalar.shape, vec![8]);
 
         let _ = fs::remove_dir_all(dir);
     }

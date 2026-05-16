@@ -290,30 +290,28 @@ fn validate_gemma4_dry_run_layer(
         &[arch.hidden_size, arch.intermediate_size],
     )?;
 
-    let layer_scalar = resolve_optional_dry_run_alias(
+    let layer_scalar = resolve_required_dry_run_alias(
+        model_dir,
         tensors,
         vec![
             format!("{lprefix}.layer_scalar"),
             format!("{lprefix}.layer_scalar.weight"),
         ],
-    );
-    let layer_scalar_dim = match &layer_scalar {
-        Some(name) => {
-            let info = tensors
-                .get(name)
-                .ok_or_else(|| missing_tensor_error(model_dir, name))?;
-            if info.shape.len() == 1 && (info.shape[0] == 1 || info.shape[0] == arch.hidden_size) {
-                info.shape[0]
-            } else {
-                return Err(shape_mismatch_error(
-                    model_dir,
-                    name,
-                    &[arch.hidden_size],
-                    &info.shape,
-                ));
-            }
+    )?;
+    let layer_scalar_dim = {
+        let info = tensors
+            .get(&layer_scalar)
+            .ok_or_else(|| missing_tensor_error(model_dir, &layer_scalar))?;
+        if info.shape.len() == 1 && (info.shape[0] == 1 || info.shape[0] == arch.hidden_size) {
+            info.shape[0]
+        } else {
+            return Err(shape_mismatch_error(
+                model_dir,
+                &layer_scalar,
+                &[arch.hidden_size],
+                &info.shape,
+            ));
         }
-        None => 0,
     };
 
     Ok(Gemma4DryRunLayerValidation {
@@ -329,7 +327,7 @@ fn validate_gemma4_dry_run_layer(
         post_feedforward_layernorm,
         q_norm,
         k_norm,
-        layer_scalar,
+        layer_scalar: Some(layer_scalar),
         layer_scalar_dim,
         rope_dim,
         rope_theta,
@@ -637,6 +635,7 @@ mod tests {
         q_proj0_shape: Option<&[usize]>,
         q_proj1_shape: Option<&[usize]>,
         omit_q_norm0: bool,
+        layer_scalar_suffix: Option<&str>,
     ) -> PathBuf {
         let dir = test_fixture_dir("gemma4-dry-run-full-gemma-style");
         let hidden = 128usize;
@@ -737,12 +736,14 @@ mod tests {
                 &format!("{lprefix}.self_attn.k_norm.weight"),
                 &[head_dim],
             );
-            add_zero_tensor(
-                &mut header,
-                &mut payload,
-                &format!("{lprefix}.layer_scalar"),
-                &[hidden],
-            );
+            if let Some(suffix) = layer_scalar_suffix {
+                add_zero_tensor(
+                    &mut header,
+                    &mut payload,
+                    &format!("{lprefix}.{suffix}"),
+                    &[hidden],
+                );
+            }
             add_zero_tensor(
                 &mut header,
                 &mut payload,
@@ -807,8 +808,16 @@ mod tests {
 
     #[test]
     fn gemma4_dry_run_validates_text_config_and_model_language_model_prefix() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, false, None, None, None, false);
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
         let validation =
             Gemma4DryRunValidation::from_model_dir(&dir).expect("dry-run validates fixture");
 
@@ -834,9 +843,56 @@ mod tests {
     }
 
     #[test]
+    fn gemma4_dry_run_accepts_layer_scalar_weight_alias() {
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar.weight"),
+        );
+        let validation =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect("layer_scalar.weight validates");
+
+        assert_eq!(
+            validation.layers[0].layer_scalar.as_deref(),
+            Some("model.language_model.layers.0.layer_scalar.weight")
+        );
+        assert_eq!(validation.layers[0].layer_scalar_dim, 128);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_missing_layer_scalar() {
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false, false, false, None, None, None, false, None,
+        );
+        let err =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect_err("layer_scalar is required");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.language_model.layers.0.layer_scalar"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn gemma4_dry_run_allows_tied_embeddings_without_lm_head() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(true, false, true, None, None, None, false);
+        let dir = write_dry_run_full_gemma_style_fixture(
+            true,
+            false,
+            true,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
         let validation = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect("tied embeddings do not require lm_head");
 
@@ -848,8 +904,16 @@ mod tests {
 
     #[test]
     fn gemma4_dry_run_rejects_missing_lm_head_when_embeddings_are_not_tied() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, true, None, None, None, false);
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            true,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
         let err = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect_err("untied embeddings require lm_head");
         let msg = format!("{err}");
@@ -862,8 +926,16 @@ mod tests {
 
     #[test]
     fn gemma4_dry_run_allows_missing_v_proj_when_attention_k_eq_v() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(false, true, false, Some(1), None, None, false);
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            true,
+            false,
+            Some(1),
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
         let validation = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect("attention_k_eq_v permits missing v_proj");
 
@@ -875,8 +947,16 @@ mod tests {
 
     #[test]
     fn gemma4_dry_run_rejects_missing_sliding_v_proj_when_attention_k_eq_v() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(false, true, false, Some(0), None, None, false);
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            true,
+            false,
+            Some(0),
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
         let err = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect_err("sliding attention requires v_proj");
         let msg = format!("{err}");
@@ -889,8 +969,16 @@ mod tests {
 
     #[test]
     fn gemma4_dry_run_missing_tensor_error_names_missing_tensor() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, false, Some(0), None, None, false);
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            Some(0),
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
         let err =
             Gemma4DryRunValidation::from_model_dir(&dir).expect_err("missing v_proj must fail");
         let msg = format!("{err}");
@@ -911,6 +999,7 @@ mod tests {
             Some(&[127, 128]),
             None,
             false,
+            Some("layer_scalar"),
         );
         let err = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect_err("q_proj shape mismatch must fail");
@@ -926,8 +1015,16 @@ mod tests {
 
     #[test]
     fn gemma4_dry_run_missing_q_norm_error_names_missing_tensor() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, false, None, None, None, true);
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            true,
+            Some("layer_scalar"),
+        );
         let err =
             Gemma4DryRunValidation::from_model_dir(&dir).expect_err("missing q_norm must fail");
         let msg = format!("{err}");
@@ -948,6 +1045,7 @@ mod tests {
             None,
             Some(&[255, 128]),
             false,
+            Some("layer_scalar"),
         );
         let err = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect_err("global q_proj shape mismatch must fail");
