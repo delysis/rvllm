@@ -407,6 +407,59 @@ impl ModelMetalBackend {
             .collect())
     }
 
+    #[cfg(test)]
+    fn debug_read_residual_f32(&self, num_tokens: usize) -> Result<Vec<f32>> {
+        let state = self.state.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("debug_read_residual_f32"),
+            )
+        })?;
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("debug_read_residual_f32"),
+            )
+        })?;
+        let elem_count = num_tokens.checked_mul(state.hidden_size).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "debug residual element count overflow",
+                },
+                model_ctx("debug_read_residual_f32"),
+            )
+        })?;
+        let byte_count = elem_count
+            .checked_mul(std::mem::size_of::<f16>())
+            .ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "debug residual byte count overflow",
+                    },
+                    model_ctx("debug_read_residual_f32"),
+                )
+            })?;
+        if byte_count > state.residual.size {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "debug residual read exceeds residual buffer",
+                },
+                model_ctx("debug_read_residual_f32"),
+            ));
+        }
+
+        let ptr = unsafe { arena.host_ptr(&state.residual) as *const u16 };
+        let bits = unsafe { std::slice::from_raw_parts(ptr, elem_count) };
+        Ok(bits
+            .iter()
+            .map(|bits| f16::from_bits(*bits).to_f32())
+            .collect())
+    }
+
     fn next_ticket(
         &mut self,
         kind: AppleLaunchKind,
@@ -1542,6 +1595,12 @@ mod tests {
     use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    const FULL_NONZERO_ZERO_DIM: usize = 0;
+    const FULL_NONZERO_ORIGINAL_DIM: usize = 7;
+    const FULL_NONZERO_ATTENTION_DIM: usize = 9;
+    const FULL_NONZERO_VALUE_DIM: usize = 11;
+    const FULL_NONZERO_FFN_DIM: usize = 13;
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -1581,14 +1640,17 @@ mod tests {
     }
 
     fn temp_fixture_dir() -> std::path::PathBuf {
+        static FIXTURE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time before epoch")
             .as_nanos();
+        let serial = FIXTURE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
-            "rvllm-metal-zero-layer-test-{}-{}",
+            "rvllm-metal-zero-layer-test-{}-{}-{}",
             std::process::id(),
-            now
+            now,
+            serial
         ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create fixture dir");
@@ -3514,14 +3576,21 @@ mod tests {
         out
     }
 
-    fn cpu_reference_one_layer_full_nonzero_logits() -> Vec<f32> {
+    struct CpuFullNonzeroOneLayerReference {
+        residual_after_attention: Vec<f32>,
+        residual: Vec<f32>,
+        final_hidden: Vec<f32>,
+        logits: Vec<f32>,
+    }
+
+    fn cpu_reference_one_layer_full_nonzero() -> CpuFullNonzeroOneLayerReference {
         let hidden = 128;
         let intermediate = 256;
         let vocab = 8;
         let eps = 0.000001f32;
 
         let mut embedding = vec![0.0f32; vocab * hidden];
-        embedding[2 * hidden + 7] = 10.0;
+        embedding[2 * hidden + FULL_NONZERO_ORIGINAL_DIM] = 10.0;
         let norm = vec![1.0f32; hidden];
 
         let mut residual = embedding[2 * hidden..3 * hidden].to_vec();
@@ -3535,10 +3604,10 @@ mod tests {
         let mut k_proj = vec![0.0f32; hidden * hidden];
         let mut v_proj = vec![0.0f32; hidden * hidden];
         let mut o_proj = vec![0.0f32; hidden * hidden];
-        q_proj[7] = 0.25;
-        k_proj[7] = 0.125;
-        v_proj[11 * hidden + 7] = 2.0;
-        o_proj[9 * hidden + 11] = 6.0;
+        q_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.25;
+        k_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.125;
+        v_proj[FULL_NONZERO_VALUE_DIM * hidden + FULL_NONZERO_ORIGINAL_DIM] = 2.0;
+        o_proj[FULL_NONZERO_ATTENTION_DIM * hidden + FULL_NONZERO_VALUE_DIM] = 6.0;
 
         let q = cpu_full_nonzero_matvec(&q_proj, hidden, hidden, &attn_normed);
         let k = cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &attn_normed);
@@ -3550,14 +3619,15 @@ mod tests {
         for (dst, src) in residual.iter_mut().zip(projected_attn.iter()) {
             *dst += src;
         }
+        let residual_after_attention = residual.clone();
 
         let mlp_normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
         let mut gate_proj = vec![0.0f32; intermediate * hidden];
         let mut up_proj = vec![0.0f32; intermediate * hidden];
         let mut down_proj = vec![0.0f32; hidden * intermediate];
-        gate_proj[7] = 0.5;
-        up_proj[7] = 0.5;
-        down_proj[9 * intermediate] = 4.0;
+        gate_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.5;
+        up_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.5;
+        down_proj[FULL_NONZERO_FFN_DIM * intermediate] = 4.0;
 
         let gate = cpu_full_nonzero_matvec(&gate_proj, intermediate, hidden, &mlp_normed);
         let up = cpu_full_nonzero_matvec(&up_proj, intermediate, hidden, &mlp_normed);
@@ -3573,9 +3643,20 @@ mod tests {
 
         let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
         let mut lm_head = vec![0.0f32; vocab * hidden];
-        lm_head[2 * hidden + 7] = 1.0;
-        lm_head[3 * hidden + 9] = 4.0;
-        cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden)
+        lm_head[2 * hidden + FULL_NONZERO_ORIGINAL_DIM] = 1.0;
+        lm_head[3 * hidden + FULL_NONZERO_ATTENTION_DIM] = 4.0;
+        let logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
+
+        CpuFullNonzeroOneLayerReference {
+            residual_after_attention,
+            residual,
+            final_hidden,
+            logits,
+        }
+    }
+
+    fn cpu_reference_one_layer_full_nonzero_logits() -> Vec<f32> {
+        cpu_reference_one_layer_full_nonzero().logits
     }
 
     fn cpu_reference_one_layer_full_nonzero_argmax() -> usize {
@@ -4136,12 +4217,12 @@ mod tests {
         let vocab = 8;
 
         let mut embedding = vec![0.0f32; vocab * hidden];
-        embedding[2 * hidden + 7] = 10.0;
+        embedding[2 * hidden + FULL_NONZERO_ORIGINAL_DIM] = 10.0;
 
         let norm = vec![1.0f32; hidden];
         let mut lm_head = vec![0.0f32; vocab * hidden];
-        lm_head[2 * hidden + 7] = 1.0;
-        lm_head[3 * hidden + 9] = 4.0;
+        lm_head[2 * hidden + FULL_NONZERO_ORIGINAL_DIM] = 1.0;
+        lm_head[3 * hidden + FULL_NONZERO_ATTENTION_DIM] = 4.0;
 
         let mut header = Map::<String, Value>::new();
         let mut payload = Vec::new();
@@ -4206,13 +4287,13 @@ mod tests {
         let mut gate_proj = vec![0.0f32; intermediate * hidden];
         let mut up_proj = vec![0.0f32; intermediate * hidden];
         let mut down_proj = vec![0.0f32; hidden * intermediate];
-        q_proj[7] = 0.25;
-        k_proj[7] = 0.125;
-        v_proj[11 * hidden + 7] = 2.0;
-        o_proj[9 * hidden + 11] = 6.0;
-        gate_proj[7] = 0.5;
-        up_proj[7] = 0.5;
-        down_proj[9 * intermediate] = 4.0;
+        q_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.25;
+        k_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.125;
+        v_proj[FULL_NONZERO_VALUE_DIM * hidden + FULL_NONZERO_ORIGINAL_DIM] = 2.0;
+        o_proj[FULL_NONZERO_ATTENTION_DIM * hidden + FULL_NONZERO_VALUE_DIM] = 6.0;
+        gate_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.5;
+        up_proj[FULL_NONZERO_ORIGINAL_DIM] = 0.5;
+        down_proj[FULL_NONZERO_FFN_DIM * intermediate] = 4.0;
 
         add_tensor(
             "model.layers.0.input_layernorm.weight",
@@ -4314,6 +4395,89 @@ mod tests {
     #[test]
     fn cpu_reference_one_layer_full_nonzero_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_one_layer_full_nonzero_argmax(), 3);
+    }
+
+    fn assert_f32_close(label: &str, got: f32, expected: f32, tolerance: f32) {
+        let diff = (got - expected).abs();
+        assert!(
+            diff <= tolerance,
+            "{label} mismatch: got={got} expected={expected} diff={diff} tol={tolerance}"
+        );
+    }
+
+    #[test]
+    fn cpu_reference_one_layer_full_nonzero_selected_hidden_values_are_expected() {
+        let reference = cpu_reference_one_layer_full_nonzero();
+
+        assert_eq!(reference.residual_after_attention.len(), 128);
+        assert_eq!(reference.residual.len(), 128);
+        assert_eq!(reference.final_hidden.len(), 128);
+        assert_f32_close(
+            "residual zero dim",
+            reference.residual[FULL_NONZERO_ZERO_DIM],
+            0.0,
+            0.0001,
+        );
+        assert_f32_close(
+            "hidden zero dim",
+            reference.final_hidden[FULL_NONZERO_ZERO_DIM],
+            0.0,
+            0.0001,
+        );
+        assert_f32_close(
+            "residual original dim",
+            reference.residual[FULL_NONZERO_ORIGINAL_DIM],
+            113.137_085,
+            0.0001,
+        );
+        assert_f32_close(
+            "hidden original dim",
+            reference.final_hidden[FULL_NONZERO_ORIGINAL_DIM],
+            6.943_472_4,
+            0.0001,
+        );
+        assert_f32_close(
+            "residual attention dim",
+            reference.residual[FULL_NONZERO_ATTENTION_DIM],
+            135.764_5,
+            0.0001,
+        );
+        assert_f32_close(
+            "hidden attention dim",
+            reference.final_hidden[FULL_NONZERO_ATTENTION_DIM],
+            8.332_167,
+            0.0001,
+        );
+        assert_f32_close(
+            "residual ffn pre-update dim",
+            reference.residual_after_attention[FULL_NONZERO_FFN_DIM],
+            0.0,
+            0.0001,
+        );
+        assert_f32_close(
+            "residual ffn dim",
+            reference.residual[FULL_NONZERO_FFN_DIM],
+            52.453_545,
+            0.0001,
+        );
+        assert_f32_close(
+            "hidden ffn dim",
+            reference.final_hidden[FULL_NONZERO_FFN_DIM],
+            3.219_189_6,
+            0.0001,
+        );
+        assert!(
+            reference.final_hidden[FULL_NONZERO_ATTENTION_DIM]
+                > reference.final_hidden[FULL_NONZERO_ORIGINAL_DIM]
+        );
+        assert!(
+            reference.final_hidden[FULL_NONZERO_ORIGINAL_DIM]
+                > reference.final_hidden[FULL_NONZERO_FFN_DIM]
+        );
+        assert!(
+            reference.final_hidden[FULL_NONZERO_FFN_DIM]
+                > reference.final_hidden[FULL_NONZERO_ZERO_DIM]
+        );
     }
 
     #[test]
@@ -6937,6 +7101,77 @@ mod tests {
                 cpu_logits[idx],
                 diff,
                 LOGIT_TOLERANCE
+            );
+        }
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_one_layer_full_nonzero_model_backend_selected_hidden_matches_cpu() {
+        let reference = cpu_reference_one_layer_full_nonzero();
+        let cpu_logits = &reference.logits;
+        let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(cpu_logits);
+        let low_idx = FULL_NONZERO_ZERO_DIM;
+        assert_eq!(expected_idx, 3);
+        assert_eq!(runner_up_idx, 2);
+        assert_eq!(cpu_logits[low_idx], 0.0);
+
+        let selected_dims = [
+            FULL_NONZERO_ZERO_DIM,
+            FULL_NONZERO_ORIGINAL_DIM,
+            FULL_NONZERO_ATTENTION_DIM,
+            FULL_NONZERO_FFN_DIM,
+        ];
+
+        let dir = write_tiny_one_layer_full_nonzero_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare one-layer full-nonzero tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let metal_residual = backend
+            .debug_read_residual_f32(1)
+            .expect("read decode residual");
+        let metal_logits = backend
+            .debug_read_decode_logits_f32(1)
+            .expect("read decode logits");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(expected_idx as u32));
+        assert_eq!(metal_residual.len(), reference.residual.len());
+        assert_eq!(metal_logits.len(), cpu_logits.len());
+
+        const HIDDEN_TOLERANCE: f32 = 0.05;
+        for dim in selected_dims {
+            assert_f32_close(
+                &format!("residual[{dim}]"),
+                metal_residual[dim],
+                reference.residual[dim],
+                HIDDEN_TOLERANCE,
+            );
+        }
+
+        const LOGIT_TOLERANCE: f32 = 0.05;
+        for idx in [expected_idx, runner_up_idx, low_idx] {
+            assert_f32_close(
+                &format!("logit[{idx}]"),
+                metal_logits[idx],
+                cpu_logits[idx],
+                LOGIT_TOLERANCE,
             );
         }
 
