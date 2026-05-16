@@ -1605,6 +1605,48 @@ mod tests {
     static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[derive(Clone)]
+    struct SharedModelMetalBackend {
+        inner: std::rc::Rc<std::cell::RefCell<ModelMetalBackend>>,
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl SharedModelMetalBackend {
+        fn new(model_dir: std::path::PathBuf) -> Self {
+            Self {
+                inner: std::rc::Rc::new(std::cell::RefCell::new(ModelMetalBackend::new(model_dir))),
+            }
+        }
+
+        fn debug_read_decode_logits_f32(&self, num_tokens: usize) -> Result<Vec<f32>> {
+            self.inner.borrow().debug_read_decode_logits_f32(num_tokens)
+        }
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl AppleBackend for SharedModelMetalBackend {
+        fn prepare(&mut self, plan: &rvllm_apple::AppleRuntimePlan) -> Result<()> {
+            self.inner.borrow_mut().prepare(plan)
+        }
+
+        fn launch_prefill(&mut self, handoff: &HandoffCapsule) -> Result<AppleLaunchTicket> {
+            self.inner.borrow_mut().launch_prefill(handoff)
+        }
+
+        fn launch_rollout(
+            &mut self,
+            handoff: &HandoffCapsule,
+            bucket: Option<rvllm_apple::RolloutBucket>,
+        ) -> Result<AppleLaunchTicket> {
+            self.inner.borrow_mut().launch_rollout(handoff, bucket)
+        }
+
+        fn collect(&mut self, ticket: AppleLaunchTicket) -> Result<Vec<StepToken>> {
+            self.inner.borrow_mut().collect(ticket)
+        }
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
     struct MetalDebugSyncEnvGuard {
         _guard: std::sync::MutexGuard<'static, ()>,
         previous: Option<std::ffi::OsString>,
@@ -3967,7 +4009,7 @@ mod tests {
         cpu_full_nonzero_argmax(&logits)
     }
 
-    fn cpu_reference_prompt_len_two_prefill_argmax(include_first_prompt_token: bool) -> usize {
+    fn cpu_reference_prompt_len_two_prefill_logits(include_first_prompt_token: bool) -> Vec<f32> {
         let hidden = 128usize;
         let vocab = 8usize;
         let eps = 0.000001f32;
@@ -4054,8 +4096,13 @@ mod tests {
         }
 
         let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
-        let logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
-        cpu_full_nonzero_argmax(&logits)
+        cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden)
+    }
+
+    fn cpu_reference_prompt_len_two_prefill_argmax(include_first_prompt_token: bool) -> usize {
+        cpu_full_nonzero_argmax(&cpu_reference_prompt_len_two_prefill_logits(
+            include_first_prompt_token,
+        ))
     }
 
     fn cpu_reference_generated_tiny_gemma4_hf_sequence(
@@ -4405,6 +4452,24 @@ mod tests {
         );
     }
 
+    fn assert_selected_logits_close(
+        label: &str,
+        got: &[f32],
+        expected: &[f32],
+        indices: &[usize],
+        tolerance: f32,
+    ) {
+        assert_eq!(got.len(), expected.len());
+        for &idx in indices {
+            assert_f32_close(
+                &format!("{label} logit[{idx}]"),
+                got[idx],
+                expected[idx],
+                tolerance,
+            );
+        }
+    }
+
     #[test]
     fn cpu_reference_one_layer_full_nonzero_selected_hidden_values_are_expected() {
         let reference = cpu_reference_one_layer_full_nonzero();
@@ -4523,6 +4588,26 @@ mod tests {
     fn cpu_reference_prompt_len_two_prefill_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_prompt_len_two_prefill_argmax(false), 2);
         assert_eq!(cpu_reference_prompt_len_two_prefill_argmax(true), 3);
+    }
+
+    #[test]
+    fn cpu_reference_prompt_len_two_prefill_selected_logits_pick_token_3() {
+        let without_first_logits = cpu_reference_prompt_len_two_prefill_logits(false);
+        let include_first_logits = cpu_reference_prompt_len_two_prefill_logits(true);
+        let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(&include_first_logits);
+        let low_idx = 0usize;
+
+        assert_eq!(without_first_logits.len(), 8);
+        assert_eq!(include_first_logits.len(), 8);
+        assert_eq!(cpu_full_nonzero_argmax(&without_first_logits), 2);
+        assert_eq!(expected_idx, 3);
+        assert_eq!(runner_up_idx, 2);
+        assert_eq!(cpu_full_nonzero_argmax(&include_first_logits), expected_idx);
+        assert_eq!(include_first_logits[low_idx], 0.0);
+        assert!(include_first_logits[expected_idx] > include_first_logits[runner_up_idx]);
+        assert!(include_first_logits[runner_up_idx] > include_first_logits[low_idx]);
+        assert!(without_first_logits[2] > without_first_logits[3]);
+        assert!(include_first_logits[3] > without_first_logits[3]);
     }
 
     #[test]
@@ -6694,6 +6779,64 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_prompt_len_two_prefill_selected_logits_match_cpu() {
+        let cpu_logits = cpu_reference_prompt_len_two_prefill_logits(true);
+        let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(&cpu_logits);
+        let low_idx = 0usize;
+        assert_eq!(expected_idx, 3);
+        assert_eq!(runner_up_idx, 2);
+        assert_eq!(cpu_logits[low_idx], 0.0);
+
+        let dir = write_tiny_prompt_len_two_prefill_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare prompt length two tiny model");
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            vec![0, 2],
+            vec![1],
+            vec![2],
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill).expect("run prefill");
+        let prefill_out = backend.collect(prefill_ticket).expect("collect prefill");
+        assert!(prefill_out.is_empty());
+
+        let decode = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(4)],
+            vec![0, 1],
+            vec![1],
+            vec![2],
+        );
+        let decode_ticket = backend.launch_rollout(&decode, None).expect("run rollout");
+        let metal_logits = backend
+            .debug_read_decode_logits_f32(1)
+            .expect("read decode logits");
+        let out = backend.collect(decode_ticket).expect("collect rollout");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(expected_idx as u32));
+
+        const LOGIT_TOLERANCE: f32 = 0.05;
+        assert_selected_logits_close(
+            "prompt length two direct backend",
+            &metal_logits,
+            &cpu_logits,
+            &[expected_idx, runner_up_idx, low_idx],
+            LOGIT_TOLERANCE,
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
     fn engine_prompt_len_two_prefill_then_decode_token_2_4_to_3() {
         let expected =
             rvllm_core::TokenId(cpu_reference_prompt_len_two_prefill_argmax(true) as u32);
@@ -6720,6 +6863,58 @@ mod tests {
         assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
         assert_eq!(out2[0].new_token, expected);
         assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_prompt_len_two_prefill_selected_logits_match_cpu() {
+        let cpu_logits = cpu_reference_prompt_len_two_prefill_logits(true);
+        let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(&cpu_logits);
+        let low_idx = 0usize;
+        assert_eq!(expected_idx, 3);
+        assert_eq!(runner_up_idx, 2);
+        assert_eq!(cpu_logits[low_idx], 0.0);
+
+        let dir = write_tiny_prompt_len_two_prefill_fixture();
+        let plan = one_layer_plan(dir.clone());
+        let shared_backend = SharedModelMetalBackend::new(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_backend(Box::new(shared_backend.clone()))
+            .with_apple_runtime_plan(plan)
+            .expect("engine with shared prompt length two tiny model backend");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(expected_idx as u32));
+        assert!(!engine.has_pending_work());
+
+        let metal_logits = shared_backend
+            .debug_read_decode_logits_f32(1)
+            .expect("read shared backend decode logits");
+        const LOGIT_TOLERANCE: f32 = 0.05;
+        assert_selected_logits_close(
+            "prompt length two engine backend",
+            &metal_logits,
+            &cpu_logits,
+            &[expected_idx, runner_up_idx, low_idx],
+            LOGIT_TOLERANCE,
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
