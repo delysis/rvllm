@@ -14,7 +14,7 @@ use std::{
 use rvllm_core::{DType, LoaderCtx, LoaderError, Result, RvllmError};
 
 use crate::{
-    load::{LayerAttnType, ModelArch},
+    gemma4_arch::{Gemma4Arch, Gemma4LayerType},
     safetensors::ShardIndex,
 };
 
@@ -121,7 +121,7 @@ impl Gemma4DryRunValidation {
 
 pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryRunValidation> {
     validate_gemma4_dry_run_config_identity(model_dir)?;
-    let arch = ModelArch::from_dir(model_dir)?;
+    let arch = Gemma4Arch::from_dir(model_dir)?;
     if arch.hidden_size == 0 || arch.vocab_size == 0 || arch.num_hidden_layers == 0 {
         return Err(corrupt_error(
             model_dir.join("config.json"),
@@ -136,7 +136,7 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
     }
 
     let tensors = scan_safetensor_tensor_metadata(model_dir)?;
-    let weight_prefix = resolve_dry_run_weight_prefix(&tensors);
+    let weight_prefix = arch.weight_prefix.clone();
     let embed_tokens = join_weight_name(&weight_prefix, "embed_tokens.weight");
     let final_norm = join_weight_name(&weight_prefix, "norm.weight");
 
@@ -204,7 +204,7 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
         final_norm,
         lm_head,
         lm_head_status,
-        final_logit_softcap: arch.final_logit_softcapping,
+        final_logit_softcap: Some(arch.logit_softcap),
         fp8_scale_summary,
         layers,
     })
@@ -212,44 +212,21 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
 
 fn validate_gemma4_dry_run_layer(
     model_dir: &Path,
-    arch: &ModelArch,
+    arch: &Gemma4Arch,
     tensors: &BTreeMap<String, DryRunTensorInfo>,
     weight_prefix: &str,
     layer_idx: usize,
 ) -> Result<Gemma4DryRunLayerValidation> {
     let layer_type = arch.layer_types[layer_idx];
     let attention_kind = match layer_type {
-        LayerAttnType::SlidingAttention => Gemma4DryRunAttentionKind::Sliding,
-        LayerAttnType::Full => Gemma4DryRunAttentionKind::Full,
-        LayerAttnType::Linear => {
-            return Err(corrupt_error(
-                model_dir.join("config.json"),
-                "Gemma4 dry-run does not support linear attention layers",
-            ))
-        }
+        Gemma4LayerType::SlidingAttention => Gemma4DryRunAttentionKind::Sliding,
+        Gemma4LayerType::GlobalAttention => Gemma4DryRunAttentionKind::Full,
     };
-    let head_dim = match layer_type {
-        LayerAttnType::SlidingAttention => arch.head_dim,
-        LayerAttnType::Full => arch.global_head_dim.unwrap_or(arch.head_dim),
-        LayerAttnType::Linear => unreachable!(),
-    };
-    let num_kv_heads = match layer_type {
-        LayerAttnType::SlidingAttention => arch.num_key_value_heads,
-        LayerAttnType::Full => arch
-            .num_global_key_value_heads
-            .unwrap_or(arch.num_key_value_heads),
-        LayerAttnType::Linear => unreachable!(),
-    };
-    let q_dim = arch.num_attention_heads * head_dim;
-    let kv_dim = num_kv_heads * head_dim;
-    let rope_dim = match layer_type {
-        LayerAttnType::SlidingAttention => head_dim,
-        LayerAttnType::Full => {
-            let partial = arch.partial_rotary_factor.unwrap_or(1.0);
-            ((head_dim as f32) * partial).round() as usize
-        }
-        LayerAttnType::Linear => unreachable!(),
-    };
+    let head_dim = arch.head_dim_for_layer(layer_idx);
+    let num_kv_heads = arch.num_kv_heads_for_layer(layer_idx);
+    let q_dim = arch.q_dim_for_layer(layer_idx);
+    let kv_dim = arch.kv_dim_for_layer(layer_idx);
+    let rope_dim = arch.rotary_dim_for_layer(layer_idx);
     if arch.num_attention_heads == 0
         || num_kv_heads == 0
         || arch.num_attention_heads % num_kv_heads != 0
@@ -265,11 +242,7 @@ fn validate_gemma4_dry_run_layer(
             "Gemma4 dry-run derived invalid grouped attention or RoPE dimensions",
         ));
     }
-    let rope_theta = match layer_type {
-        LayerAttnType::SlidingAttention => arch.rope_theta,
-        LayerAttnType::Full => arch.global_rope_theta.unwrap_or(arch.rope_theta),
-        LayerAttnType::Linear => unreachable!(),
-    };
+    let rope_theta = arch.rope_theta_for_layer(layer_idx);
     if rope_theta <= 0.0 {
         return Err(corrupt_error(
             model_dir.join("config.json"),
@@ -406,8 +379,7 @@ fn validate_gemma4_dry_run_layer(
         rope_dim,
         rope_theta,
         sliding_window: (attention_kind == Gemma4DryRunAttentionKind::Sliding)
-            .then_some(arch.sliding_window)
-            .flatten(),
+            .then_some(arch.sliding_window_size),
     })
 }
 
@@ -611,15 +583,6 @@ fn resolve_optional_dry_run_alias(
     candidates
         .into_iter()
         .find(|name| tensors.contains_key(name))
-}
-
-fn resolve_dry_run_weight_prefix(tensors: &BTreeMap<String, DryRunTensorInfo>) -> String {
-    for prefix in ["model.language_model", "model", "language_model.model", ""] {
-        if tensors.contains_key(&join_weight_name(prefix, "embed_tokens.weight")) {
-            return prefix.to_owned();
-        }
-    }
-    "model".to_owned()
 }
 
 fn join_weight_name(prefix: &str, suffix: &str) -> String {

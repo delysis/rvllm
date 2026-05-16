@@ -20,6 +20,8 @@ use std::path::Path;
 
 use rvllm_core::{LoaderCtx, LoaderError, Result, RvllmError};
 
+use crate::safetensors::ShardHeader;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Gemma4LayerType {
     SlidingAttention,
@@ -193,25 +195,35 @@ impl Gemma4Arch {
     }
 
     fn detect_weight_prefix(dir: &Path) -> String {
+        let prefix_from_keys = |keys: Vec<String>| -> Option<String> {
+            for prefix in [
+                "model.language_model",
+                "language_model.model",
+                "language_model",
+            ] {
+                let prefix_dot = format!("{prefix}.");
+                if keys.iter().any(|key| key.starts_with(&prefix_dot)) {
+                    return Some(prefix.to_string());
+                }
+            }
+            None
+        };
+
         let idx_path = dir.join("model.safetensors.index.json");
         if let Ok(bytes) = std::fs::read(&idx_path) {
             if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                 if let Some(map) = v["weight_map"].as_object() {
-                    if map
-                        .keys()
-                        .any(|key| key.starts_with("model.language_model."))
-                    {
-                        return "model.language_model".to_string();
+                    if let Some(prefix) = prefix_from_keys(map.keys().cloned().collect()) {
+                        return prefix;
                     }
-                    if map
-                        .keys()
-                        .any(|key| key.starts_with("language_model.model."))
-                    {
-                        return "language_model.model".to_string();
-                    }
-                    if map.keys().any(|key| key.starts_with("language_model.")) {
-                        return "language_model".to_string();
-                    }
+                }
+            }
+        }
+        let single_path = dir.join("model.safetensors");
+        if let Ok(bytes) = std::fs::read(&single_path) {
+            if let Ok(header) = ShardHeader::parse(&single_path, &bytes) {
+                if let Some(prefix) = prefix_from_keys(header.tensors.keys().cloned().collect()) {
+                    return prefix;
                 }
             }
         }
@@ -311,6 +323,26 @@ mod tests {
         .unwrap();
     }
 
+    fn write_single_safetensor_header(dir: &Path, keys: &[&str]) {
+        let mut header = serde_json::Map::new();
+        for key in keys {
+            header.insert(
+                (*key).to_string(),
+                serde_json::json!({
+                    "dtype": "F16",
+                    "shape": [1],
+                    "data_offsets": [0, 2],
+                }),
+            );
+        }
+        let header_json = serde_json::to_string(&header).unwrap();
+        let mut out = Vec::new();
+        out.extend_from_slice(&(header_json.len() as u64).to_le_bytes());
+        out.extend_from_slice(header_json.as_bytes());
+        out.extend_from_slice(&[0u8, 0u8]);
+        std::fs::write(dir.join("model.safetensors"), out).unwrap();
+    }
+
     #[test]
     fn default_layer_pattern_every_6th_global() {
         let types = Gemma4Arch::parse_layer_types(&serde_json::Value::Null, 12);
@@ -365,6 +397,16 @@ mod tests {
         let dir = tempdir();
         write_index(&dir, &["language_model.embed_tokens.weight"]);
         assert_eq!(Gemma4Arch::detect_weight_prefix(&dir), "language_model");
+    }
+
+    #[test]
+    fn detects_model_language_model_prefix_from_single_safetensor() {
+        let dir = tempdir();
+        write_single_safetensor_header(&dir, &["model.language_model.embed_tokens.weight"]);
+        assert_eq!(
+            Gemma4Arch::detect_weight_prefix(&dir),
+            "model.language_model"
+        );
     }
 
     #[test]
