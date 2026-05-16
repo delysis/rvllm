@@ -23,10 +23,18 @@ impl ModelArch {
             "LlamaForCausalLM" => Some(ModelArch::Llama),
             "MistralForCausalLM" => Some(ModelArch::Mistral),
             "Gemma2ForCausalLM" => Some(ModelArch::Gemma2),
-            "Gemma4ForConditionalGeneration" | "Gemma4ForCausalLM" => Some(ModelArch::Gemma4),
+            name if is_gemma4_hf_architecture(name) => Some(ModelArch::Gemma4),
             _ => None,
         }
     }
+}
+
+pub fn is_gemma4_hf_architecture(name: &str) -> bool {
+    matches!(name, "Gemma4ForConditionalGeneration" | "Gemma4ForCausalLM")
+}
+
+pub fn is_gemma4_model_type(name: &str) -> bool {
+    matches!(name, "gemma4" | "gemma4_text")
 }
 
 #[derive(Clone, Debug)]
@@ -84,6 +92,10 @@ impl ModelConfig {
         } else {
             v
         };
+        if architecture == ModelArch::Gemma4 {
+            validate_optional_gemma4_model_type(v, "model_type")?;
+            validate_optional_gemma4_model_type(tc, "text_config.model_type")?;
+        }
 
         let hidden_size = hf::usize_field(tc, "hidden_size", file)?;
         let num_layers = hf::usize_field(tc, "num_hidden_layers", file)?;
@@ -161,6 +173,26 @@ impl ModelConfig {
     }
 }
 
+fn validate_optional_gemma4_model_type(
+    value: &serde_json::Value,
+    field_name: &'static str,
+) -> Result<()> {
+    if let Some(model_type) = value.get("model_type").and_then(|value| value.as_str()) {
+        if !is_gemma4_model_type(model_type) {
+            return Err(RvllmError::config(
+                ConfigError::InvalidField {
+                    name: field_name,
+                    reason: format!(
+                        "Gemma4 config requires model_type gemma4 or gemma4_text, got {model_type}"
+                    ),
+                },
+                field_name,
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,5 +244,41 @@ mod tests {
 
         assert_eq!(config.architecture, ModelArch::Gemma4);
         assert_eq!(config.num_kv_heads, 2);
+    }
+
+    #[test]
+    fn parses_gemma4_model_type_fields() {
+        let mut value = gemma4_config("Gemma4ForConditionalGeneration");
+        value["model_type"] = serde_json::json!("gemma4");
+        value["text_config"]["model_type"] = serde_json::json!("gemma4_text");
+
+        let config = ModelConfig::from_hf_value(&value, Path::new("config.json"))
+            .expect("Gemma4 model_type fields should parse");
+
+        assert_eq!(config.architecture, ModelArch::Gemma4);
+    }
+
+    #[test]
+    fn rejects_gemma4_bad_root_model_type() {
+        let mut value = gemma4_config("Gemma4ForConditionalGeneration");
+        value["model_type"] = serde_json::json!("qwen2");
+        let err = ModelConfig::from_hf_value(&value, Path::new("config.json"))
+            .expect_err("bad root model_type should fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("model_type"));
+        assert!(msg.contains("gemma4"));
+    }
+
+    #[test]
+    fn rejects_gemma4_bad_text_model_type() {
+        let mut value = gemma4_config("Gemma4ForCausalLM");
+        value["text_config"]["model_type"] = serde_json::json!("qwen2");
+        let err = ModelConfig::from_hf_value(&value, Path::new("config.json"))
+            .expect_err("bad text_config model_type should fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("text_config.model_type"));
+        assert!(msg.contains("gemma4"));
     }
 }

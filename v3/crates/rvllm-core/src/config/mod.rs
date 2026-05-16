@@ -10,7 +10,7 @@ mod model;
 mod runtime;
 
 pub use builder::RuntimeConfigBuilder;
-pub use model::{ModelArch, ModelConfig};
+pub use model::{is_gemma4_hf_architecture, is_gemma4_model_type, ModelArch, ModelConfig};
 pub use runtime::{
     AneComputeProfile, AneFallbackPolicy, AppleBackendMode, AppleRolloutBucket,
     AppleRolloutBucketPolicy, GraphMode, LogLevel, PreemptionMode, RuntimeConfig,

@@ -11,7 +11,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rvllm_core::{DType, LoaderCtx, LoaderError, Result, RvllmError};
+use rvllm_core::{
+    config::{is_gemma4_hf_architecture, is_gemma4_model_type},
+    DType, LoaderCtx, LoaderError, Result, RvllmError,
+};
 
 use crate::{
     gemma4_arch::{Gemma4Arch, Gemma4LayerType},
@@ -669,7 +672,7 @@ fn validate_gemma4_dry_run_config_identity(model_dir: &Path) -> Result<()> {
     let is_gemma4 = architectures
         .iter()
         .filter_map(|value| value.as_str())
-        .any(|name| matches!(name, "Gemma4ForConditionalGeneration" | "Gemma4ForCausalLM"));
+        .any(is_gemma4_hf_architecture);
     if !is_gemma4 {
         return Err(corrupt_error(
             &path,
@@ -682,7 +685,7 @@ fn validate_gemma4_dry_run_config_identity(model_dir: &Path) -> Result<()> {
         ("text_config.model_type", text_config),
     ] {
         if let Some(model_type) = value.get("model_type").and_then(|value| value.as_str()) {
-            if !matches!(model_type, "gemma4" | "gemma4_text") {
+            if !is_gemma4_model_type(model_type) {
                 return Err(corrupt_error(
                     &path,
                     format!("Gemma4 dry-run requires Gemma4 model_type at {scope}"),
@@ -1698,6 +1701,32 @@ mod tests {
 
         assert!(msg.contains("Corrupt"));
         assert!(msg.contains("Gemma4 architecture"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_bad_gemma4_model_type() {
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
+        mutate_fixture_config(&dir, |config| {
+            config["text_config"]["model_type"] = serde_json::json!("qwen2");
+        });
+        let err =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect_err("bad Gemma4 model_type fails");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("Corrupt"));
+        assert!(msg.contains("Gemma4 model_type"));
+        assert!(msg.contains("text_config.model_type"));
 
         let _ = fs::remove_dir_all(dir);
     }

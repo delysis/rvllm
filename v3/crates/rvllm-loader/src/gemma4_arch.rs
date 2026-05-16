@@ -18,7 +18,10 @@
 
 use std::path::Path;
 
-use rvllm_core::{LoaderCtx, LoaderError, Result, RvllmError};
+use rvllm_core::{
+    config::{is_gemma4_hf_architecture, is_gemma4_model_type},
+    LoaderCtx, LoaderError, Result, RvllmError,
+};
 
 use crate::safetensors::ShardHeader;
 
@@ -71,6 +74,7 @@ impl Gemma4Arch {
                 },
                 bt: std::backtrace::Backtrace::capture(),
             })?;
+        validate_gemma4_config_identity(&v, &p)?;
 
         let tc = if v.get("text_config").is_some() {
             &v["text_config"]
@@ -284,6 +288,55 @@ impl Gemma4Arch {
     }
 }
 
+fn validate_gemma4_config_identity(config: &serde_json::Value, path: &Path) -> Result<()> {
+    let text_config = config
+        .get("text_config")
+        .unwrap_or(&serde_json::Value::Null);
+    let architectures = config
+        .get("architectures")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| corrupt_error(path, "Gemma4 arch requires architectures"))?;
+    let is_gemma4 = architectures
+        .iter()
+        .filter_map(|value| value.as_str())
+        .any(is_gemma4_hf_architecture);
+    if !is_gemma4 {
+        return Err(corrupt_error(
+            path,
+            "Gemma4 arch requires Gemma4 architecture",
+        ));
+    }
+
+    for (scope, value) in [
+        ("model_type", config),
+        ("text_config.model_type", text_config),
+    ] {
+        if let Some(model_type) = value.get("model_type").and_then(|value| value.as_str()) {
+            if !is_gemma4_model_type(model_type) {
+                return Err(corrupt_error(
+                    path,
+                    format!("Gemma4 arch requires Gemma4 model_type at {scope}"),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn corrupt_error(path: &Path, detail: impl Into<String>) -> RvllmError {
+    RvllmError::Loader {
+        err: LoaderError::Corrupt {
+            detail: detail.into(),
+        },
+        ctx: LoaderCtx {
+            path: path.to_path_buf(),
+            tensor: None,
+        },
+        bt: std::backtrace::Backtrace::capture(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +394,37 @@ mod tests {
         out.extend_from_slice(header_json.as_bytes());
         out.extend_from_slice(&[0u8, 0u8]);
         std::fs::write(dir.join("model.safetensors"), out).unwrap();
+    }
+
+    fn write_minimal_config(dir: &Path, architecture: &str) {
+        std::fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{
+  "architectures": ["{architecture}"],
+  "model_type": "gemma4",
+  "text_config": {{
+    "model_type": "gemma4_text",
+    "num_hidden_layers": 1,
+    "hidden_size": 128,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "head_dim": 32,
+    "global_head_dim": 32,
+    "num_global_key_value_heads": 2,
+    "intermediate_size": 256,
+    "vocab_size": 8,
+    "layer_types": ["full_attention"],
+    "rms_norm_eps": 0.000001,
+    "rope_parameters": {{
+      "sliding_attention": {{"rope_theta": 10000.0}},
+      "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 1.0}}
+    }}
+  }}
+}}"#
+            ),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -407,6 +491,33 @@ mod tests {
             Gemma4Arch::detect_weight_prefix(&dir),
             "model.language_model"
         );
+    }
+
+    #[test]
+    fn from_dir_accepts_gemma4_causallm_identity() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForCausalLM");
+        write_single_safetensor_header(&dir, &["model.language_model.embed_tokens.weight"]);
+        let arch = Gemma4Arch::from_dir(&dir).expect("Gemma4ForCausalLM identity should parse");
+
+        assert_eq!(arch.weight_prefix, "model.language_model");
+        assert_eq!(arch.q_dim_for_layer(0), 128);
+    }
+
+    #[test]
+    fn from_dir_rejects_bad_gemma4_model_type() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["text_config"]["model_type"] = serde_json::json!("qwen2");
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        let err = Gemma4Arch::from_dir(&dir).expect_err("bad model_type should fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("Gemma4 model_type"));
+        assert!(msg.contains("text_config.model_type"));
     }
 
     #[test]
