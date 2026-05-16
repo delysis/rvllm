@@ -2,11 +2,15 @@ use half::f16;
 use rvllm_apple::{AppleBackend, AppleLaunchKind, AppleLaunchTicket, HandoffCapsule, StepToken};
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError, TokenId};
 #[cfg(all(feature = "apple", target_os = "macos"))]
+use std::cell::Cell;
+#[cfg(all(feature = "apple", target_os = "macos"))]
 use std::cmp::max;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use std::path::PathBuf;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use std::ptr;
+#[cfg(all(feature = "apple", target_os = "macos"))]
+use std::time::{Duration, Instant};
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
 #[derive(Debug, Default)]
@@ -115,6 +119,132 @@ const METAL_EPS: f32 = 1e-5;
 const METAL_SOFTCAP: f32 = 0.0;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 const METAL_ARENA_BYTES: usize = 1 * 1024 * 1024;
+#[cfg(all(feature = "apple", target_os = "macos"))]
+pub const RVLLM_METAL_DEBUG_SYNC_ENV: &str = "RVLLM_METAL_DEBUG_SYNC";
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct MetalProbePerfStats {
+    pub prefill_steps: u64,
+    pub decode_steps: u64,
+    pub tokens: u64,
+    pub command_buffers: u64,
+    pub encoders: u64,
+    pub forced_waits: u64,
+    pub cpu_wall_ns: u64,
+    pub last_step_tokens: u64,
+    pub last_step_command_buffers: u64,
+    pub last_step_encoders: u64,
+    pub last_step_forced_waits: u64,
+    pub last_step_cpu_wall_ns: u64,
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[derive(Debug, Default)]
+struct MetalProbePerfCounters {
+    prefill_steps: Cell<u64>,
+    decode_steps: Cell<u64>,
+    tokens: Cell<u64>,
+    command_buffers: Cell<u64>,
+    encoders: Cell<u64>,
+    forced_waits: Cell<u64>,
+    cpu_wall_ns: Cell<u64>,
+    last_step_tokens: Cell<u64>,
+    last_step_command_buffers: Cell<u64>,
+    last_step_encoders: Cell<u64>,
+    last_step_forced_waits: Cell<u64>,
+    last_step_cpu_wall_ns: Cell<u64>,
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+impl MetalProbePerfCounters {
+    fn clear(&self) {
+        self.prefill_steps.set(0);
+        self.decode_steps.set(0);
+        self.tokens.set(0);
+        self.command_buffers.set(0);
+        self.encoders.set(0);
+        self.forced_waits.set(0);
+        self.cpu_wall_ns.set(0);
+        self.last_step_tokens.set(0);
+        self.last_step_command_buffers.set(0);
+        self.last_step_encoders.set(0);
+        self.last_step_forced_waits.set(0);
+        self.last_step_cpu_wall_ns.set(0);
+    }
+
+    fn snapshot(&self) -> MetalProbePerfStats {
+        MetalProbePerfStats {
+            prefill_steps: self.prefill_steps.get(),
+            decode_steps: self.decode_steps.get(),
+            tokens: self.tokens.get(),
+            command_buffers: self.command_buffers.get(),
+            encoders: self.encoders.get(),
+            forced_waits: self.forced_waits.get(),
+            cpu_wall_ns: self.cpu_wall_ns.get(),
+            last_step_tokens: self.last_step_tokens.get(),
+            last_step_command_buffers: self.last_step_command_buffers.get(),
+            last_step_encoders: self.last_step_encoders.get(),
+            last_step_forced_waits: self.last_step_forced_waits.get(),
+            last_step_cpu_wall_ns: self.last_step_cpu_wall_ns.get(),
+        }
+    }
+
+    fn add_command_buffers(&self, count: u64) {
+        self.command_buffers
+            .set(self.command_buffers.get().saturating_add(count));
+    }
+
+    fn add_encoders(&self, count: u64) {
+        self.encoders.set(self.encoders.get().saturating_add(count));
+    }
+
+    fn add_forced_wait(&self) {
+        self.forced_waits
+            .set(self.forced_waits.get().saturating_add(1));
+    }
+
+    fn finish_step(
+        &self,
+        decode: bool,
+        tokens: u64,
+        before: MetalProbePerfStats,
+        elapsed: Duration,
+    ) {
+        let elapsed_ns = duration_ns_u64(elapsed);
+        if decode {
+            self.decode_steps
+                .set(self.decode_steps.get().saturating_add(1));
+        } else {
+            self.prefill_steps
+                .set(self.prefill_steps.get().saturating_add(1));
+        }
+        self.tokens.set(self.tokens.get().saturating_add(tokens));
+        self.cpu_wall_ns
+            .set(self.cpu_wall_ns.get().saturating_add(elapsed_ns));
+        self.last_step_tokens.set(tokens);
+        self.last_step_command_buffers.set(
+            self.command_buffers
+                .get()
+                .saturating_sub(before.command_buffers),
+        );
+        self.last_step_encoders
+            .set(self.encoders.get().saturating_sub(before.encoders));
+        self.last_step_forced_waits
+            .set(self.forced_waits.get().saturating_sub(before.forced_waits));
+        self.last_step_cpu_wall_ns.set(elapsed_ns);
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn duration_ns_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn metal_debug_sync_enabled() -> bool {
+    std::env::var(RVLLM_METAL_DEBUG_SYNC_ENV).ok().as_deref() == Some("1")
+}
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn ctx(op: &'static str) -> AppleCtx {
@@ -169,6 +299,8 @@ pub struct ModelMetalBackend {
     pipelines: Option<PipelineCache>,
     arena: Option<MetalBufferArena>,
     pub state: Option<Gemma4MetalState>,
+    debug_sync: bool,
+    perf: MetalProbePerfCounters,
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -185,7 +317,19 @@ impl ModelMetalBackend {
             pipelines: None,
             arena: None,
             state: None,
+            debug_sync: metal_debug_sync_enabled(),
+            perf: MetalProbePerfCounters::default(),
         }
+    }
+
+    #[must_use]
+    pub fn probe_perf_stats(&self) -> MetalProbePerfStats {
+        self.perf.snapshot()
+    }
+
+    #[must_use]
+    pub const fn metal_debug_sync_enabled(&self) -> bool {
+        self.debug_sync
     }
 
     fn next_ticket(
@@ -339,7 +483,12 @@ impl ModelMetalBackend {
         encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
         encoder.endEncoding();
         cmd_buf.commit();
-        cmd_buf.waitUntilCompleted();
+        self.perf.add_command_buffers(1);
+        self.perf.add_encoders(1);
+        if self.debug_sync {
+            cmd_buf.waitUntilCompleted();
+            self.perf.add_forced_wait();
+        }
         Ok(())
     }
 
@@ -671,6 +820,9 @@ impl ModelMetalBackend {
                     one.kv_cache_v.offset,
                 )?;
             }
+            self.perf.add_command_buffers(1);
+            self.perf
+                .add_encoders(Self::estimate_layer_encoder_count(&weights));
         }
 
         Ok(())
@@ -690,11 +842,25 @@ impl ModelMetalBackend {
             .commandBuffer()
             .ok_or_else(|| RvllmError::apple(AppleError::MetalUnavailable, model_ctx(op)))?;
         cmd_buf.commit();
+        self.perf.add_command_buffers(1);
         cmd_buf.waitUntilCompleted();
+        self.perf.add_forced_wait();
         Ok(())
     }
 
+    fn estimate_layer_encoder_count(weights: &MetalLayerWeights) -> u64 {
+        let mut count = 11;
+        count += weights.q_norm_offset.is_some() as u64;
+        count += weights.k_norm_offset.is_some() as u64;
+        count += weights.v_norm_offset.is_some() as u64;
+        count += weights.post_attn_norm_offset.is_some() as u64;
+        count += weights.post_ff_norm_offset.is_some() as u64;
+        count
+    }
+
     fn run_prefill_step(&mut self, handoff: &HandoffCapsule) -> Result<()> {
+        let perf_before = self.perf.snapshot();
+        let wall_start = Instant::now();
         let state = self.state.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::NotPrepared {
@@ -770,10 +936,14 @@ impl ModelMetalBackend {
             "launch_prefill",
         )?;
         self.wait_for_metal_queue("launch_prefill")?;
+        self.perf
+            .finish_step(false, num_tokens as u64, perf_before, wall_start.elapsed());
         Ok(())
     }
 
     fn run_decode_step(&mut self, handoff: &HandoffCapsule) -> Result<()> {
+        let perf_before = self.perf.snapshot();
+        let wall_start = Instant::now();
         if handoff.tokens_flat.is_empty() {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -900,6 +1070,10 @@ impl ModelMetalBackend {
                 state.sampled.offset,
             )?;
         }
+        self.perf.add_command_buffers(1);
+        self.perf
+            .add_encoders(3 + (state.final_logit_softcap > 0.0) as u64);
+        self.perf.add_forced_wait();
 
         let sampled_ptr = unsafe { arena.host_ptr(&state.sampled) as *const i32 };
         let sampled = unsafe { std::slice::from_raw_parts(sampled_ptr, num_tokens) };
@@ -913,6 +1087,8 @@ impl ModelMetalBackend {
             });
         }
         self.pending = Some(outputs);
+        self.perf
+            .finish_step(true, num_tokens as u64, perf_before, wall_start.elapsed());
         Ok(())
     }
 }
@@ -937,6 +1113,8 @@ impl AppleBackend for ModelMetalBackend {
         self.pipelines = None;
         self.arena = None;
         self.state = None;
+        self.debug_sync = metal_debug_sync_enabled();
+        self.perf.clear();
         let state = self.initialize_model_resources()?;
         self.state = Some(state);
         self.prepared = true;
@@ -1283,6 +1461,44 @@ mod tests {
     use std::fs::{self, File};
     use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    struct MetalDebugSyncEnvGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl MetalDebugSyncEnvGuard {
+        fn new() -> Self {
+            Self {
+                _guard: METAL_DEBUG_SYNC_ENV_LOCK.lock().expect("lock env guard"),
+                previous: std::env::var_os(RVLLM_METAL_DEBUG_SYNC_ENV),
+            }
+        }
+
+        fn set_current(&self, value: Option<&str>) {
+            if let Some(value) = value {
+                std::env::set_var(RVLLM_METAL_DEBUG_SYNC_ENV, value);
+            } else {
+                std::env::remove_var(RVLLM_METAL_DEBUG_SYNC_ENV);
+            }
+        }
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl Drop for MetalDebugSyncEnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(RVLLM_METAL_DEBUG_SYNC_ENV, previous);
+            } else {
+                std::env::remove_var(RVLLM_METAL_DEBUG_SYNC_ENV);
+            }
+        }
+    }
 
     fn temp_fixture_dir() -> std::path::PathBuf {
         let now = SystemTime::now()
@@ -5718,6 +5934,127 @@ mod tests {
             cpu_reference_zero_layer_decode_loop_sequence(),
             vec![3, 4, 5]
         );
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn run_zero_layer_decode_once(
+        dir: &std::path::Path,
+    ) -> (Vec<StepToken>, MetalProbePerfStats, bool) {
+        let mut backend = ModelMetalBackend::new(dir.to_path_buf());
+        let plan = zero_layer_plan(dir.to_path_buf());
+        backend
+            .prepare(&plan)
+            .expect("prepare zero-layer decode-loop tiny model");
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect rollout");
+        let stats = backend.probe_perf_stats();
+        (out, stats, backend.metal_debug_sync_enabled())
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn metal_debug_sync_env_preserves_zero_layer_decode_output() {
+        let env_guard = MetalDebugSyncEnvGuard::new();
+        let dir = write_tiny_zero_layer_decode_loop_fixture();
+
+        env_guard.set_current(None);
+        let (normal_out, normal_stats, normal_debug_sync) = run_zero_layer_decode_once(&dir);
+
+        env_guard.set_current(Some("1"));
+        let (debug_out, debug_stats, debug_debug_sync) = run_zero_layer_decode_once(&dir);
+
+        assert!(!normal_debug_sync);
+        assert!(debug_debug_sync);
+        assert_eq!(normal_out, debug_out);
+        assert_eq!(debug_out[0].token_id, rvllm_core::TokenId(3));
+        assert!(normal_stats.command_buffers > 0);
+        assert!(normal_stats.encoders > 0);
+        assert!(normal_stats.forced_waits > 0);
+        assert!(debug_stats.forced_waits > normal_stats.forced_waits);
+        assert_eq!(debug_stats.decode_steps, 1);
+        assert_eq!(debug_stats.last_step_tokens, 1);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn metal_probe_perf_counters_are_populated_and_monotonic() {
+        let env_guard = MetalDebugSyncEnvGuard::new();
+        env_guard.set_current(None);
+        let dir = write_tiny_zero_layer_decode_loop_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = zero_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare zero-layer decode-loop tiny model");
+
+        let first = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+        let first_ticket = backend
+            .launch_rollout(&first, None)
+            .expect("run first rollout");
+        let first_out = backend
+            .collect(first_ticket)
+            .expect("collect first rollout");
+        assert_eq!(first_out[0].token_id, rvllm_core::TokenId(3));
+        let first_stats = backend.probe_perf_stats();
+        assert_eq!(first_stats.decode_steps, 1);
+        assert_eq!(first_stats.tokens, 1);
+        assert_eq!(first_stats.last_step_tokens, 1);
+        assert!(first_stats.command_buffers > 0);
+        assert!(first_stats.encoders > 0);
+        assert!(first_stats.forced_waits > 0);
+        assert!(first_stats.last_step_command_buffers > 0);
+        assert!(first_stats.last_step_encoders > 0);
+        assert!(first_stats.last_step_forced_waits > 0);
+        assert!(first_stats.last_step_cpu_wall_ns > 0);
+
+        let second = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![first_out[0].token_id],
+            vec![0, 1],
+            vec![1],
+            vec![2],
+        );
+        let second_ticket = backend
+            .launch_rollout(&second, None)
+            .expect("run second rollout");
+        let second_out = backend
+            .collect(second_ticket)
+            .expect("collect second rollout");
+        assert_eq!(second_out[0].token_id, rvllm_core::TokenId(4));
+        let second_stats = backend.probe_perf_stats();
+        assert_eq!(second_stats.decode_steps, 2);
+        assert_eq!(second_stats.tokens, 2);
+        assert!(second_stats.command_buffers > first_stats.command_buffers);
+        assert!(second_stats.encoders > first_stats.encoders);
+        assert!(second_stats.forced_waits > first_stats.forced_waits);
+        assert!(second_stats.cpu_wall_ns >= first_stats.cpu_wall_ns);
+        assert_eq!(second_stats.last_step_tokens, 1);
+        assert!(second_stats.last_step_command_buffers > 0);
+        assert!(second_stats.last_step_encoders > 0);
+        assert!(second_stats.last_step_forced_waits > 0);
+        assert!(second_stats.last_step_cpu_wall_ns > 0);
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
