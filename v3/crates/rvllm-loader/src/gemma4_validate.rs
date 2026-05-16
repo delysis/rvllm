@@ -1005,7 +1005,8 @@ mod tests {
         .expect("write config");
     }
 
-    fn write_dry_run_full_gemma_style_fixture(
+    fn write_dry_run_full_gemma_style_fixture_with_prefix(
+        prefix: &str,
         tie_embeddings: bool,
         attention_k_eq_v: bool,
         omit_lm_head: bool,
@@ -1021,7 +1022,6 @@ mod tests {
         let vocab = 8usize;
         let sliding_head_dim = 128usize;
         let global_head_dim = 256usize;
-        let prefix = "model.language_model";
 
         let mut header = Map::<String, Value>::new();
         let mut payload = Vec::new();
@@ -1182,6 +1182,29 @@ mod tests {
             .expect("write header bytes");
         out.write_all(&payload).expect("write payload");
         dir
+    }
+
+    fn write_dry_run_full_gemma_style_fixture(
+        tie_embeddings: bool,
+        attention_k_eq_v: bool,
+        omit_lm_head: bool,
+        omit_v_proj_layer: Option<usize>,
+        q_proj0_shape: Option<&[usize]>,
+        q_proj1_shape: Option<&[usize]>,
+        omit_q_norm0: bool,
+        layer_scalar_suffix: Option<&str>,
+    ) -> PathBuf {
+        write_dry_run_full_gemma_style_fixture_with_prefix(
+            "model.language_model",
+            tie_embeddings,
+            attention_k_eq_v,
+            omit_lm_head,
+            omit_v_proj_layer,
+            q_proj0_shape,
+            q_proj1_shape,
+            omit_q_norm0,
+            layer_scalar_suffix,
+        )
     }
 
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1622,6 +1645,37 @@ mod tests {
             Gemma4DryRunFp8ScaleMode::None
         );
         assert_eq!(validation.fp8_scale_summary.scaled_weights, 0);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_validates_language_model_model_prefix() {
+        let dir = write_dry_run_full_gemma_style_fixture_with_prefix(
+            "language_model.model",
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
+        let validation = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("dry-run validates language_model.model fixture");
+
+        assert_eq!(validation.weight_prefix, "language_model.model");
+        assert_eq!(
+            validation.embed_tokens,
+            "language_model.model.embed_tokens.weight"
+        );
+        assert_eq!(
+            validation.layers[0].q_proj,
+            "language_model.model.layers.0.self_attn.q_proj.weight"
+        );
+        assert_eq!(validation.layers[0].rope_dim, 128);
+        assert_eq!(validation.layers[1].rope_dim, 64);
 
         let _ = fs::remove_dir_all(dir);
     }

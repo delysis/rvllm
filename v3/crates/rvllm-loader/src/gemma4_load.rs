@@ -1344,6 +1344,7 @@ mod gemma4_load_tests {
     }
 
     struct Gemma4LoadFixtureOptions {
+        prefix: &'static str,
         layer_type: &'static str,
         attention_k_eq_v: bool,
         omit_v_proj: bool,
@@ -1358,6 +1359,7 @@ mod gemma4_load_tests {
     impl Default for Gemma4LoadFixtureOptions {
         fn default() -> Self {
             Self {
+                prefix: "model",
                 layer_type: "full_attention",
                 attention_k_eq_v: false,
                 omit_v_proj: false,
@@ -1377,7 +1379,7 @@ mod gemma4_load_tests {
         let intermediate = 16usize;
         let vocab = 8usize;
         let head_dim = 4usize;
-        let prefix = "model";
+        let prefix = options.prefix;
 
         let mut header = Map::<String, Value>::new();
         let mut payload = Vec::new();
@@ -1648,6 +1650,26 @@ mod gemma4_load_tests {
         assert_eq!(model.layers.len(), 1);
         assert_eq!(model.layers[0].input_layernorm.shape, vec![8]);
         assert_eq!(model.layers[0].layer_scalar.shape, vec![8]);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_load_accepts_language_model_model_prefix() {
+        let dir = write_one_layer_gemma4_load_fixture(Gemma4LoadFixtureOptions {
+            prefix: "language_model.model",
+            ..Default::default()
+        });
+        let arch = Gemma4Arch::from_dir(&dir).expect("parse language_model.model fixture arch");
+        let arena = HbmArena::new_host_stub(1 << 20);
+        let model = load_gemma4_model(&dir, &arena, &arch)
+            .expect("loader should use detected language_model.model prefix");
+
+        assert_eq!(arch.weight_prefix, "language_model.model");
+        assert_eq!(model.embedding.shape, vec![8, 8]);
+        assert_eq!(model.final_norm.shape, vec![8]);
+        assert_eq!(model.layers.len(), 1);
+        assert_eq!(model.layers[0].qkv.shape, vec![12, 8]);
 
         let _ = fs::remove_dir_all(dir);
     }
