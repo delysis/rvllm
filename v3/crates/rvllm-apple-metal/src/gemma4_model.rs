@@ -1618,7 +1618,7 @@ mod tests {
         tie_embeddings: bool,
         attention_k_eq_v: bool,
         omit_lm_head: bool,
-        omit_v_proj: bool,
+        omit_v_proj_layer: Option<usize>,
         q_proj0_shape: Option<&[usize]>,
         q_proj1_shape: Option<&[usize]>,
         omit_q_norm0: bool,
@@ -1694,7 +1694,7 @@ mod tests {
                 &format!("{lprefix}.self_attn.k_proj.weight"),
                 &[kv_dim, hidden],
             );
-            if !omit_v_proj {
+            if omit_v_proj_layer != Some(layer_idx) {
                 add_zero_tensor(
                     &mut header,
                     &mut payload,
@@ -1793,7 +1793,7 @@ mod tests {
     #[test]
     fn dry_run_validates_text_config_and_model_language_model_prefix() {
         let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, false, false, None, None, false);
+            write_dry_run_full_gemma_style_fixture(false, false, false, None, None, None, false);
         let validation =
             Gemma4DryRunValidation::from_model_dir(&dir).expect("dry-run validates fixture");
 
@@ -1821,7 +1821,7 @@ mod tests {
     #[test]
     fn dry_run_allows_tied_embeddings_without_lm_head() {
         let dir =
-            write_dry_run_full_gemma_style_fixture(true, false, true, false, None, None, false);
+            write_dry_run_full_gemma_style_fixture(true, false, true, None, None, None, false);
         let validation = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
             .expect("tied embeddings do not require lm_head");
 
@@ -1832,14 +1832,42 @@ mod tests {
     }
 
     #[test]
+    fn dry_run_rejects_missing_lm_head_when_embeddings_are_not_tied() {
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, false, true, None, None, None, false);
+        let err = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
+            .expect_err("untied embeddings require lm_head");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.language_model.lm_head.weight"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn dry_run_allows_missing_v_proj_when_attention_k_eq_v() {
         let dir =
-            write_dry_run_full_gemma_style_fixture(false, true, false, true, None, None, false);
+            write_dry_run_full_gemma_style_fixture(false, true, false, Some(1), None, None, false);
         let validation = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
             .expect("attention_k_eq_v permits missing v_proj");
 
-        assert!(validation.layers[0].v_uses_k_proj);
-        assert_eq!(validation.layers[0].v_proj, None);
+        assert!(validation.layers[1].v_uses_k_proj);
+        assert_eq!(validation.layers[1].v_proj, None);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn dry_run_rejects_missing_sliding_v_proj_when_attention_k_eq_v() {
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, true, false, Some(0), None, None, false);
+        let err = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
+            .expect_err("sliding attention requires v_proj");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.language_model.layers.0.self_attn.v_proj.weight"));
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1847,7 +1875,7 @@ mod tests {
     #[test]
     fn dry_run_missing_tensor_error_names_missing_tensor() {
         let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, false, true, None, None, false);
+            write_dry_run_full_gemma_style_fixture(false, false, false, Some(0), None, None, false);
         let err = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
             .expect_err("missing v_proj must fail");
         let msg = format!("{err}");
@@ -1864,7 +1892,7 @@ mod tests {
             false,
             false,
             false,
-            false,
+            None,
             Some(&[127, 128]),
             None,
             false,
@@ -1884,7 +1912,7 @@ mod tests {
     #[test]
     fn dry_run_missing_q_norm_error_names_missing_tensor() {
         let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, false, false, None, None, true);
+            write_dry_run_full_gemma_style_fixture(false, false, false, None, None, None, true);
         let err =
             Gemma4DryRunValidation::from_model_dir(&dir).expect_err("missing q_norm must fail");
         let msg = format!("{err}");
@@ -1901,7 +1929,7 @@ mod tests {
             false,
             false,
             false,
-            false,
+            None,
             None,
             Some(&[255, 128]),
             false,
