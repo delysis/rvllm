@@ -9,6 +9,14 @@ RVLLM_GENERATED_TINY_HF_REFERENCE_DIR=/tmp/rvllm-generated-tiny-reference \
   cargo test -p rvllm-runtime --features apple generated_tiny_hf_reference_bundle_can_be_exported -- --nocapture
 ```
 
+Or run the full export plus external verifier chain with one command:
+
+```bash
+bash scripts/check_generated_tiny_reference_bundle.sh
+```
+
+Set `RVLLM_GENERATED_TINY_KEEP_BUNDLE=1` to keep the generated temporary bundle. Set `RVLLM_REQUIRE_TORCH=1` if the PyTorch comparison must be present instead of being skipped when PyTorch is unavailable.
+
 The output directory contains:
 
 | File | Purpose |
