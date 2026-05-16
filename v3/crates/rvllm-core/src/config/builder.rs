@@ -433,7 +433,7 @@ mod tests {
             .max_batch(128)
             .max_context(2048)
             .kv_block_size(64)
-            .num_gpu_blocks(1024)
+            .num_gpu_blocks(4096)
             .num_cpu_blocks(0)
             .gpu_memory_utilization(0.9)
             .fp8_weights(true)
