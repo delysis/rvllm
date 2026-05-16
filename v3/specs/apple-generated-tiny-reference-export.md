@@ -26,3 +26,11 @@ python3 scripts/verify_generated_tiny_reference.py /tmp/rvllm-generated-tiny-ref
 ```
 
 The verifier parses safetensors directly and has no PyTorch dependency. It is intentionally scoped to this one-layer generated tiny export.
+
+A PyTorch comparison hook is also available:
+
+```bash
+python3 scripts/compare_generated_tiny_reference_torch.py /tmp/rvllm-generated-tiny-reference
+```
+
+This script builds a small PyTorch module from the exported safetensor weights and compares generated tokens plus full logits against `expected_reference.json`. It does not require Transformers and does not claim real-checkpoint compatibility.
