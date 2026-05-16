@@ -153,6 +153,37 @@ fn validate_qkv_scratch_planar(
     Ok(())
 }
 
+fn supports_attention_decode_reduction(dims: &MetalLayerDims) -> bool {
+    dims.num_heads > 0
+        && dims.num_kv_heads > 0
+        && dims.num_heads % dims.num_kv_heads == 0
+        && dims.head_dim <= 256
+        && dims.block_size > 0
+        && dims.max_blocks_per_seq > 0
+}
+
+fn supports_tiled_gemm(m: u32, n: u32, k: u32) -> bool {
+    m > 0 && n > 0 && k > 0 && m <= 16 && n <= 1024 && k <= 1024
+}
+
+fn supports_fused_final_logits_small(num_tokens: u32, hidden: u32, vocab: u32) -> bool {
+    num_tokens > 0 && num_tokens <= 256 && hidden > 0 && hidden <= 4096 && vocab > 0 && vocab <= 256
+}
+
+#[must_use]
+pub fn metal_finalize_logits_encoder_count(
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+    softcap: f32,
+) -> u64 {
+    if supports_fused_final_logits_small(num_tokens, hidden, vocab) {
+        1
+    } else {
+        3 + (softcap > 0.0) as u64
+    }
+}
+
 /// Execute one decoder layer on Metal.
 ///
 /// All buffers are pre-allocated in the arena. This function only
@@ -428,7 +459,12 @@ pub unsafe fn metal_forward_layer(
                     },
                 )
             })?;
-            let pso = pipelines.get("attention_decode_f16")?;
+            let use_reduction = supports_attention_decode_reduction(dims);
+            let pso = pipelines.get(if use_reduction {
+                "attention_decode_reduction_f16"
+            } else {
+                "attention_decode_f16"
+            })?;
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
             encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_k_offset, 1);
@@ -478,7 +514,7 @@ pub unsafe fn metal_forward_layer(
                 depth: 1,
             };
             let tpg = MTLSize {
-                width: 1,
+                width: if use_reduction { 256 } else { 1 },
                 height: 1,
                 depth: 1,
             };
@@ -776,6 +812,59 @@ unsafe fn encode_logits_head(
     sampled_tokens_offset: usize,
 ) -> Result<()> {
     let buf = arena.buffer_retained();
+
+    if supports_fused_final_logits_small(num_tokens, hidden, vocab) {
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "final_fused_logits_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let pso = pipelines.get("final_norm_lm_head_argmax_small_f16")?;
+        encoder.setComputePipelineState(pso);
+        encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
+        encoder.setBuffer_offset_atIndex(Some(buf), final_norm_offset, 1);
+        encoder.setBuffer_offset_atIndex(Some(buf), lm_head_offset, 2);
+        encoder.setBuffer_offset_atIndex(Some(buf), logits_offset, 3);
+        encoder.setBuffer_offset_atIndex(Some(buf), sampled_tokens_offset, 4);
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+            4,
+            5,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&vocab as *const _ as *mut _),
+            4,
+            6,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&rms_eps as *const _ as *mut _),
+            4,
+            7,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&softcap as *const _ as *mut _),
+            4,
+            8,
+        );
+        let groups = MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        };
+        encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+        encoder.endEncoding();
+        return Ok(());
+    }
 
     // 1) final RMSNorm -> normed_hidden
     {
@@ -1370,6 +1459,65 @@ mod tests {
         out
     }
 
+    fn gemm_ref(
+        a: &[half::f16],
+        b_transposed: &[half::f16],
+        m: usize,
+        n: usize,
+        k: usize,
+    ) -> Vec<half::f16> {
+        let mut out = vec![half::f16::from_f32(0.0); m * n];
+        for row in 0..m {
+            for col in 0..n {
+                let mut acc = 0.0f32;
+                for kk in 0..k {
+                    acc += a[row * k + kk].to_f32() * b_transposed[col * k + kk].to_f32();
+                }
+                out[row * n + col] = half::f16::from_f32(acc);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn fused_final_logits_small_cpu_reference_selects_expected_tokens() {
+        let residual = vec![
+            half::f16::from_f32(0.2),
+            half::f16::from_f32(0.4),
+            half::f16::from_f32(0.6),
+            half::f16::from_f32(0.8),
+            half::f16::from_f32(-0.5),
+            half::f16::from_f32(0.3),
+            half::f16::from_f32(0.7),
+            half::f16::from_f32(0.1),
+        ];
+        let final_norm = vec![half::f16::from_f32(1.0); 4];
+        let lm_head = vec![
+            half::f16::from_f32(0.1),
+            half::f16::from_f32(0.0),
+            half::f16::from_f32(-0.1),
+            half::f16::from_f32(0.0),
+            half::f16::from_f32(0.0),
+            half::f16::from_f32(0.2),
+            half::f16::from_f32(0.0),
+            half::f16::from_f32(-0.1),
+            half::f16::from_f32(0.0),
+            half::f16::from_f32(0.1),
+            half::f16::from_f32(0.4),
+            half::f16::from_f32(0.0),
+        ];
+
+        let got = lm_head_ref(&residual, &final_norm, &lm_head, 2, 4, 3, 1e-5, 30.0);
+        assert_eq!(got, vec![2, 2]);
+    }
+
+    #[test]
+    fn final_logits_encoder_count_gates_fused_small_vocab_path() {
+        assert_eq!(metal_finalize_logits_encoder_count(2, 4, 3, 30.0), 1);
+        assert_eq!(metal_finalize_logits_encoder_count(2, 4, 257, 30.0), 4);
+        assert_eq!(metal_finalize_logits_encoder_count(2, 4, 257, 0.0), 3);
+    }
+
     #[test]
     fn softcap_ref_matches_definition() {
         let cap = 30.0f32;
@@ -1506,6 +1654,87 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiled_gemm_macos_smoke_matches_cpu() -> rvllm_core::Result<()> {
+        let mut ctx = MetalContext::new()?;
+        ctx.compile_library(crate::kernels::KERNEL_SOURCE)?;
+        let mut pipelines = PipelineCache::new();
+        pipelines.compile_all(&ctx)?;
+        let mut arena = MetalBufferArena::new(ctx.device(), 16 * 1024)?;
+
+        const M: u32 = 2;
+        const N: u32 = 16;
+        const K: u32 = 8;
+        let a: Vec<half::f16> = (0..(M * K))
+            .map(|i| half::f16::from_f32((i as f32 + 1.0) * 0.01))
+            .collect();
+        let b: Vec<half::f16> = (0..(N * K))
+            .map(|i| half::f16::from_f32((i as f32 % 7.0 - 3.0) * 0.02))
+            .collect();
+        let c = vec![half::f16::from_f32(0.0); (M * N) as usize];
+
+        let half_bytes = std::mem::size_of::<half::f16>();
+        let a_region = arena.region("gemm_a", a.len() * half_bytes, 2)?;
+        let b_region = arena.region("gemm_b", b.len() * half_bytes, 2)?;
+        let c_region = arena.region("gemm_c", c.len() * half_bytes, 2)?;
+
+        unsafe {
+            let a_ptr = arena.host_ptr(&a_region) as *mut half::f16;
+            for (idx, value) in a.iter().enumerate() {
+                *a_ptr.add(idx) = *value;
+            }
+            let b_ptr = arena.host_ptr(&b_region) as *mut half::f16;
+            for (idx, value) in b.iter().enumerate() {
+                *b_ptr.add(idx) = *value;
+            }
+            let c_ptr = arena.host_ptr(&c_region) as *mut half::f16;
+            for (idx, value) in c.iter().enumerate() {
+                *c_ptr.add(idx) = *value;
+            }
+        }
+
+        let queue = ctx.queue_retained();
+        let buf = arena.buffer_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "tiled_gemm_smoke_cmdbuf",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        unsafe {
+            encode_gemm(
+                &cmd_buf,
+                &pipelines,
+                buf,
+                a_region.offset,
+                b_region.offset,
+                c_region.offset,
+                M,
+                N,
+                K,
+                1.0,
+                0.0,
+            )?;
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let expected = gemm_ref(&a, &b, M as usize, N as usize, K as usize);
+        let got = unsafe {
+            std::slice::from_raw_parts(arena.host_ptr(&c_region) as *const half::f16, c.len())
+        };
+        for i in 0..got.len() {
+            assert!((got[i].to_f32() - expected[i].to_f32()).abs() < 1e-2);
+        }
+        Ok(())
+    }
+
     #[test]
     fn attention_decode_macos_smoke_matches_cpu() -> rvllm_core::Result<()> {
         let mut ctx = MetalContext::new()?;
@@ -1601,7 +1830,7 @@ mod tests {
                 },
             )
         })?;
-        let pso = pipelines.get("attention_decode_f16")?;
+        let pso = pipelines.get("attention_decode_reduction_f16")?;
         unsafe {
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), q_region.offset, 0);
@@ -1652,7 +1881,7 @@ mod tests {
                 depth: 1,
             };
             let tpg = MTLSize {
-                width: 1,
+                width: 256,
                 height: 1,
                 depth: 1,
             };
@@ -1711,7 +1940,12 @@ unsafe fn encode_gemm(
             },
         )
     })?;
-    let pso = pipelines.get("gemm_f16")?;
+    let use_tiled = supports_tiled_gemm(m, n, k);
+    let pso = pipelines.get(if use_tiled {
+        "gemm_f16_tiled16"
+    } else {
+        "gemm_f16"
+    })?;
     encoder.setComputePipelineState(pso);
     encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
     encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
@@ -1742,8 +1976,8 @@ unsafe fn encode_gemm(
         7,
     );
 
-    let tile_m: usize = 8;
-    let tile_n: usize = 8;
+    let tile_m: usize = if use_tiled { 16 } else { 8 };
+    let tile_n: usize = if use_tiled { 16 } else { 8 };
     let groups_x = (m as usize + tile_m - 1) / tile_m;
     let groups_y = (n as usize + tile_n - 1) / tile_n;
     let groups = MTLSize {

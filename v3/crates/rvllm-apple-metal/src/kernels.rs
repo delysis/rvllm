@@ -67,6 +67,7 @@ kernel void rmsnorm_f16(
 
 constant uint TILE_M = 8;
 constant uint TILE_N = 8;
+constant uint TILE16 = 16;
 
 kernel void gemm_f16(
     device const half *A          [[buffer(0)]],  // [M, K] row-major
@@ -94,6 +95,47 @@ kernel void gemm_f16(
     }
 
     C[row * N + col] = half(acc * alpha + float(C[row * N + col]) * beta);
+}
+
+// Small/probe matrix tiled GEMM: C[M,N] = A[M,K] * B[K,N].
+// B is stored transposed as [N,K]. This keeps the general kernel as the
+// fallback and only gives dispatch a bounded aligned tile option.
+kernel void gemm_f16_tiled16(
+    device const half *A          [[buffer(0)]],
+    device const half *B          [[buffer(1)]],
+    device half       *C          [[buffer(2)]],
+    constant uint     &M          [[buffer(3)]],
+    constant uint     &N          [[buffer(4)]],
+    constant uint     &K          [[buffer(5)]],
+    constant float    &alpha      [[buffer(6)]],
+    constant float    &beta       [[buffer(7)]],
+    uint2 gid                     [[threadgroup_position_in_grid]],
+    uint2 tid                     [[thread_position_in_threadgroup]]
+) {
+    uint row = gid.x * TILE16 + tid.x;
+    uint col = gid.y * TILE16 + tid.y;
+
+    threadgroup half tile_a[16][16];
+    threadgroup half tile_b[16][16];
+
+    float acc = 0.0f;
+    for (uint k0 = 0; k0 < K; k0 += TILE16) {
+        uint a_col = k0 + tid.y;
+        uint b_col = k0 + tid.x;
+        tile_a[tid.x][tid.y] = (row < M && a_col < K) ? A[row * K + a_col] : half(0.0);
+        tile_b[tid.x][tid.y] = (col < N && b_col < K) ? B[col * K + b_col] : half(0.0);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint kk = 0; kk < TILE16; kk++) {
+            acc += float(tile_a[tid.x][kk]) * float(tile_b[kk][tid.y]);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    if (row < M && col < N) {
+        uint idx = row * N + col;
+        C[idx] = half(acc * alpha + float(C[idx]) * beta);
+    }
 }
 
 // ============================================================================
@@ -351,6 +393,119 @@ kernel void attention_decode_f16(
     }
 }
 
+// Parallel decode attention for bounded probe shapes. One threadgroup handles
+// one (sequence, Q head), parallelizing max/sum reductions across context
+// tokens. Dispatch keeps attention_decode_f16 as the correctness fallback.
+kernel void attention_decode_reduction_f16(
+    device const half *q          [[buffer(0)]],
+    device const half *k_cache    [[buffer(1)]],
+    device const half *v_cache    [[buffer(2)]],
+    device half       *output     [[buffer(3)]],
+    device const int  *block_tables [[buffer(4)]],
+    device const int  *context_lens [[buffer(5)]],
+    constant uint     &num_seqs   [[buffer(6)]],
+    constant uint     &num_heads  [[buffer(7)]],
+    constant uint     &num_kv_heads [[buffer(8)]],
+    constant uint     &head_dim   [[buffer(9)]],
+    constant uint     &block_size [[buffer(10)]],
+    constant uint     &max_blocks [[buffer(11)]],
+    constant float    &scale      [[buffer(12)]],
+    uint gid                      [[threadgroup_position_in_grid]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]]
+) {
+    uint seq = gid / num_heads;
+    uint head = gid % num_heads;
+    if (seq >= num_seqs || head_dim > 256) return;
+
+    uint kv_head = head / (num_heads / num_kv_heads);
+    int ctx_len_i = context_lens[seq];
+    if (ctx_len_i <= 0) return;
+    uint ctx_len = uint(ctx_len_i);
+
+    uint q_dim = num_heads * head_dim;
+    uint kv_dim = num_kv_heads * head_dim;
+
+    threadgroup float shared[256];
+
+    float local_max = -INFINITY;
+    for (uint t = tid; t < ctx_len; t += tg_size) {
+        uint block_idx = t / block_size;
+        uint block_offset = t % block_size;
+        int block_id = block_tables[seq * max_blocks + block_idx];
+        if (block_id < 0) continue;
+
+        float score = 0.0f;
+        uint block_base = uint(block_id) * block_size * kv_dim;
+        for (uint d = 0; d < head_dim; d++) {
+            uint q_idx = seq * q_dim + head * head_dim + d;
+            uint k_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+            score += float(q[q_idx]) * float(k_cache[k_idx]);
+        }
+        local_max = max(local_max, score * scale);
+    }
+    shared[tid] = local_max;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared[tid] = max(shared[tid], shared[tid + s]);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float max_score = shared[0];
+
+    float local_sum = 0.0f;
+    for (uint t = tid; t < ctx_len; t += tg_size) {
+        uint block_idx = t / block_size;
+        uint block_offset = t % block_size;
+        int block_id = block_tables[seq * max_blocks + block_idx];
+        if (block_id < 0) continue;
+
+        float score = 0.0f;
+        uint block_base = uint(block_id) * block_size * kv_dim;
+        for (uint d = 0; d < head_dim; d++) {
+            uint q_idx = seq * q_dim + head * head_dim + d;
+            uint k_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+            score += float(q[q_idx]) * float(k_cache[k_idx]);
+        }
+        local_sum += exp(score * scale - max_score);
+    }
+    shared[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared[tid] += shared[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float sum_exp = shared[0];
+    float inv_sum = (sum_exp > 0.0f) ? (1.0f / sum_exp) : 0.0f;
+
+    for (uint d = tid; d < head_dim; d += tg_size) {
+        float acc = 0.0f;
+        for (uint t = 0; t < ctx_len; t++) {
+            uint block_idx = t / block_size;
+            uint block_offset = t % block_size;
+            int block_id = block_tables[seq * max_blocks + block_idx];
+            if (block_id < 0) continue;
+
+            float score = 0.0f;
+            uint block_base = uint(block_id) * block_size * kv_dim;
+            for (uint kd = 0; kd < head_dim; kd++) {
+                uint q_idx = seq * q_dim + head * head_dim + kd;
+                uint k_idx = block_base + block_offset * kv_dim + kv_head * head_dim + kd;
+                score += float(q[q_idx]) * float(k_cache[k_idx]);
+            }
+            float weight = exp(score * scale - max_score) * inv_sum;
+            uint v_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
+            acc += weight * float(v_cache[v_idx]);
+        }
+        output[seq * q_dim + head * head_dim + d] = half(acc);
+    }
+}
+
 // ============================================================================
 // Attention Prefill (multi-token Q, causal mask, paged KV)
 // ============================================================================
@@ -478,6 +633,10 @@ kernel void residual_add_f16(
 // ============================================================================
 // Argmax (per-sequence)
 // ============================================================================
+static inline bool argmax_better(float candidate_val, int candidate_idx, float best_val, int best_idx) {
+    return candidate_val > best_val || (candidate_val == best_val && candidate_idx < best_idx);
+}
+
 kernel void argmax_f16(
     device const half *logits     [[buffer(0)]],  // [num_seqs, vocab]
     device int        *output     [[buffer(1)]],  // [num_seqs]
@@ -520,6 +679,80 @@ kernel void argmax_f16(
 }
 
 // ============================================================================
+// Fused final RMSNorm + lm_head + optional softcap + argmax
+// ============================================================================
+// Bounded small-vocab probe path. The unfused RMSNorm/GEMM/softcap/argmax path
+// remains the fallback for wider shapes.
+kernel void final_norm_lm_head_argmax_small_f16(
+    device const half *residual   [[buffer(0)]],
+    device const half *gamma      [[buffer(1)]],
+    device const half *lm_head    [[buffer(2)]],
+    device half       *logits     [[buffer(3)]],
+    device int        *output     [[buffer(4)]],
+    constant uint     &hidden     [[buffer(5)]],
+    constant uint     &vocab      [[buffer(6)]],
+    constant float    &eps        [[buffer(7)]],
+    constant float    &softcap    [[buffer(8)]],
+    uint token                    [[threadgroup_position_in_grid]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]]
+) {
+    threadgroup float shared_sum[256];
+    threadgroup float shared_max[256];
+    threadgroup int shared_idx[256];
+
+    uint base = token * hidden;
+    float local_sum = 0.0f;
+    for (uint d = tid; d < hidden; d += tg_size) {
+        float v = float(residual[base + d]);
+        local_sum += v * v;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float inv_rms = rsqrt(shared_sum[0] / float(hidden) + eps);
+
+    float local_max = -INFINITY;
+    int local_idx = 0;
+    for (uint v = tid; v < vocab; v += tg_size) {
+        float acc = 0.0f;
+        for (uint d = 0; d < hidden; d++) {
+            float normed = float(residual[base + d]) * inv_rms * float(gamma[d]);
+            acc += normed * float(lm_head[v * hidden + d]);
+        }
+        if (softcap > 0.0f) {
+            acc = softcap * tanh(acc / softcap);
+        }
+        logits[token * vocab + v] = half(acc);
+        if (argmax_better(acc, int(v), local_max, local_idx)) {
+            local_max = acc;
+            local_idx = int(v);
+        }
+    }
+    shared_max[tid] = local_max;
+    shared_idx[tid] = local_idx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s && argmax_better(shared_max[tid + s], shared_idx[tid + s], shared_max[tid], shared_idx[tid])) {
+            shared_max[tid] = shared_max[tid + s];
+            shared_idx[tid] = shared_idx[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    if (tid == 0) {
+        output[token] = shared_idx[0];
+    }
+}
+
+// ============================================================================
 // Logit Softcap: 30 * tanh(logits / 30) for Gemma 4
 // ============================================================================
 kernel void softcap_f16(
@@ -558,16 +791,19 @@ pub const KERNEL_COUNT: usize = KERNEL_NAMES.len();
 pub const KERNEL_NAMES: &[&str] = &[
     "rmsnorm_f16",
     "gemm_f16",
+    "gemm_f16_tiled16",
     "gemm_residual_f16",
     "split_qkv_f16",
     "rope_partial_f16",
     "kv_cache_write_f16",
     "attention_decode_f16",
+    "attention_decode_reduction_f16",
     "attention_prefill_f16",
     "embedding_gather_f16",
     "gelu_mul_f16",
     "residual_add_f16",
     "argmax_f16",
+    "final_norm_lm_head_argmax_small_f16",
     "softcap_f16",
     "bf16_to_f16",
 ];

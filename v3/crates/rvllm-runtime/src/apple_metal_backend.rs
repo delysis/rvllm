@@ -101,8 +101,8 @@ use rvllm_apple_metal::{
     gemma4_model::Gemma4MetalState,
     kernels,
     layer_forward::{
-        metal_finalize_logits_blocking, metal_forward_layer, MetalLayerDims, MetalLayerWeights,
-        MetalMetadata, MetalPhase, MetalScratch,
+        metal_finalize_logits_blocking, metal_finalize_logits_encoder_count, metal_forward_layer,
+        MetalLayerDims, MetalLayerWeights, MetalMetadata, MetalPhase, MetalScratch,
     },
     pipeline::PipelineCache,
 };
@@ -1071,8 +1071,12 @@ impl ModelMetalBackend {
             )?;
         }
         self.perf.add_command_buffers(1);
-        self.perf
-            .add_encoders(3 + (state.final_logit_softcap > 0.0) as u64);
+        self.perf.add_encoders(metal_finalize_logits_encoder_count(
+            num_tokens_u32,
+            hidden_u32,
+            vocab_u32,
+            state.final_logit_softcap,
+        ));
         self.perf.add_forced_wait();
 
         let sampled_ptr = unsafe { arena.host_ptr(&state.sampled) as *const i32 };
@@ -1703,6 +1707,39 @@ mod tests {
         let out = backend.collect(ticket).expect("collect");
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn metal_probe_microbench_counters_hook_reports_decode_work() {
+        let dir = write_tiny_zero_layer_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = zero_layer_plan(dir.clone());
+        backend.prepare(&plan).expect("prepare tiny model");
+
+        for req in [1_u64, 2_u64] {
+            let handoff = rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                vec![rvllm_core::ReqId(req)],
+                vec![rvllm_core::TokenId(2)],
+                vec![0, 1],
+                vec![0],
+                vec![1],
+            );
+            let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+            let out = backend.collect(ticket).expect("collect");
+            assert_eq!(out.len(), 1);
+        }
+
+        let stats = backend.probe_perf_stats();
+        eprintln!("metal_probe_microbench_counters_hook stats: {stats:?}");
+        assert_eq!(stats.decode_steps, 2);
+        assert_eq!(stats.last_step_tokens, 1);
+        assert!(stats.command_buffers > 0);
+        assert!(stats.encoders > 0);
 
         let _ = fs::remove_dir_all(dir);
     }
