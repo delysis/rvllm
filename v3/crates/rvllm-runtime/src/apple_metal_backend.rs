@@ -4581,6 +4581,22 @@ mod tests {
     }
 
     #[test]
+    fn cpu_reference_one_layer_full_nonzero_residual_vector_is_stable() {
+        let reference = cpu_reference_one_layer_full_nonzero();
+        let mut expected = vec![0.0f32; 128];
+        expected[FULL_NONZERO_ORIGINAL_DIM] = 113.137_085;
+        expected[FULL_NONZERO_ATTENTION_DIM] = 135.764_5;
+        expected[FULL_NONZERO_FFN_DIM] = 52.453_545;
+
+        assert_f32_slice_close(
+            "full nonzero residual",
+            &reference.residual,
+            &expected,
+            0.0001,
+        );
+    }
+
+    #[test]
     fn cpu_reference_one_layer_full_nonzero_selected_logits_pick_token_3() {
         let logits = cpu_reference_one_layer_full_nonzero_logits();
         assert_eq!(logits.len(), 8);
@@ -7594,6 +7610,49 @@ mod tests {
                 LOGIT_TOLERANCE,
             );
         }
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_one_layer_full_nonzero_model_backend_full_residual_matches_cpu() {
+        let reference = cpu_reference_one_layer_full_nonzero();
+        let expected_idx = cpu_full_nonzero_argmax(&reference.logits);
+        assert_eq!(expected_idx, 3);
+
+        let dir = write_tiny_one_layer_full_nonzero_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare one-layer full-nonzero tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let metal_residual = backend
+            .debug_read_residual_f32(1)
+            .expect("read decode residual");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(expected_idx as u32));
+
+        const RESIDUAL_TOLERANCE: f32 = 0.05;
+        assert_f32_slice_close(
+            "full nonzero Metal residual",
+            &metal_residual,
+            &reference.residual,
+            RESIDUAL_TOLERANCE,
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
