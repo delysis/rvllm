@@ -1,5 +1,11 @@
-//! GB10 bring-up probe — loads a Gemma 4 fp8 model end-to-end and
-//! validates the Rust additions on this branch:
+//! Gemma 4 load probe.
+//!
+//! With `--dry-run`, this validates Gemma 4 config and safetensors
+//! metadata without allocating Metal buffers or running decode.
+//!
+//! Without `--dry-run`, this remains the GB10 bring-up probe: it loads a
+//! Gemma 4 fp8 model end-to-end and validates the Rust additions on this
+//! branch:
 //!
 //!   (A) `Gemma4Bringup::load` picks `UnifiedArena` on sm_121 (via
 //!       `cuMemAllocManaged`) instead of `HbmArena`.
@@ -8,10 +14,15 @@
 //!       is `Some` iff the live device's `CompileTarget` reports
 //!       availability (sm_100+).
 //!
-//! Gated behind `required-features = ["gb10"]` so a default
-//! `cargo build` skips it — this probe needs a real GPU, a real
-//! CUDA 13 + cudarc setup, and a Gemma 4 fp8 model on disk, none
-//! of which are available in CI or on a developer's workstation.
+//! Full load mode requires `--features gb10`, a real GPU, a real CUDA
+//! 13 + cudarc setup, and a Gemma 4 fp8 model on disk.
+//!
+//! Dry-run shape validation:
+//!
+//! ```bash
+//! cargo run -p rvllm-runtime --features apple --bin probe_gemma4_load -- \
+//!   --dry-run /path/to/gemma4-model
+//! ```
 //!
 //! Run with:
 //!
@@ -27,24 +38,28 @@
 //! RVLLM_APPLE_ANE_PROFILE=any|neural_engine_preferred|neural_engine_only \
 //! RVLLM_APPLE_ANE_FALLBACK=allow-metal|allow-soft|failfast \
 //! RVLLM_ARENA_GB=4 \
-//! cargo run --release -p rvllm-runtime --bin probe-gemma4-load --features gb10
+//! cargo run --release -p rvllm-runtime --bin probe_gemma4_load --features gb10
 //! ```
 //!
 //! Exits 0 on successful bring-up + field validation, non-zero on
 //! any failure with a descriptive message.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+#[cfg(feature = "gb10")]
 use rvllm_core::{CompileTarget, ModelArch as HfModelArch, ModelConfig};
+#[cfg(feature = "gb10")]
 use rvllm_runtime::gemma4_bring_up::{Gemma4Bringup, Gemma4EnginePaths};
 
+#[cfg(feature = "gb10")]
 fn env_path(name: &str) -> Result<PathBuf, String> {
     std::env::var(name)
         .map(PathBuf::from)
         .map_err(|_| format!("missing env var: {name}"))
 }
 
+#[cfg(feature = "gb10")]
 fn env_gb(name: &str, default_gb: u64) -> Result<u64, String> {
     match std::env::var(name) {
         Ok(v) => v.parse::<u64>().map_err(|e| format!("{name}={v:?}: {e}")),
@@ -57,11 +72,13 @@ fn env_gb(name: &str, default_gb: u64) -> Result<u64, String> {
 /// opened on sm_121 (CUTLASS backend is `Absent`, attention goes
 /// through `Fa2Ptx`), so any unique non-existent path works — the
 /// name is what shows up in the probe banner.
+#[cfg(feature = "gb10")]
 const UNUSED_PATH_MARKER: &str = "<unused-on-sm121>";
 
 /// Minimal `policy.json` written when `RVLLM_POLICY` is unset. Parsed
 /// successfully by `rvllm_cutlass::Policy` but contains no entries
 /// — sm_121's `CutlassBackend::Absent` never looks entries up.
+#[cfg(feature = "gb10")]
 const MINIMAL_POLICY_JSON: &str =
     r#"{"revision":"probe-sm121","arch":"sm_121","variants":[],"entries":{}}"#;
 
@@ -69,6 +86,7 @@ const MINIMAL_POLICY_JSON: &str =
 /// the env var is unset. Written into a cache-dir path derived from
 /// `kernels_dir` so we don't pollute `/tmp` across runs and don't
 /// stomp on a real policy the user left in place.
+#[cfg(feature = "gb10")]
 fn resolve_policy_path(kernels_dir: &std::path::Path) -> Result<PathBuf, String> {
     if let Ok(p) = env_path("RVLLM_POLICY") {
         return Ok(p);
@@ -81,7 +99,62 @@ fn resolve_policy_path(kernels_dir: &std::path::Path) -> Result<PathBuf, String>
     Ok(target)
 }
 
-fn run() -> Result<(), String> {
+#[derive(Debug)]
+enum Command {
+    DryRun(PathBuf),
+    FullLoad,
+}
+
+fn parse_command() -> Result<Command, String> {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    match args.as_slice() {
+        [] => Ok(Command::FullLoad),
+        [flag, model_dir] if flag == "--dry-run" => Ok(Command::DryRun(PathBuf::from(model_dir))),
+        [flag] if flag == "--dry-run" => std::env::var("RVLLM_MODEL_DIR")
+            .map(PathBuf::from)
+            .map(Command::DryRun)
+            .map_err(|_| "usage: probe_gemma4_load --dry-run <MODEL_DIR>".to_owned()),
+        _ => Err("usage: probe_gemma4_load [--dry-run <MODEL_DIR>]\n\
+             full load mode reads RVLLM_MODEL_DIR/RVLLM_KERNELS_DIR/... from env"
+            .to_owned()),
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn run_dry_run(model_dir: &Path) -> Result<(), String> {
+    use rvllm_apple_metal::gemma4_model::Gemma4DryRunValidation;
+
+    eprintln!("== probe_gemma4_load dry-run ==");
+    eprintln!("  model_dir = {}", model_dir.display());
+    eprintln!("  mode      = metadata/shape validation only");
+    eprintln!("  decode    = not claimed");
+
+    let validation = Gemma4DryRunValidation::from_model_dir(model_dir)
+        .map_err(|e| format!("Gemma4 dry-run validation: {e}"))?;
+
+    eprintln!("  config OK = Gemma4");
+    eprintln!("  prefix    = {}", validation.weight_prefix);
+    eprintln!("  layers    = {}", validation.num_layers);
+    eprintln!("  hidden    = {}", validation.hidden_size);
+    eprintln!("  vocab     = {}", validation.vocab_size);
+    eprintln!(
+        "  lm_head   = {}",
+        validation.lm_head.as_deref().unwrap_or("<tied embeddings>")
+    );
+    eprintln!("  tensors   = required Gemma4 tensor shapes validated");
+    Ok(())
+}
+
+#[cfg(not(all(feature = "apple", target_os = "macos")))]
+fn run_dry_run(_model_dir: &Path) -> Result<(), String> {
+    Err(
+        "dry-run requires macOS with `cargo run -p rvllm-runtime --features apple --bin probe_gemma4_load -- --dry-run <MODEL_DIR>`"
+            .to_owned(),
+    )
+}
+
+#[cfg(feature = "gb10")]
+fn run_full_load() -> Result<(), String> {
     eprintln!("run_profile={}", probe_profile_summary());
 
     // On sm_121 the CUTLASS `.so` and FA3 `.so` are never opened —
@@ -108,7 +181,7 @@ fn run() -> Result<(), String> {
     let arena_gb = env_gb("RVLLM_ARENA_GB", 4)?;
     let arena_bytes = (arena_gb as usize) * 1024 * 1024 * 1024;
 
-    eprintln!("== probe-gemma4-load ==");
+    eprintln!("== probe_gemma4_load ==");
     eprintln!("  model_dir   = {}", paths.model_dir.display());
     eprintln!("  kernels_dir = {}", paths.kernels_dir.display());
     eprintln!("  cutlass_so  = {}", paths.cutlass_so.display());
@@ -290,6 +363,19 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(feature = "gb10"))]
+fn run_full_load() -> Result<(), String> {
+    Err("full Gemma4 bring-up probe requires `--features gb10`; use `--dry-run <MODEL_DIR>` for metadata/shape validation".to_owned())
+}
+
+fn run() -> Result<(), String> {
+    match parse_command()? {
+        Command::DryRun(model_dir) => run_dry_run(&model_dir),
+        Command::FullLoad => run_full_load(),
+    }
+}
+
+#[cfg(feature = "gb10")]
 fn probe_profile_summary() -> String {
     let strict_ane = parse_bool("RVLLM_STRICT_ANE");
     let private = parse_bool("RVLLM_APPLE_PRIVATE_ANE");
@@ -306,6 +392,7 @@ fn probe_profile_summary() -> String {
     )
 }
 
+#[cfg(feature = "gb10")]
 fn parse_bool(name: &str) -> bool {
     std::env::var(name)
         .ok()
@@ -313,6 +400,7 @@ fn parse_bool(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(feature = "gb10")]
 fn parse_bool_value(s: &str) -> Option<bool> {
     match s.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "on" => Some(true),

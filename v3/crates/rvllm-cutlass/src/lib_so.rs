@@ -712,7 +712,7 @@ impl CutlassBackend {
     ///   2. `<path.parent()>/sm_120/libcutlass_sm120.so` — the layout
     ///      produced by `kernels/build_cutlass_sm120_so.sh`, which
     ///      makes "kernels_dir" a natural resolution root for
-    ///      `probe-gemma4-load` / `rvllm-server`.
+    ///      `probe_gemma4_load` / `rvllm-server`.
     /// If neither is present, fall through to `Absent` — previous
     /// behaviour, so a host without the library built keeps working
     /// via the PTX fallback.

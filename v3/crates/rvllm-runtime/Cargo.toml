@@ -28,14 +28,12 @@ cuda = [
 gb10 = ["cuda", "rvllm-mem/gb10"]
 apple = ["dep:rvllm-apple", "dep:rvllm-apple-metal"]
 
-# `probe-gemma4-load` requires a real CUDA device + Gemma 4 fp8 model
-# artifacts. Kept as an opt-in `[[bin]]` guarded by
-# `required-features = ["gb10"]` so `cargo build` never picks it up —
-# the GB10 bring-up validation is an explicit operator action.
+# `probe_gemma4_load --dry-run` is available with `--features apple` and
+# only scans config/safetensor metadata. The full load path still requires
+# `--features gb10`, a real CUDA device, and Gemma 4 fp8 model artifacts.
 [[bin]]
-name = "probe-gemma4-load"
+name = "probe_gemma4_load"
 path = "src/bin/probe_gemma4_load.rs"
-required-features = ["gb10"]
 
 [dependencies]
 rvllm-core = { workspace = true }

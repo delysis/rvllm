@@ -162,6 +162,13 @@ pub struct Gemma4DryRunLayerValidation {
 }
 
 #[cfg(target_os = "macos")]
+impl Gemma4DryRunValidation {
+    pub fn from_model_dir(model_dir: &Path) -> Result<Self> {
+        validate_gemma4_model_dir_metadata(model_dir)
+    }
+}
+
+#[cfg(target_os = "macos")]
 impl MetalProbeLayerDims {
     fn from_arch_layer(arch: &ModelArch, layer_idx: usize) -> Result<Self> {
         let layer_type = arch
@@ -767,7 +774,7 @@ impl ProbeModelPlan {
 #[cfg(target_os = "macos")]
 impl Gemma4MetalState {
     pub fn dry_run_validate_gemma4_model_dir(model_dir: &Path) -> Result<Gemma4DryRunValidation> {
-        validate_gemma4_model_dir_metadata(model_dir)
+        Gemma4DryRunValidation::from_model_dir(model_dir)
     }
 
     pub fn required_probe_model_arena_bytes(model_dir: &Path) -> Result<usize> {
@@ -1695,11 +1702,15 @@ mod tests {
         fs::{self, File},
         io::Write,
         path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
     };
 
+    static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
+
     fn test_fixture_dir(name: &str) -> PathBuf {
+        let id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
-            "rvllm-metal-{name}-{}-{}",
+            "rvllm-metal-{name}-{}-{}-{id}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1918,6 +1929,8 @@ mod tests {
         omit_lm_head: bool,
         omit_v_proj: bool,
         q_proj0_shape: Option<&[usize]>,
+        q_proj1_shape: Option<&[usize]>,
+        omit_q_norm0: bool,
     ) -> PathBuf {
         let dir = test_fixture_dir("dry-run-full-gemma-style");
         let hidden = 128usize;
@@ -1969,12 +1982,14 @@ mod tests {
                 );
             }
 
-            let q_shape = if layer_idx == 0 {
-                q_proj0_shape
+            let q_shape = match layer_idx {
+                0 => q_proj0_shape
                     .map(|shape| shape.to_vec())
-                    .unwrap_or_else(|| vec![q_dim, hidden])
-            } else {
-                vec![q_dim, hidden]
+                    .unwrap_or_else(|| vec![q_dim, hidden]),
+                1 => q_proj1_shape
+                    .map(|shape| shape.to_vec())
+                    .unwrap_or_else(|| vec![q_dim, hidden]),
+                _ => vec![q_dim, hidden],
             };
             add_zero_tensor(
                 &mut header,
@@ -2002,12 +2017,14 @@ mod tests {
                 &format!("{lprefix}.self_attn.o_proj.weight"),
                 &[hidden, q_dim],
             );
-            add_zero_tensor(
-                &mut header,
-                &mut payload,
-                &format!("{lprefix}.self_attn.q_norm.weight"),
-                &[head_dim],
-            );
+            if !(layer_idx == 0 && omit_q_norm0) {
+                add_zero_tensor(
+                    &mut header,
+                    &mut payload,
+                    &format!("{lprefix}.self_attn.q_norm.weight"),
+                    &[head_dim],
+                );
+            }
             add_zero_tensor(
                 &mut header,
                 &mut payload,
@@ -2084,9 +2101,10 @@ mod tests {
 
     #[test]
     fn dry_run_validates_text_config_and_model_language_model_prefix() {
-        let dir = write_dry_run_full_gemma_style_fixture(false, false, false, false, None);
-        let validation = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
-            .expect("dry-run validates fixture");
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, false, false, false, None, None, false);
+        let validation =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect("dry-run validates fixture");
 
         assert_eq!(validation.weight_prefix, "model.language_model");
         assert_eq!(validation.num_layers, 2);
@@ -2111,7 +2129,8 @@ mod tests {
 
     #[test]
     fn dry_run_allows_tied_embeddings_without_lm_head() {
-        let dir = write_dry_run_full_gemma_style_fixture(true, false, true, false, None);
+        let dir =
+            write_dry_run_full_gemma_style_fixture(true, false, true, false, None, None, false);
         let validation = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
             .expect("tied embeddings do not require lm_head");
 
@@ -2123,7 +2142,8 @@ mod tests {
 
     #[test]
     fn dry_run_allows_missing_v_proj_when_attention_k_eq_v() {
-        let dir = write_dry_run_full_gemma_style_fixture(false, true, false, true, None);
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, true, false, true, None, None, false);
         let validation = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
             .expect("attention_k_eq_v permits missing v_proj");
 
@@ -2135,7 +2155,8 @@ mod tests {
 
     #[test]
     fn dry_run_missing_tensor_error_names_missing_tensor() {
-        let dir = write_dry_run_full_gemma_style_fixture(false, false, false, true, None);
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, false, false, true, None, None, false);
         let err = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
             .expect_err("missing v_proj must fail");
         let msg = format!("{err}");
@@ -2148,8 +2169,15 @@ mod tests {
 
     #[test]
     fn dry_run_shape_mismatch_error_names_tensor_and_expected_actual_shapes() {
-        let dir =
-            write_dry_run_full_gemma_style_fixture(false, false, false, false, Some(&[127, 128]));
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            false,
+            Some(&[127, 128]),
+            None,
+            false,
+        );
         let err = Gemma4MetalState::dry_run_validate_gemma4_model_dir(&dir)
             .expect_err("q_proj shape mismatch must fail");
         let msg = format!("{err}");
@@ -2158,6 +2186,43 @@ mod tests {
         assert!(msg.contains("model.language_model.layers.0.self_attn.q_proj.weight"));
         assert!(msg.contains("expected: [128, 128]"));
         assert!(msg.contains("got: [127, 128]"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn dry_run_missing_q_norm_error_names_missing_tensor() {
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, false, false, false, None, None, true);
+        let err =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect_err("missing q_norm must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.language_model.layers.0.self_attn.q_norm.weight"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn dry_run_global_layer_shape_mismatch_uses_global_head_dim() {
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            false,
+            None,
+            Some(&[255, 128]),
+            false,
+        );
+        let err = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect_err("global q_proj shape mismatch must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("ShapeMismatch"));
+        assert!(msg.contains("model.language_model.layers.1.self_attn.q_proj.weight"));
+        assert!(msg.contains("expected: [256, 128]"));
+        assert!(msg.contains("got: [255, 128]"));
 
         let _ = fs::remove_dir_all(dir);
     }
