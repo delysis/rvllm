@@ -99,8 +99,24 @@ struct ProbeModelPlan {
     final_norm_name: String,
     lm_head_name: String,
     tie_embeddings: bool,
+    layer_names: Vec<ProbeLayerNames>,
     names: Vec<String>,
     arena_bytes: usize,
+}
+
+#[cfg(target_os = "macos")]
+struct ProbeLayerNames {
+    attn_norm_name: String,
+    o_proj_name: String,
+    mlp_norm_name: String,
+    down_proj_name: String,
+    prefused_qkv_name: String,
+    q_name: String,
+    k_name: String,
+    v_name: String,
+    prefused_gate_up_name: String,
+    gate_name: String,
+    up_name: String,
 }
 
 #[cfg(target_os = "macos")]
@@ -214,6 +230,7 @@ impl ProbeModelPlan {
         let mut layer_weight_bytes = 0;
         let mut fused_qkv_bytes = 0;
         let mut fused_gate_up_bytes = 0;
+        let mut layer_names = Vec::new();
 
         if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
@@ -258,9 +275,24 @@ impl ProbeModelPlan {
 
             for layer_idx in 0..arch.num_hidden_layers {
                 let lprefix = format!("{weight_prefix}.layers.{layer_idx}");
-                let attn_norm_name = format!("{lprefix}.input_layernorm.weight");
+                let attn_norm_name = resolve_tensor_alias(
+                    &tensors,
+                    vec![
+                        format!("{lprefix}.input_layernorm.weight"),
+                        format!("{lprefix}.pre_attention_layernorm.weight"),
+                    ],
+                    "missing attention norm weight",
+                )?;
                 let o_proj_name = format!("{lprefix}.self_attn.o_proj.weight");
-                let mlp_norm_name = format!("{lprefix}.mlp_norm.weight");
+                let mlp_norm_name = resolve_tensor_alias(
+                    &tensors,
+                    vec![
+                        format!("{lprefix}.mlp_norm.weight"),
+                        format!("{lprefix}.post_attention_layernorm.weight"),
+                        format!("{lprefix}.pre_feedforward_layernorm.weight"),
+                    ],
+                    "missing mlp norm weight",
+                )?;
                 let down_proj_name = format!("{lprefix}.mlp.down_proj.weight");
 
                 let prefused_qkv_name = format!("{lprefix}.self_attn.qkv.weight");
@@ -279,14 +311,14 @@ impl ProbeModelPlan {
                 add_tensor_size(&mlp_norm_name)?;
                 add_tensor_size(&down_proj_name)?;
 
-                names.push(attn_norm_name);
-                names.push(o_proj_name);
-                names.push(mlp_norm_name);
-                names.push(down_proj_name);
+                names.push(attn_norm_name.clone());
+                names.push(o_proj_name.clone());
+                names.push(mlp_norm_name.clone());
+                names.push(down_proj_name.clone());
 
                 if use_prefused_qkv {
                     add_tensor_size(&prefused_qkv_name)?;
-                    names.push(prefused_qkv_name);
+                    names.push(prefused_qkv_name.clone());
                 } else {
                     add_tensor_size(&q_name)?;
                     add_tensor_size(&k_name)?;
@@ -296,12 +328,26 @@ impl ProbeModelPlan {
 
                 if use_prefused_gate_up {
                     add_tensor_size(&prefused_gate_up_name)?;
-                    names.push(prefused_gate_up_name);
+                    names.push(prefused_gate_up_name.clone());
                 } else {
                     add_tensor_size(&gate_name)?;
                     add_tensor_size(&up_name)?;
                     fused_gate_up_bytes += 2 * intermediate * hidden * std::mem::size_of::<f16>();
                 }
+
+                layer_names.push(ProbeLayerNames {
+                    attn_norm_name,
+                    o_proj_name,
+                    mlp_norm_name,
+                    down_proj_name,
+                    prefused_qkv_name,
+                    q_name,
+                    k_name,
+                    v_name,
+                    prefused_gate_up_name,
+                    gate_name,
+                    up_name,
+                });
             }
         }
 
@@ -415,6 +461,7 @@ impl ProbeModelPlan {
             final_norm_name,
             lm_head_name,
             tie_embeddings,
+            layer_names,
             names,
             arena_bytes,
         })
@@ -461,6 +508,14 @@ impl Gemma4MetalState {
 
         let mut layers = Vec::new();
         for layer_idx in 0..plan.arch.num_hidden_layers {
+            let layer_names = plan.layer_names.get(layer_idx).ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "missing layer name plan",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
             let hidden = plan.arch.hidden_size;
             let intermediate = plan.arch.intermediate_size;
             let num_heads = plan.arch.num_attention_heads;
@@ -470,30 +525,21 @@ impl Gemma4MetalState {
             let kv_dim = num_kv_heads * head_dim;
             let qkv_rows = q_dim + 2 * kv_dim;
 
-            let lprefix = format!("{}.layers.{layer_idx}", plan.weight_prefix);
-            let attn_norm = region_lookup(
-                &mut mapped_refs,
-                &format!("{lprefix}.input_layernorm.weight"),
-            )?;
-            let o_proj = region_lookup(
-                &mut mapped_refs,
-                &format!("{lprefix}.self_attn.o_proj.weight"),
-            )?;
-            let mlp_norm = region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp_norm.weight"))?;
-            let down_proj =
-                region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp.down_proj.weight"))?;
+            let attn_norm = region_lookup(&mut mapped_refs, &layer_names.attn_norm_name)?;
+            let o_proj = region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?;
+            let mlp_norm = region_lookup(&mut mapped_refs, &layer_names.mlp_norm_name)?;
+            let down_proj = region_lookup(&mut mapped_refs, &layer_names.down_proj_name)?;
 
-            let prefused_qkv_name = format!("{lprefix}.self_attn.qkv.weight");
-            let qkv = if plan.tensors.contains_key(&prefused_qkv_name) {
-                region_lookup(&mut mapped_refs, &prefused_qkv_name)?
+            let qkv = if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
+                region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
             } else {
                 let bytes = concat_f16_tensors(
                     model_dir,
                     &plan.tensors,
                     &[
-                        format!("{lprefix}.self_attn.q_proj.weight"),
-                        format!("{lprefix}.self_attn.k_proj.weight"),
-                        format!("{lprefix}.self_attn.v_proj.weight"),
+                        layer_names.q_name.clone(),
+                        layer_names.k_name.clone(),
+                        layer_names.v_name.clone(),
                     ],
                     &[
                         vec![q_dim, hidden],
@@ -505,17 +551,16 @@ impl Gemma4MetalState {
                 map_fused_bytes_to_arena(arena, &format!("metal_fused_qkv_{layer_idx}"), &bytes)?
             };
 
-            let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
-            let gate_up = if plan.tensors.contains_key(&prefused_gate_up_name) {
-                region_lookup(&mut mapped_refs, &prefused_gate_up_name)?
+            let gate_up = if plan
+                .tensors
+                .contains_key(&layer_names.prefused_gate_up_name)
+            {
+                region_lookup(&mut mapped_refs, &layer_names.prefused_gate_up_name)?
             } else {
                 let bytes = concat_f16_tensors(
                     model_dir,
                     &plan.tensors,
-                    &[
-                        format!("{lprefix}.mlp.gate_proj.weight"),
-                        format!("{lprefix}.mlp.up_proj.weight"),
-                    ],
+                    &[layer_names.gate_name.clone(), layer_names.up_name.clone()],
                     &[vec![intermediate, hidden], vec![intermediate, hidden]],
                     "fuse_gate_up",
                 )?;
@@ -675,6 +720,25 @@ impl Gemma4MetalState {
             layers,
         })
     }
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_tensor_alias(
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    candidates: Vec<String>,
+    missing_reason: &'static str,
+) -> Result<String> {
+    candidates
+        .into_iter()
+        .find(|name| tensors.contains_key(name))
+        .ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: missing_reason,
+                },
+                probe_ctx("prepare"),
+            )
+        })
 }
 
 #[cfg(target_os = "macos")]

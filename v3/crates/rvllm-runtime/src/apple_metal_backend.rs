@@ -2589,6 +2589,10 @@ mod tests {
         cpu_full_nonzero_argmax(&logits)
     }
 
+    fn cpu_reference_real_hf_style_one_layer_slice_argmax() -> usize {
+        cpu_reference_one_layer_full_nonzero_argmax()
+    }
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_one_layer_full_nonzero_fixture() -> std::path::PathBuf {
         let dir = temp_fixture_dir();
@@ -2777,6 +2781,194 @@ mod tests {
         assert_eq!(cpu_reference_one_layer_full_nonzero_argmax(), 3);
     }
 
+    #[test]
+    fn cpu_reference_real_hf_style_one_layer_slice_argmax_is_3() {
+        assert_eq!(cpu_reference_real_hf_style_one_layer_slice_argmax(), 3);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_real_hf_style_one_layer_slice_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let intermediate = 256;
+        let vocab = 8;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[2 * hidden + 7] = 1.0;
+        lm_head[3 * hidden + 9] = 4.0;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        let ones = vec![1.0f32; hidden];
+        let mut q_proj = vec![0.0f32; hidden * hidden];
+        let mut k_proj = vec![0.0f32; hidden * hidden];
+        let mut v_proj = vec![0.0f32; hidden * hidden];
+        let mut o_proj = vec![0.0f32; hidden * hidden];
+        let mut gate_proj = vec![0.0f32; intermediate * hidden];
+        let mut up_proj = vec![0.0f32; intermediate * hidden];
+        let mut down_proj = vec![0.0f32; hidden * intermediate];
+        q_proj[7] = 0.25;
+        k_proj[7] = 0.125;
+        v_proj[11 * hidden + 7] = 2.0;
+        o_proj[9 * hidden + 11] = 6.0;
+        gate_proj[7] = 0.5;
+        up_proj[7] = 0.5;
+        down_proj[9 * intermediate] = 4.0;
+
+        add_tensor(
+            "model.layers.0.input_layernorm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.q_proj.weight",
+            &q_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.k_proj.weight",
+            &k_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.v_proj.weight",
+            &v_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.o_proj.weight",
+            &o_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.post_attention_layernorm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.gate_proj.weight",
+            &gate_proj,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.up_proj.weight",
+            &up_proj,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.down_proj.weight",
+            &down_proj,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, hidden, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
@@ -2830,6 +3022,69 @@ mod tests {
         let out2 = step2.collect().expect("collect decode");
         assert_eq!(out2.len(), 1);
         assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_real_hf_style_one_layer_slice_model_backend_decodes_cpu_expected_token() {
+        let expected =
+            rvllm_core::TokenId(cpu_reference_real_hf_style_one_layer_slice_argmax() as u32);
+        let dir = write_tiny_real_hf_style_one_layer_slice_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare real-hf-style one-layer slice");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, expected);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_real_hf_style_one_layer_slice_prefill_then_decode_cpu_expected_token() {
+        let expected =
+            rvllm_core::TokenId(cpu_reference_real_hf_style_one_layer_slice_argmax() as u32);
+        let dir = write_tiny_real_hf_style_one_layer_slice_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with real-hf-style one-layer slice plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, expected);
         assert!(!engine.has_pending_work());
 
         let _ = fs::remove_dir_all(dir);
@@ -3023,6 +3278,27 @@ mod tests {
         assert!(tensors.contains_key("model.layers.0.self_attn.v_proj.weight"));
         assert!(tensors.contains_key("model.layers.0.mlp.gate_proj.weight"));
         assert!(tensors.contains_key("model.layers.0.mlp.up_proj.weight"));
+        assert!(!tensors.contains_key("model.layers.0.self_attn.qkv.weight"));
+        assert!(!tensors.contains_key("model.layers.0.mlp.gate_up.weight"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    fn real_hf_style_one_layer_slice_fixture_has_hf_names_and_norm_alias() {
+        let dir = write_tiny_real_hf_style_one_layer_slice_fixture();
+        let tensors =
+            rvllm_apple_metal::weight_loader::scan_safetensor_tensors(&dir).expect("scan");
+        assert!(tensors.contains_key("model.layers.0.self_attn.q_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.self_attn.k_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.self_attn.v_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.self_attn.o_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.mlp.gate_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.mlp.up_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.mlp.down_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.input_layernorm.weight"));
+        assert!(tensors.contains_key("model.layers.0.post_attention_layernorm.weight"));
+        assert!(!tensors.contains_key("model.layers.0.mlp_norm.weight"));
         assert!(!tensors.contains_key("model.layers.0.self_attn.qkv.weight"));
         assert!(!tensors.contains_key("model.layers.0.mlp.gate_up.weight"));
         let _ = fs::remove_dir_all(dir);
