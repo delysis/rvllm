@@ -1,3 +1,4 @@
+use crate::iosurface::IoSurfaceTensorDesc;
 use crate::plan::RolloutBucket;
 use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,28 @@ pub enum HandoffKind {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SurfaceId(pub u64);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum HandoffSurfaceRole {
+    ActivationInput,
+    ActivationOutput,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct HandoffSurfaceBinding {
+    pub role: HandoffSurfaceRole,
+    pub surface_id: SurfaceId,
+    pub desc: IoSurfaceTensorDesc,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct HandoffSequenceMeta {
+    pub req_id: ReqId,
+    pub token_start: u32,
+    pub token_end: u32,
+    pub position: u32,
+    pub context_len: u32,
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum StateHandleKind {
@@ -44,6 +67,7 @@ pub struct HandoffCapsule {
     pub state_handles: Vec<StateHandle>,
     pub input_surface: Option<SurfaceId>,
     pub output_surface: Option<SurfaceId>,
+    pub activation_surfaces: Vec<HandoffSurfaceBinding>,
     pub layout_hash: [u8; 32],
 }
 
@@ -68,6 +92,7 @@ impl HandoffCapsule {
             state_handles: Vec::new(),
             input_surface: None,
             output_surface: None,
+            activation_surfaces: Vec::new(),
             layout_hash: [0; 32],
         };
         capsule.layout_hash = capsule.compute_layout_hash();
@@ -174,6 +199,28 @@ impl HandoffCapsule {
         self
     }
 
+    #[must_use]
+    pub fn with_activation_surface(mut self, binding: HandoffSurfaceBinding) -> Self {
+        self.activation_surfaces.push(binding);
+        self.layout_hash = self.compute_layout_hash();
+        self
+    }
+
+    #[must_use]
+    pub fn sequence_metadata(&self) -> Vec<HandoffSequenceMeta> {
+        let mut meta = Vec::with_capacity(self.req_ids.len());
+        for idx in 0..self.req_ids.len() {
+            meta.push(HandoffSequenceMeta {
+                req_id: self.req_ids[idx],
+                token_start: self.cu_seqlens[idx],
+                token_end: self.cu_seqlens[idx + 1],
+                position: self.positions[idx],
+                context_len: self.context_lens[idx],
+            });
+        }
+        meta
+    }
+
     fn err(&self, reason: &'static str) -> RvllmError {
         RvllmError::apple(
             AppleError::HandoffMalformed { reason },
@@ -207,6 +254,7 @@ impl HandoffCapsule {
             self.state_handles.len() as u8,
             u8::from(self.input_surface.is_some()),
             u8::from(self.output_surface.is_some()),
+            self.activation_surfaces.len() as u8,
             u8::from(self.rollout_bucket.is_some()),
         ] {
             h ^= u64::from(byte);
@@ -257,6 +305,18 @@ impl HandoffCapsule {
             h ^= u64::from(handle.kind as u8 as u64);
             h = h.wrapping_mul(LAYOUT_HASH_PRIME);
             h ^= handle.bytes as u64;
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+        }
+        for binding in &self.activation_surfaces {
+            h ^= u64::from(binding.role as u8);
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            h ^= binding.surface_id.0;
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            h ^= binding.desc.dtype.bytes() as u64;
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            h ^= binding.desc.channels as u64;
+            h = h.wrapping_mul(LAYOUT_HASH_PRIME);
+            h ^= binding.desc.spatial as u64;
             h = h.wrapping_mul(LAYOUT_HASH_PRIME);
         }
 

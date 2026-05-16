@@ -9,6 +9,7 @@
 pub mod ane;
 pub mod backend;
 pub mod device;
+pub mod disaggregated;
 pub mod handoff;
 pub mod iosurface;
 pub mod metal;
@@ -22,7 +23,15 @@ pub use backend::{
     StubAppleBackend,
 };
 pub use device::{AppleAcceleratorTarget, AppleGpuFamily, AppleNpuGeneration, DeviceTier};
-pub use handoff::{HandoffCapsule, HandoffKind, StateHandle, StateHandleKind, SurfaceId};
+pub use disaggregated::{
+    synthetic_ffn_metal_only_reference, AneExecutionAvailability, DensePartitionExecutionPath,
+    DisaggregatedDenseExecutor, PartitionExecutionCounters, PartitionExecutionReport,
+    SyntheticDenseOutput, SyntheticFfnPartition,
+};
+pub use handoff::{
+    HandoffCapsule, HandoffKind, HandoffSequenceMeta, HandoffSurfaceBinding, HandoffSurfaceRole,
+    StateHandle, StateHandleKind, SurfaceId,
+};
 pub use iosurface::{IoSurfaceTensorDesc, PackedField, PackedInputLayout};
 pub use metal::{MetalPrefillBackend, MetalPrefillConfig, PrefillContract};
 pub use mil::{dense_1x1_conv_mil, fused_ffn_mil, fused_qkv_mil, FfnMilOffsets, QkvMilOffsets};
