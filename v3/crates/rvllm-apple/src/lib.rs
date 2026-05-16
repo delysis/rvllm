@@ -15,6 +15,7 @@ pub mod iosurface;
 pub mod metal;
 pub mod mil;
 pub mod plan;
+pub mod profiling;
 pub mod weight_blob;
 
 pub use ane::{AneProcedure, AneProgramPlan, AneRolloutConfig};
@@ -43,5 +44,12 @@ pub use plan::{
     AneStaticPartitionPlan, AneUnsupportedReason, AneVocabBlock, AppleBackendMode,
     AppleRuntimePlan, CoreMlAneComputePlan, CoreMlComputeUnitsPlan, RolloutBucket,
     PRIVATE_ANE_ENV_VAR, ROLLOUT_BUCKETS,
+};
+pub use profiling::{
+    current_apple_production_acceptance_report, evaluate_apple_production_acceptance,
+    AcceptanceCriterion, AcceptanceFailure, AppleProductionAcceptanceEvidence,
+    AppleProductionAcceptanceReport, BackendProfileMetrics, BackendProfileSample,
+    BenchmarkCategory, EvidenceState, OptionalMetric, PerformanceRegressionEvidence,
+    ProductionCandidateStatus, ROADMAP_BENCHMARK_CATEGORIES,
 };
 pub use weight_blob::{build_weight_blob_fp16, build_weight_blob_fp16_named, WeightChunkDesc};
