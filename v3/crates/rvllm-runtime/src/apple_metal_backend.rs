@@ -354,6 +354,59 @@ impl ModelMetalBackend {
         self.experimental_kv_int8
     }
 
+    #[cfg(test)]
+    fn debug_read_decode_logits_f32(&self, num_tokens: usize) -> Result<Vec<f32>> {
+        let state = self.state.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("debug_read_decode_logits_f32"),
+            )
+        })?;
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("debug_read_decode_logits_f32"),
+            )
+        })?;
+        let elem_count = num_tokens.checked_mul(state.vocab_size).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "debug logits element count overflow",
+                },
+                model_ctx("debug_read_decode_logits_f32"),
+            )
+        })?;
+        let byte_count = elem_count
+            .checked_mul(std::mem::size_of::<f16>())
+            .ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "debug logits byte count overflow",
+                    },
+                    model_ctx("debug_read_decode_logits_f32"),
+                )
+            })?;
+        if byte_count > state.logits.size {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "debug logits read exceeds logits buffer",
+                },
+                model_ctx("debug_read_decode_logits_f32"),
+            ));
+        }
+
+        let logits_ptr = unsafe { arena.host_ptr(&state.logits) as *const u16 };
+        let logits_bits = unsafe { std::slice::from_raw_parts(logits_ptr, elem_count) };
+        Ok(logits_bits
+            .iter()
+            .map(|bits| f16::from_bits(*bits).to_f32())
+            .collect())
+    }
+
     fn next_ticket(
         &mut self,
         kind: AppleLaunchKind,
@@ -3421,6 +3474,13 @@ mod tests {
         best_idx
     }
 
+    fn cpu_full_nonzero_top_two(values: &[f32]) -> (usize, usize) {
+        assert!(values.len() >= 2);
+        let mut ranked = values.iter().copied().enumerate().collect::<Vec<_>>();
+        ranked.sort_by(|(_, a), (_, b)| b.partial_cmp(a).expect("finite logits"));
+        (ranked[0].0, ranked[1].0)
+    }
+
     fn cpu_reference_zero_layer_decode_loop_sequence() -> Vec<usize> {
         let hidden = 128usize;
         let vocab = 8usize;
@@ -3454,7 +3514,7 @@ mod tests {
         out
     }
 
-    fn cpu_reference_one_layer_full_nonzero_argmax() -> usize {
+    fn cpu_reference_one_layer_full_nonzero_logits() -> Vec<f32> {
         let hidden = 128;
         let intermediate = 256;
         let vocab = 8;
@@ -3515,8 +3575,11 @@ mod tests {
         let mut lm_head = vec![0.0f32; vocab * hidden];
         lm_head[2 * hidden + 7] = 1.0;
         lm_head[3 * hidden + 9] = 4.0;
-        let logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
-        cpu_full_nonzero_argmax(&logits)
+        cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden)
+    }
+
+    fn cpu_reference_one_layer_full_nonzero_argmax() -> usize {
+        cpu_full_nonzero_argmax(&cpu_reference_one_layer_full_nonzero_logits())
     }
 
     fn cpu_reference_real_hf_style_one_layer_slice_argmax() -> usize {
@@ -4251,6 +4314,17 @@ mod tests {
     #[test]
     fn cpu_reference_one_layer_full_nonzero_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_one_layer_full_nonzero_argmax(), 3);
+    }
+
+    #[test]
+    fn cpu_reference_one_layer_full_nonzero_selected_logits_pick_token_3() {
+        let logits = cpu_reference_one_layer_full_nonzero_logits();
+        assert_eq!(logits.len(), 8);
+        assert_eq!(cpu_full_nonzero_argmax(&logits), 3);
+        assert_eq!(cpu_full_nonzero_top_two(&logits), (3, 2));
+        assert_eq!(logits[0], 0.0);
+        assert!(logits[3] > logits[2]);
+        assert!(logits[2] > logits[0]);
     }
 
     #[test]
@@ -6813,6 +6887,58 @@ mod tests {
         let out = backend.collect(ticket).expect("collect");
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_one_layer_full_nonzero_model_backend_selected_logits_match_cpu() {
+        let cpu_logits = cpu_reference_one_layer_full_nonzero_logits();
+        let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(&cpu_logits);
+        let low_idx = 0usize;
+        assert_eq!(expected_idx, 3);
+        assert_eq!(runner_up_idx, 2);
+        assert_eq!(cpu_logits[low_idx], 0.0);
+
+        let dir = write_tiny_one_layer_full_nonzero_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare one-layer full-nonzero tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let metal_logits = backend
+            .debug_read_decode_logits_f32(1)
+            .expect("read decode logits");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(expected_idx as u32));
+        assert_eq!(metal_logits.len(), cpu_logits.len());
+
+        const LOGIT_TOLERANCE: f32 = 0.05;
+        for idx in [expected_idx, runner_up_idx, low_idx] {
+            let diff = (metal_logits[idx] - cpu_logits[idx]).abs();
+            assert!(
+                diff <= LOGIT_TOLERANCE,
+                "logit[{idx}] mismatch: metal={} cpu={} diff={} tol={}",
+                metal_logits[idx],
+                cpu_logits[idx],
+                diff,
+                LOGIT_TOLERANCE
+            );
+        }
 
         let _ = fs::remove_dir_all(dir);
     }
