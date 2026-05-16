@@ -121,6 +121,8 @@ const METAL_SOFTCAP: f32 = 0.0;
 const METAL_ARENA_BYTES: usize = 1 * 1024 * 1024;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 pub const RVLLM_METAL_DEBUG_SYNC_ENV: &str = "RVLLM_METAL_DEBUG_SYNC";
+#[cfg(all(feature = "apple", target_os = "macos"))]
+pub const RVLLM_EXPERIMENTAL_METAL_KV_INT8_ENV: &str = "RVLLM_EXPERIMENTAL_METAL_KV_INT8";
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -247,6 +249,14 @@ fn metal_debug_sync_enabled() -> bool {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+fn experimental_metal_kv_int8_enabled() -> bool {
+    std::env::var(RVLLM_EXPERIMENTAL_METAL_KV_INT8_ENV)
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 fn ctx(op: &'static str) -> AppleCtx {
     AppleCtx {
         backend: "runtime-metal-backend",
@@ -300,6 +310,7 @@ pub struct ModelMetalBackend {
     arena: Option<MetalBufferArena>,
     pub state: Option<Gemma4MetalState>,
     debug_sync: bool,
+    experimental_kv_int8: bool,
     perf: MetalProbePerfCounters,
 }
 
@@ -318,6 +329,7 @@ impl ModelMetalBackend {
             arena: None,
             state: None,
             debug_sync: metal_debug_sync_enabled(),
+            experimental_kv_int8: experimental_metal_kv_int8_enabled(),
             perf: MetalProbePerfCounters::default(),
         }
     }
@@ -330,6 +342,16 @@ impl ModelMetalBackend {
     #[must_use]
     pub const fn metal_debug_sync_enabled(&self) -> bool {
         self.debug_sync
+    }
+
+    /// Returns whether the experimental Metal KV int8 utility path was
+    /// explicitly opted in with `RVLLM_EXPERIMENTAL_METAL_KV_INT8=1`.
+    ///
+    /// The production probe path still uses F16 KV cache storage regardless of
+    /// this flag; the compressed path is currently test-only/readback-only.
+    #[must_use]
+    pub const fn experimental_kv_int8_enabled(&self) -> bool {
+        self.experimental_kv_int8
     }
 
     fn next_ticket(
@@ -1118,6 +1140,7 @@ impl AppleBackend for ModelMetalBackend {
         self.arena = None;
         self.state = None;
         self.debug_sync = metal_debug_sync_enabled();
+        self.experimental_kv_int8 = experimental_metal_kv_int8_enabled();
         self.perf.clear();
         let state = self.initialize_model_resources()?;
         self.state = Some(state);

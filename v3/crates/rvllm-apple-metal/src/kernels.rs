@@ -306,6 +306,64 @@ kernel void kv_cache_write_f16(
     v_cache[uint(slot) * kv_dim + dim] = v_src[token * kv_dim + dim];
 }
 
+// Experimental KV cache compression utilities. These kernels are not used by
+// the default F16 probe path; tests opt in explicitly and dequantize back to
+// F16 before comparison. Quantization is symmetric per cache row.
+kernel void experimental_kv_quantize_int8_f16(
+    device const half *src        [[buffer(0)]],  // [num_rows, kv_dim]
+    device char       *dst        [[buffer(1)]],  // [num_rows, kv_dim]
+    device float      *scales     [[buffer(2)]],  // [num_rows]
+    constant uint     &num_rows   [[buffer(3)]],
+    constant uint     &kv_dim     [[buffer(4)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint row                      [[threadgroup_position_in_grid]]
+) {
+    if (row >= num_rows) return;
+
+    threadgroup float shared_max[256];
+    float local_max = 0.0f;
+    uint base = row * kv_dim;
+    for (uint dim = tid; dim < kv_dim; dim += tg_size) {
+        local_max = fmax(local_max, fabs(float(src[base + dim])));
+    }
+    shared_max[tid] = local_max;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint stride = tg_size / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            shared_max[tid] = fmax(shared_max[tid], shared_max[tid + stride]);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float scale = shared_max[0] > 0.0f ? shared_max[0] / 127.0f : 1.0f;
+    if (tid == 0) {
+        scales[row] = scale;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint dim = tid; dim < kv_dim; dim += tg_size) {
+        float q = round(float(src[base + dim]) / scale);
+        q = clamp(q, -127.0f, 127.0f);
+        dst[base + dim] = char(q);
+    }
+}
+
+kernel void experimental_kv_dequantize_int8_f16(
+    device const char  *src       [[buffer(0)]],  // [num_rows, kv_dim]
+    device const float *scales    [[buffer(1)]],  // [num_rows]
+    device half        *dst       [[buffer(2)]],  // [num_rows, kv_dim]
+    constant uint      &num_rows  [[buffer(3)]],
+    constant uint      &kv_dim    [[buffer(4)]],
+    uint gid                      [[thread_position_in_grid]]
+) {
+    uint total = num_rows * kv_dim;
+    if (gid >= total) return;
+    uint row = gid / kv_dim;
+    dst[gid] = half(float(src[gid]) * scales[row]);
+}
+
 // ============================================================================
 // Attention Decode (single Q token per sequence, paged KV)
 // ============================================================================
@@ -796,6 +854,8 @@ pub const KERNEL_NAMES: &[&str] = &[
     "split_qkv_f16",
     "rope_partial_f16",
     "kv_cache_write_f16",
+    "experimental_kv_quantize_int8_f16",
+    "experimental_kv_dequantize_int8_f16",
     "attention_decode_f16",
     "attention_decode_reduction_f16",
     "attention_prefill_f16",
@@ -808,11 +868,91 @@ pub const KERNEL_NAMES: &[&str] = &[
     "bf16_to_f16",
 ];
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExperimentalKvInt8Reference {
+    pub values: Vec<i8>,
+    pub scales: Vec<f32>,
+    pub kv_dim: usize,
+}
+
+/// CPU reference for experimental F16 KV-cache row compression.
+///
+/// This is intentionally separate from the production F16 cache path. It uses
+/// one symmetric int8 scale per cache row and leaves zero rows with scale 1.0.
+pub fn experimental_quantize_kv_f16_to_int8_reference(
+    src: &[half::f16],
+    kv_dim: usize,
+) -> ExperimentalKvInt8Reference {
+    assert!(kv_dim > 0, "kv_dim must be nonzero");
+    assert_eq!(src.len() % kv_dim, 0, "src must contain whole KV rows");
+
+    let rows = src.len() / kv_dim;
+    let mut values = vec![0_i8; src.len()];
+    let mut scales = vec![1.0_f32; rows];
+
+    for row in 0..rows {
+        let base = row * kv_dim;
+        let mut max_abs = 0.0_f32;
+        for dim in 0..kv_dim {
+            max_abs = max_abs.max(src[base + dim].to_f32().abs());
+        }
+        let scale = if max_abs > 0.0 { max_abs / 127.0 } else { 1.0 };
+        scales[row] = scale;
+        for dim in 0..kv_dim {
+            let q = (src[base + dim].to_f32() / scale)
+                .round()
+                .clamp(-127.0, 127.0);
+            values[base + dim] = q as i8;
+        }
+    }
+
+    ExperimentalKvInt8Reference {
+        values,
+        scales,
+        kv_dim,
+    }
+}
+
+/// CPU reference dequantization for experimental int8 KV rows.
+pub fn experimental_dequantize_kv_int8_to_f16_reference(
+    quantized: &ExperimentalKvInt8Reference,
+) -> Vec<half::f16> {
+    assert!(quantized.kv_dim > 0, "kv_dim must be nonzero");
+    assert_eq!(
+        quantized.values.len() % quantized.kv_dim,
+        0,
+        "values must contain whole KV rows"
+    );
+    assert_eq!(
+        quantized.values.len() / quantized.kv_dim,
+        quantized.scales.len(),
+        "scale count must match KV rows"
+    );
+
+    let mut out = Vec::with_capacity(quantized.values.len());
+    for row in 0..quantized.scales.len() {
+        let base = row * quantized.kv_dim;
+        let scale = quantized.scales[row];
+        for dim in 0..quantized.kv_dim {
+            out.push(half::f16::from_f32(
+                quantized.values[base + dim] as f32 * scale,
+            ));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    use crate::{arena::MetalBufferArena, context::MetalContext, pipeline::PipelineCache};
     use half::f16;
+    #[cfg(target_os = "macos")]
+    use objc2_metal::{
+        MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder, MTLSize,
+    };
 
     fn rmsnorm_ref(input: &[f32], gamma: &[f32], hidden: u32, eps: f32) -> Vec<f32> {
         let denom = (input
@@ -1231,6 +1371,246 @@ mod tests {
         ];
         let got = argmax_ref(&logits, 2, 3);
         assert_eq!(got, vec![2, 1]);
+    }
+
+    #[test]
+    fn experimental_kv_int8_cpu_reference_roundtrips_small_vectors() {
+        let src = [
+            -0.50, -0.25, 0.0, 0.125, 0.25, 0.50, 0.75, -0.75, 0.0, 0.0, 0.0, 0.0,
+        ]
+        .into_iter()
+        .map(f16::from_f32)
+        .collect::<Vec<_>>();
+        let quantized = experimental_quantize_kv_f16_to_int8_reference(&src, 4);
+        let got = experimental_dequantize_kv_int8_to_f16_reference(&quantized);
+
+        assert_eq!(quantized.scales.len(), 3);
+        assert_eq!(quantized.scales[2], 1.0);
+        for row in 0..quantized.scales.len() {
+            let tolerance = quantized.scales[row] * 0.55 + 0.001;
+            for dim in 0..quantized.kv_dim {
+                let idx = row * quantized.kv_dim + dim;
+                assert!(
+                    (got[idx].to_f32() - src[idx].to_f32()).abs() <= tolerance,
+                    "idx={idx} src={} got={} tolerance={tolerance}",
+                    src[idx].to_f32(),
+                    got[idx].to_f32(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn experimental_kv_int8_cpu_attention_decode_stays_close_to_f16_reference() {
+        const NUM_SEQS: u32 = 1;
+        const NUM_HEADS: u32 = 2;
+        const NUM_KV_HEADS: u32 = 1;
+        const HEAD_DIM: u32 = 4;
+        const BLOCK_SIZE: u32 = 4;
+        const MAX_BLOCKS: u32 = 1;
+        let scale = 1.0 / (HEAD_DIM as f32).sqrt();
+        let kv_dim = (NUM_KV_HEADS * HEAD_DIM) as usize;
+        let q = (0..(NUM_SEQS * NUM_HEADS * HEAD_DIM) as usize)
+            .map(|i| f16::from_f32((i as f32 - 3.0) * 0.04))
+            .collect::<Vec<_>>();
+        let k_cache = (0..(BLOCK_SIZE as usize * kv_dim))
+            .map(|i| f16::from_f32((i as f32 - 5.0) * 0.03))
+            .collect::<Vec<_>>();
+        let v_cache = (0..(BLOCK_SIZE as usize * kv_dim))
+            .map(|i| f16::from_f32((i as f32 + 1.0) * 0.02))
+            .collect::<Vec<_>>();
+        let block_tables = [0_i32];
+        let context_lens = [4_i32];
+
+        let f16_out = attention_decode_ref(
+            &q,
+            &k_cache,
+            &v_cache,
+            &block_tables,
+            &context_lens,
+            NUM_SEQS,
+            NUM_HEADS,
+            NUM_KV_HEADS,
+            HEAD_DIM,
+            BLOCK_SIZE,
+            MAX_BLOCKS,
+            scale,
+        );
+        let k_int8 = experimental_quantize_kv_f16_to_int8_reference(&k_cache, kv_dim);
+        let v_int8 = experimental_quantize_kv_f16_to_int8_reference(&v_cache, kv_dim);
+        let k_deq = experimental_dequantize_kv_int8_to_f16_reference(&k_int8);
+        let v_deq = experimental_dequantize_kv_int8_to_f16_reference(&v_int8);
+        let int8_out = attention_decode_ref(
+            &q,
+            &k_deq,
+            &v_deq,
+            &block_tables,
+            &context_lens,
+            NUM_SEQS,
+            NUM_HEADS,
+            NUM_KV_HEADS,
+            HEAD_DIM,
+            BLOCK_SIZE,
+            MAX_BLOCKS,
+            scale,
+        );
+
+        for (idx, (baseline, compressed)) in f16_out.iter().zip(int8_out.iter()).enumerate() {
+            assert!(
+                (baseline - compressed).abs() < 0.006,
+                "idx={idx} baseline={baseline} compressed={compressed}",
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device; experimental compressed KV path"]
+    fn experimental_kv_int8_metal_quantize_dequantize_smoke_matches_cpu_reference(
+    ) -> rvllm_core::Result<()> {
+        let mut ctx = MetalContext::new()?;
+        ctx.compile_library(crate::kernels::KERNEL_SOURCE)?;
+        let mut pipelines = PipelineCache::new();
+        pipelines.compile_all(&ctx)?;
+        let mut arena = MetalBufferArena::new(ctx.device(), 16 * 1024)?;
+
+        const NUM_ROWS: u32 = 3;
+        const KV_DIM: u32 = 8;
+        let src = (0..(NUM_ROWS * KV_DIM) as usize)
+            .map(|i| f16::from_f32((i as f32 - 7.0) * 0.03125))
+            .collect::<Vec<_>>();
+        let cpu_quant = experimental_quantize_kv_f16_to_int8_reference(&src, KV_DIM as usize);
+        let cpu_deq = experimental_dequantize_kv_int8_to_f16_reference(&cpu_quant);
+
+        let half_bytes = std::mem::size_of::<f16>();
+        let src_region = arena.region("experimental_kv_int8_src", src.len() * half_bytes, 2)?;
+        let q_region = arena.region("experimental_kv_int8_q", src.len(), 1)?;
+        let scales_region = arena.region(
+            "experimental_kv_int8_scales",
+            NUM_ROWS as usize * std::mem::size_of::<f32>(),
+            4,
+        )?;
+        let deq_region = arena.region("experimental_kv_int8_deq", src.len() * half_bytes, 2)?;
+
+        unsafe {
+            let src_ptr = arena.host_ptr(&src_region) as *mut f16;
+            for (idx, value) in src.iter().enumerate() {
+                *src_ptr.add(idx) = *value;
+            }
+        }
+
+        let queue = ctx.queue_retained();
+        let buf = arena.buffer_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "experimental_kv_int8_smoke",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+
+        let quant = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "experimental_kv_int8_quant_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        unsafe {
+            quant.setComputePipelineState(pipelines.get("experimental_kv_quantize_int8_f16")?);
+            quant.setBuffer_offset_atIndex(Some(buf), src_region.offset, 0);
+            quant.setBuffer_offset_atIndex(Some(buf), q_region.offset, 1);
+            quant.setBuffer_offset_atIndex(Some(buf), scales_region.offset, 2);
+            quant.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&NUM_ROWS as *const _ as *mut _),
+                4,
+                3,
+            );
+            quant.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&KV_DIM as *const _ as *mut _),
+                4,
+                4,
+            );
+            quant.dispatchThreadgroups_threadsPerThreadgroup(
+                MTLSize {
+                    width: NUM_ROWS as usize,
+                    height: 1,
+                    depth: 1,
+                },
+                MTLSize {
+                    width: 256,
+                    height: 1,
+                    depth: 1,
+                },
+            );
+            quant.endEncoding();
+        }
+
+        let dequant = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "experimental_kv_int8_dequant_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        unsafe {
+            dequant.setComputePipelineState(pipelines.get("experimental_kv_dequantize_int8_f16")?);
+            dequant.setBuffer_offset_atIndex(Some(buf), q_region.offset, 0);
+            dequant.setBuffer_offset_atIndex(Some(buf), scales_region.offset, 1);
+            dequant.setBuffer_offset_atIndex(Some(buf), deq_region.offset, 2);
+            dequant.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&NUM_ROWS as *const _ as *mut _),
+                4,
+                3,
+            );
+            dequant.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&KV_DIM as *const _ as *mut _),
+                4,
+                4,
+            );
+            dequant.dispatchThreads_threadsPerThreadgroup(
+                MTLSize {
+                    width: src.len(),
+                    height: 1,
+                    depth: 1,
+                },
+                MTLSize {
+                    width: 64,
+                    height: 1,
+                    depth: 1,
+                },
+            );
+            dequant.endEncoding();
+        }
+
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let got_q = unsafe {
+            std::slice::from_raw_parts(arena.host_ptr(&q_region) as *const i8, src.len())
+        };
+        let got_deq = unsafe {
+            std::slice::from_raw_parts(arena.host_ptr(&deq_region) as *const f16, src.len())
+        };
+        assert_eq!(got_q, cpu_quant.values.as_slice());
+        for (idx, (got, expected)) in got_deq.iter().zip(cpu_deq.iter()).enumerate() {
+            assert!(
+                (got.to_f32() - expected.to_f32()).abs() < 0.001,
+                "idx={idx} got={} expected={}",
+                got.to_f32(),
+                expected.to_f32(),
+            );
+        }
+        Ok(())
     }
 
     #[test]
