@@ -107,6 +107,8 @@ kernel void gemm_residual_f16(
     constant uint     &M          [[buffer(4)]],
     constant uint     &N          [[buffer(5)]],
     constant uint     &K          [[buffer(6)]],
+    device const half *layer_scale [[buffer(7)]],
+    constant uint     &layer_scale_dim [[buffer(8)]],
     uint2 gid                     [[threadgroup_position_in_grid]],
     uint2 tid                     [[thread_position_in_threadgroup]]
 ) {
@@ -120,7 +122,13 @@ kernel void gemm_residual_f16(
     }
 
     uint idx = row * N + col;
-    C[idx] = half(acc + float(residual[idx]));
+    float scale = 1.0f;
+    if (layer_scale_dim == 1) {
+        scale = float(layer_scale[0]);
+    } else if (layer_scale_dim == N) {
+        scale = float(layer_scale[col]);
+    }
+    C[idx] = half(acc * scale + float(residual[idx]));
 }
 
 // ============================================================================

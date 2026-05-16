@@ -69,6 +69,8 @@ pub struct MetalOneLayerState {
     pub post_attn_norm: Option<MetalRegion>,
     pub pre_ff_norm: Option<MetalRegion>,
     pub post_ff_norm: Option<MetalRegion>,
+    pub layer_scalar: Option<MetalRegion>,
+    pub layer_scalar_dim: u32,
     pub gate_up: MetalRegion,
     pub down_proj: MetalRegion,
 
@@ -126,6 +128,8 @@ struct ProbeLayerNames {
     post_attn_norm_name: Option<String>,
     pre_ff_norm_name: Option<String>,
     post_ff_norm_name: Option<String>,
+    layer_scalar_name: Option<String>,
+    layer_scalar_dim: usize,
     prefused_gate_up_name: String,
     gate_name: String,
     up_name: String,
@@ -335,6 +339,13 @@ impl ProbeModelPlan {
                     &tensors,
                     vec![format!("{lprefix}.post_feedforward_layernorm.weight")],
                 );
+                let layer_scalar_name = resolve_optional_tensor_alias(
+                    &tensors,
+                    vec![
+                        format!("{lprefix}.layer_scalar"),
+                        format!("{lprefix}.layer_scalar.weight"),
+                    ],
+                );
                 let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
 
                 let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
@@ -414,6 +425,12 @@ impl ProbeModelPlan {
                         names.push(norm_name.clone());
                     }
                 }
+                let layer_scalar_dim =
+                    validate_optional_layer_scalar_shape(&tensors, &layer_scalar_name, hidden)?;
+                if let Some(layer_scalar_name) = &layer_scalar_name {
+                    add_tensor_size(layer_scalar_name)?;
+                    names.push(layer_scalar_name.clone());
+                }
 
                 if use_prefused_gate_up {
                     add_tensor_size(&prefused_gate_up_name)?;
@@ -439,6 +456,8 @@ impl ProbeModelPlan {
                     post_attn_norm_name,
                     pre_ff_norm_name,
                     post_ff_norm_name,
+                    layer_scalar_name,
+                    layer_scalar_dim,
                     prefused_gate_up_name,
                     gate_name,
                     up_name,
@@ -646,6 +665,8 @@ impl Gemma4MetalState {
                 layer_names.post_ff_norm_name.as_deref(),
                 &layer_names.mlp_norm_name,
             )?;
+            let layer_scalar =
+                optional_region_lookup(&mut mapped_refs, layer_names.layer_scalar_name.as_deref())?;
 
             let qkv = if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
@@ -783,6 +804,8 @@ impl Gemma4MetalState {
                 post_attn_norm,
                 pre_ff_norm,
                 post_ff_norm,
+                layer_scalar,
+                layer_scalar_dim: layer_names.layer_scalar_dim as u32,
                 gate_up,
                 down_proj,
                 qkv_out,
@@ -899,6 +922,35 @@ fn validate_optional_norm_shape(
         ));
     }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn validate_optional_layer_scalar_shape(
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    name: &Option<String>,
+    hidden: usize,
+) -> Result<usize> {
+    let Some(name) = name else {
+        return Ok(0);
+    };
+    let info = tensors.get(name).ok_or_else(|| {
+        RvllmError::apple(
+            AppleError::InvalidWeightBlob {
+                reason: "missing layer_scalar tensor",
+            },
+            probe_ctx("prepare"),
+        )
+    })?;
+    if info.shape.len() == 1 && (info.shape[0] == 1 || info.shape[0] == hidden) {
+        Ok(info.shape[0])
+    } else {
+        Err(RvllmError::apple(
+            AppleError::InvalidWeightBlob {
+                reason: "layer_scalar shape mismatch",
+            },
+            probe_ctx("prepare"),
+        ))
+    }
 }
 
 #[cfg(target_os = "macos")]

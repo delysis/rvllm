@@ -46,6 +46,8 @@ pub struct MetalLayerWeights {
     pub post_attn_norm_offset: Option<usize>,
     pub pre_ff_norm_offset: Option<usize>,
     pub post_ff_norm_offset: Option<usize>,
+    pub layer_scalar_offset: Option<usize>,
+    pub layer_scalar_dim: u32,
     pub gate_up_offset: usize,
     pub down_proj_offset: usize,
 }
@@ -576,6 +578,8 @@ pub unsafe fn metal_forward_layer(
         num_tokens,
         hidden,
         q_dim,
+        weights.layer_scalar_offset,
+        weights.layer_scalar_dim,
     )?;
 
     // 9. Optional Gemma-style post-attention RMSNorm on the residual stream.
@@ -678,6 +682,8 @@ pub unsafe fn metal_forward_layer(
         num_tokens,
         hidden,
         dims.intermediate,
+        weights.layer_scalar_offset,
+        weights.layer_scalar_dim,
     )?;
 
     // 14. Optional Gemma-style post-FF RMSNorm on the residual stream.
@@ -1767,6 +1773,8 @@ unsafe fn encode_gemm_residual(
     m: u32,
     n: u32,
     k: u32,
+    layer_scalar_offset: Option<usize>,
+    layer_scalar_dim: u32,
 ) -> Result<()> {
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
@@ -1798,6 +1806,17 @@ unsafe fn encode_gemm_residual(
         std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _),
         4,
         6,
+    );
+    let layer_scalar_dim = if layer_scalar_offset.is_some() {
+        layer_scalar_dim
+    } else {
+        0
+    };
+    encoder.setBuffer_offset_atIndex(Some(buf), layer_scalar_offset.unwrap_or(residual_offset), 7);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&layer_scalar_dim as *const _ as *mut _),
+        4,
+        8,
     );
 
     let tile_m: usize = 8;
