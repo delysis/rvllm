@@ -139,6 +139,7 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
     }
 
     let tensors = scan_safetensor_tensor_metadata(model_dir)?;
+    validate_no_unsupported_moe_tensors(model_dir, &tensors)?;
     let weight_prefix = arch.weight_prefix.clone();
     let embed_tokens = join_weight_name(&weight_prefix, "embed_tokens.weight");
     let final_norm = join_weight_name(&weight_prefix, "norm.weight");
@@ -746,6 +747,31 @@ fn scan_safetensor_tensor_metadata(model_dir: &Path) -> Result<BTreeMap<String, 
     Ok(tensors)
 }
 
+fn validate_no_unsupported_moe_tensors(
+    model_dir: &Path,
+    tensors: &BTreeMap<String, DryRunTensorInfo>,
+) -> Result<()> {
+    for name in tensors.keys() {
+        if tensor_name_is_unsupported_moe(name) {
+            return Err(corrupt_error(
+                model_dir,
+                format!("Gemma4 dry-run supports dense Gemma4 only; unsupported MoE tensor {name}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn tensor_name_is_unsupported_moe(name: &str) -> bool {
+    name.contains(".experts.")
+        || name.contains(".expert.")
+        || name.contains(".router.")
+        || name.contains(".router_")
+        || name.contains(".block_sparse_moe.")
+        || name.contains("block_sparse_moe")
+        || name.contains(".moe.")
+}
+
 fn parse_safetensor_metadata_file(path: &Path) -> Result<Vec<(String, DryRunTensorInfo)>> {
     let mut file = File::open(path).map_err(|source| RvllmError::Io {
         err: rvllm_core::IoError::from(&source),
@@ -1015,6 +1041,7 @@ mod tests {
         q_proj1_shape: Option<&[usize]>,
         omit_q_norm0: bool,
         layer_scalar_suffix: Option<&str>,
+        extra_tensor_name: Option<&str>,
     ) -> PathBuf {
         let dir = test_fixture_dir("gemma4-dry-run-full-gemma-style");
         let hidden = 128usize;
@@ -1142,6 +1169,10 @@ mod tests {
             );
         }
 
+        if let Some(name) = extra_tensor_name {
+            add_zero_tensor(&mut header, &mut payload, name, &[1]);
+        }
+
         fs::write(
             dir.join("config.json"),
             format!(
@@ -1204,6 +1235,7 @@ mod tests {
             q_proj1_shape,
             omit_q_norm0,
             layer_scalar_suffix,
+            None,
         )
     }
 
@@ -1661,6 +1693,7 @@ mod tests {
             None,
             false,
             Some("layer_scalar"),
+            None,
         );
         let validation = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect("dry-run validates language_model.model fixture");
@@ -1839,6 +1872,38 @@ mod tests {
             assert!(msg.contains("Corrupt"));
             assert!(msg.contains("dense Gemma4 only"));
             assert!(msg.contains(field));
+
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_moe_tensor_metadata() {
+        for tensor_name in [
+            "model.language_model.layers.0.mlp.router.weight",
+            "model.language_model.layers.0.mlp.experts.0.gate_proj.weight",
+            "model.language_model.layers.0.block_sparse_moe.gate.weight",
+        ] {
+            let dir = write_dry_run_full_gemma_style_fixture_with_prefix(
+                "model.language_model",
+                false,
+                false,
+                false,
+                None,
+                None,
+                None,
+                false,
+                Some("layer_scalar"),
+                Some(tensor_name),
+            );
+            let err = Gemma4DryRunValidation::from_model_dir(&dir)
+                .expect_err("MoE tensor metadata must fail");
+            let msg = format!("{err}");
+
+            assert!(msg.contains("Corrupt"));
+            assert!(msg.contains("dense Gemma4 only"));
+            assert!(msg.contains("unsupported MoE tensor"));
+            assert!(msg.contains(tensor_name));
 
             let _ = fs::remove_dir_all(dir);
         }
