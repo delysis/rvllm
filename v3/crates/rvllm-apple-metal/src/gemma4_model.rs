@@ -6,7 +6,7 @@ use half::f16;
 #[cfg(target_os = "macos")]
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 #[cfg(target_os = "macos")]
-use rvllm_loader::load::ModelArch;
+use rvllm_loader::load::{LayerAttnType, ModelArch};
 
 #[cfg(target_os = "macos")]
 use crate::{
@@ -58,6 +58,7 @@ pub struct Gemma4MetalState {
 #[cfg(target_os = "macos")]
 pub struct MetalOneLayerState {
     pub layer_idx: usize,
+    pub dims: MetalProbeLayerDims,
 
     pub attn_norm: MetalRegion,
     pub qkv: MetalRegion,
@@ -98,6 +99,83 @@ pub struct MetalOneLayerState {
     pub num_blocks_total: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(target_os = "macos")]
+pub enum MetalProbeLayerAttentionKind {
+    Sliding,
+    Full,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg(target_os = "macos")]
+pub struct MetalProbeLayerDims {
+    pub attention_kind: MetalProbeLayerAttentionKind,
+    pub num_heads: usize,
+    pub num_kv_heads: usize,
+    pub head_dim: usize,
+    pub rope_dim: usize,
+    pub q_dim: usize,
+    pub kv_dim: usize,
+    pub qkv_rows: usize,
+    pub attn_scale: f32,
+}
+
+#[cfg(target_os = "macos")]
+impl MetalProbeLayerDims {
+    fn from_arch_layer(arch: &ModelArch, layer_idx: usize) -> Result<Self> {
+        let layer_type = arch
+            .layer_types
+            .get(layer_idx)
+            .copied()
+            .unwrap_or(LayerAttnType::Full);
+        let (attention_kind, head_dim, num_kv_heads) = match layer_type {
+            LayerAttnType::SlidingAttention => (
+                MetalProbeLayerAttentionKind::Sliding,
+                arch.head_dim,
+                arch.num_key_value_heads,
+            ),
+            LayerAttnType::Full => (
+                MetalProbeLayerAttentionKind::Full,
+                arch.global_head_dim.unwrap_or(arch.head_dim),
+                arch.num_global_key_value_heads
+                    .unwrap_or(arch.num_key_value_heads),
+            ),
+            LayerAttnType::Linear => {
+                return Err(RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "unsupported_probe_linear_attention_layer",
+                    },
+                    probe_ctx("prepare"),
+                ));
+            }
+        };
+        let num_heads = arch.num_attention_heads;
+        if num_heads != 1 || num_kv_heads != 1 || head_dim == 0 || head_dim % 2 != 0 {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "synthetic probe requires one query head, one kv head, and even nonzero head_dim",
+                },
+                probe_ctx("prepare"),
+            ));
+        }
+
+        let q_dim = num_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+        Ok(Self {
+            attention_kind,
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            rope_dim: head_dim,
+            q_dim,
+            kv_dim,
+            qkv_rows: q_dim + 2 * kv_dim,
+            attn_scale: 1.0 / (head_dim as f32).sqrt(),
+        })
+    }
+}
+
 #[cfg(target_os = "macos")]
 struct ProbeModelPlan {
     arch: ModelArch,
@@ -114,6 +192,7 @@ struct ProbeModelPlan {
 
 #[cfg(target_os = "macos")]
 struct ProbeLayerNames {
+    dims: MetalProbeLayerDims,
     attn_norm_name: String,
     o_proj_name: String,
     mlp_norm_name: String,
@@ -251,22 +330,7 @@ impl ProbeModelPlan {
         if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
             let intermediate = arch.intermediate_size;
-            let num_heads = arch.num_attention_heads;
-            let num_kv_heads = arch.num_key_value_heads;
-            let head_dim = arch.head_dim;
-            let q_dim = num_heads * head_dim;
-            let kv_dim = num_kv_heads * head_dim;
-            let qkv_rows = q_dim + 2 * kv_dim;
 
-            if num_heads != 1 || num_kv_heads != 1 || head_dim != hidden {
-                return Err(RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason:
-                            "one-layer probe requires one head, one kv head, head_dim == hidden",
-                    },
-                    probe_ctx("prepare"),
-                ));
-            }
             if intermediate == 0 {
                 return Err(RvllmError::apple(
                     AppleError::InvalidWeightBlob {
@@ -290,6 +354,10 @@ impl ProbeModelPlan {
             };
 
             for layer_idx in 0..arch.num_hidden_layers {
+                let dims = MetalProbeLayerDims::from_arch_layer(&arch, layer_idx)?;
+                let q_dim = dims.q_dim;
+                let kv_dim = dims.kv_dim;
+                let qkv_rows = dims.qkv_rows;
                 let lprefix = format!("{weight_prefix}.layers.{layer_idx}");
                 let attn_norm_name = resolve_tensor_alias(
                     &tensors,
@@ -353,6 +421,30 @@ impl ProbeModelPlan {
                 let up_name = format!("{lprefix}.mlp.up_proj.weight");
                 let use_prefused_gate_up = tensors.contains_key(&prefused_gate_up_name);
 
+                validate_tensor_shape(
+                    &tensors,
+                    &attn_norm_name,
+                    &[hidden],
+                    "attention norm weight shape mismatch",
+                )?;
+                validate_tensor_shape(
+                    &tensors,
+                    &o_proj_name,
+                    &[hidden, q_dim],
+                    "o_proj weight shape mismatch",
+                )?;
+                validate_tensor_shape(
+                    &tensors,
+                    &mlp_norm_name,
+                    &[hidden],
+                    "mlp norm weight shape mismatch",
+                )?;
+                validate_tensor_shape(
+                    &tensors,
+                    &down_proj_name,
+                    &[hidden, intermediate],
+                    "down_proj weight shape mismatch",
+                )?;
                 add_tensor_size(&attn_norm_name)?;
                 add_tensor_size(&o_proj_name)?;
                 add_tensor_size(&mlp_norm_name)?;
@@ -364,9 +456,33 @@ impl ProbeModelPlan {
                 names.push(down_proj_name.clone());
 
                 if use_prefused_qkv {
+                    validate_tensor_shape(
+                        &tensors,
+                        &prefused_qkv_name,
+                        &[qkv_rows, hidden],
+                        "qkv weight shape mismatch",
+                    )?;
                     add_tensor_size(&prefused_qkv_name)?;
                     names.push(prefused_qkv_name.clone());
                 } else {
+                    validate_tensor_shape(
+                        &tensors,
+                        &q_name,
+                        &[q_dim, hidden],
+                        "q_proj weight shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &k_name,
+                        &[kv_dim, hidden],
+                        "k_proj weight shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &v_name,
+                        &[kv_dim, hidden],
+                        "v_proj weight shape mismatch",
+                    )?;
                     add_tensor_size(&q_name)?;
                     add_tensor_size(&k_name)?;
                     add_tensor_size(&v_name)?;
@@ -433,15 +549,34 @@ impl ProbeModelPlan {
                 }
 
                 if use_prefused_gate_up {
+                    validate_tensor_shape(
+                        &tensors,
+                        &prefused_gate_up_name,
+                        &[2 * intermediate, hidden],
+                        "gate_up weight shape mismatch",
+                    )?;
                     add_tensor_size(&prefused_gate_up_name)?;
                     names.push(prefused_gate_up_name.clone());
                 } else {
+                    validate_tensor_shape(
+                        &tensors,
+                        &gate_name,
+                        &[intermediate, hidden],
+                        "gate_proj weight shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &up_name,
+                        &[intermediate, hidden],
+                        "up_proj weight shape mismatch",
+                    )?;
                     add_tensor_size(&gate_name)?;
                     add_tensor_size(&up_name)?;
                     fused_gate_up_bytes += 2 * intermediate * hidden * std::mem::size_of::<f16>();
                 }
 
                 layer_names.push(ProbeLayerNames {
+                    dims,
                     attn_norm_name,
                     o_proj_name,
                     mlp_norm_name,
@@ -499,42 +634,37 @@ impl ProbeModelPlan {
         if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
             let intermediate = arch.intermediate_size;
-            let num_heads = arch.num_attention_heads;
-            let num_kv_heads = arch.num_key_value_heads;
-            let head_dim = arch.head_dim;
-            let q_dim = num_heads * head_dim;
-            let kv_dim = num_kv_heads * head_dim;
-            let qkv_rows = q_dim + 2 * kv_dim;
+            for layer_names in &layer_names {
+                let dims = layer_names.dims;
+                let qkv_out_bytes = dims.qkv_rows * half_bytes;
+                let q_bytes = dims.q_dim * half_bytes;
+                let k_bytes = dims.kv_dim * half_bytes;
+                let v_bytes = dims.kv_dim * half_bytes;
+                let attn_out_bytes = dims.q_dim * half_bytes;
+                let gate_up_out_bytes = 2 * intermediate * half_bytes;
+                let activated_bytes = intermediate * half_bytes;
+                let mlp_out_bytes = hidden * half_bytes;
 
-            let qkv_out_bytes = qkv_rows * half_bytes;
-            let q_bytes = q_dim * half_bytes;
-            let k_bytes = kv_dim * half_bytes;
-            let v_bytes = kv_dim * half_bytes;
-            let attn_out_bytes = q_dim * half_bytes;
-            let gate_up_out_bytes = 2 * intermediate * half_bytes;
-            let activated_bytes = intermediate * half_bytes;
-            let mlp_out_bytes = hidden * half_bytes;
+                let block_size = 1usize;
+                let num_blocks_total = 1usize;
+                let kv_cache_bytes = num_blocks_total * block_size * dims.kv_dim * half_bytes * 2;
 
-            let block_size = 1usize;
-            let num_blocks_total = 1usize;
-            let kv_cache_bytes = num_blocks_total * block_size * kv_dim * half_bytes * 2;
+                let half_rope = dims.rope_dim / 2;
+                let max_pos = 16usize;
+                let rope_table_bytes = max_pos * half_rope * f32_bytes;
 
-            let half_rope = head_dim / 2;
-            let max_pos = 16usize;
-            let rope_table_bytes = max_pos * half_rope * f32_bytes;
-
-            let layer_scratch_bytes = qkv_out_bytes
-                + q_bytes
-                + k_bytes
-                + v_bytes
-                + attn_out_bytes
-                + gate_up_out_bytes
-                + activated_bytes
-                + mlp_out_bytes
-                + kv_cache_bytes
-                + rope_table_bytes * 2
-                + 64;
-            scratch_bytes = arch.num_hidden_layers * layer_scratch_bytes;
+                scratch_bytes += qkv_out_bytes
+                    + q_bytes
+                    + k_bytes
+                    + v_bytes
+                    + attn_out_bytes
+                    + gate_up_out_bytes
+                    + activated_bytes
+                    + mlp_out_bytes
+                    + kv_cache_bytes
+                    + rope_table_bytes * 2
+                    + 64;
+            }
         }
 
         let mut arena_bytes = embed_bytes
@@ -632,12 +762,10 @@ impl Gemma4MetalState {
             })?;
             let hidden = plan.arch.hidden_size;
             let intermediate = plan.arch.intermediate_size;
-            let num_heads = plan.arch.num_attention_heads;
-            let num_kv_heads = plan.arch.num_key_value_heads;
-            let head_dim = plan.arch.head_dim;
-            let q_dim = num_heads * head_dim;
-            let kv_dim = num_kv_heads * head_dim;
-            let qkv_rows = q_dim + 2 * kv_dim;
+            let dims = layer_names.dims;
+            let q_dim = dims.q_dim;
+            let kv_dim = dims.kv_dim;
+            let qkv_rows = dims.qkv_rows;
 
             let attn_norm = region_lookup(&mut mapped_refs, &layer_names.attn_norm_name)?;
             let o_proj = region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?;
@@ -772,7 +900,7 @@ impl Gemma4MetalState {
             let block_tables =
                 arena.region(&format!("metal_layer_{layer_idx}_block_tables"), 4, 4)?;
 
-            let half_rope = head_dim / 2;
+            let half_rope = dims.rope_dim / 2;
             let max_pos = 16usize;
             let cos = arena.region(
                 &format!("metal_layer_{layer_idx}_rope_cos"),
@@ -794,6 +922,7 @@ impl Gemma4MetalState {
 
             layers.push(MetalOneLayerState {
                 layer_idx,
+                dims,
                 attn_norm,
                 qkv,
                 q_norm,
@@ -895,6 +1024,30 @@ fn resolve_optional_tensor_alias(
     candidates
         .into_iter()
         .find(|name| tensors.contains_key(name))
+}
+
+#[cfg(target_os = "macos")]
+fn validate_tensor_shape(
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    name: &str,
+    expected: &[usize],
+    reason: &'static str,
+) -> Result<()> {
+    let info = tensors.get(name).ok_or_else(|| {
+        RvllmError::apple(
+            AppleError::InvalidWeightBlob {
+                reason: "missing layer weight",
+            },
+            probe_ctx("prepare"),
+        )
+    })?;
+    if info.shape.as_slice() != expected {
+        return Err(RvllmError::apple(
+            AppleError::InvalidWeightBlob { reason },
+            probe_ctx("prepare"),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1086,6 +1239,222 @@ fn write_f32_region(arena: &MetalBufferArena, region: &MetalRegion, values: &[f3
         ptr::copy_nonoverlapping(values.as_ptr(), dst, values.len());
     }
     Ok(())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use serde_json::{Map, Value};
+    use std::{
+        fs::{self, File},
+        io::Write,
+        path::PathBuf,
+    };
+
+    fn test_fixture_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "rvllm-metal-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("create fixture dir");
+        dir
+    }
+
+    fn f16_bytes(values: &[f32]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| f16::from_f32(*value).to_le_bytes())
+            .collect()
+    }
+
+    fn add_tensor(
+        header: &mut Map<String, Value>,
+        payload: &mut Vec<u8>,
+        name: &str,
+        data: &[f32],
+        shape: &[usize],
+    ) {
+        let start = payload.len();
+        payload.extend_from_slice(&f16_bytes(data));
+        let end = payload.len();
+        let mut meta = Map::new();
+        meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+        meta.insert(
+            "shape".to_owned(),
+            Value::Array(
+                shape
+                    .iter()
+                    .map(|n| Value::Number((*n as u64).into()))
+                    .collect(),
+            ),
+        );
+        meta.insert(
+            "data_offsets".to_owned(),
+            Value::Array(vec![
+                Value::Number((start as u64).into()),
+                Value::Number((end as u64).into()),
+            ]),
+        );
+        header.insert(name.to_string(), Value::Object(meta));
+    }
+
+    fn write_two_layer_sliding_global_plan_fixture() -> PathBuf {
+        let dir = test_fixture_dir("sliding-global-dims");
+        let hidden = 128usize;
+        let intermediate = 256usize;
+        let vocab = 8usize;
+        let sliding_head_dim = 128usize;
+        let global_head_dim = 256usize;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+        let zeros_embed = vec![0.0f32; vocab * hidden];
+        let ones_hidden = vec![1.0f32; hidden];
+        let zeros_lm_head = vec![0.0f32; vocab * hidden];
+        let zeros_gate_up = vec![0.0f32; 2 * intermediate * hidden];
+        let zeros_down = vec![0.0f32; hidden * intermediate];
+
+        add_tensor(
+            &mut header,
+            &mut payload,
+            "model.embed_tokens.weight",
+            &zeros_embed,
+            &[vocab, hidden],
+        );
+        add_tensor(
+            &mut header,
+            &mut payload,
+            "model.norm.weight",
+            &ones_hidden,
+            &[hidden],
+        );
+        add_tensor(
+            &mut header,
+            &mut payload,
+            "lm_head.weight",
+            &zeros_lm_head,
+            &[vocab, hidden],
+        );
+
+        for (layer_idx, head_dim) in [(0usize, sliding_head_dim), (1usize, global_head_dim)] {
+            let qkv_rows = 3 * head_dim;
+            let zeros_qkv = vec![0.0f32; qkv_rows * hidden];
+            let zeros_o = vec![0.0f32; hidden * head_dim];
+            add_tensor(
+                &mut header,
+                &mut payload,
+                &format!("model.layers.{layer_idx}.input_layernorm.weight"),
+                &ones_hidden,
+                &[hidden],
+            );
+            add_tensor(
+                &mut header,
+                &mut payload,
+                &format!("model.layers.{layer_idx}.self_attn.qkv.weight"),
+                &zeros_qkv,
+                &[qkv_rows, hidden],
+            );
+            add_tensor(
+                &mut header,
+                &mut payload,
+                &format!("model.layers.{layer_idx}.self_attn.o_proj.weight"),
+                &zeros_o,
+                &[hidden, head_dim],
+            );
+            add_tensor(
+                &mut header,
+                &mut payload,
+                &format!("model.layers.{layer_idx}.mlp_norm.weight"),
+                &ones_hidden,
+                &[hidden],
+            );
+            add_tensor(
+                &mut header,
+                &mut payload,
+                &format!("model.layers.{layer_idx}.mlp.gate_up.weight"),
+                &zeros_gate_up,
+                &[2 * intermediate, hidden],
+            );
+            add_tensor(
+                &mut header,
+                &mut payload,
+                &format!("model.layers.{layer_idx}.mlp.down_proj.weight"),
+                &zeros_down,
+                &[hidden, intermediate],
+            );
+        }
+
+        fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 2,
+    "hidden_size": {hidden},
+    "intermediate_size": {intermediate},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {sliding_head_dim},
+    "global_head_dim": {global_head_dim},
+    "num_global_key_value_heads": 1,
+    "layer_types": ["sliding_attention", "full_attention"],
+    "vocab_size": {vocab},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#
+            ),
+        )
+        .expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out = File::create(dir.join("model.safetensors")).expect("create safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[test]
+    fn probe_model_plan_selects_sliding_and_global_layer_dims() {
+        let dir = write_two_layer_sliding_global_plan_fixture();
+        let plan = ProbeModelPlan::new(&dir).expect("build probe model plan");
+
+        assert_eq!(plan.layer_names.len(), 2);
+        let sliding = plan.layer_names[0].dims;
+        assert_eq!(
+            sliding.attention_kind,
+            MetalProbeLayerAttentionKind::Sliding
+        );
+        assert_eq!(sliding.num_heads, 1);
+        assert_eq!(sliding.num_kv_heads, 1);
+        assert_eq!(sliding.head_dim, 128);
+        assert_eq!(sliding.rope_dim, 128);
+        assert_eq!(sliding.q_dim, 128);
+        assert_eq!(sliding.kv_dim, 128);
+        assert_eq!(sliding.qkv_rows, 384);
+
+        let full = plan.layer_names[1].dims;
+        assert_eq!(full.attention_kind, MetalProbeLayerAttentionKind::Full);
+        assert_eq!(full.num_heads, 1);
+        assert_eq!(full.num_kv_heads, 1);
+        assert_eq!(full.head_dim, 256);
+        assert_eq!(full.rope_dim, 256);
+        assert_eq!(full.q_dim, 256);
+        assert_eq!(full.kv_dim, 256);
+        assert_eq!(full.qkv_rows, 768);
+
+        let _ = fs::remove_dir_all(dir);
+    }
 }
 
 #[derive(Debug, Default, Clone)]

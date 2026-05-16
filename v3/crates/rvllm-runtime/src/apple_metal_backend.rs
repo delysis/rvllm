@@ -460,16 +460,16 @@ impl ModelMetalBackend {
             let dims = MetalLayerDims {
                 num_tokens: 1,
                 hidden: state.hidden_size as u32,
-                num_heads: 1,
-                num_kv_heads: 1,
-                head_dim: state.hidden_size as u32,
+                num_heads: one.dims.num_heads as u32,
+                num_kv_heads: one.dims.num_kv_heads as u32,
+                head_dim: one.dims.head_dim as u32,
                 intermediate: intermediate as u32,
                 block_size: one.block_size,
                 max_blocks_per_seq: one.max_blocks_per_seq,
                 num_blocks_total: one.num_blocks_total,
-                attn_scale: 1.0 / (state.hidden_size as f32).sqrt(),
+                attn_scale: one.dims.attn_scale,
                 rms_eps: state.rms_norm_eps,
-                rope_dim: state.hidden_size as u32,
+                rope_dim: one.dims.rope_dim as u32,
                 softcap: state.final_logit_softcap,
             };
 
@@ -1601,6 +1601,165 @@ mod tests {
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_two_layer_sliding_global_noop_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let intermediate = 256;
+        let vocab = 8;
+        let sliding_head_dim = 128;
+        let global_head_dim = 256;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[2 * hidden + 7] = 1.0;
+        lm_head[3 * hidden + 7] = 2.0;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        let ones = vec![1.0f32; hidden];
+        let zeros_gate_up = vec![0.0f32; 2 * intermediate * hidden];
+        let zeros_down = vec![0.0f32; hidden * intermediate];
+
+        for (layer_idx, head_dim) in [(0usize, sliding_head_dim), (1usize, global_head_dim)] {
+            let zeros_qkv = vec![0.0f32; 3 * head_dim * hidden];
+            let zeros_o = vec![0.0f32; hidden * head_dim];
+            add_tensor(
+                &format!("model.layers.{layer_idx}.input_layernorm.weight"),
+                &ones,
+                &[hidden],
+                &mut payload,
+                &mut header,
+            );
+            add_tensor(
+                &format!("model.layers.{layer_idx}.self_attn.qkv.weight"),
+                &zeros_qkv,
+                &[3 * head_dim, hidden],
+                &mut payload,
+                &mut header,
+            );
+            add_tensor(
+                &format!("model.layers.{layer_idx}.self_attn.o_proj.weight"),
+                &zeros_o,
+                &[hidden, head_dim],
+                &mut payload,
+                &mut header,
+            );
+            add_tensor(
+                &format!("model.layers.{layer_idx}.mlp_norm.weight"),
+                &ones,
+                &[hidden],
+                &mut payload,
+                &mut header,
+            );
+            add_tensor(
+                &format!("model.layers.{layer_idx}.mlp.gate_up.weight"),
+                &zeros_gate_up,
+                &[2 * intermediate, hidden],
+                &mut payload,
+                &mut header,
+            );
+            add_tensor(
+                &format!("model.layers.{layer_idx}.mlp.down_proj.weight"),
+                &zeros_down,
+                &[hidden, intermediate],
+                &mut payload,
+                &mut header,
+            );
+        }
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 2,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "global_head_dim": {},
+    "num_global_key_value_heads": 1,
+    "layer_types": ["sliding_attention", "full_attention"],
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, sliding_head_dim, global_head_dim, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_two_layer_noop_fixture() -> std::path::PathBuf {
         write_tiny_two_layer_fixture(false)
     }
@@ -1936,6 +2095,65 @@ mod tests {
         let mut engine = crate::engine::Engine::new()
             .with_apple_runtime_plan(plan)
             .expect("engine with tiny four-layer no-op model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_two_layer_sliding_global_model_backend_decodes_token_2_to_3() {
+        let dir = write_tiny_two_layer_sliding_global_noop_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = two_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare two-layer sliding/global tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_two_layer_sliding_global_prefill_then_decode_token_2_to_3() {
+        let dir = write_tiny_two_layer_sliding_global_noop_fixture();
+        let plan = two_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny two-layer sliding/global model plan");
 
         engine.scheduler.enqueue(crate::sched_state::Request::new(
             rvllm_core::ReqId(1),
