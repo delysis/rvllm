@@ -49,7 +49,7 @@ pub struct Gemma4MetalState {
     pub sampled: MetalRegion,
     pub token_ids: MetalRegion,
 
-    pub one_layer: Option<MetalOneLayerState>,
+    pub layers: Vec<MetalOneLayerState>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +105,7 @@ struct ProbeModelPlan {
 impl ProbeModelPlan {
     fn new(model_dir: &Path) -> Result<Self> {
         let arch = ModelArch::from_dir(model_dir)?;
-        if arch.num_hidden_layers > 1 {
+        if arch.num_hidden_layers > 2 {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
@@ -213,7 +213,7 @@ impl ProbeModelPlan {
         let mut fused_qkv_bytes = 0;
         let mut fused_gate_up_bytes = 0;
 
-        if arch.num_hidden_layers == 1 {
+        if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
             let intermediate = arch.intermediate_size;
             let num_heads = arch.num_attention_heads;
@@ -241,23 +241,6 @@ impl ProbeModelPlan {
                 ));
             }
 
-            let lprefix = format!("{weight_prefix}.layers.0");
-            let attn_norm_name = format!("{lprefix}.input_layernorm.weight");
-            let o_proj_name = format!("{lprefix}.self_attn.o_proj.weight");
-            let mlp_norm_name = format!("{lprefix}.mlp_norm.weight");
-            let down_proj_name = format!("{lprefix}.mlp.down_proj.weight");
-
-            let prefused_qkv_name = format!("{lprefix}.self_attn.qkv.weight");
-            let q_name = format!("{lprefix}.self_attn.q_proj.weight");
-            let k_name = format!("{lprefix}.self_attn.k_proj.weight");
-            let v_name = format!("{lprefix}.self_attn.v_proj.weight");
-            let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
-
-            let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
-            let gate_name = format!("{lprefix}.mlp.gate_proj.weight");
-            let up_name = format!("{lprefix}.mlp.up_proj.weight");
-            let use_prefused_gate_up = tensors.contains_key(&prefused_gate_up_name);
-
             let mut add_tensor_size = |name: &str| -> Result<()> {
                 let info = tensors.get(name).ok_or_else(|| {
                     RvllmError::apple(
@@ -271,33 +254,52 @@ impl ProbeModelPlan {
                 Ok(())
             };
 
-            add_tensor_size(&attn_norm_name)?;
-            add_tensor_size(&o_proj_name)?;
-            add_tensor_size(&mlp_norm_name)?;
-            add_tensor_size(&down_proj_name)?;
+            for layer_idx in 0..arch.num_hidden_layers {
+                let lprefix = format!("{weight_prefix}.layers.{layer_idx}");
+                let attn_norm_name = format!("{lprefix}.input_layernorm.weight");
+                let o_proj_name = format!("{lprefix}.self_attn.o_proj.weight");
+                let mlp_norm_name = format!("{lprefix}.mlp_norm.weight");
+                let down_proj_name = format!("{lprefix}.mlp.down_proj.weight");
 
-            names.push(attn_norm_name);
-            names.push(o_proj_name);
-            names.push(mlp_norm_name);
-            names.push(down_proj_name);
+                let prefused_qkv_name = format!("{lprefix}.self_attn.qkv.weight");
+                let q_name = format!("{lprefix}.self_attn.q_proj.weight");
+                let k_name = format!("{lprefix}.self_attn.k_proj.weight");
+                let v_name = format!("{lprefix}.self_attn.v_proj.weight");
+                let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
 
-            if use_prefused_qkv {
-                add_tensor_size(&prefused_qkv_name)?;
-                names.push(prefused_qkv_name);
-            } else {
-                add_tensor_size(&q_name)?;
-                add_tensor_size(&k_name)?;
-                add_tensor_size(&v_name)?;
-                fused_qkv_bytes = qkv_rows * hidden * std::mem::size_of::<f16>();
-            }
+                let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
+                let gate_name = format!("{lprefix}.mlp.gate_proj.weight");
+                let up_name = format!("{lprefix}.mlp.up_proj.weight");
+                let use_prefused_gate_up = tensors.contains_key(&prefused_gate_up_name);
 
-            if use_prefused_gate_up {
-                add_tensor_size(&prefused_gate_up_name)?;
-                names.push(prefused_gate_up_name);
-            } else {
-                add_tensor_size(&gate_name)?;
-                add_tensor_size(&up_name)?;
-                fused_gate_up_bytes = 2 * intermediate * hidden * std::mem::size_of::<f16>();
+                add_tensor_size(&attn_norm_name)?;
+                add_tensor_size(&o_proj_name)?;
+                add_tensor_size(&mlp_norm_name)?;
+                add_tensor_size(&down_proj_name)?;
+
+                names.push(attn_norm_name);
+                names.push(o_proj_name);
+                names.push(mlp_norm_name);
+                names.push(down_proj_name);
+
+                if use_prefused_qkv {
+                    add_tensor_size(&prefused_qkv_name)?;
+                    names.push(prefused_qkv_name);
+                } else {
+                    add_tensor_size(&q_name)?;
+                    add_tensor_size(&k_name)?;
+                    add_tensor_size(&v_name)?;
+                    fused_qkv_bytes += qkv_rows * hidden * std::mem::size_of::<f16>();
+                }
+
+                if use_prefused_gate_up {
+                    add_tensor_size(&prefused_gate_up_name)?;
+                    names.push(prefused_gate_up_name);
+                } else {
+                    add_tensor_size(&gate_name)?;
+                    add_tensor_size(&up_name)?;
+                    fused_gate_up_bytes += 2 * intermediate * hidden * std::mem::size_of::<f16>();
+                }
             }
         }
 
@@ -332,7 +334,7 @@ impl ProbeModelPlan {
         let token_ids_bytes = 4;
 
         let mut scratch_bytes = 0;
-        if arch.num_hidden_layers == 1 {
+        if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
             let intermediate = arch.intermediate_size;
             let num_heads = arch.num_attention_heads;
@@ -359,7 +361,7 @@ impl ProbeModelPlan {
             let max_pos = 16usize;
             let rope_table_bytes = max_pos * half_rope * f32_bytes;
 
-            scratch_bytes = qkv_out_bytes
+            let layer_scratch_bytes = qkv_out_bytes
                 + q_bytes
                 + k_bytes
                 + v_bytes
@@ -370,6 +372,7 @@ impl ProbeModelPlan {
                 + kv_cache_bytes
                 + rope_table_bytes * 2
                 + 64;
+            scratch_bytes = arch.num_hidden_layers * layer_scratch_bytes;
         }
 
         let mut arena_bytes = embed_bytes
@@ -454,8 +457,8 @@ impl Gemma4MetalState {
         let sampled_bytes = std::mem::size_of::<i32>();
         let token_ids_bytes = 4;
 
-        let mut one_layer = None;
-        if plan.arch.num_hidden_layers == 1 {
+        let mut layers = Vec::new();
+        for layer_idx in 0..plan.arch.num_hidden_layers {
             let hidden = plan.arch.hidden_size;
             let intermediate = plan.arch.intermediate_size;
             let num_heads = plan.arch.num_attention_heads;
@@ -465,7 +468,7 @@ impl Gemma4MetalState {
             let kv_dim = num_kv_heads * head_dim;
             let qkv_rows = q_dim + 2 * kv_dim;
 
-            let lprefix = format!("{}.layers.0", plan.weight_prefix);
+            let lprefix = format!("{}.layers.{layer_idx}", plan.weight_prefix);
             let attn_norm = region_lookup(
                 &mut mapped_refs,
                 &format!("{lprefix}.input_layernorm.weight"),
@@ -497,7 +500,7 @@ impl Gemma4MetalState {
                     ],
                     "fuse_qkv",
                 )?;
-                map_fused_bytes_to_arena(arena, "metal_fused_qkv", &bytes)?
+                map_fused_bytes_to_arena(arena, &format!("metal_fused_qkv_{layer_idx}"), &bytes)?
             };
 
             let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
@@ -514,42 +517,88 @@ impl Gemma4MetalState {
                     &[vec![intermediate, hidden], vec![intermediate, hidden]],
                     "fuse_gate_up",
                 )?;
-                map_fused_bytes_to_arena(arena, "metal_fused_gate_up", &bytes)?
+                map_fused_bytes_to_arena(
+                    arena,
+                    &format!("metal_fused_gate_up_{layer_idx}"),
+                    &bytes,
+                )?
             };
 
-            let qkv_out = arena.region("metal_qkv_out", qkv_rows * half_bytes, 16)?;
-            let q = arena.region("metal_q", q_dim * half_bytes, 16)?;
-            let k = arena.region("metal_k", kv_dim * half_bytes, 16)?;
-            let v = arena.region("metal_v", kv_dim * half_bytes, 16)?;
-            let attn_out = arena.region("metal_attn_out", q_dim * half_bytes, 16)?;
-            let gate_up_out =
-                arena.region("metal_gate_up_out", 2 * intermediate * half_bytes, 16)?;
-            let activated = arena.region("metal_activated", intermediate * half_bytes, 16)?;
-            let mlp_out = arena.region("metal_mlp_out", hidden * half_bytes, 16)?;
+            let qkv_out = arena.region(
+                &format!("metal_layer_{layer_idx}_qkv_out"),
+                qkv_rows * half_bytes,
+                16,
+            )?;
+            let q = arena.region(
+                &format!("metal_layer_{layer_idx}_q"),
+                q_dim * half_bytes,
+                16,
+            )?;
+            let k = arena.region(
+                &format!("metal_layer_{layer_idx}_k"),
+                kv_dim * half_bytes,
+                16,
+            )?;
+            let v = arena.region(
+                &format!("metal_layer_{layer_idx}_v"),
+                kv_dim * half_bytes,
+                16,
+            )?;
+            let attn_out = arena.region(
+                &format!("metal_layer_{layer_idx}_attn_out"),
+                q_dim * half_bytes,
+                16,
+            )?;
+            let gate_up_out = arena.region(
+                &format!("metal_layer_{layer_idx}_gate_up_out"),
+                2 * intermediate * half_bytes,
+                16,
+            )?;
+            let activated = arena.region(
+                &format!("metal_layer_{layer_idx}_activated"),
+                intermediate * half_bytes,
+                16,
+            )?;
+            let mlp_out = arena.region(
+                &format!("metal_layer_{layer_idx}_mlp_out"),
+                hidden * half_bytes,
+                16,
+            )?;
 
             let block_size = 1u32;
             let num_blocks_total = 1u32;
             let max_blocks_per_seq = 1u32;
             let kv_cache_k = arena.region(
-                "metal_kv_cache_k",
+                &format!("metal_layer_{layer_idx}_kv_cache_k"),
                 (num_blocks_total as usize) * (block_size as usize) * kv_dim * half_bytes,
                 16,
             )?;
             let kv_cache_v = arena.region(
-                "metal_kv_cache_v",
+                &format!("metal_layer_{layer_idx}_kv_cache_v"),
                 (num_blocks_total as usize) * (block_size as usize) * kv_dim * half_bytes,
                 16,
             )?;
 
-            let positions = arena.region("metal_meta_positions", 4, 4)?;
-            let slot_mapping = arena.region("metal_meta_slot_mapping", 4, 4)?;
-            let context_lens = arena.region("metal_meta_context_lens", 4, 4)?;
-            let block_tables = arena.region("metal_meta_block_tables", 4, 4)?;
+            let positions = arena.region(&format!("metal_layer_{layer_idx}_positions"), 4, 4)?;
+            let slot_mapping =
+                arena.region(&format!("metal_layer_{layer_idx}_slot_mapping"), 4, 4)?;
+            let context_lens =
+                arena.region(&format!("metal_layer_{layer_idx}_context_lens"), 4, 4)?;
+            let block_tables =
+                arena.region(&format!("metal_layer_{layer_idx}_block_tables"), 4, 4)?;
 
             let half_rope = head_dim / 2;
             let max_pos = 16usize;
-            let cos = arena.region("metal_rope_cos", max_pos * half_rope * f32_bytes, 16)?;
-            let sin = arena.region("metal_rope_sin", max_pos * half_rope * f32_bytes, 16)?;
+            let cos = arena.region(
+                &format!("metal_layer_{layer_idx}_rope_cos"),
+                max_pos * half_rope * f32_bytes,
+                16,
+            )?;
+            let sin = arena.region(
+                &format!("metal_layer_{layer_idx}_rope_sin"),
+                max_pos * half_rope * f32_bytes,
+                16,
+            )?;
 
             write_i32_region(arena, &positions, &[0])?;
             write_i32_region(arena, &slot_mapping, &[0])?;
@@ -558,8 +607,8 @@ impl Gemma4MetalState {
             write_f32_region(arena, &cos, &vec![1.0; max_pos * half_rope])?;
             write_f32_region(arena, &sin, &vec![0.0; max_pos * half_rope])?;
 
-            one_layer = Some(MetalOneLayerState {
-                layer_idx: 0,
+            layers.push(MetalOneLayerState {
+                layer_idx,
                 attn_norm,
                 qkv,
                 o_proj,
@@ -621,7 +670,7 @@ impl Gemma4MetalState {
             normed_hidden,
             sampled,
             token_ids,
-            one_layer,
+            layers,
         })
     }
 }
