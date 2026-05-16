@@ -167,4 +167,80 @@ mod tests {
             other => panic!("expected Decode, got {other:?}"),
         }
     }
+
+    #[test]
+    fn decode_plan_advances_last_token_position_and_context_len_after_commit() {
+        let mut s = Scheduler::new();
+        s.enqueue(Request::new(
+            ReqId(1),
+            vec![TokenId(0), TokenId(1), TokenId(2)],
+            3,
+        ));
+
+        match s.schedule() {
+            BatchPlan::Prefill {
+                req_ids,
+                prompt_tokens_flat,
+                cu_seqlens_q,
+            } => {
+                assert_eq!(req_ids, vec![ReqId(1)]);
+                assert_eq!(prompt_tokens_flat, vec![TokenId(0), TokenId(1), TokenId(2)]);
+                assert_eq!(cu_seqlens_q, vec![0, 3]);
+            }
+            other => panic!("expected Prefill, got {other:?}"),
+        }
+
+        match s.schedule() {
+            BatchPlan::Decode {
+                req_ids,
+                last_tokens,
+                positions,
+                context_lens,
+                ..
+            } => {
+                assert_eq!(req_ids, vec![ReqId(1)]);
+                assert_eq!(last_tokens, vec![TokenId(2)]);
+                assert_eq!(positions, vec![2]);
+                assert_eq!(context_lens, vec![3]);
+            }
+            other => panic!("expected Decode, got {other:?}"),
+        }
+
+        s.commit_decode(&[(ReqId(1), TokenId(3))]);
+        match s.schedule() {
+            BatchPlan::Decode {
+                req_ids,
+                last_tokens,
+                positions,
+                context_lens,
+                ..
+            } => {
+                assert_eq!(req_ids, vec![ReqId(1)]);
+                assert_eq!(last_tokens, vec![TokenId(3)]);
+                assert_eq!(positions, vec![3]);
+                assert_eq!(context_lens, vec![4]);
+            }
+            other => panic!("expected Decode, got {other:?}"),
+        }
+
+        s.commit_decode(&[(ReqId(1), TokenId(4))]);
+        match s.schedule() {
+            BatchPlan::Decode {
+                req_ids,
+                last_tokens,
+                positions,
+                context_lens,
+                ..
+            } => {
+                assert_eq!(req_ids, vec![ReqId(1)]);
+                assert_eq!(last_tokens, vec![TokenId(4)]);
+                assert_eq!(positions, vec![4]);
+                assert_eq!(context_lens, vec![5]);
+            }
+            other => panic!("expected Decode, got {other:?}"),
+        }
+
+        s.commit_decode(&[(ReqId(1), TokenId(5))]);
+        assert!(matches!(s.schedule(), BatchPlan::Idle));
+    }
 }

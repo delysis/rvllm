@@ -2799,6 +2799,114 @@ mod tests {
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_zero_layer_decode_loop_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let vocab = 8;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 2] = 10.0;
+        embedding[3 * hidden + 3] = 10.0;
+        embedding[4 * hidden + 4] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[3 * hidden + 2] = 2.0;
+        lm_head[4 * hidden + 3] = 2.0;
+        lm_head[5 * hidden + 4] = 2.0;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let add_tensor = |name: &str,
+                          data: &[f32],
+                          shape: &[usize],
+                          payload: &mut Vec<u8>,
+                          header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 0,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden,
+            hidden * 2,
+            hidden,
+            vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_one_layer_attention_nonzero_fixture() -> std::path::PathBuf {
         let dir = temp_fixture_dir();
         let hidden = 128;
@@ -3018,6 +3126,39 @@ mod tests {
             }
         }
         best_idx
+    }
+
+    fn cpu_reference_zero_layer_decode_loop_sequence() -> Vec<usize> {
+        let hidden = 128usize;
+        let vocab = 8usize;
+        let eps = 0.000001f32;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 2] = 10.0;
+        embedding[3 * hidden + 3] = 10.0;
+        embedding[4 * hidden + 4] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[3 * hidden + 2] = 2.0;
+        lm_head[4 * hidden + 3] = 2.0;
+        lm_head[5 * hidden + 4] = 2.0;
+
+        let mut current = 2usize;
+        let mut out = Vec::new();
+        for _ in 0..3 {
+            let mut residual = embedding[current * hidden..(current + 1) * hidden].to_vec();
+            let embed_scale = (hidden as f32).sqrt();
+            for value in &mut residual {
+                *value *= embed_scale;
+            }
+
+            let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
+            let logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
+            current = cpu_full_nonzero_argmax(&logits);
+            out.push(current);
+        }
+        out
     }
 
     fn cpu_reference_one_layer_full_nonzero_argmax() -> usize {
@@ -5159,6 +5300,113 @@ mod tests {
         let out = backend.collect(ticket).expect("collect");
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].token_id, expected);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cpu_reference_zero_layer_decode_loop_sequence_is_3_4_5() {
+        assert_eq!(
+            cpu_reference_zero_layer_decode_loop_sequence(),
+            vec![3, 4, 5]
+        );
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_zero_layer_decode_loop_model_backend_generates_3_4_5() {
+        let expected = cpu_reference_zero_layer_decode_loop_sequence()
+            .into_iter()
+            .map(|token| rvllm_core::TokenId(token as u32))
+            .collect::<Vec<_>>();
+        let dir = write_tiny_zero_layer_decode_loop_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = zero_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare zero-layer decode-loop tiny model");
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![
+                rvllm_core::TokenId(0),
+                rvllm_core::TokenId(1),
+                rvllm_core::TokenId(2),
+            ],
+            vec![0, 3],
+            vec![2],
+            vec![3],
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill).expect("run prefill");
+        let prefill_out = backend.collect(prefill_ticket).expect("collect prefill");
+        assert!(prefill_out.is_empty());
+
+        let mut current = rvllm_core::TokenId(2);
+        let mut generated = Vec::new();
+        for (position, context_len) in [(2, 3), (3, 4), (4, 5)] {
+            let decode = rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                vec![rvllm_core::ReqId(1)],
+                vec![current],
+                vec![0, 1],
+                vec![position],
+                vec![context_len],
+            );
+            let ticket = backend.launch_rollout(&decode, None).expect("run rollout");
+            let out = backend.collect(ticket).expect("collect rollout");
+            assert_eq!(out.len(), 1);
+            current = out[0].token_id;
+            generated.push(current);
+        }
+
+        assert_eq!(generated, expected);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_zero_layer_decode_loop_generates_3_4_5() {
+        let expected = cpu_reference_zero_layer_decode_loop_sequence()
+            .into_iter()
+            .map(|token| rvllm_core::TokenId(token as u32))
+            .collect::<Vec<_>>();
+        let dir = write_tiny_zero_layer_decode_loop_fixture();
+        let plan = zero_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with zero-layer decode-loop tiny model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![
+                rvllm_core::TokenId(0),
+                rvllm_core::TokenId(1),
+                rvllm_core::TokenId(2),
+            ],
+            3,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let mut generated = Vec::new();
+        for expected_token in &expected {
+            let step = engine.step_launch().expect("launch decode");
+            let out = step.collect().expect("collect decode");
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].req_id, rvllm_core::ReqId(1));
+            assert_eq!(&out[0].new_token, expected_token);
+            generated.push(out[0].new_token);
+        }
+
+        assert_eq!(generated, expected);
+        assert!(!engine.has_pending_work());
 
         let _ = fs::remove_dir_all(dir);
     }
