@@ -5,7 +5,7 @@
 //! via the bf16_to_f16 Metal kernel.
 
 use std::collections::{BTreeMap, HashSet};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::arena::{MetalBufferArena, MetalRegion};
@@ -160,12 +160,21 @@ fn dtype_bytes(dtype: DType) -> usize {
 }
 
 fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
-    let bytes = std::fs::read(path).map_err(|source| RvllmError::Io {
+    let mut file = std::fs::File::open(path).map_err(|source| RvllmError::Io {
         err: rvllm_core::IoError::from(&source),
         path: path.to_path_buf(),
         source,
     })?;
-    if bytes.len() < 8 {
+    let file_len = file
+        .metadata()
+        .map_err(|source| RvllmError::Io {
+            err: rvllm_core::IoError::from(&source),
+            path: path.to_path_buf(),
+            source,
+        })?
+        .len() as usize;
+    let mut header_len = [0u8; 8];
+    if file.read_exact(&mut header_len).is_err() {
         return Err(RvllmError::apple(
             AppleError::InvalidWeightBlob {
                 reason: "safetensor file shorter than 8-byte prefix",
@@ -173,9 +182,9 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
             ctx("parse_safetensor_file"),
         ));
     }
-    let header_bytes = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+    let header_bytes = u64::from_le_bytes(header_len) as usize;
     let payload_start = 8usize + header_bytes;
-    if payload_start > bytes.len() {
+    if payload_start > file_len {
         return Err(RvllmError::apple(
             AppleError::InvalidWeightBlob {
                 reason: "safetensor header length exceeds file size",
@@ -183,7 +192,14 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
             ctx("parse_safetensor_file"),
         ));
     }
-    let header_json = match std::str::from_utf8(&bytes[8..8 + header_bytes]) {
+    let mut header_buf = vec![0u8; header_bytes];
+    file.read_exact(&mut header_buf)
+        .map_err(|source| RvllmError::Io {
+            err: rvllm_core::IoError::from(&source),
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let header_json = match std::str::from_utf8(&header_buf) {
         Ok(s) => s,
         Err(_) => {
             return Err(RvllmError::apple(
@@ -305,7 +321,7 @@ fn parse_safetensor_file(path: &Path) -> Result<Vec<SafetensorTensorInfo>> {
             ));
         }
         let offset = 8 + header_bytes + start;
-        if offset.checked_add(nbytes).map_or(true, |v| v > bytes.len()) {
+        if offset.checked_add(nbytes).map_or(true, |v| v > file_len) {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
                     reason: "safetensor tensor offset out of file bounds",
