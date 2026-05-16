@@ -31,11 +31,59 @@ pub struct Gemma4DryRunValidation {
     pub hidden_size: usize,
     pub vocab_size: usize,
     pub tie_word_embeddings: bool,
+    pub attention_sliding_layers: usize,
+    pub attention_full_layers: usize,
+    pub v_uses_k_proj_layers: usize,
     pub embed_tokens: String,
     pub final_norm: String,
     pub lm_head: Option<String>,
+    pub lm_head_status: Gemma4DryRunLmHeadStatus,
     pub final_logit_softcap: Option<f32>,
+    pub fp8_scale_summary: Gemma4DryRunFp8ScaleSummary,
     pub layers: Vec<Gemma4DryRunLayerValidation>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gemma4DryRunLmHeadStatus {
+    ExplicitPrefixed,
+    ExplicitTopLevelAlias,
+    TiedEmbeddings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gemma4DryRunFp8ScaleMode {
+    None,
+    Bf16PerChannel,
+    Bf16Blockscale,
+    MixedValid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gemma4DryRunFp8ScaleSummary {
+    pub mode: Gemma4DryRunFp8ScaleMode,
+    pub scaled_weights: usize,
+    pub fp8_lm_head: bool,
+}
+
+impl Gemma4DryRunLmHeadStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExplicitPrefixed => "explicit_prefixed",
+            Self::ExplicitTopLevelAlias => "explicit_top_level_alias",
+            Self::TiedEmbeddings => "tied_embeddings",
+        }
+    }
+}
+
+impl Gemma4DryRunFp8ScaleMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Bf16PerChannel => "bf16_per_channel",
+            Self::Bf16Blockscale => "bf16_blockscale",
+            Self::MixedValid => "mixed_valid",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,6 +154,14 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
         &tensors,
         vec![prefixed_lm_head.clone(), "lm_head.weight".to_owned()],
     );
+    let lm_head_status = match lm_head.as_deref() {
+        Some(name) if name == prefixed_lm_head.as_str() => {
+            Gemma4DryRunLmHeadStatus::ExplicitPrefixed
+        }
+        Some("lm_head.weight") => Gemma4DryRunLmHeadStatus::ExplicitTopLevelAlias,
+        Some(_) => Gemma4DryRunLmHeadStatus::ExplicitPrefixed,
+        None => Gemma4DryRunLmHeadStatus::TiedEmbeddings,
+    };
     if let Some(name) = &lm_head {
         validate_required_shape(
             model_dir,
@@ -123,7 +179,17 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
             validate_gemma4_dry_run_layer(model_dir, &arch, &tensors, &weight_prefix, layer_idx)?;
         layers.push(layer);
     }
-    validate_gemma4_dry_run_fp8_scales(model_dir, &tensors, lm_head.as_deref(), &layers)?;
+    let attention_sliding_layers = layers
+        .iter()
+        .filter(|layer| layer.attention_kind == Gemma4DryRunAttentionKind::Sliding)
+        .count();
+    let attention_full_layers = layers
+        .iter()
+        .filter(|layer| layer.attention_kind == Gemma4DryRunAttentionKind::Full)
+        .count();
+    let v_uses_k_proj_layers = layers.iter().filter(|layer| layer.v_uses_k_proj).count();
+    let fp8_scale_summary =
+        validate_gemma4_dry_run_fp8_scales(model_dir, &tensors, lm_head.as_deref(), &layers)?;
 
     Ok(Gemma4DryRunValidation {
         weight_prefix,
@@ -131,10 +197,15 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
         hidden_size: arch.hidden_size,
         vocab_size: arch.vocab_size,
         tie_word_embeddings,
+        attention_sliding_layers,
+        attention_full_layers,
+        v_uses_k_proj_layers,
         embed_tokens,
         final_norm,
         lm_head,
+        lm_head_status,
         final_logit_softcap: arch.final_logit_softcapping,
+        fp8_scale_summary,
         layers,
     })
 }
@@ -345,7 +416,7 @@ fn validate_gemma4_dry_run_fp8_scales(
     tensors: &BTreeMap<String, DryRunTensorInfo>,
     lm_head: Option<&str>,
     layers: &[Gemma4DryRunLayerValidation],
-) -> Result<()> {
+) -> Result<Gemma4DryRunFp8ScaleSummary> {
     let fp8_prequant = layers
         .first()
         .and_then(|layer| tensors.get(&layer.q_proj))
@@ -392,28 +463,37 @@ fn validate_gemma4_dry_run_fp8_scales(
             ));
         }
         if info.dtype == DType::Fp8E4M3 {
-            validate_gemma4_dry_run_fp8_scale(model_dir, tensors, name, info.shape[0])?;
+            validate_gemma4_dry_run_fp8_scale(model_dir, tensors, name, &info.shape)?;
         }
     }
 
+    let mut fp8_lm_head = false;
     if let Some(name) = lm_head {
         let info = tensors
             .get(name)
             .ok_or_else(|| missing_tensor_error(model_dir, name))?;
         if info.dtype == DType::Fp8E4M3 {
-            validate_gemma4_dry_run_fp8_scale(model_dir, tensors, name, info.shape[0])?;
+            fp8_lm_head = true;
+            validate_gemma4_dry_run_fp8_scale(model_dir, tensors, name, &info.shape)?;
         }
     }
 
-    Ok(())
+    Ok(summarize_gemma4_dry_run_fp8_scales(
+        tensors,
+        &layer_linears,
+        lm_head,
+        fp8_lm_head,
+    ))
 }
 
 fn validate_gemma4_dry_run_fp8_scale(
     model_dir: &Path,
     tensors: &BTreeMap<String, DryRunTensorInfo>,
     weight_name: &str,
-    rows: usize,
+    weight_shape: &[usize],
 ) -> Result<()> {
+    let rows = weight_shape.first().copied().unwrap_or(0);
+    let cols = weight_shape.get(1).copied().unwrap_or(0);
     let scale_name = format!("{weight_name}_scale");
     let scale = tensors
         .get(&scale_name)
@@ -432,7 +512,8 @@ fn validate_gemma4_dry_run_fp8_scale(
     let valid_blockscale = scale.shape.len() == 2
         && scale.shape[0] > 0
         && scale.shape[1] > 0
-        && scale.shape[0].saturating_mul(128) >= rows;
+        && scale.shape[0].saturating_mul(128) >= rows
+        && scale.shape[1].saturating_mul(128) >= cols;
     if !valid_per_channel && !valid_blockscale {
         return Err(shape_mismatch_error(
             model_dir,
@@ -442,6 +523,58 @@ fn validate_gemma4_dry_run_fp8_scale(
         ));
     }
     Ok(())
+}
+
+fn summarize_gemma4_dry_run_fp8_scales(
+    tensors: &BTreeMap<String, DryRunTensorInfo>,
+    layer_linears: &[String],
+    lm_head: Option<&str>,
+    fp8_lm_head: bool,
+) -> Gemma4DryRunFp8ScaleSummary {
+    let mut scaled_weights = 0usize;
+    let mut per_channel = false;
+    let mut blockscale = false;
+
+    let mut visit = |name: &str| {
+        let Some(info) = tensors.get(name) else {
+            return;
+        };
+        if info.dtype != DType::Fp8E4M3 {
+            return;
+        }
+        let Some(scale) = tensors.get(&format!("{name}_scale")) else {
+            return;
+        };
+        scaled_weights += 1;
+        let rows = info.shape.first().copied().unwrap_or(0);
+        if scale.shape.as_slice() == [rows]
+            || (scale.shape.len() == 2 && scale.shape[0] == rows && scale.shape[1] == 1)
+        {
+            per_channel = true;
+        } else {
+            blockscale = true;
+        }
+    };
+
+    for name in layer_linears {
+        visit(name);
+    }
+    if let Some(name) = lm_head {
+        visit(name);
+    }
+
+    let mode = match (per_channel, blockscale) {
+        (false, false) => Gemma4DryRunFp8ScaleMode::None,
+        (true, false) => Gemma4DryRunFp8ScaleMode::Bf16PerChannel,
+        (false, true) => Gemma4DryRunFp8ScaleMode::Bf16Blockscale,
+        (true, true) => Gemma4DryRunFp8ScaleMode::MixedValid,
+    };
+
+    Gemma4DryRunFp8ScaleSummary {
+        mode,
+        scaled_weights,
+        fp8_lm_head,
+    }
 }
 
 fn validate_required_shape(
@@ -1285,6 +1418,18 @@ mod tests {
         assert_eq!(validation.layers[1].rope_dim, 64);
         assert_eq!(validation.layers[1].rope_theta, 1000000.0);
         assert_eq!(validation.layers[0].layer_scalar_dim, 128);
+        assert_eq!(validation.attention_sliding_layers, 1);
+        assert_eq!(validation.attention_full_layers, 1);
+        assert_eq!(validation.v_uses_k_proj_layers, 0);
+        assert_eq!(
+            validation.lm_head_status,
+            Gemma4DryRunLmHeadStatus::ExplicitPrefixed
+        );
+        assert_eq!(
+            validation.fp8_scale_summary.mode,
+            Gemma4DryRunFp8ScaleMode::None
+        );
+        assert_eq!(validation.fp8_scale_summary.scaled_weights, 0);
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1451,6 +1596,10 @@ mod tests {
 
         assert!(validation.tie_word_embeddings);
         assert_eq!(validation.lm_head, None);
+        assert_eq!(
+            validation.lm_head_status,
+            Gemma4DryRunLmHeadStatus::TiedEmbeddings
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1494,6 +1643,7 @@ mod tests {
 
         assert!(validation.layers[1].v_uses_k_proj);
         assert_eq!(validation.layers[1].v_proj, None);
+        assert_eq!(validation.v_uses_k_proj_layers, 1);
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1628,6 +1778,12 @@ mod tests {
             "model.language_model.layers.0.self_attn.q_proj.weight"
         );
         assert_eq!(validation.lm_head, None);
+        assert_eq!(
+            validation.fp8_scale_summary.mode,
+            Gemma4DryRunFp8ScaleMode::Bf16PerChannel
+        );
+        assert_eq!(validation.fp8_scale_summary.scaled_weights, 7);
+        assert!(!validation.fp8_scale_summary.fp8_lm_head);
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1659,7 +1815,14 @@ mod tests {
             None,
         );
 
-        Gemma4DryRunValidation::from_model_dir(&dir).expect("FP8 blockscale shape validates");
+        let validation =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect("FP8 blockscale shape validates");
+
+        assert_eq!(
+            validation.fp8_scale_summary.mode,
+            Gemma4DryRunFp8ScaleMode::MixedValid
+        );
+        assert_eq!(validation.fp8_scale_summary.scaled_weights, 7);
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1811,6 +1974,32 @@ mod tests {
             validation.lm_head.as_deref(),
             Some("model.language_model.lm_head.weight")
         );
+        assert_eq!(
+            validation.lm_head_status,
+            Gemma4DryRunLmHeadStatus::ExplicitPrefixed
+        );
+        assert!(!validation.fp8_scale_summary.fp8_lm_head);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_summarizes_fp8_lm_head_scale() {
+        let dir =
+            write_dry_run_one_layer_fp8_fixture(None, None, false, false, false, Some("F8_E4M3"));
+        let validation =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect("FP8 lm_head with scale validates");
+
+        assert_eq!(
+            validation.lm_head_status,
+            Gemma4DryRunLmHeadStatus::ExplicitPrefixed
+        );
+        assert_eq!(
+            validation.fp8_scale_summary.mode,
+            Gemma4DryRunFp8ScaleMode::Bf16PerChannel
+        );
+        assert_eq!(validation.fp8_scale_summary.scaled_weights, 8);
+        assert!(validation.fp8_scale_summary.fp8_lm_head);
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1834,12 +2023,19 @@ mod tests {
         assert!(validation.vocab_size > 0);
         assert_eq!(validation.layers.len(), validation.num_layers);
         eprintln!(
-            "validated Gemma4 dry-run metadata: dir={} prefix={} layers={} hidden={} vocab={}",
+            "validated Gemma4 dry-run metadata: dir={} prefix={} layers={} hidden={} vocab={} tie_word_embeddings={} attention=sliding:{} full:{} v_uses_k_proj:{} lm_head_status={} fp8_scales={} fp8_scaled_weights={}",
             model_dir.display(),
             validation.weight_prefix,
             validation.num_layers,
             validation.hidden_size,
-            validation.vocab_size
+            validation.vocab_size,
+            validation.tie_word_embeddings,
+            validation.attention_sliding_layers,
+            validation.attention_full_layers,
+            validation.v_uses_k_proj_layers,
+            validation.lm_head_status.as_str(),
+            validation.fp8_scale_summary.mode.as_str(),
+            validation.fp8_scale_summary.scaled_weights
         );
     }
 }

@@ -9,7 +9,9 @@ use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 use rvllm_loader::{
     gemma4_validate::{
         Gemma4DryRunAttentionKind as HostGemma4DryRunAttentionKind,
+        Gemma4DryRunFp8ScaleSummary as HostGemma4DryRunFp8ScaleSummary,
         Gemma4DryRunLayerValidation as HostGemma4DryRunLayerValidation,
+        Gemma4DryRunLmHeadStatus as HostGemma4DryRunLmHeadStatus,
         Gemma4DryRunValidation as HostGemma4DryRunValidation,
     },
     load::{LayerAttnType, ModelArch},
@@ -139,10 +141,15 @@ pub struct Gemma4DryRunValidation {
     pub hidden_size: usize,
     pub vocab_size: usize,
     pub tie_word_embeddings: bool,
+    pub attention_sliding_layers: usize,
+    pub attention_full_layers: usize,
+    pub v_uses_k_proj_layers: usize,
     pub embed_tokens: String,
     pub final_norm: String,
     pub lm_head: Option<String>,
+    pub lm_head_status: HostGemma4DryRunLmHeadStatus,
     pub final_logit_softcap: Option<f32>,
+    pub fp8_scale_summary: HostGemma4DryRunFp8ScaleSummary,
     pub layers: Vec<Gemma4DryRunLayerValidation>,
 }
 
@@ -181,10 +188,15 @@ impl Gemma4DryRunValidation {
             hidden_size: host.hidden_size,
             vocab_size: host.vocab_size,
             tie_word_embeddings: host.tie_word_embeddings,
+            attention_sliding_layers: host.attention_sliding_layers,
+            attention_full_layers: host.attention_full_layers,
+            v_uses_k_proj_layers: host.v_uses_k_proj_layers,
             embed_tokens: host.embed_tokens,
             final_norm: host.final_norm,
             lm_head: host.lm_head,
+            lm_head_status: host.lm_head_status,
             final_logit_softcap: host.final_logit_softcap,
+            fp8_scale_summary: host.fp8_scale_summary,
             layers: host
                 .layers
                 .into_iter()
@@ -1966,12 +1978,19 @@ mod tests {
         assert!(validation.vocab_size > 0);
         assert_eq!(validation.layers.len(), validation.num_layers);
         eprintln!(
-            "validated Gemma4 dry-run shapes: dir={} prefix={} layers={} hidden={} vocab={}",
+            "validated Gemma4 dry-run shapes: dir={} prefix={} layers={} hidden={} vocab={} tie_word_embeddings={} attention=sliding:{} full:{} v_uses_k_proj:{} lm_head_status={} fp8_scales={} fp8_scaled_weights={}",
             model_dir.display(),
             validation.weight_prefix,
             validation.num_layers,
             validation.hidden_size,
-            validation.vocab_size
+            validation.vocab_size,
+            validation.tie_word_embeddings,
+            validation.attention_sliding_layers,
+            validation.attention_full_layers,
+            validation.v_uses_k_proj_layers,
+            validation.lm_head_status.as_str(),
+            validation.fp8_scale_summary.mode.as_str(),
+            validation.fp8_scale_summary.scaled_weights
         );
     }
 }

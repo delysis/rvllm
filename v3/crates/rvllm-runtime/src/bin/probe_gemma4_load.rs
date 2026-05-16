@@ -121,7 +121,7 @@ fn parse_command() -> Result<Command, String> {
 }
 
 fn run_dry_run(model_dir: &Path) -> Result<(), String> {
-    use rvllm_loader::Gemma4DryRunValidation;
+    use rvllm_loader::{Gemma4DryRunLmHeadStatus, Gemma4DryRunValidation};
 
     eprintln!("== probe_gemma4_load dry-run ==");
     eprintln!("  model_dir = {}", model_dir.display());
@@ -136,9 +136,34 @@ fn run_dry_run(model_dir: &Path) -> Result<(), String> {
     eprintln!("  layers    = {}", validation.num_layers);
     eprintln!("  hidden    = {}", validation.hidden_size);
     eprintln!("  vocab     = {}", validation.vocab_size);
+    eprintln!("  tied      = {}", validation.tie_word_embeddings);
     eprintln!(
-        "  lm_head   = {}",
-        validation.lm_head.as_deref().unwrap_or("<tied embeddings>")
+        "  attention = sliding:{} full:{} v_uses_k_proj:{}",
+        validation.attention_sliding_layers,
+        validation.attention_full_layers,
+        validation.v_uses_k_proj_layers
+    );
+    let lm_head = match validation.lm_head_status {
+        Gemma4DryRunLmHeadStatus::ExplicitPrefixed => {
+            format!(
+                "explicit_prefixed:{}",
+                validation.lm_head.as_deref().unwrap_or("<missing>")
+            )
+        }
+        Gemma4DryRunLmHeadStatus::ExplicitTopLevelAlias => {
+            format!(
+                "explicit_top_level_alias:{}",
+                validation.lm_head.as_deref().unwrap_or("<missing>")
+            )
+        }
+        Gemma4DryRunLmHeadStatus::TiedEmbeddings => "tied_embeddings".to_owned(),
+    };
+    eprintln!("  lm_head   = {lm_head}");
+    eprintln!(
+        "  fp8       = scales:{} weights:{} lm_head_fp8:{} scale_dtype=BF16",
+        validation.fp8_scale_summary.mode.as_str(),
+        validation.fp8_scale_summary.scaled_weights,
+        validation.fp8_scale_summary.fp8_lm_head
     );
     eprintln!("  tensors   = required Gemma4 tensor shapes validated");
     Ok(())

@@ -21,7 +21,8 @@ pub mod weights;
 
 pub use fp8_quant::{check_clamp_gate, quantize_per_tensor_ref, QuantResult, FP8_E4M3_MAX};
 pub use gemma4_validate::{
-    validate_gemma4_model_dir_metadata, Gemma4DryRunAttentionKind, Gemma4DryRunLayerValidation,
+    validate_gemma4_model_dir_metadata, Gemma4DryRunAttentionKind, Gemma4DryRunFp8ScaleMode,
+    Gemma4DryRunFp8ScaleSummary, Gemma4DryRunLayerValidation, Gemma4DryRunLmHeadStatus,
     Gemma4DryRunValidation,
 };
 pub use load::{load_model, LayerAttnType, MlpActivation, ModelArch};
