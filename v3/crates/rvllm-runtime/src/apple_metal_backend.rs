@@ -248,6 +248,61 @@ impl ModelMetalBackend {
         Ok(refs.swap_remove(idx).1)
     }
 
+    fn map_fused_bytes_to_arena(
+        arena: &mut MetalBufferArena,
+        name: &str,
+        bytes: &[u8],
+    ) -> Result<MetalRegion> {
+        let region = arena.region(name, bytes.len(), 16)?;
+        unsafe {
+            arena.write_region(&region, bytes)?;
+        }
+        Ok(region)
+    }
+
+    fn concat_f16_tensors(
+        model_dir: &std::path::Path,
+        tensors: &std::collections::BTreeMap<
+            String,
+            rvllm_apple_metal::weight_loader::SafetensorTensorInfo,
+        >,
+        names: &[String],
+        expected_shapes: &[Vec<usize>],
+        op: &'static str,
+    ) -> Result<Vec<u8>> {
+        if names.len() != expected_shapes.len() {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "concat shape metadata mismatch",
+                },
+                model_ctx(op),
+            ));
+        }
+
+        let mut out = Vec::new();
+        for (name, expected_shape) in names.iter().zip(expected_shapes.iter()) {
+            let info = tensors.get(name).ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "missing tensor for concat",
+                    },
+                    model_ctx(op),
+                )
+            })?;
+            if info.shape != *expected_shape {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "tensor shape mismatch for concat",
+                    },
+                    model_ctx(op),
+                ));
+            }
+            let bytes = rvllm_apple_metal::weight_loader::load_safetensor_f16(model_dir, name)?;
+            out.extend_from_slice(&bytes);
+        }
+        Ok(out)
+    }
+
     fn write_i32_region(
         arena: &MetalBufferArena,
         region: &MetalRegion,
@@ -379,17 +434,55 @@ impl ModelMetalBackend {
         }
 
         let mut layer_weight_bytes = 0;
+        let mut fused_qkv_bytes = 0;
+        let mut fused_gate_up_bytes = 0;
+
         if arch.num_hidden_layers == 1 {
+            let hidden = arch.hidden_size;
+            let intermediate = arch.intermediate_size;
+            let num_heads = arch.num_attention_heads;
+            let num_kv_heads = arch.num_key_value_heads;
+            let head_dim = arch.head_dim;
+            let q_dim = num_heads * head_dim;
+            let kv_dim = num_kv_heads * head_dim;
+            let qkv_rows = q_dim + 2 * kv_dim;
+
+            if num_heads != 1 || num_kv_heads != 1 || head_dim != hidden {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason:
+                            "one-layer probe requires one head, one kv head, head_dim == hidden",
+                    },
+                    model_ctx("prepare"),
+                ));
+            }
+            if intermediate == 0 {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "one-layer probe requires nonzero intermediate",
+                    },
+                    model_ctx("prepare"),
+                ));
+            }
+
             let lprefix = format!("{wprefix}.layers.0");
-            let layer_names = vec![
-                format!("{lprefix}.input_layernorm.weight"),
-                format!("{lprefix}.self_attn.qkv.weight"),
-                format!("{lprefix}.self_attn.o_proj.weight"),
-                format!("{lprefix}.mlp_norm.weight"),
-                format!("{lprefix}.mlp.gate_up.weight"),
-                format!("{lprefix}.mlp.down_proj.weight"),
-            ];
-            for name in &layer_names {
+            let attn_norm_name = format!("{lprefix}.input_layernorm.weight");
+            let o_proj_name = format!("{lprefix}.self_attn.o_proj.weight");
+            let mlp_norm_name = format!("{lprefix}.mlp_norm.weight");
+            let down_proj_name = format!("{lprefix}.mlp.down_proj.weight");
+
+            let prefused_qkv_name = format!("{lprefix}.self_attn.qkv.weight");
+            let q_name = format!("{lprefix}.self_attn.q_proj.weight");
+            let k_name = format!("{lprefix}.self_attn.k_proj.weight");
+            let v_name = format!("{lprefix}.self_attn.v_proj.weight");
+            let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
+
+            let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
+            let gate_name = format!("{lprefix}.mlp.gate_proj.weight");
+            let up_name = format!("{lprefix}.mlp.up_proj.weight");
+            let use_prefused_gate_up = tensors.contains_key(&prefused_gate_up_name);
+
+            let mut add_tensor_size = |name: &str| -> Result<()> {
                 let info = tensors.get(name).ok_or_else(|| {
                     RvllmError::apple(
                         AppleError::InvalidWeightBlob {
@@ -399,7 +492,36 @@ impl ModelMetalBackend {
                     )
                 })?;
                 layer_weight_bytes += info.nbytes;
-                names.push(name.clone());
+                Ok(())
+            };
+
+            add_tensor_size(&attn_norm_name)?;
+            add_tensor_size(&o_proj_name)?;
+            add_tensor_size(&mlp_norm_name)?;
+            add_tensor_size(&down_proj_name)?;
+
+            names.push(attn_norm_name);
+            names.push(o_proj_name);
+            names.push(mlp_norm_name);
+            names.push(down_proj_name);
+
+            if use_prefused_qkv {
+                add_tensor_size(&prefused_qkv_name)?;
+                names.push(prefused_qkv_name);
+            } else {
+                add_tensor_size(&q_name)?;
+                add_tensor_size(&k_name)?;
+                add_tensor_size(&v_name)?;
+                fused_qkv_bytes = qkv_rows * hidden * std::mem::size_of::<f16>();
+            }
+
+            if use_prefused_gate_up {
+                add_tensor_size(&prefused_gate_up_name)?;
+                names.push(prefused_gate_up_name);
+            } else {
+                add_tensor_size(&gate_name)?;
+                add_tensor_size(&up_name)?;
+                fused_gate_up_bytes = 2 * intermediate * hidden * std::mem::size_of::<f16>();
             }
         }
 
@@ -478,6 +600,8 @@ impl ModelMetalBackend {
             .checked_add(final_norm_bytes)
             .and_then(|v| v.checked_add(lm_head_bytes))
             .and_then(|v| v.checked_add(layer_weight_bytes))
+            .and_then(|v| v.checked_add(fused_qkv_bytes))
+            .and_then(|v| v.checked_add(fused_gate_up_bytes))
             .and_then(|v| v.checked_add(residual_bytes))
             .and_then(|v| v.checked_add(logits_bytes))
             .and_then(|v| v.checked_add(normed_hidden_bytes))
@@ -523,24 +647,6 @@ impl ModelMetalBackend {
 
         let mut one_layer = None;
         if arch.num_hidden_layers == 1 {
-            let lprefix = format!("{wprefix}.layers.0");
-            let attn_norm = Self::region_lookup(
-                &mut mapped_refs,
-                &format!("{lprefix}.input_layernorm.weight"),
-            )?;
-            let qkv =
-                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.self_attn.qkv.weight"))?;
-            let o_proj = Self::region_lookup(
-                &mut mapped_refs,
-                &format!("{lprefix}.self_attn.o_proj.weight"),
-            )?;
-            let mlp_norm =
-                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp_norm.weight"))?;
-            let gate_up =
-                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp.gate_up.weight"))?;
-            let down_proj =
-                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp.down_proj.weight"))?;
-
             let hidden = arch.hidden_size;
             let intermediate = arch.intermediate_size;
             let num_heads = arch.num_attention_heads;
@@ -549,6 +655,59 @@ impl ModelMetalBackend {
             let q_dim = num_heads * head_dim;
             let kv_dim = num_kv_heads * head_dim;
             let qkv_rows = q_dim + 2 * kv_dim;
+
+            let lprefix = format!("{wprefix}.layers.0");
+            let attn_norm = Self::region_lookup(
+                &mut mapped_refs,
+                &format!("{lprefix}.input_layernorm.weight"),
+            )?;
+            let o_proj = Self::region_lookup(
+                &mut mapped_refs,
+                &format!("{lprefix}.self_attn.o_proj.weight"),
+            )?;
+            let mlp_norm =
+                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp_norm.weight"))?;
+            let down_proj =
+                Self::region_lookup(&mut mapped_refs, &format!("{lprefix}.mlp.down_proj.weight"))?;
+
+            let prefused_qkv_name = format!("{lprefix}.self_attn.qkv.weight");
+            let qkv = if tensors.contains_key(&prefused_qkv_name) {
+                Self::region_lookup(&mut mapped_refs, &prefused_qkv_name)?
+            } else {
+                let bytes = Self::concat_f16_tensors(
+                    &self.model_dir,
+                    &tensors,
+                    &[
+                        format!("{lprefix}.self_attn.q_proj.weight"),
+                        format!("{lprefix}.self_attn.k_proj.weight"),
+                        format!("{lprefix}.self_attn.v_proj.weight"),
+                    ],
+                    &[
+                        vec![q_dim, hidden],
+                        vec![kv_dim, hidden],
+                        vec![kv_dim, hidden],
+                    ],
+                    "fuse_qkv",
+                )?;
+                Self::map_fused_bytes_to_arena(&mut arena, "metal_fused_qkv", &bytes)?
+            };
+
+            let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
+            let gate_up = if tensors.contains_key(&prefused_gate_up_name) {
+                Self::region_lookup(&mut mapped_refs, &prefused_gate_up_name)?
+            } else {
+                let bytes = Self::concat_f16_tensors(
+                    &self.model_dir,
+                    &tensors,
+                    &[
+                        format!("{lprefix}.mlp.gate_proj.weight"),
+                        format!("{lprefix}.mlp.up_proj.weight"),
+                    ],
+                    &[vec![intermediate, hidden], vec![intermediate, hidden]],
+                    "fuse_gate_up",
+                )?;
+                Self::map_fused_bytes_to_arena(&mut arena, "metal_fused_gate_up", &bytes)?
+            };
 
             let qkv_out = arena.region("metal_qkv_out", qkv_rows * half_bytes, 16)?;
             let q = arena.region("metal_q", q_dim * half_bytes, 16)?;
@@ -1878,6 +2037,256 @@ mod tests {
         assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
         assert!(!engine.has_pending_work());
 
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_one_layer_hf_style_noop_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let intermediate = 256;
+        let vocab = 8;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        // token 3 should be chosen if dim 7 is high
+        for d in 0..hidden {
+            lm_head[3 * hidden + d] = if d == 7 { 2.0 } else { 0.0 };
+            lm_head[2 * hidden + d] = if d == 7 { 1.0 } else { 0.0 };
+        }
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        // One layer tensors (HF style separate)
+        let ones = vec![1.0f32; hidden];
+        let zeros_qkvo = vec![0.0f32; hidden * hidden];
+        let zeros_gate_up = vec![0.0f32; intermediate * hidden];
+        let zeros_down = vec![0.0f32; hidden * intermediate];
+
+        add_tensor(
+            "model.layers.0.input_layernorm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.q_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.k_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.v_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.o_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp_norm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.gate_proj.weight",
+            &zeros_gate_up,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.up_proj.weight",
+            &zeros_gate_up,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.down_proj.weight",
+            &zeros_down,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, hidden, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_one_layer_hf_style_noop_model_backend_decodes_token_2_to_3() {
+        let dir = write_tiny_one_layer_hf_style_noop_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare one-layer hf-style tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_one_layer_hf_style_noop_model_backend_prefill_then_decode_token_2_to_3() {
+        let dir = write_tiny_one_layer_hf_style_noop_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny hf-style one-layer model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    fn hf_style_one_layer_fixture_has_separate_tensors() {
+        let dir = write_tiny_one_layer_hf_style_noop_fixture();
+        let tensors =
+            rvllm_apple_metal::weight_loader::scan_safetensor_tensors(&dir).expect("scan");
+        assert!(tensors.contains_key("model.layers.0.self_attn.q_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.self_attn.k_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.self_attn.v_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.mlp.gate_proj.weight"));
+        assert!(tensors.contains_key("model.layers.0.mlp.up_proj.weight"));
+        assert!(!tensors.contains_key("model.layers.0.self_attn.qkv.weight"));
+        assert!(!tensors.contains_key("model.layers.0.mlp.gate_up.weight"));
         let _ = fs::remove_dir_all(dir);
     }
 
