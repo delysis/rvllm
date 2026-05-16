@@ -66,6 +66,9 @@ pub struct MetalOneLayerState {
     pub v_norm: Option<MetalRegion>,
     pub o_proj: MetalRegion,
     pub mlp_norm: MetalRegion,
+    pub post_attn_norm: Option<MetalRegion>,
+    pub pre_ff_norm: Option<MetalRegion>,
+    pub post_ff_norm: Option<MetalRegion>,
     pub gate_up: MetalRegion,
     pub down_proj: MetalRegion,
 
@@ -120,6 +123,9 @@ struct ProbeLayerNames {
     q_norm_name: Option<String>,
     k_norm_name: Option<String>,
     v_norm_name: Option<String>,
+    post_attn_norm_name: Option<String>,
+    pre_ff_norm_name: Option<String>,
+    post_ff_norm_name: Option<String>,
     prefused_gate_up_name: String,
     gate_name: String,
     up_name: String,
@@ -294,8 +300,8 @@ impl ProbeModelPlan {
                     &tensors,
                     vec![
                         format!("{lprefix}.mlp_norm.weight"),
-                        format!("{lprefix}.post_attention_layernorm.weight"),
                         format!("{lprefix}.pre_feedforward_layernorm.weight"),
+                        format!("{lprefix}.post_attention_layernorm.weight"),
                     ],
                     "missing mlp norm weight",
                 )?;
@@ -316,6 +322,18 @@ impl ProbeModelPlan {
                 let v_norm_name = resolve_optional_tensor_alias(
                     &tensors,
                     vec![format!("{lprefix}.self_attn.v_norm.weight")],
+                );
+                let post_attn_norm_name = resolve_optional_tensor_alias(
+                    &tensors,
+                    vec![format!("{lprefix}.post_attention_layernorm.weight")],
+                );
+                let pre_ff_norm_name = resolve_optional_tensor_alias(
+                    &tensors,
+                    vec![format!("{lprefix}.pre_feedforward_layernorm.weight")],
+                );
+                let post_ff_norm_name = resolve_optional_tensor_alias(
+                    &tensors,
+                    vec![format!("{lprefix}.post_feedforward_layernorm.weight")],
                 );
                 let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
 
@@ -369,6 +387,33 @@ impl ProbeModelPlan {
                     add_tensor_size(norm_name)?;
                     names.push(norm_name.clone());
                 }
+                validate_optional_norm_shape(
+                    &tensors,
+                    &post_attn_norm_name,
+                    hidden,
+                    "post_attention_layernorm weight shape mismatch",
+                )?;
+                validate_optional_norm_shape(
+                    &tensors,
+                    &pre_ff_norm_name,
+                    hidden,
+                    "pre_feedforward_layernorm weight shape mismatch",
+                )?;
+                validate_optional_norm_shape(
+                    &tensors,
+                    &post_ff_norm_name,
+                    hidden,
+                    "post_feedforward_layernorm weight shape mismatch",
+                )?;
+                for norm_name in [&post_attn_norm_name, &pre_ff_norm_name, &post_ff_norm_name]
+                    .into_iter()
+                    .flatten()
+                {
+                    if norm_name != &mlp_norm_name {
+                        add_tensor_size(norm_name)?;
+                        names.push(norm_name.clone());
+                    }
+                }
 
                 if use_prefused_gate_up {
                     add_tensor_size(&prefused_gate_up_name)?;
@@ -391,6 +436,9 @@ impl ProbeModelPlan {
                     q_norm_name,
                     k_norm_name,
                     v_norm_name,
+                    post_attn_norm_name,
+                    pre_ff_norm_name,
+                    post_ff_norm_name,
                     prefused_gate_up_name,
                     gate_name,
                     up_name,
@@ -582,6 +630,22 @@ impl Gemma4MetalState {
                 optional_region_lookup(&mut mapped_refs, layer_names.k_norm_name.as_deref())?;
             let v_norm =
                 optional_region_lookup(&mut mapped_refs, layer_names.v_norm_name.as_deref())?;
+            let post_attn_norm = optional_distinct_region_lookup(
+                &mut mapped_refs,
+                layer_names.post_attn_norm_name.as_deref(),
+                &layer_names.mlp_norm_name,
+            )?;
+            let pre_ff_norm = optional_region_or_alias_lookup(
+                &mut mapped_refs,
+                layer_names.pre_ff_norm_name.as_deref(),
+                &layer_names.mlp_norm_name,
+                &mlp_norm,
+            )?;
+            let post_ff_norm = optional_distinct_region_lookup(
+                &mut mapped_refs,
+                layer_names.post_ff_norm_name.as_deref(),
+                &layer_names.mlp_norm_name,
+            )?;
 
             let qkv = if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
@@ -716,6 +780,9 @@ impl Gemma4MetalState {
                 v_norm,
                 o_proj,
                 mlp_norm,
+                post_attn_norm,
+                pre_ff_norm,
+                post_ff_norm,
                 gate_up,
                 down_proj,
                 qkv_out,
@@ -866,6 +933,32 @@ fn optional_region_lookup(
     name: Option<&str>,
 ) -> Result<Option<MetalRegion>> {
     match name {
+        Some(name) => Ok(Some(region_lookup(refs, name)?)),
+        None => Ok(None),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn optional_distinct_region_lookup(
+    refs: &mut Vec<(String, MetalRegion)>,
+    name: Option<&str>,
+    alias_name: &str,
+) -> Result<Option<MetalRegion>> {
+    match name {
+        Some(name) if name != alias_name => Ok(Some(region_lookup(refs, name)?)),
+        _ => Ok(None),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn optional_region_or_alias_lookup(
+    refs: &mut Vec<(String, MetalRegion)>,
+    name: Option<&str>,
+    alias_name: &str,
+    alias_region: &MetalRegion,
+) -> Result<Option<MetalRegion>> {
+    match name {
+        Some(name) if name == alias_name => Ok(Some(alias_region.clone())),
         Some(name) => Ok(Some(region_lookup(refs, name)?)),
         None => Ok(None),
     }

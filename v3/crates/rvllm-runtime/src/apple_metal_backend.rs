@@ -482,6 +482,9 @@ impl ModelMetalBackend {
                 v_norm_offset: one.v_norm.as_ref().map(|region| region.offset),
                 o_proj_offset: one.o_proj.offset,
                 mlp_norm_offset: one.mlp_norm.offset,
+                post_attn_norm_offset: one.post_attn_norm.as_ref().map(|region| region.offset),
+                pre_ff_norm_offset: one.pre_ff_norm.as_ref().map(|region| region.offset),
+                post_ff_norm_offset: one.post_ff_norm.as_ref().map(|region| region.offset),
                 gate_up_offset: one.gate_up.offset,
                 down_proj_offset: one.down_proj.offset,
             };
@@ -2664,6 +2667,84 @@ mod tests {
         cpu_full_nonzero_argmax(&logits)
     }
 
+    fn cpu_reference_one_layer_extra_norms_argmax(apply_extra_norms: bool) -> usize {
+        let hidden = 128usize;
+        let intermediate = 256usize;
+        let vocab = 8usize;
+        let eps = 1e-6f32;
+
+        let mut residual = vec![0.0f32; hidden];
+        residual[7] = 10.0 * (hidden as f32).sqrt();
+
+        let norm = vec![1.0f32; hidden];
+        let mut post_attn_norm = vec![1.0f32; hidden];
+        let pre_ff_norm = vec![1.0f32; hidden];
+        let post_ff_norm = vec![1.0f32; hidden];
+
+        post_attn_norm[7] = 0.01;
+        post_attn_norm[9] = 64.0;
+
+        let mut q_proj = vec![0.0f32; hidden * hidden];
+        let mut k_proj = vec![0.0f32; hidden * hidden];
+        let mut v_proj = vec![0.0f32; hidden * hidden];
+        let mut o_proj = vec![0.0f32; hidden * hidden];
+        let gate_proj = vec![0.0f32; intermediate * hidden];
+        let up_proj = vec![0.0f32; intermediate * hidden];
+        let down_proj = vec![0.0f32; hidden * intermediate];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+
+        q_proj[7] = 0.25;
+        k_proj[7] = 0.125;
+        v_proj[11 * hidden + 7] = 0.25;
+        o_proj[9 * hidden + 11] = 0.5;
+        lm_head[2 * hidden + 7] = 1.0;
+        lm_head[3 * hidden + 9] = 4.0;
+
+        let attn_normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
+        let q = cpu_full_nonzero_matvec(&q_proj, hidden, hidden, &attn_normed);
+        let k = cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &attn_normed);
+        let v = cpu_full_nonzero_matvec(&v_proj, hidden, hidden, &attn_normed);
+        let _single_key_score =
+            q.iter().zip(k.iter()).map(|(a, b)| a * b).sum::<f32>() / (hidden as f32).sqrt();
+        let projected_attn = cpu_full_nonzero_matvec(&o_proj, hidden, hidden, &v);
+        for d in 0..hidden {
+            residual[d] += projected_attn[d];
+        }
+
+        if apply_extra_norms {
+            residual = cpu_full_nonzero_rms_norm(&residual, &post_attn_norm, eps);
+        }
+
+        let mlp_normed = cpu_full_nonzero_rms_norm(
+            &residual,
+            if apply_extra_norms {
+                &pre_ff_norm
+            } else {
+                &norm
+            },
+            eps,
+        );
+        let gate = cpu_full_nonzero_matvec(&gate_proj, intermediate, hidden, &mlp_normed);
+        let up = cpu_full_nonzero_matvec(&up_proj, intermediate, hidden, &mlp_normed);
+        let activated = gate
+            .iter()
+            .zip(up.iter())
+            .map(|(g, u)| cpu_full_nonzero_gelu_tanh(*g) * u)
+            .collect::<Vec<_>>();
+        let mlp_out = cpu_full_nonzero_matvec(&down_proj, hidden, intermediate, &activated);
+        for d in 0..hidden {
+            residual[d] += mlp_out[d];
+        }
+
+        if apply_extra_norms {
+            residual = cpu_full_nonzero_rms_norm(&residual, &post_ff_norm, eps);
+        }
+
+        let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
+        let logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
+        cpu_full_nonzero_argmax(&logits)
+    }
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_one_layer_full_nonzero_fixture() -> std::path::PathBuf {
         let dir = temp_fixture_dir();
@@ -2863,6 +2944,12 @@ mod tests {
         assert_eq!(cpu_reference_one_layer_qkv_norm_nonzero_argmax(true), 3);
     }
 
+    #[test]
+    fn cpu_reference_one_layer_extra_norms_fixture_argmax_is_3() {
+        assert_eq!(cpu_reference_one_layer_extra_norms_argmax(false), 2);
+        assert_eq!(cpu_reference_one_layer_extra_norms_argmax(true), 3);
+    }
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_real_hf_style_one_layer_slice_fixture() -> std::path::PathBuf {
         let dir = temp_fixture_dir();
@@ -3002,6 +3089,199 @@ mod tests {
             "model.layers.0.mlp.up_proj.weight",
             &up_proj,
             &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.down_proj.weight",
+            &down_proj,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, hidden, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_one_layer_extra_norms_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let intermediate = 256;
+        let vocab = 8;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut post_attn_norm = vec![1.0f32; hidden];
+        let pre_ff_norm = vec![1.0f32; hidden];
+        let post_ff_norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+
+        post_attn_norm[7] = 0.01;
+        post_attn_norm[9] = 64.0;
+        lm_head[2 * hidden + 7] = 1.0;
+        lm_head[3 * hidden + 9] = 4.0;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        let ones = vec![1.0f32; hidden];
+        let mut q_proj = vec![0.0f32; hidden * hidden];
+        let mut k_proj = vec![0.0f32; hidden * hidden];
+        let mut v_proj = vec![0.0f32; hidden * hidden];
+        let mut o_proj = vec![0.0f32; hidden * hidden];
+        let gate_up = vec![0.0f32; 2 * intermediate * hidden];
+        let down_proj = vec![0.0f32; hidden * intermediate];
+
+        q_proj[7] = 0.25;
+        k_proj[7] = 0.125;
+        v_proj[11 * hidden + 7] = 0.25;
+        o_proj[9 * hidden + 11] = 0.5;
+
+        add_tensor(
+            "model.layers.0.input_layernorm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.q_proj.weight",
+            &q_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.k_proj.weight",
+            &k_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.v_proj.weight",
+            &v_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.o_proj.weight",
+            &o_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.post_attention_layernorm.weight",
+            &post_attn_norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.pre_feedforward_layernorm.weight",
+            &pre_ff_norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.post_feedforward_layernorm.weight",
+            &post_ff_norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.gate_up.weight",
+            &gate_up,
+            &[2 * intermediate, hidden],
             &mut payload,
             &mut header,
         );
@@ -3345,6 +3625,67 @@ mod tests {
         let mut engine = crate::engine::Engine::new()
             .with_apple_runtime_plan(plan)
             .expect("engine with real-hf-style one-layer slice plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, expected);
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_one_layer_extra_norms_model_backend_decodes_token_2_to_3() {
+        let expected = rvllm_core::TokenId(cpu_reference_one_layer_extra_norms_argmax(true) as u32);
+        let dir = write_tiny_one_layer_extra_norms_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare one-layer extra-norms tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, expected);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_one_layer_extra_norms_prefill_then_decode_token_2_to_3() {
+        let expected = rvllm_core::TokenId(cpu_reference_one_layer_extra_norms_argmax(true) as u32);
+        let dir = write_tiny_one_layer_extra_norms_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny extra-norms one-layer model plan");
 
         engine.scheduler.enqueue(crate::sched_state::Request::new(
             rvllm_core::ReqId(1),

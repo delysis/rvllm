@@ -43,6 +43,9 @@ pub struct MetalLayerWeights {
     pub v_norm_offset: Option<usize>,
     pub o_proj_offset: usize,
     pub mlp_norm_offset: usize,
+    pub post_attn_norm_offset: Option<usize>,
+    pub pre_ff_norm_offset: Option<usize>,
+    pub post_ff_norm_offset: Option<usize>,
     pub gate_up_offset: usize,
     pub down_proj_offset: usize,
 }
@@ -575,48 +578,39 @@ pub unsafe fn metal_forward_layer(
         q_dim,
     )?;
 
-    // 9. Pre-FFN RMSNorm
-    {
-        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-            rvllm_core::RvllmError::apple(
-                rvllm_core::AppleError::MetalUnavailable,
-                rvllm_core::AppleCtx {
-                    backend: "metal",
-                    op: "ffn_norm",
-                    device: "apple-silicon",
-                },
-            )
-        })?;
-        let pso = pipelines.get("rmsnorm_f16")?;
-        encoder.setComputePipelineState(pso);
-        encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
-        encoder.setBuffer_offset_atIndex(Some(buf), scratch.normed_hidden, 1);
-        encoder.setBuffer_offset_atIndex(Some(buf), weights.mlp_norm_offset, 2);
-        encoder.setBytes_length_atIndex(
-            std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
-            4,
-            3,
-        );
-        encoder.setBytes_length_atIndex(
-            std::ptr::NonNull::new_unchecked(&dims.rms_eps as *const _ as *mut _),
-            4,
-            4,
-        );
-        let threads_per_group = MTLSize {
-            width: 256,
-            height: 1,
-            depth: 1,
-        };
-        let groups = MTLSize {
-            width: num_tokens as usize,
-            height: 1,
-            depth: 1,
-        };
-        encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
-        encoder.endEncoding();
+    // 9. Optional Gemma-style post-attention RMSNorm on the residual stream.
+    if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
+        encode_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            residual_offset,
+            residual_offset,
+            post_attn_norm_offset,
+            hidden,
+            dims.rms_eps,
+            num_tokens,
+            "post_attn_norm",
+        )?;
     }
 
-    // 10. Gate||Up projection: normed_hidden × W_gate_up → gate_up_out
+    // 10. Pre-FFN RMSNorm. Explicit pre-FF Gemma norm overrides the legacy MLP norm.
+    encode_rmsnorm(
+        &cmd_buf,
+        pipelines,
+        buf,
+        residual_offset,
+        scratch.normed_hidden,
+        weights
+            .pre_ff_norm_offset
+            .unwrap_or(weights.mlp_norm_offset),
+        hidden,
+        dims.rms_eps,
+        num_tokens,
+        "ffn_norm",
+    )?;
+
+    // 11. Gate||Up projection: normed_hidden × W_gate_up → gate_up_out
     let two_inter = 2 * dims.intermediate;
     encode_gemm(
         &cmd_buf,
@@ -632,7 +626,7 @@ pub unsafe fn metal_forward_layer(
         0.0,
     )?;
 
-    // 11. GELU(gate) * up → activated
+    // 12. GELU(gate) * up → activated
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
@@ -672,7 +666,7 @@ pub unsafe fn metal_forward_layer(
         encoder.endEncoding();
     }
 
-    // 12. Down projection with residual: residual += activated × W_down
+    // 13. Down projection with residual: residual += activated × W_down
     encode_gemm_residual(
         &cmd_buf,
         pipelines,
@@ -685,6 +679,22 @@ pub unsafe fn metal_forward_layer(
         hidden,
         dims.intermediate,
     )?;
+
+    // 14. Optional Gemma-style post-FF RMSNorm on the residual stream.
+    if let Some(post_ff_norm_offset) = weights.post_ff_norm_offset {
+        encode_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            residual_offset,
+            residual_offset,
+            post_ff_norm_offset,
+            hidden,
+            dims.rms_eps,
+            num_tokens,
+            "post_ff_norm",
+        )?;
+    }
 
     cmd_buf.commit();
 
