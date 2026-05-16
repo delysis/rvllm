@@ -199,10 +199,15 @@ impl MetalProbeLayerDims {
             }
         };
         let num_heads = arch.num_attention_heads;
-        if num_heads != 1 || num_kv_heads != 1 || head_dim == 0 || head_dim % 2 != 0 {
+        if num_heads == 0
+            || num_kv_heads == 0
+            || num_heads % num_kv_heads != 0
+            || head_dim == 0
+            || head_dim % 2 != 0
+        {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
-                    reason: "synthetic probe requires one query head, one kv head, and even nonzero head_dim",
+                    reason: "synthetic probe requires nonzero grouped attention heads and even nonzero head_dim",
                 },
                 probe_ctx("prepare"),
             ));

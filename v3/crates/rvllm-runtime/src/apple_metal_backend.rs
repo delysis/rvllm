@@ -1600,6 +1600,10 @@ mod tests {
     const FULL_NONZERO_ATTENTION_DIM: usize = 9;
     const FULL_NONZERO_VALUE_DIM: usize = 11;
     const FULL_NONZERO_FFN_DIM: usize = 13;
+    const GQA_SOURCE_DIM: usize = 7;
+    const GQA_OUTPUT_DIM: usize = 9;
+    const GQA_VALUE_DIM: usize = 11;
+    const GQA_OUTPUT_HEAD: usize = 1;
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
     static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -2621,6 +2625,86 @@ mod tests {
             .expect("nonempty logits")
     }
 
+    fn cpu_reference_gqa_attention_argmax(
+        hidden: usize,
+        num_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+    ) -> usize {
+        assert!(num_heads > 0);
+        assert!(num_kv_heads > 0);
+        assert_eq!(num_heads % num_kv_heads, 0);
+        assert!(GQA_SOURCE_DIM < hidden);
+        assert!(GQA_OUTPUT_DIM < hidden);
+        assert!(GQA_VALUE_DIM < head_dim);
+        assert!(GQA_OUTPUT_HEAD < num_heads);
+
+        let vocab = 8usize;
+        let eps = 0.000001f32;
+        let q_dim = num_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+        let output_col = GQA_OUTPUT_HEAD * head_dim + GQA_VALUE_DIM;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + GQA_SOURCE_DIM] = 10.0;
+        let norm = vec![1.0f32; hidden];
+
+        let mut residual = vec![0.0f32; hidden];
+        let embedding_scale = (hidden as f32).sqrt();
+        for dim in 0..hidden {
+            residual[dim] = embedding[2 * hidden + dim] * embedding_scale;
+        }
+
+        let attn_input = rmsnorm_f32(&residual, &norm, eps);
+        let mut q_proj = vec![0.0f32; q_dim * hidden];
+        let mut k_proj = vec![0.0f32; kv_dim * hidden];
+        let mut v_proj = vec![0.0f32; kv_dim * hidden];
+        let mut o_proj = vec![0.0f32; hidden * q_dim];
+        q_proj[GQA_SOURCE_DIM] = 0.25;
+        k_proj[GQA_SOURCE_DIM] = 0.125;
+        v_proj[GQA_VALUE_DIM * hidden + GQA_SOURCE_DIM] = 2.0;
+        o_proj[GQA_OUTPUT_DIM * q_dim + output_col] = 6.0;
+
+        let q = gemm_f32(&attn_input, &q_proj, q_dim, hidden);
+        let k = gemm_f32(&attn_input, &k_proj, kv_dim, hidden);
+        let v = gemm_f32(&attn_input, &v_proj, kv_dim, hidden);
+        let mut attn_out = vec![0.0f32; q_dim];
+        for head in 0..num_heads {
+            let kv_head = head * num_kv_heads / num_heads;
+            let q_base = head * head_dim;
+            let kv_base = kv_head * head_dim;
+            let score = q[q_base..q_base + head_dim]
+                .iter()
+                .zip(k[kv_base..kv_base + head_dim].iter())
+                .map(|(a, b)| a * b)
+                .sum::<f32>()
+                / (head_dim as f32).sqrt();
+            assert!(score.is_finite());
+            attn_out[q_base..q_base + head_dim].copy_from_slice(&v[kv_base..kv_base + head_dim]);
+        }
+
+        let attn_residual = gemm_f32(&attn_out, &o_proj, hidden, q_dim);
+        for dim in 0..hidden {
+            residual[dim] += attn_residual[dim];
+        }
+
+        let final_hidden = rmsnorm_f32(&residual, &norm, eps);
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[2 * hidden + GQA_SOURCE_DIM] = 1.0;
+        lm_head[3 * hidden + GQA_OUTPUT_DIM] = 4.0;
+        let logits = gemm_f32(&final_hidden, &lm_head, vocab, hidden);
+        logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("finite logits"))
+            .map(|(idx, _)| idx)
+            .expect("nonempty logits")
+    }
+
+    fn cpu_reference_multihead_gqa_attention_argmax() -> usize {
+        cpu_reference_gqa_attention_argmax(128, 4, 2, 32)
+    }
+
     #[test]
     fn cpu_reference_one_layer_ffn_nonzero_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_one_layer_ffn_nonzero_argmax(), 3);
@@ -2629,6 +2713,11 @@ mod tests {
     #[test]
     fn cpu_reference_one_layer_attention_nonzero_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_one_layer_attention_nonzero_argmax(), 3);
+    }
+
+    #[test]
+    fn cpu_reference_multihead_gqa_attention_fixture_argmax_is_3() {
+        assert_eq!(cpu_reference_multihead_gqa_attention_argmax(), 3);
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -3533,6 +3622,205 @@ mod tests {
             .expect("write header bytes");
         out.write_all(&payload).expect("write payload");
         dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_gqa_attention_fixture(
+        hidden: usize,
+        intermediate: usize,
+        num_heads: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+    ) -> std::path::PathBuf {
+        assert!(num_heads > 0);
+        assert!(num_kv_heads > 0);
+        assert_eq!(num_heads % num_kv_heads, 0);
+        assert!(GQA_SOURCE_DIM < hidden);
+        assert!(GQA_OUTPUT_DIM < hidden);
+        assert!(GQA_VALUE_DIM < head_dim);
+        assert!(GQA_OUTPUT_HEAD < num_heads);
+
+        let dir = temp_fixture_dir();
+        let vocab = 8;
+        let q_dim = num_heads * head_dim;
+        let kv_dim = num_kv_heads * head_dim;
+        let output_col = GQA_OUTPUT_HEAD * head_dim + GQA_VALUE_DIM;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + GQA_SOURCE_DIM] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[2 * hidden + GQA_SOURCE_DIM] = 1.0;
+        lm_head[3 * hidden + GQA_OUTPUT_DIM] = 4.0;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        let ones = vec![1.0f32; hidden];
+        let zeros_gate_up = vec![0.0f32; intermediate * hidden];
+        let zeros_down = vec![0.0f32; hidden * intermediate];
+        let mut q_proj = vec![0.0f32; q_dim * hidden];
+        let mut k_proj = vec![0.0f32; kv_dim * hidden];
+        let mut v_proj = vec![0.0f32; kv_dim * hidden];
+        let mut o_proj = vec![0.0f32; hidden * q_dim];
+        q_proj[GQA_SOURCE_DIM] = 0.25;
+        k_proj[GQA_SOURCE_DIM] = 0.125;
+        v_proj[GQA_VALUE_DIM * hidden + GQA_SOURCE_DIM] = 2.0;
+        o_proj[GQA_OUTPUT_DIM * q_dim + output_col] = 6.0;
+
+        add_tensor(
+            "model.layers.0.input_layernorm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.q_proj.weight",
+            &q_proj,
+            &[q_dim, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.k_proj.weight",
+            &k_proj,
+            &[kv_dim, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.v_proj.weight",
+            &v_proj,
+            &[kv_dim, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.o_proj.weight",
+            &o_proj,
+            &[hidden, q_dim],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp_norm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.gate_proj.weight",
+            &zeros_gate_up,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.up_proj.weight",
+            &zeros_gate_up,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.down_proj.weight",
+            &zeros_down,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": {},
+    "num_key_value_heads": {},
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, num_heads, num_kv_heads, head_dim, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_multihead_gqa_attention_fixture() -> std::path::PathBuf {
+        write_tiny_gqa_attention_fixture(128, 256, 4, 2, 32)
     }
 
     fn cpu_full_nonzero_rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
@@ -7442,6 +7730,69 @@ mod tests {
         let mut engine = crate::engine::Engine::new()
             .with_apple_runtime_plan(plan)
             .expect("engine with tiny attention-nonzero one-layer model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_multihead_gqa_attention_model_backend_decodes_token_2_to_3() {
+        assert_eq!(cpu_reference_multihead_gqa_attention_argmax(), 3);
+
+        let dir = write_tiny_multihead_gqa_attention_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare multi-head GQA attention tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_multihead_gqa_attention_prefill_then_decode_token_2_to_3() {
+        assert_eq!(cpu_reference_multihead_gqa_attention_argmax(), 3);
+
+        let dir = write_tiny_multihead_gqa_attention_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny multi-head GQA attention model plan");
 
         engine.scheduler.enqueue(crate::sched_state::Request::new(
             rvllm_core::ReqId(1),

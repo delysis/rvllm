@@ -121,12 +121,11 @@ impl ModelArch {
                     hidden_size / num_attention_heads
                 }
             });
-        // Accept head_dim 128 (Llama/Qwen/Mistral) and 256 (Gemma 4).
-        if head_dim != 128 && head_dim != 256 {
+        if head_dim == 0 || head_dim % 2 != 0 {
             return Err(RvllmError::Loader {
                 err: LoaderError::Corrupt {
                     detail: format!(
-                        "v3 requires head_dim in {{128, 256}}, got {head_dim} (hidden={hidden_size}, heads={num_attention_heads})"
+                        "v3 requires positive even head_dim, got {head_dim} (hidden={hidden_size}, heads={num_attention_heads})"
                     ),
                 },
                 ctx: LoaderCtx {
