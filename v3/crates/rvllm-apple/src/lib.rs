@@ -27,6 +27,12 @@ pub use iosurface::{IoSurfaceTensorDesc, PackedField, PackedInputLayout};
 pub use metal::{MetalPrefillBackend, MetalPrefillConfig, PrefillContract};
 pub use mil::{dense_1x1_conv_mil, fused_ffn_mil, fused_qkv_mil, FfnMilOffsets, QkvMilOffsets};
 pub use plan::{
-    select_rollout_bucket, AppleBackendMode, AppleRuntimePlan, RolloutBucket, ROLLOUT_BUCKETS,
+    plan_ane_static_partitions, private_ane_env_opted_in, private_ane_feature_enabled,
+    probe_ane_capability, select_rollout_bucket, AneCapabilityPath, AneCapabilityReport,
+    AneCapabilityStatus, AneCompiledCacheKey, AneLayerRange, AneOsDeviceKey, AnePartitionOpKind,
+    AnePartitionPolicy, AnePartitionRequest, AnePlannedBackend, AneStaticPartition,
+    AneStaticPartitionPlan, AneUnsupportedReason, AneVocabBlock, AppleBackendMode,
+    AppleRuntimePlan, CoreMlAneComputePlan, CoreMlComputeUnitsPlan, RolloutBucket,
+    PRIVATE_ANE_ENV_VAR, ROLLOUT_BUCKETS,
 };
 pub use weight_blob::{build_weight_blob_fp16, build_weight_blob_fp16_named, WeightChunkDesc};

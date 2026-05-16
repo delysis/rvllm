@@ -5,10 +5,8 @@ use prost::Message;
 use rvllm_core::error::AneCompileError;
 use rvllm_core::{AppleCtx, AppleError, DType, Result, RvllmError};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::VecDeque;
 use std::ffi::OsStr;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
 use std::process::Command;
@@ -175,31 +173,45 @@ impl AneProgramPlan {
 
     #[must_use]
     pub fn cache_key(&self) -> String {
-        // Deterministic hash over all plan structure so cache keys are stable
-        // even when hash map iteration order is randomized.
-        let mut hasher = DefaultHasher::new();
         let mut fields = Vec::from_iter(
             self.offsets
                 .iter()
                 .map(|(name, offset)| (name.as_str(), *offset)),
         );
         fields.sort_by(|a, b| a.0.cmp(b.0));
-        self.id.hash(&mut hasher);
-        self.template_name.hash(&mut hasher);
-        self.spatial.hash(&mut hasher);
-        self.in_ch.hash(&mut hasher);
-        self.hidden_ch.hash(&mut hasher);
-        self.out_ch.hash(&mut hasher);
+        let mut input = format!(
+            concat!(
+                "rvllm-private-ane-program-v1\n",
+                "id={}\n",
+                "template={}\n",
+                "spatial={}\n",
+                "in_ch={}\n",
+                "hidden_ch={}\n",
+                "out_ch={}\n",
+            ),
+            self.id, self.template_name, self.spatial, self.in_ch, self.hidden_ch, self.out_ch
+        );
         for (name, offset) in fields {
-            name.hash(&mut hasher);
-            offset.hash(&mut hasher);
+            input.push_str("offset=");
+            input.push_str(name);
+            input.push('=');
+            input.push_str(&offset.to_string());
+            input.push('\n');
         }
-        format!("ane_v1_{:016x}", hasher.finish())
+        format!("ane_v1_{}", crate::plan::stable_hash_hex(input.as_bytes()))
     }
 }
 
 #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
 pub fn compile_private_ane_program(plan: &AneProgramPlan, weights_path: &Path) -> Result<PathBuf> {
+    if !crate::plan::private_ane_env_opted_in() {
+        return Err(RvllmError::apple(
+            AppleError::PrivateApiUnavailable {
+                symbol: crate::plan::PRIVATE_ANE_ENV_VAR,
+            },
+            ctx("private_ane_env_opt_in"),
+        ));
+    }
     plan.validate()?;
 
     let cache_root = std::env::var_os("RVLLM_ANE_CACHE_DIR")
