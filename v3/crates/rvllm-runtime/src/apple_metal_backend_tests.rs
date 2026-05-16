@@ -1028,12 +1028,12 @@ fn cpu_reference_one_layer_attention_nonzero_argmax() -> usize {
         .expect("nonempty logits")
 }
 
-fn cpu_reference_gqa_attention_argmax(
+fn cpu_reference_gqa_attention_logits(
     hidden: usize,
     num_heads: usize,
     num_kv_heads: usize,
     head_dim: usize,
-) -> usize {
+) -> Vec<f32> {
     assert!(num_heads > 0);
     assert!(num_kv_heads > 0);
     assert_eq!(num_heads % num_kv_heads, 0);
@@ -1095,21 +1095,23 @@ fn cpu_reference_gqa_attention_argmax(
     let mut lm_head = vec![0.0f32; vocab * hidden];
     lm_head[2 * hidden + GQA_SOURCE_DIM] = 1.0;
     lm_head[3 * hidden + GQA_OUTPUT_DIM] = 4.0;
-    let logits = gemm_f32(&final_hidden, &lm_head, vocab, hidden);
-    logits
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("finite logits"))
-        .map(|(idx, _)| idx)
-        .expect("nonempty logits")
+    gemm_f32(&final_hidden, &lm_head, vocab, hidden)
+}
+
+fn cpu_reference_multihead_gqa_attention_logits() -> Vec<f32> {
+    cpu_reference_gqa_attention_logits(128, 4, 2, 32)
 }
 
 fn cpu_reference_multihead_gqa_attention_argmax() -> usize {
-    cpu_reference_gqa_attention_argmax(128, 4, 2, 32)
+    cpu_full_nonzero_argmax(&cpu_reference_multihead_gqa_attention_logits())
+}
+
+fn cpu_reference_qdim_not_hidden_logits() -> Vec<f32> {
+    cpu_reference_gqa_attention_logits(64, 4, 2, 32)
 }
 
 fn cpu_reference_qdim_not_hidden_argmax() -> usize {
-    cpu_reference_gqa_attention_argmax(64, 4, 2, 32)
+    cpu_full_nonzero_argmax(&cpu_reference_qdim_not_hidden_logits())
 }
 
 #[test]
@@ -1130,6 +1132,31 @@ fn cpu_reference_multihead_gqa_attention_fixture_argmax_is_3() {
 #[test]
 fn cpu_reference_qdim_not_hidden_fixture_argmax_is_3() {
     assert_eq!(cpu_reference_qdim_not_hidden_argmax(), 3);
+}
+
+#[test]
+fn cpu_reference_multihead_gqa_attention_full_logits_are_stable() {
+    let logits = cpu_reference_multihead_gqa_attention_logits();
+    let expected = [0.0f32, 0.0, 7.242_86, 34.765_73, 0.0, 0.0, 0.0, 0.0];
+
+    assert_eq!(logits.len(), 8);
+    assert_eq!(cpu_full_nonzero_argmax(&logits), 3);
+    assert_f32_slice_close(
+        "multi-head GQA attention CPU logits",
+        &logits,
+        &expected,
+        0.01,
+    );
+}
+
+#[test]
+fn cpu_reference_qdim_not_hidden_full_logits_are_stable() {
+    let logits = cpu_reference_qdim_not_hidden_logits();
+    let expected = [0.0f32, 0.0, 5.121_48, 24.583_08, 0.0, 0.0, 0.0, 0.0];
+
+    assert_eq!(logits.len(), 8);
+    assert_eq!(cpu_full_nonzero_argmax(&logits), 3);
+    assert_f32_slice_close("q_dim != hidden CPU logits", &logits, &expected, 0.01);
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -6224,6 +6251,48 @@ fn tiny_multihead_gqa_attention_model_backend_decodes_token_2_to_3() {
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
 #[ignore = "requires Apple Silicon Metal device"]
+fn tiny_multihead_gqa_attention_model_backend_full_logits_match_cpu() {
+    let cpu_logits = cpu_reference_multihead_gqa_attention_logits();
+    assert_eq!(cpu_full_nonzero_argmax(&cpu_logits), 3);
+
+    let dir = write_tiny_multihead_gqa_attention_fixture();
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = one_layer_plan(dir.clone());
+    backend
+        .prepare(&plan)
+        .expect("prepare multi-head GQA attention tiny model");
+
+    let handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+
+    let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+    let out = backend.collect(ticket).expect("collect");
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+    let metal_logits = backend
+        .debug_read_decode_logits_f32(1)
+        .expect("read decode logits");
+    assert_eq!(metal_logits.len(), cpu_logits.len());
+    assert_f32_slice_close(
+        "multi-head GQA direct decode logits",
+        &metal_logits,
+        &cpu_logits,
+        0.05,
+    );
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
 fn engine_multihead_gqa_attention_prefill_then_decode_token_2_to_3() {
     assert_eq!(cpu_reference_multihead_gqa_attention_argmax(), 3);
 
@@ -6250,6 +6319,53 @@ fn engine_multihead_gqa_attention_prefill_then_decode_token_2_to_3() {
     assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
     assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
     assert!(!engine.has_pending_work());
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
+fn engine_multihead_gqa_attention_full_logits_match_cpu() {
+    let cpu_logits = cpu_reference_multihead_gqa_attention_logits();
+    assert_eq!(cpu_full_nonzero_argmax(&cpu_logits), 3);
+
+    let dir = write_tiny_multihead_gqa_attention_fixture();
+    let plan = one_layer_plan(dir.clone());
+    let shared_backend = SharedModelMetalBackend::new(dir.clone());
+
+    let mut engine = crate::engine::Engine::new()
+        .with_apple_backend(Box::new(shared_backend.clone()))
+        .with_apple_runtime_plan(plan)
+        .expect("engine with shared multi-head GQA attention model backend");
+
+    engine.scheduler.enqueue(crate::sched_state::Request::new(
+        rvllm_core::ReqId(1),
+        vec![rvllm_core::TokenId(2)],
+        1,
+    ));
+
+    let step1 = engine.step_launch().expect("launch prefill");
+    let out1 = step1.collect().expect("collect prefill");
+    assert!(out1.is_empty());
+
+    let step2 = engine.step_launch().expect("launch decode");
+    let out2 = step2.collect().expect("collect decode");
+    assert_eq!(out2.len(), 1);
+    assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+    assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+    assert!(!engine.has_pending_work());
+
+    let metal_logits = shared_backend
+        .debug_read_decode_logits_f32(1)
+        .expect("read shared backend decode logits");
+    assert_eq!(metal_logits.len(), cpu_logits.len());
+    assert_f32_slice_close(
+        "multi-head GQA engine decode logits",
+        &metal_logits,
+        &cpu_logits,
+        0.05,
+    );
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -6287,6 +6403,48 @@ fn tiny_qdim_not_hidden_model_backend_decodes_token_2_to_3() {
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
 #[ignore = "requires Apple Silicon Metal device"]
+fn tiny_qdim_not_hidden_model_backend_full_logits_match_cpu() {
+    let cpu_logits = cpu_reference_qdim_not_hidden_logits();
+    assert_eq!(cpu_full_nonzero_argmax(&cpu_logits), 3);
+
+    let dir = write_tiny_qdim_not_hidden_attention_fixture();
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = one_layer_plan(dir.clone());
+    backend
+        .prepare(&plan)
+        .expect("prepare q_dim != hidden attention tiny model");
+
+    let handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+
+    let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+    let out = backend.collect(ticket).expect("collect");
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+    let metal_logits = backend
+        .debug_read_decode_logits_f32(1)
+        .expect("read decode logits");
+    assert_eq!(metal_logits.len(), cpu_logits.len());
+    assert_f32_slice_close(
+        "q_dim != hidden direct decode logits",
+        &metal_logits,
+        &cpu_logits,
+        0.05,
+    );
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
 fn engine_qdim_not_hidden_prefill_then_decode_token_2_to_3() {
     assert_eq!(cpu_reference_qdim_not_hidden_argmax(), 3);
 
@@ -6313,6 +6471,53 @@ fn engine_qdim_not_hidden_prefill_then_decode_token_2_to_3() {
     assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
     assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
     assert!(!engine.has_pending_work());
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
+fn engine_qdim_not_hidden_full_logits_match_cpu() {
+    let cpu_logits = cpu_reference_qdim_not_hidden_logits();
+    assert_eq!(cpu_full_nonzero_argmax(&cpu_logits), 3);
+
+    let dir = write_tiny_qdim_not_hidden_attention_fixture();
+    let plan = one_layer_plan(dir.clone());
+    let shared_backend = SharedModelMetalBackend::new(dir.clone());
+
+    let mut engine = crate::engine::Engine::new()
+        .with_apple_backend(Box::new(shared_backend.clone()))
+        .with_apple_runtime_plan(plan)
+        .expect("engine with shared q_dim != hidden attention model backend");
+
+    engine.scheduler.enqueue(crate::sched_state::Request::new(
+        rvllm_core::ReqId(1),
+        vec![rvllm_core::TokenId(2)],
+        1,
+    ));
+
+    let step1 = engine.step_launch().expect("launch prefill");
+    let out1 = step1.collect().expect("collect prefill");
+    assert!(out1.is_empty());
+
+    let step2 = engine.step_launch().expect("launch decode");
+    let out2 = step2.collect().expect("collect decode");
+    assert_eq!(out2.len(), 1);
+    assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+    assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+    assert!(!engine.has_pending_work());
+
+    let metal_logits = shared_backend
+        .debug_read_decode_logits_f32(1)
+        .expect("read shared backend decode logits");
+    assert_eq!(metal_logits.len(), cpu_logits.len());
+    assert_f32_slice_close(
+        "q_dim != hidden engine decode logits",
+        &metal_logits,
+        &cpu_logits,
+        0.05,
+    );
 
     let _ = fs::remove_dir_all(dir);
 }
