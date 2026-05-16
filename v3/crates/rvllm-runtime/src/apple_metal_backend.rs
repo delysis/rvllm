@@ -7152,6 +7152,79 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_generated_gemma4_hf_end_to_end_model_backend_selected_logits_match_cpu() {
+        let cpu_reference = cpu_reference_generated_tiny_hf_end_to_end_decode_loop();
+        assert_eq!(cpu_reference.generated, vec![3, 5]);
+
+        let dir = write_generated_tiny_hf_end_to_end_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare generated tiny Gemma4 HF-named model");
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            vec![0, 2],
+            vec![1],
+            vec![2],
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill).expect("run prefill");
+        let prefill_out = backend.collect(prefill_ticket).expect("collect prefill");
+        assert!(prefill_out.is_empty());
+
+        let mut current = rvllm_core::TokenId(4);
+        let mut generated = Vec::new();
+        for (step_idx, expected_token) in cpu_reference.generated.iter().enumerate() {
+            let decode = rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                vec![rvllm_core::ReqId(1)],
+                vec![current],
+                vec![0, 1],
+                vec![1 + step_idx as u32],
+                vec![2 + step_idx as u32],
+            );
+            let ticket = backend.launch_rollout(&decode, None).expect("run rollout");
+            let metal_logits = backend
+                .debug_read_decode_logits_f32(1)
+                .expect("read decode logits");
+            let out = backend.collect(ticket).expect("collect rollout");
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].token_id, rvllm_core::TokenId(*expected_token as u32));
+            current = out[0].token_id;
+            generated.push(current);
+
+            let cpu_logits = &cpu_reference.logits_by_step[step_idx];
+            let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(cpu_logits);
+            let low_idx = 0usize;
+            assert_eq!(expected_idx, *expected_token);
+            assert_eq!(metal_logits.len(), cpu_logits.len());
+
+            const LOGIT_TOLERANCE: f32 = 0.05;
+            assert_selected_logits_close(
+                &format!("generated tiny HF direct decode step {}", step_idx + 1),
+                &metal_logits,
+                cpu_logits,
+                &[expected_idx, runner_up_idx, low_idx],
+                LOGIT_TOLERANCE,
+            );
+        }
+
+        let expected = cpu_reference
+            .generated
+            .iter()
+            .map(|token| rvllm_core::TokenId(*token as u32))
+            .collect::<Vec<_>>();
+        assert_eq!(generated, expected);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
     fn engine_generated_gemma4_hf_end_to_end_matches_cpu_tokens() {
         let expected = cpu_reference_generated_tiny_hf_end_to_end_sequence()
             .into_iter()
