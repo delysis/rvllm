@@ -321,7 +321,40 @@ fn validate_gemma4_config_identity(config: &serde_json::Value, path: &Path) -> R
         }
     }
 
+    for (scope, value) in [("root", config), ("text_config", text_config)] {
+        for field in [
+            "enable_moe_block",
+            "num_experts",
+            "top_k_experts",
+            "expert_intermediate_size",
+            "moe_intermediate_size",
+            "num_local_experts",
+            "num_experts_per_tok",
+            "router_aux_loss_coef",
+        ] {
+            if config_value_is_truthy(value.get(field)) {
+                return Err(corrupt_error(
+                    path,
+                    format!(
+                        "Gemma4 arch supports dense Gemma4 only; unsupported MoE marker {scope}.{field}"
+                    ),
+                ));
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn config_value_is_truthy(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(serde_json::Value::Number(value)) => value.as_f64().is_some_and(|n| n != 0.0),
+        Some(serde_json::Value::String(value)) => !value.is_empty() && value != "0",
+        Some(serde_json::Value::Array(value)) => !value.is_empty(),
+        Some(serde_json::Value::Object(value)) => !value.is_empty(),
+        Some(serde_json::Value::Null) | None => false,
+    }
 }
 
 fn corrupt_error(path: &Path, detail: impl Into<String>) -> RvllmError {
@@ -518,6 +551,62 @@ mod tests {
 
         assert!(msg.contains("Gemma4 model_type"));
         assert!(msg.contains("text_config.model_type"));
+    }
+
+    #[test]
+    fn from_dir_allows_dense_moe_placeholders() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        write_single_safetensor_header(&dir, &["model.language_model.embed_tokens.weight"]);
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["enable_moe_block"] = serde_json::json!(false);
+        config["text_config"]["num_experts"] = serde_json::Value::Null;
+        config["text_config"]["top_k_experts"] = serde_json::Value::Null;
+        config["text_config"]["expert_intermediate_size"] = serde_json::Value::Null;
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+        let arch = Gemma4Arch::from_dir(&dir).expect("false/null MoE placeholders should parse");
+        assert_eq!(arch.weight_prefix, "model.language_model");
+    }
+
+    #[test]
+    fn from_dir_rejects_explicit_moe_markers() {
+        for (scope, field, value) in [
+            ("root", "enable_moe_block", serde_json::json!(true)),
+            ("text_config", "num_experts", serde_json::json!(128)),
+            ("text_config", "top_k_experts", serde_json::json!(8)),
+            (
+                "text_config",
+                "expert_intermediate_size",
+                serde_json::json!(1024),
+            ),
+            (
+                "text_config",
+                "router_aux_loss_coef",
+                serde_json::json!(0.01),
+            ),
+        ] {
+            let dir = tempdir();
+            write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+            let path = dir.join("config.json");
+            let mut config: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            if scope == "root" {
+                config[field] = value;
+            } else {
+                config["text_config"][field] = value;
+            }
+            std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+            let err = Gemma4Arch::from_dir(&dir).expect_err("MoE marker should fail");
+            let msg = format!("{err}");
+
+            assert!(msg.contains("dense Gemma4 only"));
+            assert!(msg.contains(scope));
+            assert!(msg.contains(field));
+        }
     }
 
     #[test]
