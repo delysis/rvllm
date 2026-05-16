@@ -194,13 +194,20 @@ impl Gemma4Arch {
         if let Ok(bytes) = std::fs::read(&idx_path) {
             if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                 if let Some(map) = v["weight_map"].as_object() {
-                    for key in map.keys() {
-                        if key.starts_with("model.language_model.") {
-                            return "model.language_model".to_string();
-                        }
-                        if key.starts_with("language_model.") {
-                            return "language_model".to_string();
-                        }
+                    if map
+                        .keys()
+                        .any(|key| key.starts_with("model.language_model."))
+                    {
+                        return "model.language_model".to_string();
+                    }
+                    if map
+                        .keys()
+                        .any(|key| key.starts_with("language_model.model."))
+                    {
+                        return "language_model.model".to_string();
+                    }
+                    if map.keys().any(|key| key.starts_with("language_model.")) {
+                        return "language_model".to_string();
                     }
                 }
             }
@@ -265,6 +272,41 @@ impl Gemma4Arch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn tempdir() -> PathBuf {
+        static N: AtomicU64 = AtomicU64::new(0);
+        let p = std::env::temp_dir().join(format!(
+            "rvllm-loader-gemma4-arch-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn write_index(dir: &Path, keys: &[&str]) {
+        let weight_map: serde_json::Map<String, serde_json::Value> = keys
+            .iter()
+            .map(|key| {
+                (
+                    (*key).to_string(),
+                    serde_json::Value::String("model-00001-of-00001.safetensors".to_string()),
+                )
+            })
+            .collect();
+        let index = serde_json::json!({
+            "metadata": {},
+            "weight_map": weight_map,
+        });
+        std::fs::write(
+            dir.join("model.safetensors.index.json"),
+            serde_json::to_vec(&index).unwrap(),
+        )
+        .unwrap();
+    }
 
     #[test]
     fn default_layer_pattern_every_6th_global() {
@@ -287,6 +329,39 @@ mod tests {
         let types = Gemma4Arch::parse_layer_types(&v, 6);
         assert_eq!(types[5], Gemma4LayerType::GlobalAttention);
         assert_eq!(types[0], Gemma4LayerType::SlidingAttention);
+    }
+
+    #[test]
+    fn detects_language_model_model_weight_prefix() {
+        let dir = tempdir();
+        write_index(
+            &dir,
+            &[
+                "language_model.layers.0.self_attn.q_proj.weight",
+                "language_model.model.embed_tokens.weight",
+            ],
+        );
+        assert_eq!(
+            Gemma4Arch::detect_weight_prefix(&dir),
+            "language_model.model"
+        );
+    }
+
+    #[test]
+    fn detects_model_language_model_weight_prefix() {
+        let dir = tempdir();
+        write_index(&dir, &["model.language_model.embed_tokens.weight"]);
+        assert_eq!(
+            Gemma4Arch::detect_weight_prefix(&dir),
+            "model.language_model"
+        );
+    }
+
+    #[test]
+    fn detects_language_model_weight_prefix() {
+        let dir = tempdir();
+        write_index(&dir, &["language_model.embed_tokens.weight"]);
+        assert_eq!(Gemma4Arch::detect_weight_prefix(&dir), "language_model");
     }
 
     #[test]
