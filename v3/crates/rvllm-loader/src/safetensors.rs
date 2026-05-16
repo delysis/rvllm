@@ -126,18 +126,15 @@ fn map_dtype(s: &str) -> Option<DType> {
         "F32" => DType::F32,
         "F16" => DType::F16,
         "BF16" => DType::Bf16,
+        "U32" => DType::U32,
+        "U8" => DType::U8,
         "F8_E4M3" | "F8E4M3" => DType::Fp8E4M3,
         _ => return None,
     })
 }
 
 fn dtype_bytes(d: DType) -> usize {
-    match d {
-        DType::F32 => 4,
-        DType::F16 | DType::Bf16 => 2,
-        DType::Fp8E4M3 => 1,
-        _ => 0,
-    }
+    d.bytes()
 }
 
 /// HF often ships sharded models: `model.safetensors.index.json`
@@ -225,6 +222,8 @@ mod tests {
                 DType::F32 => "F32",
                 DType::F16 => "F16",
                 DType::Bf16 => "BF16",
+                DType::U32 => "U32",
+                DType::U8 => "U8",
                 DType::Fp8E4M3 => "F8_E4M3",
                 _ => "F32",
             };
@@ -302,5 +301,24 @@ mod tests {
         let idx = ShardIndex::resolve(&dir).unwrap();
         assert_eq!(idx.shards.len(), 1);
         assert!(idx.weight_to_shard.is_empty());
+    }
+
+    #[test]
+    fn parses_packed_u32_and_u8_metadata() {
+        let dir = tempdir();
+        let path = write_shard(
+            &dir,
+            &[
+                ("packed_weight", DType::U32, &[2], &[0u8; 8]),
+                ("packed_scale", DType::U8, &[4], &[0u8; 4]),
+            ],
+        );
+        let body = std::fs::read(&path).unwrap();
+        let hdr = ShardHeader::parse(&path, &body).unwrap();
+
+        assert_eq!(hdr.tensors["packed_weight"].dtype, DType::U32);
+        assert_eq!(hdr.tensors["packed_weight"].nbytes, 8);
+        assert_eq!(hdr.tensors["packed_scale"].dtype, DType::U8);
+        assert_eq!(hdr.tensors["packed_scale"].nbytes, 4);
     }
 }

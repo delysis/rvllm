@@ -146,7 +146,9 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
         &embed_tokens,
         &[arch.vocab_size, arch.hidden_size],
     )?;
+    validate_floating_tensor_dtype(model_dir, &tensors, &embed_tokens)?;
     validate_required_shape(model_dir, &tensors, &final_norm, &[arch.hidden_size])?;
+    validate_floating_tensor_dtype(model_dir, &tensors, &final_norm)?;
 
     let prefixed_lm_head = join_weight_name(&weight_prefix, "lm_head.weight");
     let tie_word_embeddings = arch.tie_word_embeddings;
@@ -169,6 +171,7 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
             name,
             &[arch.vocab_size, arch.hidden_size],
         )?;
+        validate_linear_tensor_dtype(model_dir, &tensors, name)?;
     } else if !tie_word_embeddings {
         return Err(missing_tensor_error(model_dir, &prefixed_lm_head));
     }
@@ -281,13 +284,16 @@ fn validate_gemma4_dry_run_layer(
         &post_feedforward_layernorm,
     ] {
         validate_required_shape(model_dir, tensors, name, &[arch.hidden_size])?;
+        validate_floating_tensor_dtype(model_dir, tensors, name)?;
     }
 
     let q_proj = format!("{lprefix}.self_attn.q_proj.weight");
     let k_proj = format!("{lprefix}.self_attn.k_proj.weight");
     let v_proj_name = format!("{lprefix}.self_attn.v_proj.weight");
     validate_required_shape(model_dir, tensors, &q_proj, &[q_dim, arch.hidden_size])?;
+    validate_linear_tensor_dtype(model_dir, tensors, &q_proj)?;
     validate_required_shape(model_dir, tensors, &k_proj, &[kv_dim, arch.hidden_size])?;
+    validate_linear_tensor_dtype(model_dir, tensors, &k_proj)?;
     let v_proj = if tensors.contains_key(&v_proj_name) {
         validate_required_shape(
             model_dir,
@@ -295,6 +301,7 @@ fn validate_gemma4_dry_run_layer(
             &v_proj_name,
             &[kv_dim, arch.hidden_size],
         )?;
+        validate_linear_tensor_dtype(model_dir, tensors, &v_proj_name)?;
         Some(v_proj_name)
     } else if arch.attention_k_eq_v && attention_kind == Gemma4DryRunAttentionKind::Full {
         None
@@ -304,15 +311,19 @@ fn validate_gemma4_dry_run_layer(
 
     let o_proj = format!("{lprefix}.self_attn.o_proj.weight");
     validate_required_shape(model_dir, tensors, &o_proj, &[arch.hidden_size, q_dim])?;
+    validate_linear_tensor_dtype(model_dir, tensors, &o_proj)?;
 
     let q_norm = format!("{lprefix}.self_attn.q_norm.weight");
     let k_norm = format!("{lprefix}.self_attn.k_norm.weight");
     validate_required_shape(model_dir, tensors, &q_norm, &[head_dim])?;
+    validate_floating_tensor_dtype(model_dir, tensors, &q_norm)?;
     validate_required_shape(model_dir, tensors, &k_norm, &[head_dim])?;
+    validate_floating_tensor_dtype(model_dir, tensors, &k_norm)?;
 
     let v_norm = format!("{lprefix}.self_attn.v_norm.weight");
     if tensors.contains_key(&v_norm) {
         validate_required_shape(model_dir, tensors, &v_norm, &[head_dim])?;
+        validate_floating_tensor_dtype(model_dir, tensors, &v_norm)?;
     }
 
     let gate_proj = format!("{lprefix}.mlp.gate_proj.weight");
@@ -324,18 +335,21 @@ fn validate_gemma4_dry_run_layer(
         &gate_proj,
         &[arch.intermediate_size, arch.hidden_size],
     )?;
+    validate_linear_tensor_dtype(model_dir, tensors, &gate_proj)?;
     validate_required_shape(
         model_dir,
         tensors,
         &up_proj,
         &[arch.intermediate_size, arch.hidden_size],
     )?;
+    validate_linear_tensor_dtype(model_dir, tensors, &up_proj)?;
     validate_required_shape(
         model_dir,
         tensors,
         &down_proj,
         &[arch.hidden_size, arch.intermediate_size],
     )?;
+    validate_linear_tensor_dtype(model_dir, tensors, &down_proj)?;
 
     let layer_scalar = resolve_required_dry_run_alias(
         model_dir,
@@ -360,6 +374,7 @@ fn validate_gemma4_dry_run_layer(
             ));
         }
     };
+    validate_floating_tensor_dtype(model_dir, tensors, &layer_scalar)?;
 
     Ok(Gemma4DryRunLayerValidation {
         layer_idx,
@@ -562,6 +577,47 @@ fn validate_required_shape(
         return Err(shape_mismatch_error(model_dir, name, expected, &info.shape));
     }
     Ok(())
+}
+
+fn validate_floating_tensor_dtype(
+    model_dir: &Path,
+    tensors: &BTreeMap<String, DryRunTensorInfo>,
+    name: &str,
+) -> Result<()> {
+    let info = tensors
+        .get(name)
+        .ok_or_else(|| missing_tensor_error(model_dir, name))?;
+    if matches!(info.dtype, DType::F32 | DType::F16 | DType::Bf16) {
+        return Ok(());
+    }
+    Err(unsupported_dtype_error(
+        model_dir,
+        name,
+        info.dtype,
+        "floating metadata tensors must be F32, F16, or BF16",
+    ))
+}
+
+fn validate_linear_tensor_dtype(
+    model_dir: &Path,
+    tensors: &BTreeMap<String, DryRunTensorInfo>,
+    name: &str,
+) -> Result<()> {
+    let info = tensors
+        .get(name)
+        .ok_or_else(|| missing_tensor_error(model_dir, name))?;
+    if matches!(
+        info.dtype,
+        DType::F32 | DType::F16 | DType::Bf16 | DType::Fp8E4M3
+    ) {
+        return Ok(());
+    }
+    Err(unsupported_dtype_error(
+        model_dir,
+        name,
+        info.dtype,
+        "linear weights must be F32, F16, BF16, or F8_E4M3 with BF16 scales; packed U32/U8 quantization is not yet supported",
+    ))
 }
 
 fn resolve_required_dry_run_alias(
@@ -792,18 +848,15 @@ fn map_dtype(s: &str) -> Option<DType> {
         "F32" => DType::F32,
         "F16" => DType::F16,
         "BF16" => DType::Bf16,
+        "U32" => DType::U32,
+        "U8" => DType::U8,
         "F8_E4M3" | "F8E4M3" => DType::Fp8E4M3,
         _ => return None,
     })
 }
 
 fn dtype_bytes(dtype: DType) -> usize {
-    match dtype {
-        DType::F32 => 4,
-        DType::F16 | DType::Bf16 => 2,
-        DType::Fp8E4M3 => 1,
-        _ => 0,
-    }
+    dtype.bytes()
 }
 
 fn missing_tensor_error(model_dir: &Path, name: &str) -> RvllmError {
@@ -852,6 +905,18 @@ fn corrupt_error(path: impl Into<PathBuf>, detail: impl Into<String>) -> RvllmEr
     }
 }
 
+fn unsupported_dtype_error(
+    model_dir: &Path,
+    name: &str,
+    dtype: DType,
+    detail: &'static str,
+) -> RvllmError {
+    corrupt_error(
+        model_dir,
+        format!("{name}: unsupported Gemma4 dry-run dtype {dtype:?}; {detail}"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -898,7 +963,8 @@ mod tests {
         let bytes_per_elem = match dtype {
             "F32" => 4,
             "F16" | "BF16" => 2,
-            "F8_E4M3" => 1,
+            "F8_E4M3" | "U8" => 1,
+            "U32" => 4,
             other => panic!("unsupported fixture dtype {other}"),
         };
         let nbytes = shape.iter().copied().product::<usize>() * bytes_per_elem;
@@ -1349,6 +1415,166 @@ mod tests {
         dir
     }
 
+    fn write_dry_run_one_layer_dtype_fixture(
+        q_proj_dtype: &str,
+        include_aux_packed_tensors: bool,
+    ) -> PathBuf {
+        let dir = test_fixture_dir("gemma4-dry-run-one-layer-unsupported-dtype");
+        let hidden = 8usize;
+        let intermediate = 16usize;
+        let vocab = 8usize;
+        let head_dim = 4usize;
+        let prefix = "model.language_model";
+        let lprefix = format!("{prefix}.layers.0");
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{prefix}.embed_tokens.weight"),
+            &[vocab, hidden],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{prefix}.norm.weight"),
+            &[hidden],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{prefix}.lm_head.weight"),
+            &[vocab, hidden],
+        );
+        for suffix in [
+            "input_layernorm.weight",
+            "post_attention_layernorm.weight",
+            "pre_feedforward_layernorm.weight",
+            "post_feedforward_layernorm.weight",
+        ] {
+            add_zero_tensor(
+                &mut header,
+                &mut payload,
+                &format!("{lprefix}.{suffix}"),
+                &[hidden],
+            );
+        }
+        add_zero_tensor_with_dtype(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.q_proj.weight"),
+            &[head_dim, hidden],
+            q_proj_dtype,
+        );
+        for suffix in ["k_proj.weight", "v_proj.weight", "o_proj.weight"] {
+            let shape = if suffix == "o_proj.weight" {
+                vec![hidden, head_dim]
+            } else {
+                vec![head_dim, hidden]
+            };
+            add_zero_tensor(
+                &mut header,
+                &mut payload,
+                &format!("{lprefix}.self_attn.{suffix}"),
+                &shape,
+            );
+        }
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.q_norm.weight"),
+            &[head_dim],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.k_norm.weight"),
+            &[head_dim],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.layer_scalar"),
+            &[hidden],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.gate_proj.weight"),
+            &[intermediate, hidden],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.up_proj.weight"),
+            &[intermediate, hidden],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.down_proj.weight"),
+            &[hidden, intermediate],
+        );
+        if include_aux_packed_tensors {
+            add_zero_tensor_with_dtype(
+                &mut header,
+                &mut payload,
+                "unused_packed_weight",
+                &[2],
+                "U32",
+            );
+            add_zero_tensor_with_dtype(
+                &mut header,
+                &mut payload,
+                "unused_packed_scale",
+                &[4],
+                "U8",
+            );
+        }
+
+        fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{
+  "architectures": ["Gemma4ForConditionalGeneration"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {hidden},
+    "intermediate_size": {intermediate},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {head_dim},
+    "global_head_dim": {head_dim},
+    "num_global_key_value_heads": 1,
+    "layer_types": ["full_attention"],
+    "vocab_size": {vocab},
+    "max_position_embeddings": 1024,
+    "sliding_window": 4,
+    "rms_norm_eps": 0.000001,
+    "tie_word_embeddings": false,
+    "attention_k_eq_v": false,
+    "rope_parameters": {{
+      "sliding_attention": {{"rope_theta": 10000.0}},
+      "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 1.0}}
+    }}
+  }}
+}}"#
+            ),
+        )
+        .expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out = File::create(dir.join("model.safetensors")).expect("create safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
     #[test]
     fn gemma4_dry_run_validates_text_config_and_model_language_model_prefix() {
         let dir = write_dry_run_full_gemma_style_fixture(
@@ -1395,6 +1621,38 @@ mod tests {
         assert_eq!(validation.fp8_scale_summary.scaled_weights, 0);
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_accepts_unused_packed_u32_u8_metadata() {
+        let dir = write_dry_run_one_layer_dtype_fixture("F16", true);
+        let validation = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("unused packed auxiliary metadata should not reject dense dry-run");
+
+        assert_eq!(validation.num_layers, 1);
+        assert_eq!(validation.weight_prefix, "model.language_model");
+        assert_eq!(
+            validation.fp8_scale_summary.mode,
+            Gemma4DryRunFp8ScaleMode::None
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_packed_required_linear_weights() {
+        for dtype in ["U32", "U8"] {
+            let dir = write_dry_run_one_layer_dtype_fixture(dtype, false);
+            let err = Gemma4DryRunValidation::from_model_dir(&dir)
+                .expect_err("packed required q_proj must not validate as executable dense/FP8");
+            let msg = format!("{err}");
+
+            assert!(msg.contains("unsupported Gemma4 dry-run dtype"));
+            assert!(msg.contains("self_attn.q_proj.weight"));
+            assert!(msg.contains("packed U32/U8 quantization is not yet supported"));
+
+            let _ = fs::remove_dir_all(dir);
+        }
     }
 
     #[test]
