@@ -61,6 +61,9 @@ pub struct MetalOneLayerState {
 
     pub attn_norm: MetalRegion,
     pub qkv: MetalRegion,
+    pub q_norm: Option<MetalRegion>,
+    pub k_norm: Option<MetalRegion>,
+    pub v_norm: Option<MetalRegion>,
     pub o_proj: MetalRegion,
     pub mlp_norm: MetalRegion,
     pub gate_up: MetalRegion,
@@ -114,6 +117,9 @@ struct ProbeLayerNames {
     q_name: String,
     k_name: String,
     v_name: String,
+    q_norm_name: Option<String>,
+    k_norm_name: Option<String>,
+    v_norm_name: Option<String>,
     prefused_gate_up_name: String,
     gate_name: String,
     up_name: String,
@@ -299,6 +305,18 @@ impl ProbeModelPlan {
                 let q_name = format!("{lprefix}.self_attn.q_proj.weight");
                 let k_name = format!("{lprefix}.self_attn.k_proj.weight");
                 let v_name = format!("{lprefix}.self_attn.v_proj.weight");
+                let q_norm_name = resolve_optional_tensor_alias(
+                    &tensors,
+                    vec![format!("{lprefix}.self_attn.q_norm.weight")],
+                );
+                let k_norm_name = resolve_optional_tensor_alias(
+                    &tensors,
+                    vec![format!("{lprefix}.self_attn.k_norm.weight")],
+                );
+                let v_norm_name = resolve_optional_tensor_alias(
+                    &tensors,
+                    vec![format!("{lprefix}.self_attn.v_norm.weight")],
+                );
                 let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
 
                 let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
@@ -326,6 +344,32 @@ impl ProbeModelPlan {
                     fused_qkv_bytes += qkv_rows * hidden * std::mem::size_of::<f16>();
                 }
 
+                validate_optional_norm_shape(
+                    &tensors,
+                    &q_norm_name,
+                    q_dim,
+                    "q_norm weight shape mismatch",
+                )?;
+                validate_optional_norm_shape(
+                    &tensors,
+                    &k_norm_name,
+                    kv_dim,
+                    "k_norm weight shape mismatch",
+                )?;
+                validate_optional_norm_shape(
+                    &tensors,
+                    &v_norm_name,
+                    kv_dim,
+                    "v_norm weight shape mismatch",
+                )?;
+                for norm_name in [&q_norm_name, &k_norm_name, &v_norm_name]
+                    .into_iter()
+                    .flatten()
+                {
+                    add_tensor_size(norm_name)?;
+                    names.push(norm_name.clone());
+                }
+
                 if use_prefused_gate_up {
                     add_tensor_size(&prefused_gate_up_name)?;
                     names.push(prefused_gate_up_name.clone());
@@ -344,6 +388,9 @@ impl ProbeModelPlan {
                     q_name,
                     k_name,
                     v_name,
+                    q_norm_name,
+                    k_norm_name,
+                    v_norm_name,
                     prefused_gate_up_name,
                     gate_name,
                     up_name,
@@ -529,6 +576,12 @@ impl Gemma4MetalState {
             let o_proj = region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?;
             let mlp_norm = region_lookup(&mut mapped_refs, &layer_names.mlp_norm_name)?;
             let down_proj = region_lookup(&mut mapped_refs, &layer_names.down_proj_name)?;
+            let q_norm =
+                optional_region_lookup(&mut mapped_refs, layer_names.q_norm_name.as_deref())?;
+            let k_norm =
+                optional_region_lookup(&mut mapped_refs, layer_names.k_norm_name.as_deref())?;
+            let v_norm =
+                optional_region_lookup(&mut mapped_refs, layer_names.v_norm_name.as_deref())?;
 
             let qkv = if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
@@ -658,6 +711,9 @@ impl Gemma4MetalState {
                 layer_idx,
                 attn_norm,
                 qkv,
+                q_norm,
+                k_norm,
+                v_norm,
                 o_proj,
                 mlp_norm,
                 gate_up,
@@ -742,6 +798,43 @@ fn resolve_tensor_alias(
 }
 
 #[cfg(target_os = "macos")]
+fn resolve_optional_tensor_alias(
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    candidates: Vec<String>,
+) -> Option<String> {
+    candidates
+        .into_iter()
+        .find(|name| tensors.contains_key(name))
+}
+
+#[cfg(target_os = "macos")]
+fn validate_optional_norm_shape(
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    name: &Option<String>,
+    expected_dim: usize,
+    reason: &'static str,
+) -> Result<()> {
+    let Some(name) = name else {
+        return Ok(());
+    };
+    let info = tensors.get(name).ok_or_else(|| {
+        RvllmError::apple(
+            AppleError::InvalidWeightBlob {
+                reason: "missing optional norm tensor",
+            },
+            probe_ctx("prepare"),
+        )
+    })?;
+    if info.shape.len() != 1 || info.shape[0] != expected_dim {
+        return Err(RvllmError::apple(
+            AppleError::InvalidWeightBlob { reason },
+            probe_ctx("prepare"),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 fn resolve_weight_prefix(tensors: &BTreeMap<String, SafetensorTensorInfo>) -> String {
     if tensors.contains_key("model.embed_tokens.weight") {
         "model".to_owned()
@@ -765,6 +858,17 @@ fn region_lookup(refs: &mut Vec<(String, MetalRegion)>, name: &str) -> Result<Me
         )
     })?;
     Ok(refs.swap_remove(idx).1)
+}
+
+#[cfg(target_os = "macos")]
+fn optional_region_lookup(
+    refs: &mut Vec<(String, MetalRegion)>,
+    name: Option<&str>,
+) -> Result<Option<MetalRegion>> {
+    match name {
+        Some(name) => Ok(Some(region_lookup(refs, name)?)),
+        None => Ok(None),
+    }
 }
 
 #[cfg(target_os = "macos")]

@@ -38,6 +38,9 @@ pub struct MetalLayerWeights {
     pub attn_norm_offset: usize,
     pub qkv_offset: usize,
     pub qkv_bias_offset: Option<usize>,
+    pub q_norm_offset: Option<usize>,
+    pub k_norm_offset: Option<usize>,
+    pub v_norm_offset: Option<usize>,
     pub o_proj_offset: usize,
     pub mlp_norm_offset: usize,
     pub gate_up_offset: usize,
@@ -261,7 +264,51 @@ pub unsafe fn metal_forward_layer(
         kv_dim,
     )?;
 
-    // 4. RoPE: apply partial RoPE to Q and K
+    // 4. Optional Gemma-style Q/K/V norms before RoPE and KV cache write.
+    if let Some(q_norm_offset) = weights.q_norm_offset {
+        encode_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.q_offset,
+            scratch.q_offset,
+            q_norm_offset,
+            q_dim,
+            dims.rms_eps,
+            num_tokens,
+            "q_norm",
+        )?;
+    }
+    if let Some(k_norm_offset) = weights.k_norm_offset {
+        encode_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.k_offset,
+            scratch.k_offset,
+            k_norm_offset,
+            kv_dim,
+            dims.rms_eps,
+            num_tokens,
+            "k_norm",
+        )?;
+    }
+    if let Some(v_norm_offset) = weights.v_norm_offset {
+        encode_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.v_offset,
+            scratch.v_offset,
+            v_norm_offset,
+            kv_dim,
+            dims.rms_eps,
+            num_tokens,
+            "v_norm",
+        )?;
+    }
+
+    // 5. RoPE: apply partial RoPE to Q and K
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
@@ -320,7 +367,7 @@ pub unsafe fn metal_forward_layer(
         encoder.endEncoding();
     }
 
-    // 4. KV cache write
+    // 6. KV cache write
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
@@ -363,7 +410,7 @@ pub unsafe fn metal_forward_layer(
         encoder.endEncoding();
     }
 
-    // 5. Attention
+    // 7. Attention
     match phase {
         MetalPhase::Decode => {
             let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
@@ -514,7 +561,7 @@ pub unsafe fn metal_forward_layer(
         }
     }
 
-    // 6. O projection with residual: residual += attn_out × W_o
+    // 8. O projection with residual: residual += attn_out × W_o
     encode_gemm_residual(
         &cmd_buf,
         pipelines,
@@ -528,7 +575,7 @@ pub unsafe fn metal_forward_layer(
         q_dim,
     )?;
 
-    // 7. Pre-FFN RMSNorm
+    // 9. Pre-FFN RMSNorm
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
@@ -569,7 +616,7 @@ pub unsafe fn metal_forward_layer(
         encoder.endEncoding();
     }
 
-    // 8. Gate||Up projection: normed_hidden × W_gate_up → gate_up_out
+    // 10. Gate||Up projection: normed_hidden × W_gate_up → gate_up_out
     let two_inter = 2 * dims.intermediate;
     encode_gemm(
         &cmd_buf,
@@ -585,7 +632,7 @@ pub unsafe fn metal_forward_layer(
         0.0,
     )?;
 
-    // 9. GELU(gate) * up → activated
+    // 11. GELU(gate) * up → activated
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
@@ -625,7 +672,7 @@ pub unsafe fn metal_forward_layer(
         encoder.endEncoding();
     }
 
-    // 10. Down projection with residual: residual += activated × W_down
+    // 12. Down projection with residual: residual += activated × W_down
     encode_gemm_residual(
         &cmd_buf,
         pipelines,
@@ -641,6 +688,58 @@ pub unsafe fn metal_forward_layer(
 
     cmd_buf.commit();
 
+    Ok(())
+}
+
+unsafe fn encode_rmsnorm(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    input_offset: usize,
+    output_offset: usize,
+    gamma_offset: usize,
+    hidden: u32,
+    eps: f32,
+    num_tokens: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("rmsnorm_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), gamma_offset, 2);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        4,
+    );
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    let groups = MTLSize {
+        width: num_tokens as usize,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
     Ok(())
 }
 
