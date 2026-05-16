@@ -62,6 +62,7 @@ pub struct Gemma4DryRunLayerValidation {
 #[derive(Debug, Clone)]
 struct DryRunTensorInfo {
     shape: Vec<usize>,
+    dtype: DType,
 }
 
 impl Gemma4DryRunValidation {
@@ -122,6 +123,7 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
             validate_gemma4_dry_run_layer(model_dir, &arch, &tensors, &weight_prefix, layer_idx)?;
         layers.push(layer);
     }
+    validate_gemma4_dry_run_fp8_scales(model_dir, &tensors, lm_head.as_deref(), &layers)?;
 
     Ok(Gemma4DryRunValidation {
         weight_prefix,
@@ -336,6 +338,110 @@ fn validate_gemma4_dry_run_layer(
             .then_some(arch.sliding_window)
             .flatten(),
     })
+}
+
+fn validate_gemma4_dry_run_fp8_scales(
+    model_dir: &Path,
+    tensors: &BTreeMap<String, DryRunTensorInfo>,
+    lm_head: Option<&str>,
+    layers: &[Gemma4DryRunLayerValidation],
+) -> Result<()> {
+    let fp8_prequant = layers
+        .first()
+        .and_then(|layer| tensors.get(&layer.q_proj))
+        .is_some_and(|info| info.dtype == DType::Fp8E4M3);
+    let mut layer_linears = Vec::new();
+    for layer in layers {
+        let lprefix = layer
+            .q_proj
+            .strip_suffix(".self_attn.q_proj.weight")
+            .ok_or_else(|| corrupt_error(model_dir, "Gemma4 dry-run internal q_proj name error"))?;
+        layer_linears.push(layer.q_proj.clone());
+        layer_linears.push(layer.k_proj.clone());
+        if let Some(v_proj) = &layer.v_proj {
+            layer_linears.push(v_proj.clone());
+        }
+        layer_linears.push(format!("{lprefix}.self_attn.o_proj.weight"));
+        layer_linears.push(format!("{lprefix}.mlp.gate_proj.weight"));
+        layer_linears.push(format!("{lprefix}.mlp.up_proj.weight"));
+        layer_linears.push(format!("{lprefix}.mlp.down_proj.weight"));
+    }
+
+    let any_layer_fp8 = layer_linears.iter().any(|name| {
+        tensors
+            .get(name)
+            .is_some_and(|info| info.dtype == DType::Fp8E4M3)
+    });
+    for name in &layer_linears {
+        let info = tensors
+            .get(name)
+            .ok_or_else(|| missing_tensor_error(model_dir, name))?;
+        if any_layer_fp8 && !fp8_prequant {
+            return Err(corrupt_error(
+                model_dir.join("config.json"),
+                "Gemma4 dry-run FP8 prequant mode is detected from layer 0 q_proj; mixed later FP8 linears are unsupported",
+            ));
+        }
+        if fp8_prequant && info.dtype != DType::Fp8E4M3 {
+            return Err(corrupt_error(
+                model_dir.join("config.json"),
+                format!(
+                    "Gemma4 dry-run FP8 prequant mode requires all layer linear weights to be F8_E4M3; {name} is {:?}",
+                    info.dtype
+                ),
+            ));
+        }
+        if info.dtype == DType::Fp8E4M3 {
+            validate_gemma4_dry_run_fp8_scale(model_dir, tensors, name, info.shape[0])?;
+        }
+    }
+
+    if let Some(name) = lm_head {
+        let info = tensors
+            .get(name)
+            .ok_or_else(|| missing_tensor_error(model_dir, name))?;
+        if info.dtype == DType::Fp8E4M3 {
+            validate_gemma4_dry_run_fp8_scale(model_dir, tensors, name, info.shape[0])?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_gemma4_dry_run_fp8_scale(
+    model_dir: &Path,
+    tensors: &BTreeMap<String, DryRunTensorInfo>,
+    weight_name: &str,
+    rows: usize,
+) -> Result<()> {
+    let scale_name = format!("{weight_name}_scale");
+    let scale = tensors
+        .get(&scale_name)
+        .ok_or_else(|| missing_tensor_error(model_dir, &scale_name))?;
+    if scale.dtype != DType::Bf16 {
+        return Err(corrupt_error(
+            model_dir,
+            format!(
+                "{scale_name}: FP8 scale tensor must be BF16, got {:?}",
+                scale.dtype
+            ),
+        ));
+    }
+    let valid_per_channel = scale.shape.as_slice() == [rows]
+        || (scale.shape.len() == 2 && scale.shape[0] == rows && scale.shape[1] == 1);
+    let valid_blockscale = scale.shape.len() == 2
+        && scale.shape[0] > 0
+        && scale.shape[1] > 0
+        && scale.shape[0].saturating_mul(128) >= rows;
+    if !valid_per_channel && !valid_blockscale {
+        return Err(shape_mismatch_error(
+            model_dir,
+            &scale_name,
+            &[rows],
+            &scale.shape,
+        ));
+    }
+    Ok(())
 }
 
 fn validate_required_shape(
@@ -580,7 +686,7 @@ fn parse_safetensor_metadata_file(path: &Path) -> Result<Vec<(String, DryRunTens
                 format!("{name}: data offsets exceed file length"),
             ));
         }
-        out.push((name, DryRunTensorInfo { shape }));
+        out.push((name, DryRunTensorInfo { shape, dtype }));
     }
     Ok(out)
 }
@@ -682,11 +788,27 @@ mod tests {
         name: &str,
         shape: &[usize],
     ) {
+        add_zero_tensor_with_dtype(header, payload, name, shape, "F16");
+    }
+
+    fn add_zero_tensor_with_dtype(
+        header: &mut Map<String, Value>,
+        payload: &mut Vec<u8>,
+        name: &str,
+        shape: &[usize],
+        dtype: &str,
+    ) {
         let start = payload.len();
-        let nbytes = shape.iter().copied().product::<usize>() * 2;
+        let bytes_per_elem = match dtype {
+            "F32" => 4,
+            "F16" | "BF16" => 2,
+            "F8_E4M3" => 1,
+            other => panic!("unsupported fixture dtype {other}"),
+        };
+        let nbytes = shape.iter().copied().product::<usize>() * bytes_per_elem;
         payload.resize(start + nbytes, 0);
         let mut meta = Map::new();
-        meta.insert("dtype".to_owned(), Value::String("F16".to_owned()));
+        meta.insert("dtype".to_owned(), Value::String(dtype.to_owned()));
         meta.insert(
             "shape".to_owned(),
             Value::Array(
@@ -880,6 +1002,240 @@ mod tests {
     "rope_parameters": {{
       "sliding_attention": {{"rope_theta": 10000.0}},
       "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 0.25}}
+    }}
+  }}
+}}"#
+            ),
+        )
+        .expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out = File::create(dir.join("model.safetensors")).expect("create safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Fp8ScaleFixture {
+        PerChannel,
+        PerChannelColumn,
+        Block,
+        BadRows,
+        BadBlockRows,
+        F16PerChannel,
+        Missing,
+    }
+
+    fn add_fp8_scale_for_fixture(
+        header: &mut Map<String, Value>,
+        payload: &mut Vec<u8>,
+        weight_name: &str,
+        rows: usize,
+        scale_override: Option<(&str, Fp8ScaleFixture)>,
+    ) {
+        let spec = scale_override
+            .filter(|(suffix, _)| weight_name.ends_with(suffix))
+            .map(|(_, spec)| spec)
+            .unwrap_or(Fp8ScaleFixture::PerChannel);
+        if spec == Fp8ScaleFixture::Missing {
+            return;
+        }
+
+        let (shape, dtype) = match spec {
+            Fp8ScaleFixture::PerChannel => (vec![rows], "BF16"),
+            Fp8ScaleFixture::PerChannelColumn => (vec![rows, 1], "BF16"),
+            Fp8ScaleFixture::Block => (vec![1, 1], "BF16"),
+            Fp8ScaleFixture::BadRows => (vec![rows + 1], "BF16"),
+            Fp8ScaleFixture::BadBlockRows => (vec![0, 1], "BF16"),
+            Fp8ScaleFixture::F16PerChannel => (vec![rows], "F16"),
+            Fp8ScaleFixture::Missing => unreachable!(),
+        };
+        add_zero_tensor_with_dtype(
+            header,
+            payload,
+            &format!("{weight_name}_scale"),
+            &shape,
+            dtype,
+        );
+    }
+
+    fn add_fp8_fixture_linear(
+        header: &mut Map<String, Value>,
+        payload: &mut Vec<u8>,
+        name: &str,
+        shape: &[usize],
+        scale_override: Option<(&str, Fp8ScaleFixture)>,
+        mixed_f16_linear_suffix: Option<&str>,
+    ) {
+        let dtype = if mixed_f16_linear_suffix.is_some_and(|suffix| name.ends_with(suffix)) {
+            "F16"
+        } else {
+            "F8_E4M3"
+        };
+        add_zero_tensor_with_dtype(header, payload, name, shape, dtype);
+        if dtype == "F8_E4M3" {
+            add_fp8_scale_for_fixture(header, payload, name, shape[0], scale_override);
+        }
+    }
+
+    fn write_dry_run_one_layer_fp8_fixture(
+        scale_override: Option<(&str, Fp8ScaleFixture)>,
+        mixed_f16_linear_suffix: Option<&str>,
+        omit_v_proj: bool,
+        attention_k_eq_v: bool,
+        tie_embeddings: bool,
+        lm_head_dtype: Option<&str>,
+    ) -> PathBuf {
+        let dir = test_fixture_dir("gemma4-dry-run-one-layer-fp8");
+        let hidden = 8usize;
+        let intermediate = 16usize;
+        let vocab = 8usize;
+        let head_dim = 4usize;
+        let prefix = "model.language_model";
+        let lprefix = format!("{prefix}.layers.0");
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{prefix}.embed_tokens.weight"),
+            &[vocab, hidden],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{prefix}.norm.weight"),
+            &[hidden],
+        );
+        if let Some(dtype) = lm_head_dtype {
+            let name = format!("{prefix}.lm_head.weight");
+            add_zero_tensor_with_dtype(&mut header, &mut payload, &name, &[vocab, hidden], dtype);
+            if dtype == "F8_E4M3" {
+                add_fp8_scale_for_fixture(&mut header, &mut payload, &name, vocab, scale_override);
+            }
+        }
+
+        for suffix in [
+            "input_layernorm.weight",
+            "post_attention_layernorm.weight",
+            "pre_feedforward_layernorm.weight",
+            "post_feedforward_layernorm.weight",
+        ] {
+            add_zero_tensor(
+                &mut header,
+                &mut payload,
+                &format!("{lprefix}.{suffix}"),
+                &[hidden],
+            );
+        }
+
+        add_fp8_fixture_linear(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.q_proj.weight"),
+            &[head_dim, hidden],
+            scale_override,
+            mixed_f16_linear_suffix,
+        );
+        add_fp8_fixture_linear(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.k_proj.weight"),
+            &[head_dim, hidden],
+            scale_override,
+            mixed_f16_linear_suffix,
+        );
+        if !omit_v_proj {
+            add_fp8_fixture_linear(
+                &mut header,
+                &mut payload,
+                &format!("{lprefix}.self_attn.v_proj.weight"),
+                &[head_dim, hidden],
+                scale_override,
+                mixed_f16_linear_suffix,
+            );
+        }
+        add_fp8_fixture_linear(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.o_proj.weight"),
+            &[hidden, head_dim],
+            scale_override,
+            mixed_f16_linear_suffix,
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.q_norm.weight"),
+            &[head_dim],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.k_norm.weight"),
+            &[head_dim],
+        );
+        add_zero_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.layer_scalar"),
+            &[hidden],
+        );
+        add_fp8_fixture_linear(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.gate_proj.weight"),
+            &[intermediate, hidden],
+            scale_override,
+            mixed_f16_linear_suffix,
+        );
+        add_fp8_fixture_linear(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.up_proj.weight"),
+            &[intermediate, hidden],
+            scale_override,
+            mixed_f16_linear_suffix,
+        );
+        add_fp8_fixture_linear(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.down_proj.weight"),
+            &[hidden, intermediate],
+            scale_override,
+            mixed_f16_linear_suffix,
+        );
+
+        fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{
+  "architectures": ["Gemma4ForConditionalGeneration"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {hidden},
+    "intermediate_size": {intermediate},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {head_dim},
+    "global_head_dim": {head_dim},
+    "num_global_key_value_heads": 1,
+    "layer_types": ["full_attention"],
+    "vocab_size": {vocab},
+    "max_position_embeddings": 64,
+    "sliding_window": 16,
+    "rms_norm_eps": 0.000001,
+    "tie_word_embeddings": {tie_embeddings},
+    "attention_k_eq_v": {attention_k_eq_v},
+    "rope_parameters": {{
+      "sliding_attention": {{"rope_theta": 10000.0}},
+      "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 1.0}}
     }}
   }}
 }}"#
@@ -1252,6 +1608,209 @@ mod tests {
         assert!(msg.contains("model.language_model.layers.1.self_attn.q_proj.weight"));
         assert!(msg.contains("expected: [256, 128]"));
         assert!(msg.contains("got: [255, 128]"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_validates_fp8_linears_with_bf16_scales() {
+        let dir = write_dry_run_one_layer_fp8_fixture(None, None, false, false, true, None);
+        let validation = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("FP8 linears with BF16 scales validate");
+
+        assert_eq!(validation.num_layers, 1);
+        assert_eq!(
+            validation.layers[0].attention_kind,
+            Gemma4DryRunAttentionKind::Full
+        );
+        assert_eq!(
+            validation.layers[0].q_proj,
+            "model.language_model.layers.0.self_attn.q_proj.weight"
+        );
+        assert_eq!(validation.lm_head, None);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_validates_fp8_row_column_scale_shape() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            Some(("q_proj.weight", Fp8ScaleFixture::PerChannelColumn)),
+            None,
+            false,
+            false,
+            true,
+            None,
+        );
+
+        Gemma4DryRunValidation::from_model_dir(&dir).expect("FP8 row-column scale shape validates");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_validates_fp8_blockscale_shape() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            Some(("gate_proj.weight", Fp8ScaleFixture::Block)),
+            None,
+            false,
+            false,
+            true,
+            None,
+        );
+
+        Gemma4DryRunValidation::from_model_dir(&dir).expect("FP8 blockscale shape validates");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_allows_fp8_missing_global_v_proj_when_attention_k_eq_v() {
+        let dir = write_dry_run_one_layer_fp8_fixture(None, None, true, true, true, None);
+        let validation = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("attention_k_eq_v full layer can reuse k_proj as v_proj");
+
+        assert!(validation.layers[0].v_uses_k_proj);
+        assert_eq!(validation.layers[0].v_proj, None);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_fp8_linear_missing_scale() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            Some(("q_proj.weight", Fp8ScaleFixture::Missing)),
+            None,
+            false,
+            false,
+            true,
+            None,
+        );
+        let err = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect_err("FP8 q_proj missing scale must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.language_model.layers.0.self_attn.q_proj.weight_scale"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_fp8_linear_f16_scale() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            Some(("q_proj.weight", Fp8ScaleFixture::F16PerChannel)),
+            None,
+            false,
+            false,
+            true,
+            None,
+        );
+        let err = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect_err("FP8 q_proj F16 scale must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("Corrupt"));
+        assert!(msg.contains("FP8 scale tensor must be BF16"));
+        assert!(msg.contains("model.language_model.layers.0.self_attn.q_proj.weight_scale"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_fp8_linear_bad_scale_shape() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            Some(("q_proj.weight", Fp8ScaleFixture::BadRows)),
+            None,
+            false,
+            false,
+            true,
+            None,
+        );
+        let err = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect_err("FP8 q_proj bad scale shape must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("ShapeMismatch"));
+        assert!(msg.contains("model.language_model.layers.0.self_attn.q_proj.weight_scale"));
+        assert!(msg.contains("expected: [4]"));
+        assert!(msg.contains("got: [5]"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_fp8_linear_bad_blockscale_shape() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            Some(("gate_proj.weight", Fp8ScaleFixture::BadBlockRows)),
+            None,
+            false,
+            false,
+            true,
+            None,
+        );
+        let err = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect_err("FP8 gate_proj bad blockscale shape must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("ShapeMismatch"));
+        assert!(msg.contains("model.language_model.layers.0.mlp.gate_proj.weight_scale"));
+        assert!(msg.contains("got: [0, 1]"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_mixed_fp8_and_f16_layer_linears() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            None,
+            Some("k_proj.weight"),
+            false,
+            false,
+            true,
+            None,
+        );
+        let err = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect_err("mixed FP8/F16 layer linears must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("Corrupt"));
+        assert!(msg.contains("requires all layer linear weights to be F8_E4M3"));
+        assert!(msg.contains("model.language_model.layers.0.self_attn.k_proj.weight"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_fp8_lm_head_missing_scale() {
+        let dir = write_dry_run_one_layer_fp8_fixture(
+            Some(("lm_head.weight", Fp8ScaleFixture::Missing)),
+            None,
+            false,
+            false,
+            false,
+            Some("F8_E4M3"),
+        );
+        let err = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect_err("FP8 lm_head missing scale must fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.language_model.lm_head.weight_scale"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_accepts_non_fp8_lm_head_without_scale() {
+        let dir = write_dry_run_one_layer_fp8_fixture(None, None, false, false, false, Some("F16"));
+        let validation = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("non-FP8 lm_head does not require scale");
+
+        assert_eq!(
+            validation.lm_head.as_deref(),
+            Some("model.language_model.lm_head.weight")
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
