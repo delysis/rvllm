@@ -4,9 +4,16 @@ use std::{cmp::max, collections::BTreeMap, path::Path, ptr};
 #[cfg(target_os = "macos")]
 use half::f16;
 #[cfg(target_os = "macos")]
-use rvllm_core::{AppleCtx, AppleError, LoaderCtx, LoaderError, Result, RvllmError};
+use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 #[cfg(target_os = "macos")]
-use rvllm_loader::load::{LayerAttnType, ModelArch};
+use rvllm_loader::{
+    gemma4_validate::{
+        Gemma4DryRunAttentionKind as HostGemma4DryRunAttentionKind,
+        Gemma4DryRunLayerValidation as HostGemma4DryRunLayerValidation,
+        Gemma4DryRunValidation as HostGemma4DryRunValidation,
+    },
+    load::{LayerAttnType, ModelArch},
+};
 
 #[cfg(target_os = "macos")]
 use crate::{
@@ -164,7 +171,54 @@ pub struct Gemma4DryRunLayerValidation {
 #[cfg(target_os = "macos")]
 impl Gemma4DryRunValidation {
     pub fn from_model_dir(model_dir: &Path) -> Result<Self> {
-        validate_gemma4_model_dir_metadata(model_dir)
+        HostGemma4DryRunValidation::from_model_dir(model_dir).map(Self::from_host)
+    }
+
+    fn from_host(host: HostGemma4DryRunValidation) -> Self {
+        Self {
+            weight_prefix: host.weight_prefix,
+            num_layers: host.num_layers,
+            hidden_size: host.hidden_size,
+            vocab_size: host.vocab_size,
+            tie_word_embeddings: host.tie_word_embeddings,
+            embed_tokens: host.embed_tokens,
+            final_norm: host.final_norm,
+            lm_head: host.lm_head,
+            final_logit_softcap: host.final_logit_softcap,
+            layers: host
+                .layers
+                .into_iter()
+                .map(Gemma4DryRunLayerValidation::from_host)
+                .collect(),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Gemma4DryRunLayerValidation {
+    fn from_host(host: HostGemma4DryRunLayerValidation) -> Self {
+        Self {
+            layer_idx: host.layer_idx,
+            attention_kind: match host.attention_kind {
+                HostGemma4DryRunAttentionKind::Sliding => MetalProbeLayerAttentionKind::Sliding,
+                HostGemma4DryRunAttentionKind::Full => MetalProbeLayerAttentionKind::Full,
+            },
+            q_proj: host.q_proj,
+            k_proj: host.k_proj,
+            v_proj: host.v_proj,
+            v_uses_k_proj: host.v_uses_k_proj,
+            input_layernorm: host.input_layernorm,
+            post_attention_layernorm: host.post_attention_layernorm,
+            pre_feedforward_layernorm: host.pre_feedforward_layernorm,
+            post_feedforward_layernorm: host.post_feedforward_layernorm,
+            q_norm: host.q_norm,
+            k_norm: host.k_norm,
+            layer_scalar: host.layer_scalar,
+            layer_scalar_dim: host.layer_scalar_dim,
+            rope_dim: host.rope_dim,
+            rope_theta: host.rope_theta,
+            sliding_window: host.sliding_window,
+        }
     }
 }
 
@@ -1084,374 +1138,6 @@ impl Gemma4MetalState {
             token_ids,
             layers,
         })
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryRunValidation> {
-    let arch = ModelArch::from_dir(model_dir)?;
-    if arch.hidden_size == 0 || arch.vocab_size == 0 || arch.num_hidden_layers == 0 {
-        return Err(RvllmError::apple(
-            AppleError::InvalidWeightBlob {
-                reason:
-                    "Gemma4 dry-run requires nonzero hidden_size, vocab_size, and num_hidden_layers",
-            },
-            probe_ctx("dry_run_validate"),
-        ));
-    }
-    if arch.layer_types.len() != arch.num_hidden_layers {
-        return Err(RvllmError::apple(
-            AppleError::InvalidWeightBlob {
-                reason: "Gemma4 dry-run layer_types length does not match num_hidden_layers",
-            },
-            probe_ctx("dry_run_validate"),
-        ));
-    }
-
-    let tensors = scan_safetensor_tensors(model_dir)?;
-    let weight_prefix = resolve_dry_run_weight_prefix(&tensors);
-    let embed_tokens = join_weight_name(&weight_prefix, "embed_tokens.weight");
-    let final_norm = join_weight_name(&weight_prefix, "norm.weight");
-
-    validate_required_shape(
-        model_dir,
-        &tensors,
-        &embed_tokens,
-        &[arch.vocab_size, arch.hidden_size],
-    )?;
-    validate_required_shape(model_dir, &tensors, &final_norm, &[arch.hidden_size])?;
-
-    let prefixed_lm_head = join_weight_name(&weight_prefix, "lm_head.weight");
-    let tie_word_embeddings = arch.tie_word_embeddings
-        || (!tensors.contains_key("lm_head.weight") && !tensors.contains_key(&prefixed_lm_head));
-    let lm_head = resolve_optional_dry_run_alias(
-        &tensors,
-        vec![prefixed_lm_head.clone(), "lm_head.weight".to_owned()],
-    );
-    if let Some(name) = &lm_head {
-        validate_required_shape(
-            model_dir,
-            &tensors,
-            name,
-            &[arch.vocab_size, arch.hidden_size],
-        )?;
-    } else if !tie_word_embeddings {
-        return Err(missing_tensor_error(model_dir, &prefixed_lm_head));
-    }
-
-    let mut layers = Vec::with_capacity(arch.num_hidden_layers);
-    for layer_idx in 0..arch.num_hidden_layers {
-        let layer =
-            validate_gemma4_dry_run_layer(model_dir, &arch, &tensors, &weight_prefix, layer_idx)?;
-        layers.push(layer);
-    }
-
-    Ok(Gemma4DryRunValidation {
-        weight_prefix,
-        num_layers: arch.num_hidden_layers,
-        hidden_size: arch.hidden_size,
-        vocab_size: arch.vocab_size,
-        tie_word_embeddings,
-        embed_tokens,
-        final_norm,
-        lm_head,
-        final_logit_softcap: arch.final_logit_softcapping,
-        layers,
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn validate_gemma4_dry_run_layer(
-    model_dir: &Path,
-    arch: &ModelArch,
-    tensors: &BTreeMap<String, SafetensorTensorInfo>,
-    weight_prefix: &str,
-    layer_idx: usize,
-) -> Result<Gemma4DryRunLayerValidation> {
-    let layer_type = arch.layer_types[layer_idx];
-    let attention_kind = match layer_type {
-        LayerAttnType::SlidingAttention => MetalProbeLayerAttentionKind::Sliding,
-        LayerAttnType::Full => MetalProbeLayerAttentionKind::Full,
-        LayerAttnType::Linear => {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "gemma4_dry_run_linear_attention_layer",
-                },
-                probe_ctx("dry_run_validate"),
-            ))
-        }
-    };
-    let head_dim = match layer_type {
-        LayerAttnType::SlidingAttention => arch.head_dim,
-        LayerAttnType::Full => arch.global_head_dim.unwrap_or(arch.head_dim),
-        LayerAttnType::Linear => unreachable!(),
-    };
-    let num_kv_heads = match layer_type {
-        LayerAttnType::SlidingAttention => arch.num_key_value_heads,
-        LayerAttnType::Full => arch
-            .num_global_key_value_heads
-            .unwrap_or(arch.num_key_value_heads),
-        LayerAttnType::Linear => unreachable!(),
-    };
-    let q_dim = arch.num_attention_heads * head_dim;
-    let kv_dim = num_kv_heads * head_dim;
-    let rope_dim = match layer_type {
-        LayerAttnType::SlidingAttention => head_dim,
-        LayerAttnType::Full => {
-            let partial = arch.partial_rotary_factor.unwrap_or(1.0);
-            ((head_dim as f32) * partial).round() as usize
-        }
-        LayerAttnType::Linear => unreachable!(),
-    };
-    if head_dim == 0 || q_dim == 0 || kv_dim == 0 || rope_dim == 0 || rope_dim % 2 != 0 {
-        return Err(RvllmError::apple(
-            AppleError::InvalidWeightBlob {
-                reason: "Gemma4 dry-run derived invalid attention or RoPE dimensions",
-            },
-            probe_ctx("dry_run_validate"),
-        ));
-    }
-    let rope_theta = match layer_type {
-        LayerAttnType::SlidingAttention => arch.rope_theta,
-        LayerAttnType::Full => arch.global_rope_theta.unwrap_or(arch.rope_theta),
-        LayerAttnType::Linear => unreachable!(),
-    };
-    if rope_theta <= 0.0 {
-        return Err(RvllmError::apple(
-            AppleError::InvalidWeightBlob {
-                reason: "Gemma4 dry-run requires positive RoPE theta",
-            },
-            probe_ctx("dry_run_validate"),
-        ));
-    }
-
-    let lprefix = join_weight_name(weight_prefix, &format!("layers.{layer_idx}"));
-    let input_layernorm = resolve_required_dry_run_alias(
-        model_dir,
-        tensors,
-        vec![
-            format!("{lprefix}.input_layernorm.weight"),
-            format!("{lprefix}.pre_attention_layernorm.weight"),
-        ],
-    )?;
-    let post_attention_layernorm = resolve_required_dry_run_alias(
-        model_dir,
-        tensors,
-        vec![format!("{lprefix}.post_attention_layernorm.weight")],
-    )?;
-    let pre_feedforward_layernorm = resolve_required_dry_run_alias(
-        model_dir,
-        tensors,
-        vec![format!("{lprefix}.pre_feedforward_layernorm.weight")],
-    )?;
-    let post_feedforward_layernorm = resolve_required_dry_run_alias(
-        model_dir,
-        tensors,
-        vec![format!("{lprefix}.post_feedforward_layernorm.weight")],
-    )?;
-    for name in [
-        &input_layernorm,
-        &post_attention_layernorm,
-        &pre_feedforward_layernorm,
-        &post_feedforward_layernorm,
-    ] {
-        validate_required_shape(model_dir, tensors, name, &[arch.hidden_size])?;
-    }
-
-    let q_proj = format!("{lprefix}.self_attn.q_proj.weight");
-    let k_proj = format!("{lprefix}.self_attn.k_proj.weight");
-    let v_proj_name = format!("{lprefix}.self_attn.v_proj.weight");
-    validate_required_shape(model_dir, tensors, &q_proj, &[q_dim, arch.hidden_size])?;
-    validate_required_shape(model_dir, tensors, &k_proj, &[kv_dim, arch.hidden_size])?;
-    let v_proj = if tensors.contains_key(&v_proj_name) {
-        validate_required_shape(
-            model_dir,
-            tensors,
-            &v_proj_name,
-            &[kv_dim, arch.hidden_size],
-        )?;
-        Some(v_proj_name)
-    } else if arch.attention_k_eq_v {
-        None
-    } else {
-        return Err(missing_tensor_error(model_dir, &v_proj_name));
-    };
-
-    let o_proj = format!("{lprefix}.self_attn.o_proj.weight");
-    validate_required_shape(model_dir, tensors, &o_proj, &[arch.hidden_size, q_dim])?;
-
-    let q_norm = format!("{lprefix}.self_attn.q_norm.weight");
-    let k_norm = format!("{lprefix}.self_attn.k_norm.weight");
-    validate_required_shape(model_dir, tensors, &q_norm, &[head_dim])?;
-    validate_required_shape(model_dir, tensors, &k_norm, &[head_dim])?;
-
-    let v_norm = format!("{lprefix}.self_attn.v_norm.weight");
-    if tensors.contains_key(&v_norm) {
-        validate_required_shape(model_dir, tensors, &v_norm, &[head_dim])?;
-    }
-
-    let gate_proj = format!("{lprefix}.mlp.gate_proj.weight");
-    let up_proj = format!("{lprefix}.mlp.up_proj.weight");
-    let down_proj = format!("{lprefix}.mlp.down_proj.weight");
-    validate_required_shape(
-        model_dir,
-        tensors,
-        &gate_proj,
-        &[arch.intermediate_size, arch.hidden_size],
-    )?;
-    validate_required_shape(
-        model_dir,
-        tensors,
-        &up_proj,
-        &[arch.intermediate_size, arch.hidden_size],
-    )?;
-    validate_required_shape(
-        model_dir,
-        tensors,
-        &down_proj,
-        &[arch.hidden_size, arch.intermediate_size],
-    )?;
-
-    let layer_scalar = resolve_optional_dry_run_alias(
-        tensors,
-        vec![
-            format!("{lprefix}.layer_scalar"),
-            format!("{lprefix}.layer_scalar.weight"),
-        ],
-    );
-    let layer_scalar_dim = match &layer_scalar {
-        Some(name) => {
-            let info = tensors
-                .get(name)
-                .ok_or_else(|| missing_tensor_error(model_dir, name))?;
-            if info.shape.len() == 1 && (info.shape[0] == 1 || info.shape[0] == arch.hidden_size) {
-                info.shape[0]
-            } else {
-                return Err(shape_mismatch_error(
-                    model_dir,
-                    name,
-                    &[arch.hidden_size],
-                    &info.shape,
-                ));
-            }
-        }
-        None => 0,
-    };
-
-    Ok(Gemma4DryRunLayerValidation {
-        layer_idx,
-        attention_kind,
-        q_proj,
-        k_proj,
-        v_uses_k_proj: v_proj.is_none() && arch.attention_k_eq_v,
-        v_proj,
-        input_layernorm,
-        post_attention_layernorm,
-        pre_feedforward_layernorm,
-        post_feedforward_layernorm,
-        q_norm,
-        k_norm,
-        layer_scalar,
-        layer_scalar_dim,
-        rope_dim,
-        rope_theta,
-        sliding_window: (attention_kind == MetalProbeLayerAttentionKind::Sliding)
-            .then_some(arch.sliding_window)
-            .flatten(),
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn validate_required_shape(
-    model_dir: &Path,
-    tensors: &BTreeMap<String, SafetensorTensorInfo>,
-    name: &str,
-    expected: &[usize],
-) -> Result<()> {
-    let info = tensors
-        .get(name)
-        .ok_or_else(|| missing_tensor_error(model_dir, name))?;
-    if info.shape.as_slice() != expected {
-        return Err(shape_mismatch_error(model_dir, name, expected, &info.shape));
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn resolve_required_dry_run_alias(
-    model_dir: &Path,
-    tensors: &BTreeMap<String, SafetensorTensorInfo>,
-    candidates: Vec<String>,
-) -> Result<String> {
-    candidates
-        .iter()
-        .find(|name| tensors.contains_key(*name))
-        .cloned()
-        .ok_or_else(|| missing_tensor_error(model_dir, &candidates[0]))
-}
-
-#[cfg(target_os = "macos")]
-fn resolve_optional_dry_run_alias(
-    tensors: &BTreeMap<String, SafetensorTensorInfo>,
-    candidates: Vec<String>,
-) -> Option<String> {
-    candidates
-        .into_iter()
-        .find(|name| tensors.contains_key(name))
-}
-
-#[cfg(target_os = "macos")]
-fn resolve_dry_run_weight_prefix(tensors: &BTreeMap<String, SafetensorTensorInfo>) -> String {
-    for prefix in ["model.language_model", "model", "language_model.model", ""] {
-        if tensors.contains_key(&join_weight_name(prefix, "embed_tokens.weight")) {
-            return prefix.to_owned();
-        }
-    }
-    "model".to_owned()
-}
-
-#[cfg(target_os = "macos")]
-fn join_weight_name(prefix: &str, suffix: &str) -> String {
-    if prefix.is_empty() {
-        suffix.to_owned()
-    } else {
-        format!("{prefix}.{suffix}")
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn missing_tensor_error(model_dir: &Path, name: &str) -> RvllmError {
-    RvllmError::Loader {
-        err: LoaderError::MissingTensor {
-            name: name.to_owned(),
-        },
-        ctx: LoaderCtx {
-            path: model_dir.to_path_buf(),
-            tensor: Some(name.to_owned()),
-        },
-        bt: std::backtrace::Backtrace::capture(),
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn shape_mismatch_error(
-    model_dir: &Path,
-    name: &str,
-    expected: &[usize],
-    got: &[usize],
-) -> RvllmError {
-    RvllmError::Loader {
-        err: LoaderError::ShapeMismatch {
-            tensor: name.to_owned(),
-            expected: expected.to_vec(),
-            got: got.to_vec(),
-        },
-        ctx: LoaderCtx {
-            path: model_dir.to_path_buf(),
-            tensor: Some(name.to_owned()),
-        },
-        bt: std::backtrace::Backtrace::capture(),
     }
 }
 

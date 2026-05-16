@@ -20,7 +20,7 @@
 //! Dry-run shape validation:
 //!
 //! ```bash
-//! cargo run -p rvllm-runtime --features apple --bin probe_gemma4_load -- \
+//! cargo run -p rvllm-runtime --bin probe_gemma4_load -- \
 //!   --dry-run /path/to/gemma4-model
 //! ```
 //!
@@ -120,9 +120,8 @@ fn parse_command() -> Result<Command, String> {
     }
 }
 
-#[cfg(all(feature = "apple", target_os = "macos"))]
 fn run_dry_run(model_dir: &Path) -> Result<(), String> {
-    use rvllm_apple_metal::gemma4_model::Gemma4DryRunValidation;
+    use rvllm_loader::Gemma4DryRunValidation;
 
     eprintln!("== probe_gemma4_load dry-run ==");
     eprintln!("  model_dir = {}", model_dir.display());
@@ -143,14 +142,6 @@ fn run_dry_run(model_dir: &Path) -> Result<(), String> {
     );
     eprintln!("  tensors   = required Gemma4 tensor shapes validated");
     Ok(())
-}
-
-#[cfg(not(all(feature = "apple", target_os = "macos")))]
-fn run_dry_run(_model_dir: &Path) -> Result<(), String> {
-    Err(
-        "dry-run requires macOS with `cargo run -p rvllm-runtime --features apple --bin probe_gemma4_load -- --dry-run <MODEL_DIR>`"
-            .to_owned(),
-    )
 }
 
 #[cfg(feature = "gb10")]
