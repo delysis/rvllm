@@ -71,6 +71,7 @@ impl Gemma4DryRunValidation {
 }
 
 pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryRunValidation> {
+    validate_gemma4_dry_run_config_identity(model_dir)?;
     let arch = ModelArch::from_dir(model_dir)?;
     if arch.hidden_size == 0 || arch.vocab_size == 0 || arch.num_hidden_layers == 0 {
         return Err(corrupt_error(
@@ -390,6 +391,84 @@ fn join_weight_name(prefix: &str, suffix: &str) -> String {
     }
 }
 
+fn validate_gemma4_dry_run_config_identity(model_dir: &Path) -> Result<()> {
+    let path = model_dir.join("config.json");
+    let bytes = std::fs::read(&path).map_err(|source| RvllmError::Io {
+        err: rvllm_core::IoError::from(&source),
+        path: path.clone(),
+        source,
+    })?;
+    let config: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| corrupt_error(&path, format!("config.json: {e}")))?;
+    let text_config = config
+        .get("text_config")
+        .unwrap_or(&serde_json::Value::Null);
+
+    let architectures = config
+        .get("architectures")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| corrupt_error(&path, "Gemma4 dry-run requires architectures"))?;
+    let is_gemma4 = architectures
+        .iter()
+        .filter_map(|value| value.as_str())
+        .any(|name| matches!(name, "Gemma4ForConditionalGeneration" | "Gemma4ForCausalLM"));
+    if !is_gemma4 {
+        return Err(corrupt_error(
+            &path,
+            "Gemma4 dry-run requires Gemma4 architecture",
+        ));
+    }
+
+    for (scope, value) in [
+        ("model_type", &config),
+        ("text_config.model_type", text_config),
+    ] {
+        if let Some(model_type) = value.get("model_type").and_then(|value| value.as_str()) {
+            if !matches!(model_type, "gemma4" | "gemma4_text") {
+                return Err(corrupt_error(
+                    &path,
+                    format!("Gemma4 dry-run requires Gemma4 model_type at {scope}"),
+                ));
+            }
+        }
+    }
+
+    for (scope, value) in [("root", &config), ("text_config", text_config)] {
+        for field in [
+            "enable_moe_block",
+            "num_experts",
+            "top_k_experts",
+            "expert_intermediate_size",
+            "moe_intermediate_size",
+            "num_local_experts",
+            "num_experts_per_tok",
+            "router_aux_loss_coef",
+        ] {
+            if config_value_is_truthy(value.get(field)) {
+                return Err(corrupt_error(
+                    &path,
+                    format!(
+                        "Gemma4 dry-run supports dense Gemma4 only; unsupported MoE marker {scope}.{field}"
+                    ),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn config_value_is_truthy(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(serde_json::Value::Number(value)) => value.as_f64().is_some_and(|n| n != 0.0),
+        Some(serde_json::Value::String(value)) => !value.is_empty() && value != "0",
+        Some(serde_json::Value::Array(value)) => !value.is_empty(),
+        Some(serde_json::Value::Object(value)) => !value.is_empty(),
+        Some(serde_json::Value::Null) | None => false,
+    }
+}
+
 fn scan_safetensor_tensor_metadata(model_dir: &Path) -> Result<BTreeMap<String, DryRunTensorInfo>> {
     let index = ShardIndex::resolve(model_dir)?;
     let mut tensors = BTreeMap::new();
@@ -627,6 +706,18 @@ mod tests {
         header.insert(name.to_owned(), Value::Object(meta));
     }
 
+    fn mutate_fixture_config(dir: &Path, f: impl FnOnce(&mut Value)) {
+        let path = dir.join("config.json");
+        let mut config: Value =
+            serde_json::from_slice(&fs::read(&path).expect("read config")).expect("parse config");
+        f(&mut config);
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(&config).expect("serialize config"),
+        )
+        .expect("write config");
+    }
+
     fn write_dry_run_full_gemma_style_fixture(
         tie_embeddings: bool,
         attention_k_eq_v: bool,
@@ -840,6 +931,112 @@ mod tests {
         assert_eq!(validation.layers[0].layer_scalar_dim, 128);
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_accepts_generated_causallm_identity() {
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
+        mutate_fixture_config(&dir, |config| {
+            config["architectures"] = serde_json::json!(["Gemma4ForCausalLM"]);
+        });
+
+        Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("Gemma4ForCausalLM identity should validate");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_non_gemma4_identity() {
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
+        mutate_fixture_config(&dir, |config| {
+            config["architectures"] = serde_json::json!(["LlamaForCausalLM"]);
+        });
+        let err =
+            Gemma4DryRunValidation::from_model_dir(&dir).expect_err("non-Gemma4 identity fails");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("Corrupt"));
+        assert!(msg.contains("Gemma4 architecture"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_allows_dense_moe_placeholders() {
+        let dir = write_dry_run_full_gemma_style_fixture(
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+        );
+        mutate_fixture_config(&dir, |config| {
+            config["model_type"] = serde_json::json!("gemma4");
+            config["text_config"]["model_type"] = serde_json::json!("gemma4_text");
+            config["text_config"]["enable_moe_block"] = serde_json::json!(false);
+            config["text_config"]["num_experts"] = Value::Null;
+            config["text_config"]["top_k_experts"] = Value::Null;
+            config["text_config"]["expert_intermediate_size"] = Value::Null;
+        });
+
+        Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("false/null MoE placeholders should validate");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_dry_run_rejects_explicit_moe_markers() {
+        for (field, value) in [
+            ("enable_moe_block", serde_json::json!(true)),
+            ("num_experts", serde_json::json!(128)),
+            ("top_k_experts", serde_json::json!(8)),
+        ] {
+            let dir = write_dry_run_full_gemma_style_fixture(
+                false,
+                false,
+                false,
+                None,
+                None,
+                None,
+                false,
+                Some("layer_scalar"),
+            );
+            mutate_fixture_config(&dir, |config| {
+                config["text_config"][field] = value;
+            });
+            let err =
+                Gemma4DryRunValidation::from_model_dir(&dir).expect_err("MoE marker must fail");
+            let msg = format!("{err}");
+
+            assert!(msg.contains("Corrupt"));
+            assert!(msg.contains("dense Gemma4 only"));
+            assert!(msg.contains(field));
+
+            let _ = fs::remove_dir_all(dir);
+        }
     }
 
     #[test]
