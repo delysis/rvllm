@@ -2705,6 +2705,10 @@ mod tests {
         cpu_reference_gqa_attention_argmax(128, 4, 2, 32)
     }
 
+    fn cpu_reference_qdim_not_hidden_argmax() -> usize {
+        cpu_reference_gqa_attention_argmax(64, 4, 2, 32)
+    }
+
     #[test]
     fn cpu_reference_one_layer_ffn_nonzero_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_one_layer_ffn_nonzero_argmax(), 3);
@@ -2718,6 +2722,11 @@ mod tests {
     #[test]
     fn cpu_reference_multihead_gqa_attention_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_multihead_gqa_attention_argmax(), 3);
+    }
+
+    #[test]
+    fn cpu_reference_qdim_not_hidden_fixture_argmax_is_3() {
+        assert_eq!(cpu_reference_qdim_not_hidden_argmax(), 3);
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -3821,6 +3830,11 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_multihead_gqa_attention_fixture() -> std::path::PathBuf {
         write_tiny_gqa_attention_fixture(128, 256, 4, 2, 32)
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_qdim_not_hidden_attention_fixture() -> std::path::PathBuf {
+        write_tiny_gqa_attention_fixture(64, 256, 4, 2, 32)
     }
 
     fn cpu_full_nonzero_rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
@@ -7793,6 +7807,69 @@ mod tests {
         let mut engine = crate::engine::Engine::new()
             .with_apple_runtime_plan(plan)
             .expect("engine with tiny multi-head GQA attention model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_qdim_not_hidden_model_backend_decodes_token_2_to_3() {
+        assert_eq!(cpu_reference_qdim_not_hidden_argmax(), 3);
+
+        let dir = write_tiny_qdim_not_hidden_attention_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare q_dim != hidden attention tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_qdim_not_hidden_prefill_then_decode_token_2_to_3() {
+        assert_eq!(cpu_reference_qdim_not_hidden_argmax(), 3);
+
+        let dir = write_tiny_qdim_not_hidden_attention_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny q_dim != hidden attention model plan");
 
         engine.scheduler.enqueue(crate::sched_state::Request::new(
             rvllm_core::ReqId(1),
