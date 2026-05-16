@@ -3411,6 +3411,59 @@ fn cpu_reference_generated_tiny_hf_full_logits_are_stable() {
     );
 }
 
+#[test]
+fn generated_tiny_hf_reference_bundle_can_be_exported() {
+    let Some(bundle_dir) = std::env::var_os("RVLLM_GENERATED_TINY_HF_REFERENCE_DIR") else {
+        eprintln!("skipping: RVLLM_GENERATED_TINY_HF_REFERENCE_DIR is not set");
+        return;
+    };
+    let bundle_dir = std::path::PathBuf::from(bundle_dir);
+    fs::create_dir_all(&bundle_dir).expect("create reference bundle dir");
+
+    let fixture_dir = write_generated_tiny_hf_end_to_end_fixture();
+    let reference = cpu_reference_generated_tiny_hf_end_to_end_decode_loop();
+    assert_eq!(reference.generated, vec![3, 5]);
+    assert_eq!(reference.logits_by_step.len(), 2);
+
+    fs::copy(
+        fixture_dir.join("config.json"),
+        bundle_dir.join("config.json"),
+    )
+    .expect("copy generated tiny config");
+    fs::copy(
+        fixture_dir.join("model.safetensors"),
+        bundle_dir.join("model.safetensors"),
+    )
+    .expect("copy generated tiny safetensors");
+
+    let manifest = serde_json::json!({
+        "fixture": "generated_tiny_gemma4_hf",
+        "evidence_class": "GENERATED-HF-NUMERIC",
+        "model_scope": "generated HF/Gemma-shaped synthetic fixture; not a real checkpoint",
+        "prompt_tokens": [2, 4],
+        "decode_steps": 2,
+        "generated_tokens": reference.generated,
+        "logits_by_step": reference.logits_by_step,
+        "files": {
+            "config": "config.json",
+            "weights": "model.safetensors"
+        },
+        "comparison_note": "External reference code should load the exported safetensors/config, run the same prompt [2, 4] for two decode steps, and compare full logits by step."
+    });
+    fs::write(
+        bundle_dir.join("expected_reference.json"),
+        serde_json::to_string_pretty(&manifest).expect("serialize reference manifest"),
+    )
+    .expect("write reference manifest");
+
+    eprintln!(
+        "exported generated tiny HF reference bundle to {}",
+        bundle_dir.display()
+    );
+
+    let _ = fs::remove_dir_all(fixture_dir);
+}
+
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn write_tiny_real_hf_style_one_layer_slice_fixture() -> std::path::PathBuf {
     let dir = temp_fixture_dir();
@@ -4591,7 +4644,6 @@ fn write_tiny_one_layer_qkv_norm_nonzero_fixture() -> std::path::PathBuf {
     dir
 }
 
-#[cfg(all(feature = "apple", target_os = "macos"))]
 fn write_generated_tiny_hf_end_to_end_fixture() -> std::path::PathBuf {
     let dir = temp_fixture_dir();
     let hidden = 128;
