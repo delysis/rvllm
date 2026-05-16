@@ -343,6 +343,410 @@ impl ModelMetalBackend {
         Ok(())
     }
 
+    fn write_i32_metadata_region(
+        arena: &MetalBufferArena,
+        region: &MetalRegion,
+        values: &[i32],
+        op: &'static str,
+    ) -> Result<()> {
+        let byte_len = values
+            .len()
+            .checked_mul(std::mem::size_of::<i32>())
+            .ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "metadata byte length overflow",
+                    },
+                    model_ctx(op),
+                )
+            })?;
+        if byte_len > region.size {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "metadata region too small",
+                },
+                model_ctx(op),
+            ));
+        }
+
+        unsafe {
+            let dst = arena.host_ptr(region) as *mut i32;
+            ptr::copy_nonoverlapping(values.as_ptr(), dst, values.len());
+        }
+        Ok(())
+    }
+
+    fn write_prefill_layer_metadata(
+        &self,
+        state: &Gemma4MetalState,
+        handoff: &HandoffCapsule,
+    ) -> Result<()> {
+        let num_tokens = handoff.tokens_flat.len();
+        if num_tokens == 0 || num_tokens > state.max_probe_tokens {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_prefill_length",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("launch_prefill"),
+            )
+        })?;
+
+        let positions = (0..num_tokens).map(|idx| idx as i32).collect::<Vec<_>>();
+        let slot_mapping = positions.clone();
+        let context_lens = [num_tokens as i32];
+        let block_tables = [0_i32];
+        let cu_seqlens = [0_i32, num_tokens as i32];
+
+        for layer in &state.layers {
+            Self::write_i32_metadata_region(arena, &layer.positions, &positions, "launch_prefill")?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.slot_mapping,
+                &slot_mapping,
+                "launch_prefill",
+            )?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.context_lens,
+                &context_lens,
+                "launch_prefill",
+            )?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.block_tables,
+                &block_tables,
+                "launch_prefill",
+            )?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.cu_seqlens,
+                &cu_seqlens,
+                "launch_prefill",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn write_decode_layer_metadata(
+        &self,
+        state: &Gemma4MetalState,
+        handoff: &HandoffCapsule,
+    ) -> Result<()> {
+        let position = handoff.positions[0] as usize;
+        let context_len = handoff.context_lens[0] as usize;
+        if position >= state.max_probe_tokens
+            || context_len == 0
+            || context_len > state.max_probe_tokens
+        {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_context_length",
+                },
+                model_ctx("launch_rollout"),
+            ));
+        }
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("launch_rollout"),
+            )
+        })?;
+
+        let positions = [position as i32];
+        let slot_mapping = [position as i32];
+        let context_lens = [context_len as i32];
+        let block_tables = [0_i32];
+        let cu_seqlens = [0_i32, 1_i32];
+
+        for layer in &state.layers {
+            Self::write_i32_metadata_region(arena, &layer.positions, &positions, "launch_rollout")?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.slot_mapping,
+                &slot_mapping,
+                "launch_rollout",
+            )?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.context_lens,
+                &context_lens,
+                "launch_rollout",
+            )?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.block_tables,
+                &block_tables,
+                "launch_rollout",
+            )?;
+            Self::write_i32_metadata_region(
+                arena,
+                &layer.cu_seqlens,
+                &cu_seqlens,
+                "launch_rollout",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn enqueue_probe_layers(
+        &self,
+        state: &Gemma4MetalState,
+        num_tokens: usize,
+        phase: MetalPhase,
+        op: &'static str,
+    ) -> Result<()> {
+        if num_tokens == 0 || num_tokens > state.max_probe_tokens {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_probe_token_count",
+                },
+                model_ctx(op),
+            ));
+        }
+        if state.num_layers != state.layers.len() {
+            return Err(RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx(op),
+            ));
+        }
+
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx(op),
+            )
+        })?;
+        let pipelines = self.pipelines.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx(op),
+            )
+        })?;
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx(op),
+            )
+        })?;
+
+        let num_tokens_u32 = u32::try_from(num_tokens).map_err(|_| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "token count exceeds u32",
+                },
+                model_ctx(op),
+            )
+        })?;
+        let half_bytes = std::mem::size_of::<f16>();
+
+        for one in &state.layers {
+            if one.layer_idx >= state.num_layers {
+                return Err(RvllmError::apple(
+                    AppleError::NotPrepared {
+                        backend: "model-metal-backend",
+                    },
+                    model_ctx(op),
+                ));
+            }
+
+            let hidden = state.hidden_size;
+            let intermediate = one.gate_up.size / 2 / half_bytes / hidden;
+
+            let dims = MetalLayerDims {
+                num_tokens: num_tokens_u32,
+                hidden: state.hidden_size as u32,
+                num_heads: one.dims.num_heads as u32,
+                num_kv_heads: one.dims.num_kv_heads as u32,
+                head_dim: one.dims.head_dim as u32,
+                intermediate: intermediate as u32,
+                block_size: one.block_size,
+                max_blocks_per_seq: one.max_blocks_per_seq,
+                num_blocks_total: one.num_blocks_total,
+                attn_scale: one.dims.attn_scale,
+                rms_eps: state.rms_norm_eps,
+                rope_dim: one.dims.rope_dim as u32,
+                softcap: state.final_logit_softcap,
+            };
+
+            let weights = MetalLayerWeights {
+                attn_norm_offset: one.attn_norm.offset,
+                qkv_offset: one.qkv.offset,
+                qkv_bias_offset: None,
+                q_norm_offset: one.q_norm.as_ref().map(|region| region.offset),
+                k_norm_offset: one.k_norm.as_ref().map(|region| region.offset),
+                v_norm_offset: one.v_norm.as_ref().map(|region| region.offset),
+                o_proj_offset: one.o_proj.offset,
+                mlp_norm_offset: one.mlp_norm.offset,
+                post_attn_norm_offset: one.post_attn_norm.as_ref().map(|region| region.offset),
+                pre_ff_norm_offset: one.pre_ff_norm.as_ref().map(|region| region.offset),
+                post_ff_norm_offset: one.post_ff_norm.as_ref().map(|region| region.offset),
+                layer_scalar_offset: one.layer_scalar.as_ref().map(|region| region.offset),
+                layer_scalar_dim: one.layer_scalar_dim,
+                gate_up_offset: one.gate_up.offset,
+                down_proj_offset: one.down_proj.offset,
+            };
+
+            let scratch = MetalScratch {
+                normed_hidden: state.normed_hidden.offset,
+                qkv_out: one.qkv_out.offset,
+                q_offset: one.q.offset,
+                k_offset: one.k.offset,
+                v_offset: one.v.offset,
+                attn_out: one.attn_out.offset,
+                gate_up_out: one.gate_up_out.offset,
+                activated: one.activated.offset,
+                mlp_out: one.mlp_out.offset,
+            };
+
+            let meta = MetalMetadata {
+                positions_offset: one.positions.offset,
+                slot_mapping_offset: one.slot_mapping.offset,
+                cos_offset: one.cos.offset,
+                sin_offset: one.sin.offset,
+                block_tables_offset: one.block_tables.offset,
+                context_lens_offset: one.context_lens.offset,
+                cu_seqlens_offset: Some(one.cu_seqlens.offset),
+            };
+
+            unsafe {
+                metal_forward_layer(
+                    ctx,
+                    pipelines,
+                    arena,
+                    &dims,
+                    &weights,
+                    &scratch,
+                    &meta,
+                    state.residual.offset,
+                    phase,
+                    one.kv_cache_k.offset,
+                    one.kv_cache_v.offset,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn wait_for_metal_queue(&self, op: &'static str) -> Result<()> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx(op),
+            )
+        })?;
+        let queue = ctx.queue_retained();
+        let cmd_buf = queue
+            .commandBuffer()
+            .ok_or_else(|| RvllmError::apple(AppleError::MetalUnavailable, model_ctx(op)))?;
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+        Ok(())
+    }
+
+    fn run_prefill_step(&mut self, handoff: &HandoffCapsule) -> Result<()> {
+        if handoff.num_sequences() != 1 {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_batch_size",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+
+        let state = self.state.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("launch_prefill"),
+            )
+        })?;
+        const MAX_SYNTHETIC_PROBE_LAYERS: usize = 8;
+        if state.num_layers > MAX_SYNTHETIC_PROBE_LAYERS {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_synthetic_probe_num_layers",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+
+        let num_tokens = handoff.tokens_flat.len();
+        if num_tokens == 0 || num_tokens > state.max_probe_tokens {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_prefill_length",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+        for &tok in &handoff.tokens_flat {
+            if (tok.raw() as usize) >= state.vocab_size {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "token id exceeds vocabulary size",
+                    },
+                    model_ctx("launch_prefill"),
+                ));
+            }
+        }
+
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("launch_prefill"),
+            )
+        })?;
+        let token_ids: Vec<u32> = handoff.tokens_flat.iter().map(|t| t.raw()).collect();
+        unsafe {
+            let dst = arena.host_ptr(&state.token_ids) as *mut u32;
+            ptr::copy_nonoverlapping(token_ids.as_ptr(), dst, token_ids.len());
+        }
+
+        self.write_prefill_layer_metadata(state, handoff)?;
+        self.enqueue_embedding_gather(state, num_tokens)?;
+        self.enqueue_probe_layers(
+            state,
+            num_tokens,
+            MetalPhase::Prefill {
+                max_seqlen_q: num_tokens as u32,
+                batch_size: 1,
+            },
+            "launch_prefill",
+        )?;
+        self.wait_for_metal_queue("launch_prefill")?;
+        Ok(())
+    }
+
     fn run_decode_step(&mut self, handoff: &HandoffCapsule) -> Result<()> {
         if handoff.num_sequences() > 1 {
             return Err(RvllmError::apple(
@@ -432,103 +836,9 @@ impl ModelMetalBackend {
             ptr::copy_nonoverlapping(token_ids.as_ptr(), dst, token_ids.len());
         }
 
+        self.write_decode_layer_metadata(state, handoff)?;
         self.enqueue_embedding_gather(state, num_tokens)?;
-
-        if state.num_layers != state.layers.len() {
-            return Err(RvllmError::apple(
-                AppleError::NotPrepared {
-                    backend: "model-metal-backend",
-                },
-                model_ctx("launch_rollout"),
-            ));
-        }
-
-        for one in &state.layers {
-            if one.layer_idx >= state.num_layers {
-                return Err(RvllmError::apple(
-                    AppleError::NotPrepared {
-                        backend: "model-metal-backend",
-                    },
-                    model_ctx("launch_rollout"),
-                ));
-            }
-
-            let hidden = state.hidden_size;
-            let half_bytes = std::mem::size_of::<f16>();
-            let intermediate = one.gate_up.size / 2 / half_bytes / hidden;
-
-            let dims = MetalLayerDims {
-                num_tokens: 1,
-                hidden: state.hidden_size as u32,
-                num_heads: one.dims.num_heads as u32,
-                num_kv_heads: one.dims.num_kv_heads as u32,
-                head_dim: one.dims.head_dim as u32,
-                intermediate: intermediate as u32,
-                block_size: one.block_size,
-                max_blocks_per_seq: one.max_blocks_per_seq,
-                num_blocks_total: one.num_blocks_total,
-                attn_scale: one.dims.attn_scale,
-                rms_eps: state.rms_norm_eps,
-                rope_dim: one.dims.rope_dim as u32,
-                softcap: state.final_logit_softcap,
-            };
-
-            let weights = MetalLayerWeights {
-                attn_norm_offset: one.attn_norm.offset,
-                qkv_offset: one.qkv.offset,
-                qkv_bias_offset: None,
-                q_norm_offset: one.q_norm.as_ref().map(|region| region.offset),
-                k_norm_offset: one.k_norm.as_ref().map(|region| region.offset),
-                v_norm_offset: one.v_norm.as_ref().map(|region| region.offset),
-                o_proj_offset: one.o_proj.offset,
-                mlp_norm_offset: one.mlp_norm.offset,
-                post_attn_norm_offset: one.post_attn_norm.as_ref().map(|region| region.offset),
-                pre_ff_norm_offset: one.pre_ff_norm.as_ref().map(|region| region.offset),
-                post_ff_norm_offset: one.post_ff_norm.as_ref().map(|region| region.offset),
-                layer_scalar_offset: one.layer_scalar.as_ref().map(|region| region.offset),
-                layer_scalar_dim: one.layer_scalar_dim,
-                gate_up_offset: one.gate_up.offset,
-                down_proj_offset: one.down_proj.offset,
-            };
-
-            let scratch = MetalScratch {
-                normed_hidden: state.normed_hidden.offset,
-                qkv_out: one.qkv_out.offset,
-                q_offset: one.q.offset,
-                k_offset: one.k.offset,
-                v_offset: one.v.offset,
-                attn_out: one.attn_out.offset,
-                gate_up_out: one.gate_up_out.offset,
-                activated: one.activated.offset,
-                mlp_out: one.mlp_out.offset,
-            };
-
-            let meta = MetalMetadata {
-                positions_offset: one.positions.offset,
-                slot_mapping_offset: one.slot_mapping.offset,
-                cos_offset: one.cos.offset,
-                sin_offset: one.sin.offset,
-                block_tables_offset: one.block_tables.offset,
-                context_lens_offset: one.context_lens.offset,
-                cu_seqlens_offset: None,
-            };
-
-            unsafe {
-                metal_forward_layer(
-                    ctx,
-                    pipelines,
-                    arena,
-                    &dims,
-                    &weights,
-                    &scratch,
-                    &meta,
-                    state.residual.offset,
-                    MetalPhase::Decode,
-                    one.kv_cache_k.offset,
-                    one.kv_cache_v.offset,
-                )?;
-            }
-        }
+        self.enqueue_probe_layers(state, num_tokens, MetalPhase::Decode, "launch_rollout")?;
 
         let num_tokens_u32 = u32::try_from(num_tokens).map_err(|_| {
             RvllmError::apple(
@@ -619,47 +929,7 @@ impl AppleBackend for ModelMetalBackend {
     fn launch_prefill(&mut self, handoff: &HandoffCapsule) -> Result<AppleLaunchTicket> {
         self.ensure_prepared("launch_prefill")?;
         handoff.validate()?;
-
-        let state = self.state.as_ref().ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::NotPrepared {
-                    backend: "model-metal-backend",
-                },
-                model_ctx("launch_prefill"),
-            )
-        })?;
-
-        const MAX_SYNTHETIC_PROBE_LAYERS: usize = 8;
-        if state.num_layers > MAX_SYNTHETIC_PROBE_LAYERS {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "unsupported_synthetic_probe_num_layers",
-                },
-                model_ctx("launch_prefill"),
-            ));
-        }
-
-        if handoff.num_sequences() != 1 {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "unsupported_batch_size",
-                },
-                model_ctx("launch_prefill"),
-            ));
-        }
-
-        if handoff.tokens_flat.len() != 1 {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "unsupported_prefill_length",
-                },
-                model_ctx("launch_prefill"),
-            ));
-        }
-
+        self.run_prefill_step(handoff)?;
         self.pending = Some(Vec::new());
         Ok(self.next_ticket(AppleLaunchKind::Prefill, None))
     }
@@ -3119,6 +3389,97 @@ mod tests {
         cpu_full_nonzero_argmax(&logits)
     }
 
+    fn cpu_reference_prompt_len_two_prefill_argmax(include_first_prompt_token: bool) -> usize {
+        let hidden = 128usize;
+        let vocab = 8usize;
+        let eps = 0.000001f32;
+        let scale = (hidden as f32).sqrt();
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+        embedding[4 * hidden + 5] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut q_proj = vec![0.0f32; hidden * hidden];
+        let mut k_proj = vec![0.0f32; hidden * hidden];
+        let mut v_proj = vec![0.0f32; hidden * hidden];
+        let mut o_proj = vec![0.0f32; hidden * hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+
+        q_proj[5] = 1.0;
+        k_proj[7] = 1.0;
+        k_proj[5] = -1.0;
+        v_proj[11 * hidden + 7] = 2.0;
+        o_proj[9 * hidden + 11] = 2.0;
+        lm_head[2 * hidden + 5] = 1.0;
+        lm_head[3 * hidden + 9] = 4.0;
+
+        let token_residual = |token: usize| -> Vec<f32> {
+            let mut residual = vec![0.0f32; hidden];
+            for dim in 0..hidden {
+                residual[dim] = embedding[token * hidden + dim] * scale;
+            }
+            residual
+        };
+
+        let prompt_tokens = if include_first_prompt_token {
+            vec![2usize, 4usize]
+        } else {
+            vec![4usize]
+        };
+
+        let mut k_cache = Vec::with_capacity(prompt_tokens.len());
+        let mut v_cache = Vec::with_capacity(prompt_tokens.len());
+        for &token in &prompt_tokens {
+            let residual = token_residual(token);
+            let normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
+            k_cache.push(cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &normed));
+            v_cache.push(cpu_full_nonzero_matvec(&v_proj, hidden, hidden, &normed));
+        }
+
+        let mut residual = token_residual(4);
+        let normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
+        let q = cpu_full_nonzero_matvec(&q_proj, hidden, hidden, &normed);
+        let decode_k = cpu_full_nonzero_matvec(&k_proj, hidden, hidden, &normed);
+        let decode_v = cpu_full_nonzero_matvec(&v_proj, hidden, hidden, &normed);
+        let last_slot = k_cache.len() - 1;
+        k_cache[last_slot] = decode_k;
+        v_cache[last_slot] = decode_v;
+
+        let mut scores = Vec::with_capacity(k_cache.len());
+        for key in &k_cache {
+            let score = q
+                .iter()
+                .zip(key.iter())
+                .map(|(qv, kv)| qv * kv)
+                .sum::<f32>()
+                / (hidden as f32).sqrt();
+            scores.push(score);
+        }
+        let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut denom = 0.0f32;
+        for score in &scores {
+            denom += (*score - max_score).exp();
+        }
+
+        let mut attn_out = vec![0.0f32; hidden];
+        for (idx, value) in v_cache.iter().enumerate() {
+            let weight = (scores[idx] - max_score).exp() / denom;
+            for dim in 0..hidden {
+                attn_out[dim] += value[dim] * weight;
+            }
+        }
+
+        let projected = cpu_full_nonzero_matvec(&o_proj, hidden, hidden, &attn_out);
+        for dim in 0..hidden {
+            residual[dim] += projected[dim];
+        }
+
+        let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
+        let logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
+        cpu_full_nonzero_argmax(&logits)
+    }
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_one_layer_full_nonzero_fixture() -> std::path::PathBuf {
         let dir = temp_fixture_dir();
@@ -3333,6 +3694,12 @@ mod tests {
     #[test]
     fn cpu_reference_one_layer_integrated_gemma_probe_fixture_argmax_is_3() {
         assert_eq!(cpu_reference_one_layer_integrated_gemma_probe_argmax(), 3);
+    }
+
+    #[test]
+    fn cpu_reference_prompt_len_two_prefill_fixture_argmax_is_3() {
+        assert_eq!(cpu_reference_prompt_len_two_prefill_argmax(false), 2);
+        assert_eq!(cpu_reference_prompt_len_two_prefill_argmax(true), 3);
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -4143,6 +4510,186 @@ mod tests {
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_prompt_len_two_prefill_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let intermediate = 256;
+        let vocab = 8;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+        embedding[4 * hidden + 5] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut q_proj = vec![0.0f32; hidden * hidden];
+        let mut k_proj = vec![0.0f32; hidden * hidden];
+        let mut v_proj = vec![0.0f32; hidden * hidden];
+        let mut o_proj = vec![0.0f32; hidden * hidden];
+        let gate_proj = vec![0.0f32; intermediate * hidden];
+        let up_proj = vec![0.0f32; intermediate * hidden];
+        let down_proj = vec![0.0f32; hidden * intermediate];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+
+        q_proj[5] = 1.0;
+        k_proj[7] = 1.0;
+        k_proj[5] = -1.0;
+        v_proj[11 * hidden + 7] = 2.0;
+        o_proj[9 * hidden + 11] = 2.0;
+        lm_head[2 * hidden + 5] = 1.0;
+        lm_head[3 * hidden + 9] = 4.0;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let add_tensor = |name: &str,
+                          data: &[f32],
+                          shape: &[usize],
+                          payload: &mut Vec<u8>,
+                          header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.input_layernorm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.q_proj.weight",
+            &q_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.k_proj.weight",
+            &k_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.v_proj.weight",
+            &v_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.o_proj.weight",
+            &o_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp_norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.gate_proj.weight",
+            &gate_proj,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.up_proj.weight",
+            &up_proj,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.down_proj.weight",
+            &down_proj,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, hidden, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
     fn write_tiny_one_layer_qkv_norm_nonzero_fixture() -> std::path::PathBuf {
         let dir = temp_fixture_dir();
         let hidden = 128;
@@ -4632,6 +5179,80 @@ mod tests {
         engine.scheduler.enqueue(crate::sched_state::Request::new(
             rvllm_core::ReqId(1),
             vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
+        assert_eq!(out2[0].new_token, expected);
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_prompt_len_two_model_backend_prefill_then_decode_token_2_4_to_3() {
+        let expected =
+            rvllm_core::TokenId(cpu_reference_prompt_len_two_prefill_argmax(true) as u32);
+        let dir = write_tiny_prompt_len_two_prefill_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare prompt length two tiny model");
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            vec![0, 2],
+            vec![1],
+            vec![2],
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill).expect("run prefill");
+        let prefill_out = backend.collect(prefill_ticket).expect("collect prefill");
+        assert!(prefill_out.is_empty());
+
+        let decode = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(4)],
+            vec![0, 1],
+            vec![1],
+            vec![2],
+        );
+        let decode_ticket = backend.launch_rollout(&decode, None).expect("run rollout");
+        let out = backend.collect(decode_ticket).expect("collect rollout");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, expected);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_prompt_len_two_prefill_then_decode_token_2_4_to_3() {
+        let expected =
+            rvllm_core::TokenId(cpu_reference_prompt_len_two_prefill_argmax(true) as u32);
+        let dir = write_tiny_prompt_len_two_prefill_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with prompt length two tiny model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
             1,
         ));
 

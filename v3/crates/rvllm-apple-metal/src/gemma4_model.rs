@@ -23,6 +23,8 @@ const PROBE_METAL_ARENA_BYTES: usize = 1024 * 1024;
 const PROBE_METAL_SOFTCAP: f32 = 0.0;
 #[cfg(target_os = "macos")]
 const PROBE_METAL_MAX_SYNTHETIC_LAYERS: usize = 8;
+#[cfg(target_os = "macos")]
+const PROBE_METAL_MAX_PROMPT_TOKENS: usize = 8;
 
 #[cfg(target_os = "macos")]
 fn probe_ctx(op: &'static str) -> AppleCtx {
@@ -42,6 +44,7 @@ pub struct Gemma4MetalState {
     pub rms_norm_eps: f32,
     pub final_logit_softcap: f32,
     pub embedding_scale: f32,
+    pub max_probe_tokens: usize,
     pub embedding: MetalRegion,
     pub final_norm: MetalRegion,
     pub lm_head: MetalRegion,
@@ -90,6 +93,7 @@ pub struct MetalOneLayerState {
     pub sin: MetalRegion,
     pub block_tables: MetalRegion,
     pub context_lens: MetalRegion,
+    pub cu_seqlens: MetalRegion,
 
     pub kv_cache_k: MetalRegion,
     pub kv_cache_v: MetalRegion,
@@ -603,6 +607,7 @@ impl ProbeModelPlan {
         let half_bytes = std::mem::size_of::<f16>();
         let i32_bytes = std::mem::size_of::<i32>();
         let f32_bytes = std::mem::size_of::<f32>();
+        let max_probe_tokens = PROBE_METAL_MAX_PROMPT_TOKENS;
         let embed_bytes = embed_info.nbytes;
         let final_norm_bytes = final_norm_info.nbytes;
         let lm_head_bytes = if tie_embeddings {
@@ -610,25 +615,33 @@ impl ProbeModelPlan {
         } else {
             lm_head_info.nbytes
         };
-        let residual_bytes = arch.hidden_size.checked_mul(half_bytes).ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::InvalidWeightBlob {
-                    reason: "residual buffer size overflow",
-                },
-                probe_ctx("prepare"),
-            )
-        })?;
-        let logits_bytes = arch.vocab_size.checked_mul(half_bytes).ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::InvalidWeightBlob {
-                    reason: "logits buffer size overflow",
-                },
-                probe_ctx("prepare"),
-            )
-        })?;
+        let residual_bytes = arch
+            .hidden_size
+            .checked_mul(max_probe_tokens)
+            .and_then(|v| v.checked_mul(half_bytes))
+            .ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "residual buffer size overflow",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
+        let logits_bytes = arch
+            .vocab_size
+            .checked_mul(max_probe_tokens)
+            .and_then(|v| v.checked_mul(half_bytes))
+            .ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "logits buffer size overflow",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
         let normed_hidden_bytes = residual_bytes;
-        let sampled_bytes = i32_bytes;
-        let token_ids_bytes = 4;
+        let sampled_bytes = max_probe_tokens * i32_bytes;
+        let token_ids_bytes = max_probe_tokens * 4;
 
         let mut scratch_bytes = 0;
         if arch.num_hidden_layers > 0 {
@@ -636,18 +649,19 @@ impl ProbeModelPlan {
             let intermediate = arch.intermediate_size;
             for layer_names in &layer_names {
                 let dims = layer_names.dims;
-                let qkv_out_bytes = dims.qkv_rows * half_bytes;
-                let q_bytes = dims.q_dim * half_bytes;
-                let k_bytes = dims.kv_dim * half_bytes;
-                let v_bytes = dims.kv_dim * half_bytes;
-                let attn_out_bytes = dims.q_dim * half_bytes;
-                let gate_up_out_bytes = 2 * intermediate * half_bytes;
-                let activated_bytes = intermediate * half_bytes;
-                let mlp_out_bytes = hidden * half_bytes;
+                let qkv_out_bytes = max_probe_tokens * dims.qkv_rows * half_bytes;
+                let q_bytes = max_probe_tokens * dims.q_dim * half_bytes;
+                let k_bytes = max_probe_tokens * dims.kv_dim * half_bytes;
+                let v_bytes = max_probe_tokens * dims.kv_dim * half_bytes;
+                let attn_out_bytes = max_probe_tokens * dims.q_dim * half_bytes;
+                let gate_up_out_bytes = max_probe_tokens * 2 * intermediate * half_bytes;
+                let activated_bytes = max_probe_tokens * intermediate * half_bytes;
+                let mlp_out_bytes = max_probe_tokens * hidden * half_bytes;
 
-                let block_size = 1usize;
+                let block_size = max_probe_tokens;
                 let num_blocks_total = 1usize;
                 let kv_cache_bytes = num_blocks_total * block_size * dims.kv_dim * half_bytes * 2;
+                let metadata_bytes = max_probe_tokens * i32_bytes * 2 + 4 * i32_bytes;
 
                 let half_rope = dims.rope_dim / 2;
                 let max_pos = 16usize;
@@ -663,6 +677,7 @@ impl ProbeModelPlan {
                     + mlp_out_bytes
                     + kv_cache_bytes
                     + rope_table_bytes * 2
+                    + metadata_bytes
                     + 64;
             }
         }
@@ -744,11 +759,12 @@ impl Gemma4MetalState {
 
         let half_bytes = std::mem::size_of::<f16>();
         let f32_bytes = std::mem::size_of::<f32>();
-        let residual_bytes = plan.arch.hidden_size * half_bytes;
-        let logits_bytes = plan.arch.vocab_size * half_bytes;
+        let max_probe_tokens = PROBE_METAL_MAX_PROMPT_TOKENS;
+        let residual_bytes = max_probe_tokens * plan.arch.hidden_size * half_bytes;
+        let logits_bytes = max_probe_tokens * plan.arch.vocab_size * half_bytes;
         let normed_hidden_bytes = residual_bytes;
-        let sampled_bytes = std::mem::size_of::<i32>();
-        let token_ids_bytes = 4;
+        let sampled_bytes = max_probe_tokens * std::mem::size_of::<i32>();
+        let token_ids_bytes = max_probe_tokens * 4;
 
         let mut layers = Vec::new();
         for layer_idx in 0..plan.arch.num_hidden_layers {
@@ -839,46 +855,46 @@ impl Gemma4MetalState {
 
             let qkv_out = arena.region(
                 &format!("metal_layer_{layer_idx}_qkv_out"),
-                qkv_rows * half_bytes,
+                max_probe_tokens * qkv_rows * half_bytes,
                 16,
             )?;
             let q = arena.region(
                 &format!("metal_layer_{layer_idx}_q"),
-                q_dim * half_bytes,
+                max_probe_tokens * q_dim * half_bytes,
                 16,
             )?;
             let k = arena.region(
                 &format!("metal_layer_{layer_idx}_k"),
-                kv_dim * half_bytes,
+                max_probe_tokens * kv_dim * half_bytes,
                 16,
             )?;
             let v = arena.region(
                 &format!("metal_layer_{layer_idx}_v"),
-                kv_dim * half_bytes,
+                max_probe_tokens * kv_dim * half_bytes,
                 16,
             )?;
             let attn_out = arena.region(
                 &format!("metal_layer_{layer_idx}_attn_out"),
-                q_dim * half_bytes,
+                max_probe_tokens * q_dim * half_bytes,
                 16,
             )?;
             let gate_up_out = arena.region(
                 &format!("metal_layer_{layer_idx}_gate_up_out"),
-                2 * intermediate * half_bytes,
+                max_probe_tokens * 2 * intermediate * half_bytes,
                 16,
             )?;
             let activated = arena.region(
                 &format!("metal_layer_{layer_idx}_activated"),
-                intermediate * half_bytes,
+                max_probe_tokens * intermediate * half_bytes,
                 16,
             )?;
             let mlp_out = arena.region(
                 &format!("metal_layer_{layer_idx}_mlp_out"),
-                hidden * half_bytes,
+                max_probe_tokens * hidden * half_bytes,
                 16,
             )?;
 
-            let block_size = 1u32;
+            let block_size = max_probe_tokens as u32;
             let num_blocks_total = 1u32;
             let max_blocks_per_seq = 1u32;
             let kv_cache_k = arena.region(
@@ -892,13 +908,21 @@ impl Gemma4MetalState {
                 16,
             )?;
 
-            let positions = arena.region(&format!("metal_layer_{layer_idx}_positions"), 4, 4)?;
-            let slot_mapping =
-                arena.region(&format!("metal_layer_{layer_idx}_slot_mapping"), 4, 4)?;
+            let positions = arena.region(
+                &format!("metal_layer_{layer_idx}_positions"),
+                max_probe_tokens * 4,
+                4,
+            )?;
+            let slot_mapping = arena.region(
+                &format!("metal_layer_{layer_idx}_slot_mapping"),
+                max_probe_tokens * 4,
+                4,
+            )?;
             let context_lens =
                 arena.region(&format!("metal_layer_{layer_idx}_context_lens"), 4, 4)?;
             let block_tables =
                 arena.region(&format!("metal_layer_{layer_idx}_block_tables"), 4, 4)?;
+            let cu_seqlens = arena.region(&format!("metal_layer_{layer_idx}_cu_seqlens"), 8, 4)?;
 
             let half_rope = dims.rope_dim / 2;
             let max_pos = 16usize;
@@ -913,10 +937,11 @@ impl Gemma4MetalState {
                 16,
             )?;
 
-            write_i32_region(arena, &positions, &[0])?;
-            write_i32_region(arena, &slot_mapping, &[0])?;
+            write_i32_region(arena, &positions, &vec![0; max_probe_tokens])?;
+            write_i32_region(arena, &slot_mapping, &vec![0; max_probe_tokens])?;
             write_i32_region(arena, &context_lens, &[1])?;
             write_i32_region(arena, &block_tables, &[0])?;
+            write_i32_region(arena, &cu_seqlens, &[0, 1])?;
             write_f32_region(arena, &cos, &vec![1.0; max_pos * half_rope])?;
             write_f32_region(arena, &sin, &vec![0.0; max_pos * half_rope])?;
 
@@ -951,6 +976,7 @@ impl Gemma4MetalState {
                 sin,
                 block_tables,
                 context_lens,
+                cu_seqlens,
                 kv_cache_k,
                 kv_cache_v,
                 block_size,
@@ -984,6 +1010,7 @@ impl Gemma4MetalState {
                 .final_logit_softcapping
                 .unwrap_or(PROBE_METAL_SOFTCAP),
             embedding_scale: (plan.arch.hidden_size as f32).sqrt(),
+            max_probe_tokens,
             embedding,
             final_norm,
             lm_head,
