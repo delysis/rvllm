@@ -23,7 +23,7 @@ impl ModelArch {
             "LlamaForCausalLM" => Some(ModelArch::Llama),
             "MistralForCausalLM" => Some(ModelArch::Mistral),
             "Gemma2ForCausalLM" => Some(ModelArch::Gemma2),
-            "Gemma4ForConditionalGeneration" => Some(ModelArch::Gemma4),
+            "Gemma4ForConditionalGeneration" | "Gemma4ForCausalLM" => Some(ModelArch::Gemma4),
             _ => None,
         }
     }
@@ -158,5 +158,59 @@ impl ModelConfig {
             tie_word_embeddings,
             torch_dtype,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn gemma4_config(architecture: &str) -> serde_json::Value {
+        serde_json::json!({
+            "architectures": [architecture],
+            "torch_dtype": "bfloat16",
+            "text_config": {
+                "hidden_size": 128,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 4,
+                "num_key_value_heads": 2,
+                "head_dim": 32,
+                "intermediate_size": 256,
+                "vocab_size": 8,
+                "max_position_embeddings": 128,
+                "rms_norm_eps": 0.000001,
+                "tie_word_embeddings": false,
+                "rope_parameters": {
+                    "sliding_attention": {
+                        "rope_theta": 10000.0
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn parses_gemma4_conditional_generation_identity() {
+        let config = ModelConfig::from_hf_value(
+            &gemma4_config("Gemma4ForConditionalGeneration"),
+            Path::new("config.json"),
+        )
+        .expect("Gemma4ForConditionalGeneration should parse");
+
+        assert_eq!(config.architecture, ModelArch::Gemma4);
+        assert_eq!(config.head_dim, 32);
+    }
+
+    #[test]
+    fn parses_gemma4_causallm_identity() {
+        let config = ModelConfig::from_hf_value(
+            &gemma4_config("Gemma4ForCausalLM"),
+            Path::new("config.json"),
+        )
+        .expect("Gemma4ForCausalLM should parse");
+
+        assert_eq!(config.architecture, ModelArch::Gemma4);
+        assert_eq!(config.num_kv_heads, 2);
     }
 }
