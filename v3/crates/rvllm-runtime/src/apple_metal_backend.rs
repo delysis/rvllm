@@ -4493,6 +4493,18 @@ mod tests {
         }
     }
 
+    fn assert_f32_slice_close(label: &str, got: &[f32], expected: &[f32], tolerance: f32) {
+        assert_eq!(got.len(), expected.len(), "{label} length mismatch");
+        for idx in 0..expected.len() {
+            assert_f32_close(
+                &format!("{label}[{idx}]"),
+                got[idx],
+                expected[idx],
+                tolerance,
+            );
+        }
+    }
+
     #[test]
     fn cpu_reference_one_layer_full_nonzero_selected_hidden_values_are_expected() {
         let reference = cpu_reference_one_layer_full_nonzero();
@@ -4642,25 +4654,17 @@ mod tests {
     }
 
     #[test]
-    fn cpu_reference_decode_loop_selected_logits_sequence_is_expected() {
+    fn cpu_reference_generated_tiny_hf_full_logits_are_stable() {
         let reference = cpu_reference_generated_tiny_hf_end_to_end_decode_loop();
         assert_eq!(reference.generated, vec![3, 5]);
         assert_eq!(reference.logits_by_step.len(), 2);
 
-        let expected_selected_logits = [
-            [
-                (3usize, 24.286_85f32),
-                (2usize, 0.281_43f32),
-                (0usize, 0.0f32),
-            ],
-            [
-                (5usize, 24.338_19f32),
-                (2usize, 0.094_23f32),
-                (0usize, 0.0f32),
-            ],
+        let expected_logits = [
+            [0.0f32, 0.0, 0.281_43, 24.286_85, 0.0, 0.0, 0.0, 0.0],
+            [0.0f32, 0.0, 0.094_23, 0.0, 0.0, 24.338_19, 0.0, 0.0],
         ];
 
-        for (step_idx, selected_logits) in expected_selected_logits.iter().enumerate() {
+        for (step_idx, expected) in expected_logits.iter().enumerate() {
             let logits = &reference.logits_by_step[step_idx];
             let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(logits);
             let low_idx = 0usize;
@@ -4672,14 +4676,12 @@ mod tests {
             assert!(logits[expected_idx] > logits[runner_up_idx]);
             assert!(logits[runner_up_idx] > logits[low_idx]);
 
-            for &(idx, expected_logit) in selected_logits {
-                assert_f32_close(
-                    &format!("decode step {} logit[{idx}]", step_idx + 1),
-                    logits[idx],
-                    expected_logit,
-                    0.05,
-                );
-            }
+            assert_f32_slice_close(
+                &format!("decode step {} logits", step_idx + 1),
+                logits,
+                expected,
+                0.05,
+            );
         }
 
         let max_step_diff = reference.logits_by_step[0]
@@ -7152,7 +7154,7 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
-    fn tiny_generated_gemma4_hf_end_to_end_model_backend_selected_logits_match_cpu() {
+    fn tiny_generated_gemma4_hf_end_to_end_model_backend_full_logits_match_cpu() {
         let cpu_reference = cpu_reference_generated_tiny_hf_end_to_end_decode_loop();
         assert_eq!(cpu_reference.generated, vec![3, 5]);
 
@@ -7197,17 +7199,15 @@ mod tests {
             generated.push(current);
 
             let cpu_logits = &cpu_reference.logits_by_step[step_idx];
-            let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(cpu_logits);
-            let low_idx = 0usize;
+            let expected_idx = cpu_full_nonzero_argmax(cpu_logits);
             assert_eq!(expected_idx, *expected_token);
             assert_eq!(metal_logits.len(), cpu_logits.len());
 
             const LOGIT_TOLERANCE: f32 = 0.05;
-            assert_selected_logits_close(
+            assert_f32_slice_close(
                 &format!("generated tiny HF direct decode step {}", step_idx + 1),
                 &metal_logits,
                 cpu_logits,
-                &[expected_idx, runner_up_idx, low_idx],
                 LOGIT_TOLERANCE,
             );
         }
@@ -7266,7 +7266,7 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
-    fn engine_decode_loop_selected_logits_match_cpu() {
+    fn engine_generated_gemma4_hf_end_to_end_full_logits_match_cpu() {
         let cpu_reference = cpu_reference_generated_tiny_hf_end_to_end_decode_loop();
         assert_eq!(cpu_reference.generated, vec![3, 5]);
 
@@ -7305,17 +7305,15 @@ mod tests {
                 .debug_read_decode_logits_f32(1)
                 .expect("read shared backend decode logits");
             let cpu_logits = &cpu_reference.logits_by_step[step_idx];
-            let (expected_idx, runner_up_idx) = cpu_full_nonzero_top_two(cpu_logits);
-            let low_idx = 0usize;
+            let expected_idx = cpu_full_nonzero_argmax(cpu_logits);
             assert_eq!(expected_idx, *expected_token);
             assert_eq!(metal_logits.len(), cpu_logits.len());
 
             const LOGIT_TOLERANCE: f32 = 0.05;
-            assert_selected_logits_close(
+            assert_f32_slice_close(
                 &format!("generated tiny HF engine decode step {}", step_idx + 1),
                 &metal_logits,
                 cpu_logits,
-                &[expected_idx, runner_up_idx, low_idx],
                 LOGIT_TOLERANCE,
             );
         }
