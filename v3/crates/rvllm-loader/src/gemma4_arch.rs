@@ -47,6 +47,7 @@ pub struct Gemma4Arch {
     pub layer_types: Vec<Gemma4LayerType>,
     pub weight_prefix: String,
     pub tie_word_embeddings: bool,
+    pub attention_k_eq_v: bool,
 }
 
 impl Gemma4Arch {
@@ -127,6 +128,7 @@ impl Gemma4Arch {
             .as_bool()
             .or_else(|| v["tie_word_embeddings"].as_bool())
             .unwrap_or(true);
+        let attention_k_eq_v = tc["attention_k_eq_v"].as_bool().unwrap_or(false);
 
         let layer_types = Self::parse_layer_types(tc, num_hidden_layers);
         let weight_prefix = Self::detect_weight_prefix(dir);
@@ -164,6 +166,7 @@ impl Gemma4Arch {
             layer_types,
             weight_prefix,
             tie_word_embeddings,
+            attention_k_eq_v,
         })
     }
 
@@ -386,6 +389,7 @@ mod tests {
             layer_types: vec![Gemma4LayerType::SlidingAttention; 6],
             weight_prefix: "model".into(),
             tie_word_embeddings: true,
+            attention_k_eq_v: false,
         };
         assert_eq!(arch.rotary_dim_for_layer(0), 256);
     }
@@ -412,6 +416,7 @@ mod tests {
             layer_types: vec![Gemma4LayerType::GlobalAttention; 6],
             weight_prefix: "model".into(),
             tie_word_embeddings: true,
+            attention_k_eq_v: false,
         };
         // 512 * 0.25 = 128
         assert_eq!(arch.rotary_dim_for_layer(0), 128);

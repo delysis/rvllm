@@ -12,7 +12,7 @@ use rvllm_core::{DType, LoaderCtx, LoaderError, Result, RvllmError};
 use rvllm_mem::HbmArena;
 
 use crate::fp8_quant::{check_clamp_gate, quantize_per_tensor_ref, FP8_E4M3_MAX};
-use crate::gemma4_arch::Gemma4Arch;
+use crate::gemma4_arch::{Gemma4Arch, Gemma4LayerType};
 use crate::gemma4_weights::{Gemma4LayerWeights, Gemma4LoadedModel};
 use crate::safetensors::{ShardHeader, ShardIndex, TensorEntry};
 use crate::weights::{F16Weight, Fp8Weight};
@@ -259,11 +259,17 @@ pub fn load_gemma4_model(
 
         let q_tensor = must_get(&ln("self_attn.q_proj.weight"))?;
         let k_tensor = must_get(&ln("self_attn.k_proj.weight"))?;
-        let has_v = get_tensor(&ln("self_attn.v_proj.weight")).is_some();
+        let v_name = ln("self_attn.v_proj.weight");
+        let has_v = get_tensor(&v_name).is_some();
+        let v_uses_k_proj = !has_v
+            && arch.attention_k_eq_v
+            && arch.layer_types[l] == Gemma4LayerType::GlobalAttention;
         let v_tensor = if has_v {
-            must_get(&ln("self_attn.v_proj.weight"))?
-        } else {
+            must_get(&v_name)?
+        } else if v_uses_k_proj {
             k_tensor.clone()
+        } else {
+            must_get(&v_name)?
         };
         let qkv_rows = layer_q_dim + 2 * layer_kv_dim;
 
@@ -272,8 +278,10 @@ pub fn load_gemma4_model(
             let k_scale = get_tensor(&ln("self_attn.k_proj.weight_scale"));
             let v_scale = if has_v {
                 get_tensor(&ln("self_attn.v_proj.weight_scale"))
-            } else {
+            } else if v_uses_k_proj {
                 k_scale.clone()
+            } else {
+                None
             };
             let qkv = fuse_fp8_direct_channelscale(
                 arena,
@@ -1224,6 +1232,257 @@ fn fp8_e4m3_to_f32(b: u8) -> f32 {
         -val
     } else {
         val
+    }
+}
+
+#[cfg(test)]
+mod gemma4_load_tests {
+    use super::*;
+    use serde_json::{Map, Value};
+    use std::{
+        fs::{self, File},
+        io::Write,
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
+
+    fn test_fixture_dir(name: &str) -> PathBuf {
+        let id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "rvllm-loader-{name}-{}-{}-{id}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("create fixture dir");
+        dir
+    }
+
+    fn add_zero_f16_tensor(
+        header: &mut Map<String, Value>,
+        payload: &mut Vec<u8>,
+        name: &str,
+        shape: &[usize],
+    ) {
+        let start = payload.len();
+        let nbytes = shape.iter().copied().product::<usize>() * 2;
+        payload.resize(start + nbytes, 0);
+        let mut meta = Map::new();
+        meta.insert("dtype".to_owned(), Value::String("F16".to_owned()));
+        meta.insert(
+            "shape".to_owned(),
+            Value::Array(
+                shape
+                    .iter()
+                    .map(|n| Value::Number((*n as u64).into()))
+                    .collect(),
+            ),
+        );
+        meta.insert(
+            "data_offsets".to_owned(),
+            Value::Array(vec![
+                Value::Number((start as u64).into()),
+                Value::Number(((start + nbytes) as u64).into()),
+            ]),
+        );
+        header.insert(name.to_owned(), Value::Object(meta));
+    }
+
+    fn write_one_layer_gemma4_load_fixture(
+        layer_type: &str,
+        attention_k_eq_v: bool,
+        omit_v_proj: bool,
+    ) -> PathBuf {
+        let dir = test_fixture_dir("gemma4-load-v-proj");
+        let hidden = 8usize;
+        let intermediate = 16usize;
+        let vocab = 8usize;
+        let head_dim = 4usize;
+        let prefix = "model";
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{prefix}.embed_tokens.weight"),
+            &[vocab, hidden],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{prefix}.norm.weight"),
+            &[hidden],
+        );
+
+        let lprefix = format!("{prefix}.layers.0");
+        for suffix in [
+            "input_layernorm.weight",
+            "post_attention_layernorm.weight",
+            "pre_feedforward_layernorm.weight",
+            "post_feedforward_layernorm.weight",
+        ] {
+            add_zero_f16_tensor(
+                &mut header,
+                &mut payload,
+                &format!("{lprefix}.{suffix}"),
+                &[hidden],
+            );
+        }
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.q_proj.weight"),
+            &[head_dim, hidden],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.k_proj.weight"),
+            &[head_dim, hidden],
+        );
+        if !omit_v_proj {
+            add_zero_f16_tensor(
+                &mut header,
+                &mut payload,
+                &format!("{lprefix}.self_attn.v_proj.weight"),
+                &[head_dim, hidden],
+            );
+        }
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.o_proj.weight"),
+            &[hidden, head_dim],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.q_norm.weight"),
+            &[head_dim],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.self_attn.k_norm.weight"),
+            &[head_dim],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.layer_scalar"),
+            &[hidden],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.gate_proj.weight"),
+            &[intermediate, hidden],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.up_proj.weight"),
+            &[intermediate, hidden],
+        );
+        add_zero_f16_tensor(
+            &mut header,
+            &mut payload,
+            &format!("{lprefix}.mlp.down_proj.weight"),
+            &[hidden, intermediate],
+        );
+
+        fs::write(
+            dir.join("config.json"),
+            format!(
+                r#"{{
+  "architectures": ["Gemma4ForConditionalGeneration"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {hidden},
+    "intermediate_size": {intermediate},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {head_dim},
+    "global_head_dim": {head_dim},
+    "num_global_key_value_heads": 1,
+    "layer_types": ["{layer_type}"],
+    "vocab_size": {vocab},
+    "max_position_embeddings": 8,
+    "sliding_window": 4,
+    "rms_norm_eps": 0.000001,
+    "tie_word_embeddings": true,
+    "attention_k_eq_v": {attention_k_eq_v},
+    "rope_parameters": {{
+      "sliding_attention": {{"rope_theta": 10000.0}},
+      "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 1.0}}
+    }}
+  }}
+}}"#
+            ),
+        )
+        .expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize safetensor header");
+        let mut out = File::create(dir.join("model.safetensors")).expect("create safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes()).expect("write header");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[test]
+    fn gemma4_load_rejects_missing_sliding_v_proj_when_attention_k_eq_v() {
+        let dir = write_one_layer_gemma4_load_fixture("sliding_attention", true, true);
+        let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
+        let arena = HbmArena::new_host_stub(1 << 20);
+        let err = match load_gemma4_model(&dir, &arena, &arch) {
+            Ok(_) => panic!("missing sliding v_proj must not load"),
+            Err(err) => err,
+        };
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.layers.0.self_attn.v_proj.weight"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_load_rejects_missing_global_v_proj_without_attention_k_eq_v() {
+        let dir = write_one_layer_gemma4_load_fixture("full_attention", false, true);
+        let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
+        let arena = HbmArena::new_host_stub(1 << 20);
+        let err = match load_gemma4_model(&dir, &arena, &arch) {
+            Ok(_) => panic!("missing global v_proj without attention_k_eq_v must not load"),
+            Err(err) => err,
+        };
+        let msg = format!("{err}");
+
+        assert!(msg.contains("MissingTensor"));
+        assert!(msg.contains("model.layers.0.self_attn.v_proj.weight"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gemma4_load_allows_missing_global_v_proj_when_attention_k_eq_v() {
+        let dir = write_one_layer_gemma4_load_fixture("full_attention", true, true);
+        let arch = Gemma4Arch::from_dir(&dir).expect("parse fixture arch");
+        let arena = HbmArena::new_host_stub(1 << 20);
+        let model = load_gemma4_model(&dir, &arena, &arch)
+            .expect("global attention may reuse k_proj as v_proj");
+
+        assert_eq!(model.layers.len(), 1);
+        assert_eq!(model.layers[0].qkv.shape, vec![12, 8]);
+
+        let _ = fs::remove_dir_all(dir);
     }
 }
 
