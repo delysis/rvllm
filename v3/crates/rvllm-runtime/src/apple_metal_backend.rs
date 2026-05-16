@@ -1981,6 +1981,87 @@ mod tests {
         }
     }
 
+    fn rmsnorm_f32(input: &[f32], gamma: &[f32], eps: f32) -> Vec<f32> {
+        let hidden = input.len();
+        let sum_sq = input.iter().map(|v| v * v).sum::<f32>();
+        let inv_rms = 1.0 / (sum_sq / hidden as f32 + eps).sqrt();
+        input
+            .iter()
+            .zip(gamma.iter())
+            .map(|(x, g)| x * inv_rms * g)
+            .collect()
+    }
+
+    fn gemm_f32(input: &[f32], weights: &[f32], out_dim: usize, in_dim: usize) -> Vec<f32> {
+        let mut out = vec![0.0f32; out_dim];
+        for row in 0..out_dim {
+            let mut acc = 0.0f32;
+            for col in 0..in_dim {
+                acc += input[col] * weights[row * in_dim + col];
+            }
+            out[row] = acc;
+        }
+        out
+    }
+
+    fn gelu_tanh_f32(x: f32) -> f32 {
+        let c = 0.7978845608f32;
+        0.5 * x * (1.0 + (c * (x + 0.044715 * x * x * x)).tanh())
+    }
+
+    fn cpu_reference_one_layer_ffn_nonzero_argmax() -> usize {
+        let hidden = 128usize;
+        let intermediate = 256usize;
+        let vocab = 8usize;
+        let eps = 0.000001f32;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+        let norm = vec![1.0f32; hidden];
+
+        let mut residual = vec![0.0f32; hidden];
+        let embedding_scale = (hidden as f32).sqrt();
+        for dim in 0..hidden {
+            residual[dim] = embedding[2 * hidden + dim] * embedding_scale;
+        }
+
+        let mlp_input = rmsnorm_f32(&residual, &norm, eps);
+        let mut gate_proj = vec![0.0f32; intermediate * hidden];
+        let mut up_proj = vec![0.0f32; intermediate * hidden];
+        let mut down_proj = vec![0.0f32; hidden * intermediate];
+        gate_proj[7] = 0.5;
+        up_proj[7] = 0.5;
+        down_proj[9 * intermediate] = 4.0;
+
+        let gate = gemm_f32(&mlp_input, &gate_proj, intermediate, hidden);
+        let up = gemm_f32(&mlp_input, &up_proj, intermediate, hidden);
+        let mut activated = vec![0.0f32; intermediate];
+        for dim in 0..intermediate {
+            activated[dim] = gelu_tanh_f32(gate[dim]) * up[dim];
+        }
+        let mlp_out = gemm_f32(&activated, &down_proj, hidden, intermediate);
+        for dim in 0..hidden {
+            residual[dim] += mlp_out[dim];
+        }
+
+        let final_hidden = rmsnorm_f32(&residual, &norm, eps);
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[2 * hidden + 7] = 1.0;
+        lm_head[3 * hidden + 9] = 4.0;
+        let logits = gemm_f32(&final_hidden, &lm_head, vocab, hidden);
+        logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("finite logits"))
+            .map(|(idx, _)| idx)
+            .expect("nonempty logits")
+    }
+
+    #[test]
+    fn cpu_reference_one_layer_ffn_nonzero_fixture_argmax_is_3() {
+        assert_eq!(cpu_reference_one_layer_ffn_nonzero_argmax(), 3);
+    }
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
@@ -2217,6 +2298,183 @@ mod tests {
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
+    fn write_tiny_one_layer_ffn_nonzero_fixture() -> std::path::PathBuf {
+        let dir = temp_fixture_dir();
+        let hidden = 128;
+        let intermediate = 256;
+        let vocab = 8;
+
+        let mut embedding = vec![0.0f32; vocab * hidden];
+        embedding[2 * hidden + 7] = 10.0;
+
+        let norm = vec![1.0f32; hidden];
+        let mut lm_head = vec![0.0f32; vocab * hidden];
+        lm_head[2 * hidden + 7] = 1.0;
+        lm_head[3 * hidden + 9] = 4.0;
+
+        let mut header = Map::<String, Value>::new();
+        let mut payload = Vec::new();
+
+        let mut add_tensor = |name: &str,
+                              data: &[f32],
+                              shape: &[usize],
+                              payload: &mut Vec<u8>,
+                              header: &mut Map<String, Value>| {
+            let start = payload.len();
+            let bytes = f16_bytes(data);
+            payload.extend_from_slice(&bytes);
+            let end = payload.len();
+            let mut meta = Map::new();
+            meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+            meta.insert(
+                "shape".to_owned(),
+                Value::Array(
+                    shape
+                        .iter()
+                        .map(|n| Value::Number((*n as u64).into()))
+                        .collect(),
+                ),
+            );
+            meta.insert(
+                "data_offsets".to_owned(),
+                Value::Array(vec![
+                    Value::Number((start as u64).into()),
+                    Value::Number((end as u64).into()),
+                ]),
+            );
+            header.insert(name.to_string(), Value::Object(meta));
+        };
+
+        add_tensor(
+            "model.embed_tokens.weight",
+            &embedding,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.norm.weight",
+            &norm,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "lm_head.weight",
+            &lm_head,
+            &[vocab, hidden],
+            &mut payload,
+            &mut header,
+        );
+
+        let ones = vec![1.0f32; hidden];
+        let zeros_qkvo = vec![0.0f32; hidden * hidden];
+        let zeros_down = vec![0.0f32; hidden * intermediate];
+        let mut gate_proj = vec![0.0f32; intermediate * hidden];
+        let mut up_proj = vec![0.0f32; intermediate * hidden];
+        let mut down_proj = zeros_down;
+        gate_proj[7] = 0.5;
+        up_proj[7] = 0.5;
+        down_proj[9 * intermediate] = 4.0;
+
+        add_tensor(
+            "model.layers.0.input_layernorm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.q_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.k_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.v_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.self_attn.o_proj.weight",
+            &zeros_qkvo,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp_norm.weight",
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.gate_proj.weight",
+            &gate_proj,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.up_proj.weight",
+            &up_proj,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            "model.layers.0.mlp.down_proj.weight",
+            &down_proj,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+
+        let config = format!(
+            r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 1,
+    "hidden_size": {},
+    "intermediate_size": {},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {},
+    "vocab_size": {},
+    "max_position_embeddings": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#,
+            hidden, intermediate, hidden, vocab
+        );
+
+        fs::write(dir.join("config.json"), config).expect("write config");
+
+        let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+        let mut out =
+            File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+        out.write_all(&(header_json.len() as u64).to_le_bytes())
+            .expect("write header len");
+        out.write_all(header_json.as_bytes())
+            .expect("write header bytes");
+        out.write_all(&payload).expect("write payload");
+        dir
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires Apple Silicon Metal device"]
     fn tiny_one_layer_hf_style_noop_model_backend_decodes_token_2_to_3() {
@@ -2268,6 +2526,65 @@ mod tests {
         let step2 = engine.step_launch().expect("launch decode");
         let out2 = step2.collect().expect("collect decode");
         assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
+        assert!(!engine.has_pending_work());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn tiny_one_layer_ffn_nonzero_model_backend_decodes_token_2_to_3() {
+        let dir = write_tiny_one_layer_ffn_nonzero_fixture();
+        let mut backend = ModelMetalBackend::new(dir.clone());
+        let plan = one_layer_plan(dir.clone());
+        backend
+            .prepare(&plan)
+            .expect("prepare one-layer ffn-nonzero tiny model");
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2)],
+            vec![0, 1],
+            vec![0],
+            vec![1],
+        );
+
+        let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+        let out = backend.collect(ticket).expect("collect");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn engine_one_layer_ffn_nonzero_model_backend_prefill_then_decode_token_2_to_3() {
+        let dir = write_tiny_one_layer_ffn_nonzero_fixture();
+        let plan = one_layer_plan(dir.clone());
+
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("engine with tiny ffn-nonzero one-layer model plan");
+
+        engine.scheduler.enqueue(crate::sched_state::Request::new(
+            rvllm_core::ReqId(1),
+            vec![rvllm_core::TokenId(2)],
+            1,
+        ));
+
+        let step1 = engine.step_launch().expect("launch prefill");
+        let out1 = step1.collect().expect("collect prefill");
+        assert!(out1.is_empty());
+
+        let step2 = engine.step_launch().expect("launch decode");
+        let out2 = step2.collect().expect("collect decode");
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].req_id, rvllm_core::ReqId(1));
         assert_eq!(out2[0].new_token, rvllm_core::TokenId(3));
         assert!(!engine.has_pending_work());
 
