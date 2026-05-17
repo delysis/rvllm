@@ -3357,6 +3357,43 @@ fn finite_summary(values: &[f32]) -> FiniteSummary {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+fn compare_trace_summary_stats(hf: &Value, metal: &Value, name: &str) {
+    let hf_summary = &hf["summaries"][name];
+    let metal_summary = &metal["summaries"][name];
+    assert!(
+        hf_summary.is_object(),
+        "HF layer trace missing summary {name}"
+    );
+    assert!(
+        metal_summary.is_object(),
+        "Metal layer trace missing summary {name}"
+    );
+    let hf_total = hf_summary["total_count"].as_u64().expect("HF total_count");
+    let metal_total = metal_summary["total_count"]
+        .as_u64()
+        .expect("Metal total_count");
+    let hf_finite = hf_summary["finite_count"]
+        .as_u64()
+        .expect("HF finite_count");
+    let metal_finite = metal_summary["finite_count"]
+        .as_u64()
+        .expect("Metal finite_count");
+    assert_eq!(hf_total, metal_total, "{name} total_count");
+    assert_eq!(hf_finite, hf_total, "{name} HF finite_count");
+    assert_eq!(metal_finite, metal_total, "{name} Metal finite_count");
+
+    let hf_max = hf_summary["max_abs"].as_f64().expect("HF max_abs");
+    let metal_max = metal_summary["max_abs"].as_f64().expect("Metal max_abs");
+    let hf_mean = hf_summary["mean_abs"].as_f64().expect("HF mean_abs");
+    let metal_mean = metal_summary["mean_abs"].as_f64().expect("Metal mean_abs");
+    eprintln!(
+        "E2B layer4 trace {name}: hf_max={hf_max:.6e} metal_max={metal_max:.6e} delta_max={:.6e} hf_mean={hf_mean:.6e} metal_mean={metal_mean:.6e} delta_mean={:.6e}",
+        (hf_max - metal_max).abs(),
+        (hf_mean - metal_mean).abs()
+    );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 fn read_e2b_hf_reference_selected_logits(path: &std::path::Path) -> (Vec<u32>, Vec<f32>, u32) {
     let raw = fs::read_to_string(path).expect("read HF reference logits artifact");
     let value: Value = serde_json::from_str(&raw).expect("parse HF reference logits artifact");
@@ -7320,6 +7357,102 @@ fn real_gemma4_e2b_prefill_layers_0_to_4_residuals_are_finite() {
         assert_eq!(summary.finite_count, summary.total_count);
     }
     env_guard.remove(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory and /tmp/gemma4-e2b-hf-layer4-trace.json"]
+fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let hf_trace_path = std::path::PathBuf::from("/tmp/gemma4-e2b-hf-layer4-trace.json");
+    if !hf_trace_path.exists() {
+        eprintln!(
+            "skipping: HF layer trace artifact is missing at {}",
+            hf_trace_path.display()
+        );
+        return;
+    }
+    let metal_trace_path = std::path::PathBuf::from("/tmp/gemma4-e2b-metal-layer4-trace.json");
+    let _ = fs::remove_file(&metal_trace_path);
+
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before layer trace");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+
+    let env_guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV,
+        RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV,
+        RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_JSON_ENV,
+    ]);
+    env_guard.set(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV, "4");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV, "4");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_JSON_ENV, &metal_trace_path);
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+    backend
+        .prepare(&plan)
+        .expect("real Gemma4 E2B Metal prepare/load should complete before layer trace");
+
+    let prefill = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+        vec![0, 2],
+        vec![1],
+        vec![2],
+    );
+    let ticket = backend
+        .launch_prefill(&prefill)
+        .expect("bounded E2B layer trace prefill should launch");
+    let out = backend
+        .collect(ticket)
+        .expect("bounded E2B layer trace prefill collect should succeed");
+    assert!(out.is_empty(), "layer trace prefill must not sample logits");
+
+    let hf_raw = fs::read_to_string(&hf_trace_path).expect("read HF layer trace");
+    let metal_raw = fs::read_to_string(&metal_trace_path).expect("read Metal layer trace");
+    let hf: Value = serde_json::from_str(&hf_raw).expect("parse HF layer trace");
+    let metal: Value = serde_json::from_str(&metal_raw).expect("parse Metal layer trace");
+    assert_eq!(
+        hf["schema"].as_str(),
+        Some("rvllm.gemma4_hf_layer_trace.v1")
+    );
+    assert_eq!(
+        metal["schema"].as_str(),
+        Some("rvllm.gemma4_metal_layer_trace.v1")
+    );
+    assert_eq!(
+        hf["prompt_token_ids"]
+            .as_array()
+            .expect("prompt ids")
+            .as_slice(),
+        &[Value::from(2), Value::from(4)]
+    );
+    assert_eq!(hf["layer"].as_u64(), Some(4));
+    assert_eq!(metal["layer"].as_u64(), Some(4));
+    assert_eq!(metal["phase"].as_str(), Some("prefill"));
+
+    for name in [
+        "after_rope_q",
+        "after_rope_k",
+        "after_v_norm",
+        "attention_output",
+        "final_residual_after_layer",
+    ] {
+        compare_trace_summary_stats(&hf, &metal, name);
+    }
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]

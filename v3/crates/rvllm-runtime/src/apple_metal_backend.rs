@@ -133,6 +133,10 @@ const RVLLM_METAL_DEBUG_FINITE_LAYERS_ENV: &str = "RVLLM_METAL_DEBUG_FINITE_LAYE
 const RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV: &str = "RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS";
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_STOP_AFTER_LAYER";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_LAYER";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_TRACE_JSON_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_JSON";
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -293,6 +297,27 @@ fn metal_debug_stop_after_layer() -> Option<usize> {
 }
 
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_trace_layer() -> Option<usize> {
+    let raw = std::env::var(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV).ok()?;
+    match raw.parse::<usize>() {
+        Ok(layer_idx) => Some(layer_idx),
+        Err(err) => {
+            eprintln!(
+                "metal debug trace: ignoring invalid {RVLLM_METAL_DEBUG_TRACE_LAYER_ENV}={raw:?}: {err}"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_trace_json_path() -> Option<PathBuf> {
+    std::env::var_os(RVLLM_METAL_DEBUG_TRACE_JSON_ENV)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
 fn debug_print_f16_region_token_stats(
     arena: &MetalBufferArena,
     label: &str,
@@ -328,6 +353,131 @@ fn debug_print_f16_region_token_stats(
         );
     }
     total_nonfinite
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn debug_f16_summary_json(
+    arena: &MetalBufferArena,
+    label: &str,
+    offset: usize,
+    num_tokens: usize,
+    elems_per_token: usize,
+) -> String {
+    let elem_count = num_tokens.saturating_mul(elems_per_token);
+    let region = MetalRegion {
+        name: label.to_owned(),
+        offset,
+        size: elem_count.saturating_mul(std::mem::size_of::<f16>()),
+    };
+    let ptr = unsafe { arena.host_ptr(&region) as *const u16 };
+    let bits = unsafe { std::slice::from_raw_parts(ptr, elem_count) };
+    let mut finite_count = 0usize;
+    let mut first_nonfinite_index = None;
+    let mut max_abs = 0.0f32;
+    let mut abs_sum = 0.0f64;
+    let mut first_values = String::new();
+    for (idx, raw) in bits.iter().enumerate() {
+        let value = f16::from_bits(*raw).to_f32();
+        if idx < 16 {
+            if idx > 0 {
+                first_values.push(',');
+            }
+            if value.is_finite() {
+                first_values.push_str(&format!("{value:.9e}"));
+            } else {
+                first_values.push_str("null");
+            }
+        }
+        if value.is_finite() {
+            finite_count += 1;
+            max_abs = max_abs.max(value.abs());
+            abs_sum += value.abs() as f64;
+        } else if first_nonfinite_index.is_none() {
+            first_nonfinite_index = Some(idx);
+        }
+    }
+    let mean_abs = if finite_count == 0 {
+        0.0
+    } else {
+        (abs_sum / finite_count as f64) as f32
+    };
+    let first_nonfinite =
+        first_nonfinite_index.map_or_else(|| "null".to_owned(), |idx| idx.to_string());
+    format!(
+        "\"{label}\":{{\"shape\":[{num_tokens},{elems_per_token}],\"total_count\":{elem_count},\"finite_count\":{finite_count},\"max_abs\":{max_abs:.9e},\"mean_abs\":{mean_abs:.9e},\"first_nonfinite_index\":{first_nonfinite},\"first_values\":[{first_values}]}}"
+    )
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+#[allow(clippy::too_many_arguments)]
+fn debug_write_layer_trace_json(
+    arena: &MetalBufferArena,
+    path: &std::path::Path,
+    op: &'static str,
+    phase: MetalPhase,
+    layer_idx: usize,
+    num_tokens: usize,
+    hidden: usize,
+    q_dim: usize,
+    kv_dim: usize,
+    intermediate: usize,
+    residual_offset: usize,
+    q_offset: usize,
+    k_offset: usize,
+    v_offset: usize,
+    attn_out_offset: usize,
+    gate_up_out_offset: usize,
+    activated_offset: usize,
+) -> Result<()> {
+    let phase_name = match phase {
+        MetalPhase::Decode => "decode",
+        MetalPhase::Prefill { .. } => "prefill",
+    };
+    let summaries = [
+        debug_f16_summary_json(
+            arena,
+            "final_residual_after_layer",
+            residual_offset,
+            num_tokens,
+            hidden,
+        ),
+        debug_f16_summary_json(arena, "after_rope_q", q_offset, num_tokens, q_dim),
+        debug_f16_summary_json(arena, "after_rope_k", k_offset, num_tokens, kv_dim),
+        debug_f16_summary_json(arena, "after_v_norm", v_offset, num_tokens, kv_dim),
+        debug_f16_summary_json(
+            arena,
+            "attention_output",
+            attn_out_offset,
+            num_tokens,
+            q_dim,
+        ),
+        debug_f16_summary_json(
+            arena,
+            "gate_up_out",
+            gate_up_out_offset,
+            num_tokens,
+            intermediate.saturating_mul(2),
+        ),
+        debug_f16_summary_json(
+            arena,
+            "ffn_activation",
+            activated_offset,
+            num_tokens,
+            intermediate,
+        ),
+    ];
+    let json = format!(
+        "{{\"schema\":\"rvllm.gemma4_metal_layer_trace.v1\",\"op\":\"{op}\",\"phase\":\"{phase_name}\",\"layer\":{layer_idx},\"num_tokens\":{num_tokens},\"summaries\":{{{}}},\"claim\":\"rvLLM Metal layer debug summary only; no final logits, ANE, or production claim.\"}}\n",
+        summaries.join(",")
+    );
+    std::fs::write(path, json).map_err(|_| {
+        RvllmError::apple(
+            AppleError::InvalidWeightBlob {
+                reason: "failed to write Metal layer trace JSON",
+            },
+            model_ctx("debug_layer_trace"),
+        )
+    })
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -1035,6 +1185,10 @@ impl ModelMetalBackend {
         let half_bytes = std::mem::size_of::<f16>();
         #[cfg(test)]
         let stop_after_layer = metal_debug_stop_after_layer();
+        #[cfg(test)]
+        let trace_layer = metal_debug_trace_layer();
+        #[cfg(test)]
+        let trace_json_path = metal_debug_trace_json_path();
 
         for one in &state.layers {
             if one.layer_idx >= state.num_layers {
@@ -1141,7 +1295,10 @@ impl ModelMetalBackend {
                 .add_encoders(Self::estimate_layer_encoder_count(&weights));
 
             #[cfg(test)]
-            if metal_debug_finite_layers_enabled() || stop_after_layer.is_some() {
+            if metal_debug_finite_layers_enabled()
+                || stop_after_layer.is_some()
+                || trace_layer.is_some()
+            {
                 self.wait_for_metal_queue("debug_layer_finite")?;
                 let residual_nonfinite = debug_print_f16_region_token_stats(
                     arena,
@@ -1208,6 +1365,36 @@ impl ModelMetalBackend {
                         },
                         model_ctx("debug_layer_finite"),
                     ));
+                }
+                if trace_layer == Some(one.layer_idx) {
+                    if let Some(path) = trace_json_path.as_deref() {
+                        let q_dim = one.dims.q_dim;
+                        let kv_dim = one.dims.kv_dim;
+                        debug_write_layer_trace_json(
+                            arena,
+                            path,
+                            op,
+                            phase,
+                            one.layer_idx,
+                            num_tokens,
+                            state.hidden_size,
+                            q_dim,
+                            kv_dim,
+                            intermediate,
+                            state.residual.offset,
+                            one.q.offset,
+                            one.k.offset,
+                            one.v.offset,
+                            one.attn_out.offset,
+                            one.gate_up_out.offset,
+                            one.activated.offset,
+                        )?;
+                        eprintln!(
+                            "metal debug trace: wrote layer {} summary to {}",
+                            one.layer_idx,
+                            path.display()
+                        );
+                    }
                 }
             }
 
