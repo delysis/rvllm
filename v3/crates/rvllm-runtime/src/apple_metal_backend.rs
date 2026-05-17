@@ -129,6 +129,10 @@ pub const RVLLM_METAL_DEBUG_SYNC_ENV: &str = "RVLLM_METAL_DEBUG_SYNC";
 pub const RVLLM_EXPERIMENTAL_METAL_KV_INT8_ENV: &str = "RVLLM_EXPERIMENTAL_METAL_KV_INT8";
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_FINITE_LAYERS_ENV: &str = "RVLLM_METAL_DEBUG_FINITE_LAYERS";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV: &str = "RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_STOP_AFTER_LAYER";
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -264,10 +268,28 @@ fn experimental_metal_kv_int8_enabled() -> bool {
 
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 fn metal_debug_finite_layers_enabled() -> bool {
-    std::env::var(RVLLM_METAL_DEBUG_FINITE_LAYERS_ENV)
-        .ok()
-        .as_deref()
-        == Some("1")
+    fn env_truthy(name: &str) -> bool {
+        std::env::var(name)
+            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false)
+    }
+
+    env_truthy(RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV)
+        || env_truthy(RVLLM_METAL_DEBUG_FINITE_LAYERS_ENV)
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_stop_after_layer() -> Option<usize> {
+    let raw = std::env::var(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV).ok()?;
+    match raw.parse::<usize>() {
+        Ok(layer_idx) => Some(layer_idx),
+        Err(err) => {
+            eprintln!(
+                "metal debug finite: ignoring invalid {RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV}={raw:?}: {err}"
+            );
+            None
+        }
+    }
 }
 
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
@@ -1011,6 +1033,8 @@ impl ModelMetalBackend {
             )
         })?;
         let half_bytes = std::mem::size_of::<f16>();
+        #[cfg(test)]
+        let stop_after_layer = metal_debug_stop_after_layer();
 
         for one in &state.layers {
             if one.layer_idx >= state.num_layers {
@@ -1117,7 +1141,7 @@ impl ModelMetalBackend {
                 .add_encoders(Self::estimate_layer_encoder_count(&weights));
 
             #[cfg(test)]
-            if metal_debug_finite_layers_enabled() {
+            if metal_debug_finite_layers_enabled() || stop_after_layer.is_some() {
                 self.wait_for_metal_queue("debug_layer_finite")?;
                 let residual_nonfinite = debug_print_f16_region_token_stats(
                     arena,
@@ -1185,6 +1209,15 @@ impl ModelMetalBackend {
                         model_ctx("debug_layer_finite"),
                     ));
                 }
+            }
+
+            #[cfg(test)]
+            if stop_after_layer == Some(one.layer_idx) {
+                eprintln!(
+                    "metal debug finite: op={op} stopped after layer={}",
+                    one.layer_idx
+                );
+                break;
             }
         }
 

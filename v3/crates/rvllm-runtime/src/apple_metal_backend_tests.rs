@@ -100,6 +100,46 @@ impl Drop for MetalDebugSyncEnvGuard {
     }
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+struct MetalDebugEnvGuard {
+    _guard: std::sync::MutexGuard<'static, ()>,
+    previous: Vec<(&'static str, Option<std::ffi::OsString>)>,
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+impl MetalDebugEnvGuard {
+    fn new(names: &[&'static str]) -> Self {
+        Self {
+            _guard: METAL_DEBUG_SYNC_ENV_LOCK.lock().expect("lock env guard"),
+            previous: names
+                .iter()
+                .map(|&name| (name, std::env::var_os(name)))
+                .collect(),
+        }
+    }
+
+    fn set(&self, name: &'static str, value: impl AsRef<std::ffi::OsStr>) {
+        std::env::set_var(name, value);
+    }
+
+    fn remove(&self, name: &'static str) {
+        std::env::remove_var(name);
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+impl Drop for MetalDebugEnvGuard {
+    fn drop(&mut self) {
+        for (name, previous) in &self.previous {
+            if let Some(previous) = previous {
+                std::env::set_var(name, previous);
+            } else {
+                std::env::remove_var(name);
+            }
+        }
+    }
+}
+
 fn temp_fixture_dir() -> std::path::PathBuf {
     static FIXTURE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let now = SystemTime::now()
@@ -3273,6 +3313,46 @@ fn assert_f32_slice_close(label: &str, got: &[f32], expected: &[f32], tolerance:
             expected[idx],
             tolerance,
         );
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[derive(Clone, Debug)]
+struct FiniteSummary {
+    finite_count: usize,
+    total_count: usize,
+    max_abs: f32,
+    mean_abs: f32,
+    first_nonfinite_index: Option<usize>,
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn finite_summary(values: &[f32]) -> FiniteSummary {
+    let mut finite_count = 0usize;
+    let mut abs_sum = 0.0f64;
+    let mut max_abs = 0.0f32;
+    let mut first_nonfinite_index = None;
+    for (idx, value) in values.iter().copied().enumerate() {
+        if value.is_finite() {
+            finite_count += 1;
+            let abs = value.abs();
+            max_abs = max_abs.max(abs);
+            abs_sum += abs as f64;
+        } else if first_nonfinite_index.is_none() {
+            first_nonfinite_index = Some(idx);
+        }
+    }
+    let mean_abs = if finite_count == 0 {
+        0.0
+    } else {
+        (abs_sum / finite_count as f64) as f32
+    };
+    FiniteSummary {
+        finite_count,
+        total_count: values.len(),
+        max_abs,
+        mean_abs,
+        first_nonfinite_index,
     }
 }
 
@@ -7168,6 +7248,78 @@ fn real_gemma4_e2b_model_backend_prepare_with_large_model_opt_in() {
     }
 
     prepare.expect("real Gemma4 E2B Metal prepare/load should complete under explicit opt-in");
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory and bounded layer finite debug opt-in"]
+fn real_gemma4_e2b_prefill_layers_0_to_4_residuals_are_finite() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before bounded finite run");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+
+    let env_guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV,
+        RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV,
+        RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV,
+    ]);
+    env_guard.set(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV, "1");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+    backend
+        .prepare(&plan)
+        .expect("real Gemma4 E2B Metal prepare/load should complete before finite run");
+
+    for stop_after_layer in 0usize..=4 {
+        env_guard.set(
+            RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV,
+            stop_after_layer.to_string(),
+        );
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            vec![0, 2],
+            vec![1],
+            vec![2],
+        );
+        let ticket = backend.launch_prefill(&prefill).unwrap_or_else(|err| {
+            panic!("bounded E2B prefill failed at layer {stop_after_layer}: {err}")
+        });
+        let out = backend.collect(ticket).unwrap_or_else(|err| {
+            panic!("bounded E2B prefill collect failed at layer {stop_after_layer}: {err}")
+        });
+        assert!(out.is_empty(), "bounded prefill must not sample logits");
+
+        let residual = backend.debug_read_residual_f32(2).unwrap_or_else(|err| {
+            panic!("bounded E2B residual read failed at layer {stop_after_layer}: {err}")
+        });
+        let summary = finite_summary(&residual);
+        eprintln!(
+            "bounded E2B residual after layer {stop_after_layer}: finite={}/{} max_abs={:e} mean_abs={:e} first_nonfinite_index={:?}",
+            summary.finite_count,
+            summary.total_count,
+            summary.max_abs,
+            summary.mean_abs,
+            summary.first_nonfinite_index
+        );
+        assert_eq!(
+            summary.first_nonfinite_index, None,
+            "first non-finite residual after local kernel fixes appears at or before layer {stop_after_layer}: {summary:?}"
+        );
+        assert_eq!(summary.finite_count, summary.total_count);
+    }
+    env_guard.remove(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV);
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
