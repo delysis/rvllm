@@ -16,14 +16,12 @@
 //!   sliding: head_dim=256, kv_heads=16, theta=10000, full rotation
 //!   global:  head_dim=512, kv_heads=4,  theta=1M, partial_rotary=0.25
 
-use std::path::Path;
+use std::{io::Read, path::Path};
 
 use rvllm_core::{
     config::{is_gemma4_hf_architecture, is_gemma4_model_type},
     LoaderCtx, LoaderError, Result, RvllmError,
 };
-
-use crate::safetensors::ShardHeader;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Gemma4LayerType {
@@ -41,6 +39,8 @@ pub struct Gemma4Arch {
     pub num_kv_heads_sliding: usize,
     pub num_kv_heads_global: usize,
     pub intermediate_size: usize,
+    pub use_double_wide_mlp: bool,
+    pub num_kv_shared_layers: usize,
     pub vocab_size: usize,
     pub rms_norm_eps: f32,
     pub max_position_embeddings: usize,
@@ -90,6 +90,14 @@ impl Gemma4Arch {
         let head_dim_global = tc["global_head_dim"].as_u64().unwrap_or(512) as usize;
 
         let intermediate_size = tc["intermediate_size"].as_u64().unwrap_or(0) as usize;
+        let use_double_wide_mlp = tc["use_double_wide_mlp"]
+            .as_bool()
+            .or_else(|| v["use_double_wide_mlp"].as_bool())
+            .unwrap_or(false);
+        let num_kv_shared_layers = tc["num_kv_shared_layers"]
+            .as_u64()
+            .or_else(|| v["num_kv_shared_layers"].as_u64())
+            .unwrap_or(0) as usize;
         let vocab_size = tc["vocab_size"]
             .as_u64()
             .or_else(|| v["vocab_size"].as_u64())
@@ -108,7 +116,7 @@ impl Gemma4Arch {
         let num_kv_heads_global = tc["num_global_key_value_heads"]
             .as_u64()
             .or_else(|| tc["num_key_value_heads_global"].as_u64())
-            .unwrap_or(4) as usize;
+            .unwrap_or(num_kv_heads_sliding as u64) as usize;
 
         // RoPE parameters -- nested per-type in Gemma 4
         let rope = &tc["rope_parameters"];
@@ -151,6 +159,20 @@ impl Gemma4Arch {
                 bt: std::backtrace::Backtrace::capture(),
             });
         }
+        if use_double_wide_mlp
+            && (num_kv_shared_layers == 0 || num_kv_shared_layers > num_hidden_layers)
+        {
+            return Err(RvllmError::Loader {
+                err: LoaderError::Corrupt {
+                    detail: "Gemma4 double-wide MLP requires num_kv_shared_layers in 1..=num_hidden_layers".into(),
+                },
+                ctx: LoaderCtx {
+                    path: p,
+                    tensor: None,
+                },
+                bt: std::backtrace::Backtrace::capture(),
+            });
+        }
 
         Ok(Self {
             num_hidden_layers,
@@ -161,6 +183,8 @@ impl Gemma4Arch {
             num_kv_heads_sliding,
             num_kv_heads_global,
             intermediate_size,
+            use_double_wide_mlp,
+            num_kv_shared_layers,
             vocab_size,
             rms_norm_eps,
             max_position_embeddings,
@@ -224,11 +248,9 @@ impl Gemma4Arch {
             }
         }
         let single_path = dir.join("model.safetensors");
-        if let Ok(bytes) = std::fs::read(&single_path) {
-            if let Ok(header) = ShardHeader::parse(&single_path, &bytes) {
-                if let Some(prefix) = prefix_from_keys(header.tensors.keys().cloned().collect()) {
-                    return prefix;
-                }
+        if let Ok(keys) = read_single_safetensor_header_keys(&single_path) {
+            if let Some(prefix) = prefix_from_keys(keys) {
+                return prefix;
             }
         }
         "model".to_string()
@@ -275,6 +297,17 @@ impl Gemma4Arch {
         self.num_kv_heads_for_layer(layer_idx) * self.head_dim_for_layer(layer_idx)
     }
 
+    pub fn intermediate_size_for_layer(&self, layer_idx: usize) -> usize {
+        if self.use_double_wide_mlp
+            && self.num_kv_shared_layers > 0
+            && layer_idx >= self.num_hidden_layers - self.num_kv_shared_layers
+        {
+            self.intermediate_size * 2
+        } else {
+            self.intermediate_size
+        }
+    }
+
     pub fn max_head_dim(&self) -> usize {
         self.head_dim_sliding.max(self.head_dim_global)
     }
@@ -286,6 +319,45 @@ impl Gemma4Arch {
     pub fn max_q_dim(&self) -> usize {
         self.num_attention_heads * self.max_head_dim()
     }
+}
+
+fn read_single_safetensor_header_keys(path: &Path) -> Result<Vec<String>> {
+    let mut file = std::fs::File::open(path).map_err(|source| RvllmError::Io {
+        err: rvllm_core::IoError::from(&source),
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut header_len = [0u8; 8];
+    file.read_exact(&mut header_len)
+        .map_err(|source| RvllmError::Io {
+            err: rvllm_core::IoError::from(&source),
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let header_bytes = u64::from_le_bytes(header_len) as usize;
+    let mut header = vec![0u8; header_bytes];
+    file.read_exact(&mut header)
+        .map_err(|source| RvllmError::Io {
+            err: rvllm_core::IoError::from(&source),
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let header: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(&header)
+        .map_err(|e| RvllmError::Loader {
+            err: LoaderError::Corrupt {
+                detail: format!("safetensor header json: {e}"),
+            },
+            ctx: LoaderCtx {
+                path: path.to_path_buf(),
+                tensor: None,
+            },
+            bt: std::backtrace::Backtrace::capture(),
+        })?;
+    Ok(header
+        .into_iter()
+        .map(|(key, _)| key)
+        .filter(|key| key != "__metadata__")
+        .collect())
 }
 
 fn validate_gemma4_config_identity(config: &serde_json::Value, path: &Path) -> Result<()> {
@@ -538,6 +610,126 @@ mod tests {
     }
 
     #[test]
+    fn from_dir_global_kv_heads_default_to_regular_kv_heads() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        write_single_safetensor_header(&dir, &["model.language_model.embed_tokens.weight"]);
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["text_config"]["num_attention_heads"] = serde_json::json!(8);
+        config["text_config"]["num_key_value_heads"] = serde_json::json!(1);
+        config["text_config"]["head_dim"] = serde_json::json!(256);
+        config["text_config"]["global_head_dim"] = serde_json::json!(512);
+        config["text_config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("num_global_key_value_heads");
+        config["text_config"]["layer_types"] = serde_json::json!(["full_attention"]);
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+        let arch = Gemma4Arch::from_dir(&dir)
+            .expect("missing global kv heads should fall back to regular kv heads");
+
+        assert_eq!(arch.num_kv_heads_sliding, 1);
+        assert_eq!(arch.num_kv_heads_global, 1);
+        assert_eq!(arch.q_dim_for_layer(0), 4096);
+        assert_eq!(arch.kv_dim_for_layer(0), 512);
+    }
+
+    #[test]
+    fn from_dir_null_global_kv_heads_default_to_regular_kv_heads() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        write_single_safetensor_header(&dir, &["model.language_model.embed_tokens.weight"]);
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["text_config"]["num_attention_heads"] = serde_json::json!(8);
+        config["text_config"]["num_key_value_heads"] = serde_json::json!(1);
+        config["text_config"]["head_dim"] = serde_json::json!(256);
+        config["text_config"]["global_head_dim"] = serde_json::json!(512);
+        config["text_config"]["num_global_key_value_heads"] = serde_json::Value::Null;
+        config["text_config"]["layer_types"] = serde_json::json!(["full_attention"]);
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+        let arch = Gemma4Arch::from_dir(&dir)
+            .expect("null global kv heads should fall back to regular kv heads");
+
+        assert_eq!(arch.num_kv_heads_sliding, 1);
+        assert_eq!(arch.num_kv_heads_global, 1);
+        assert_eq!(arch.q_dim_for_layer(0), 4096);
+        assert_eq!(arch.kv_dim_for_layer(0), 512);
+    }
+
+    #[test]
+    fn from_dir_explicit_global_kv_heads_override_regular_kv_heads() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        write_single_safetensor_header(&dir, &["model.language_model.embed_tokens.weight"]);
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["text_config"]["num_attention_heads"] = serde_json::json!(8);
+        config["text_config"]["num_key_value_heads"] = serde_json::json!(1);
+        config["text_config"]["num_global_key_value_heads"] = serde_json::json!(2);
+        config["text_config"]["global_head_dim"] = serde_json::json!(512);
+        config["text_config"]["layer_types"] = serde_json::json!(["full_attention"]);
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+        let arch =
+            Gemma4Arch::from_dir(&dir).expect("explicit global kv heads should keep precedence");
+
+        assert_eq!(arch.num_kv_heads_sliding, 1);
+        assert_eq!(arch.num_kv_heads_global, 2);
+        assert_eq!(arch.kv_dim_for_layer(0), 1024);
+    }
+
+    #[test]
+    fn from_dir_parses_double_wide_mlp_tail_layers() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        write_single_safetensor_header(&dir, &["model.language_model.embed_tokens.weight"]);
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["text_config"]["num_hidden_layers"] = serde_json::json!(35);
+        config["text_config"]["intermediate_size"] = serde_json::json!(6144);
+        config["text_config"]["use_double_wide_mlp"] = serde_json::json!(true);
+        config["text_config"]["num_kv_shared_layers"] = serde_json::json!(20);
+        config["text_config"]["layer_types"] = serde_json::Value::Array(
+            std::iter::repeat(serde_json::json!("sliding_attention"))
+                .take(35)
+                .collect(),
+        );
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+        let arch = Gemma4Arch::from_dir(&dir).expect("double-wide MLP config should parse");
+
+        assert_eq!(arch.intermediate_size_for_layer(14), 6144);
+        assert_eq!(arch.intermediate_size_for_layer(15), 12288);
+        assert_eq!(arch.intermediate_size_for_layer(34), 12288);
+    }
+
+    #[test]
+    fn from_dir_rejects_invalid_double_wide_mlp_window() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["text_config"]["use_double_wide_mlp"] = serde_json::json!(true);
+        config["text_config"]["num_kv_shared_layers"] = serde_json::json!(0);
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+        let err = Gemma4Arch::from_dir(&dir).expect_err("invalid double-wide MLP should fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("double-wide MLP"));
+        assert!(msg.contains("num_kv_shared_layers"));
+    }
+
+    #[test]
     fn from_dir_rejects_bad_gemma4_model_type() {
         let dir = tempdir();
         write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
@@ -620,6 +812,8 @@ mod tests {
             num_kv_heads_sliding: 16,
             num_kv_heads_global: 4,
             intermediate_size: 21504,
+            use_double_wide_mlp: false,
+            num_kv_shared_layers: 0,
             vocab_size: 262144,
             rms_norm_eps: 1e-6,
             max_position_embeddings: 262144,
@@ -647,6 +841,8 @@ mod tests {
             num_kv_heads_sliding: 16,
             num_kv_heads_global: 4,
             intermediate_size: 21504,
+            use_double_wide_mlp: false,
+            num_kv_shared_layers: 0,
             vocab_size: 262144,
             rms_norm_eps: 1e-6,
             max_position_embeddings: 262144,

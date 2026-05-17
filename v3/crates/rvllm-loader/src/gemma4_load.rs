@@ -298,6 +298,7 @@ pub fn load_gemma4_model(
         let layer_nkvh = arch.num_kv_heads_for_layer(l);
         let layer_q_dim = arch.num_attention_heads * layer_hd;
         let layer_kv_dim = layer_nkvh * layer_hd;
+        let layer_intermediate = arch.intermediate_size_for_layer(l);
 
         let q_tensor = must_get(&ln("self_attn.q_proj.weight"))?;
         let k_tensor = must_get(&ln("self_attn.k_proj.weight"))?;
@@ -354,7 +355,7 @@ pub fn load_gemma4_model(
                 &[&gate_entry, &up_entry],
                 &[gate_scale.as_ref(), up_scale.as_ref()],
                 &shards,
-                &[2 * arch.intermediate_size, arch.hidden_size],
+                &[2 * layer_intermediate, arch.hidden_size],
             )?;
 
             let down_entry = must_get(&ln("mlp.down_proj.weight"))?;
@@ -503,7 +504,7 @@ pub fn load_gemma4_model(
                     let gate_up = Fp8Weight {
                         offset_bytes: gu_r.device_ptr(),
                         scale_ptr: gu_one_r.device_ptr(),
-                        shape: vec![2 * arch.intermediate_size, arch.hidden_size],
+                        shape: vec![2 * layer_intermediate, arch.hidden_size],
                         scale: 1.0,
                         clamp_ppm: 0.0,
                         dtype: DType::Fp8E4M3,
@@ -561,7 +562,7 @@ pub fn load_gemma4_model(
                         arena,
                         "gate_up",
                         &gate_up_f16_bytes,
-                        &[2 * arch.intermediate_size, arch.hidden_size],
+                        &[2 * layer_intermediate, arch.hidden_size],
                         &ln("mlp.gate_up.weight"),
                         model_dir,
                     )?;
@@ -653,7 +654,7 @@ pub fn load_gemma4_model(
             let gu_w = upload_concat_f16(
                 &[&gate_e, &up_e],
                 "gu_f16",
-                vec![2 * arch.intermediate_size, arch.hidden_size],
+                vec![2 * layer_intermediate, arch.hidden_size],
             )?;
             let d_entry = must_get(&ln("mlp.down_proj.weight"))?;
             let d_w = upload_concat_f16(&[&d_entry], "d_f16", d_entry.1.shape.clone())?;

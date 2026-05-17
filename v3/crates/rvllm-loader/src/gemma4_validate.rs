@@ -330,6 +330,7 @@ fn validate_gemma4_dry_run_layer(
         validate_floating_tensor_dtype(model_dir, tensors, &v_norm)?;
     }
 
+    let intermediate_size = arch.intermediate_size_for_layer(layer_idx);
     let gate_proj = format!("{lprefix}.mlp.gate_proj.weight");
     let up_proj = format!("{lprefix}.mlp.up_proj.weight");
     let down_proj = format!("{lprefix}.mlp.down_proj.weight");
@@ -337,21 +338,21 @@ fn validate_gemma4_dry_run_layer(
         model_dir,
         tensors,
         &gate_proj,
-        &[arch.intermediate_size, arch.hidden_size],
+        &[intermediate_size, arch.hidden_size],
     )?;
     validate_linear_tensor_dtype(model_dir, tensors, &gate_proj)?;
     validate_required_shape(
         model_dir,
         tensors,
         &up_proj,
-        &[arch.intermediate_size, arch.hidden_size],
+        &[intermediate_size, arch.hidden_size],
     )?;
     validate_linear_tensor_dtype(model_dir, tensors, &up_proj)?;
     validate_required_shape(
         model_dir,
         tensors,
         &down_proj,
-        &[arch.hidden_size, arch.intermediate_size],
+        &[arch.hidden_size, intermediate_size],
     )?;
     validate_linear_tensor_dtype(model_dir, tensors, &down_proj)?;
 
@@ -1042,6 +1043,7 @@ mod tests {
         omit_q_norm0: bool,
         layer_scalar_suffix: Option<&str>,
         extra_tensor_name: Option<&str>,
+        double_wide_tail_mlp: bool,
     ) -> PathBuf {
         let dir = test_fixture_dir("gemma4-dry-run-full-gemma-style");
         let hidden = 128usize;
@@ -1077,6 +1079,11 @@ mod tests {
         for (layer_idx, head_dim) in [(0usize, sliding_head_dim), (1usize, global_head_dim)] {
             let q_dim = head_dim;
             let kv_dim = head_dim;
+            let layer_intermediate = if double_wide_tail_mlp && layer_idx == 1 {
+                intermediate * 2
+            } else {
+                intermediate
+            };
             let lprefix = format!("{prefix}.layers.{layer_idx}");
             for suffix in [
                 "input_layernorm.weight",
@@ -1153,19 +1160,19 @@ mod tests {
                 &mut header,
                 &mut payload,
                 &format!("{lprefix}.mlp.gate_proj.weight"),
-                &[intermediate, hidden],
+                &[layer_intermediate, hidden],
             );
             add_zero_tensor(
                 &mut header,
                 &mut payload,
                 &format!("{lprefix}.mlp.up_proj.weight"),
-                &[intermediate, hidden],
+                &[layer_intermediate, hidden],
             );
             add_zero_tensor(
                 &mut header,
                 &mut payload,
                 &format!("{lprefix}.mlp.down_proj.weight"),
-                &[hidden, intermediate],
+                &[hidden, layer_intermediate],
             );
         }
 
@@ -1195,12 +1202,15 @@ mod tests {
     "final_logit_softcapping": 30.0,
     "tie_word_embeddings": {tie_embeddings},
     "attention_k_eq_v": {attention_k_eq_v},
+    "use_double_wide_mlp": {double_wide_tail_mlp},
+    "num_kv_shared_layers": {},
     "rope_parameters": {{
       "sliding_attention": {{"rope_theta": 10000.0}},
       "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 0.25}}
     }}
   }}
-}}"#
+}}"#,
+                if double_wide_tail_mlp { 1 } else { 0 }
             ),
         )
         .expect("write config");
@@ -1236,6 +1246,7 @@ mod tests {
             omit_q_norm0,
             layer_scalar_suffix,
             None,
+            false,
         )
     }
 
@@ -1682,6 +1693,42 @@ mod tests {
     }
 
     #[test]
+    fn gemma4_dry_run_validates_double_wide_mlp_tail_layer() {
+        let dir = write_dry_run_full_gemma_style_fixture_with_prefix(
+            "model.language_model",
+            true,
+            false,
+            true,
+            None,
+            None,
+            None,
+            false,
+            Some("layer_scalar"),
+            None,
+            true,
+        );
+
+        let validation = Gemma4DryRunValidation::from_model_dir(&dir)
+            .expect("double-wide MLP tail layer should validate");
+
+        assert_eq!(validation.num_layers, 2);
+        assert_eq!(
+            validation.layers[0].attention_kind,
+            Gemma4DryRunAttentionKind::Sliding
+        );
+        assert_eq!(
+            validation.layers[1].attention_kind,
+            Gemma4DryRunAttentionKind::Full
+        );
+        assert_eq!(
+            validation.lm_head_status,
+            Gemma4DryRunLmHeadStatus::TiedEmbeddings
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn gemma4_dry_run_validates_language_model_model_prefix() {
         let dir = write_dry_run_full_gemma_style_fixture_with_prefix(
             "language_model.model",
@@ -1694,6 +1741,7 @@ mod tests {
             false,
             Some("layer_scalar"),
             None,
+            false,
         );
         let validation = Gemma4DryRunValidation::from_model_dir(&dir)
             .expect("dry-run validates language_model.model fixture");
@@ -1895,6 +1943,7 @@ mod tests {
                 false,
                 Some("layer_scalar"),
                 Some(tensor_name),
+                false,
             );
             let err = Gemma4DryRunValidation::from_model_dir(&dir)
                 .expect_err("MoE tensor metadata must fail");
