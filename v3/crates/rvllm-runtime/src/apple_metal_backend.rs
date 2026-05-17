@@ -12,6 +12,9 @@ use std::ptr;
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use std::time::{Duration, Instant};
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV: &str = "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE";
+
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
 #[derive(Debug, Default)]
 pub struct RuntimeMetalBackend;
@@ -272,6 +275,13 @@ fn model_ctx(op: &'static str) -> AppleCtx {
         op,
         device: "apple-silicon",
     }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn large_gemma4_probe_opted_in() -> bool {
+    std::env::var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -1007,7 +1017,7 @@ impl ModelMetalBackend {
             ));
         }
         const MAX_DEFAULT_PROBE_LAYERS: usize = 8;
-        if state.num_layers > MAX_DEFAULT_PROBE_LAYERS {
+        if state.num_layers > MAX_DEFAULT_PROBE_LAYERS && !large_gemma4_probe_opted_in() {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
@@ -1099,7 +1109,7 @@ impl ModelMetalBackend {
             )
         })?;
         const MAX_DEFAULT_PROBE_LAYERS: usize = 8;
-        if state.num_layers > MAX_DEFAULT_PROBE_LAYERS {
+        if state.num_layers > MAX_DEFAULT_PROBE_LAYERS && !large_gemma4_probe_opted_in() {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",

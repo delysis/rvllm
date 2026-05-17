@@ -58,6 +58,8 @@ pub struct ModelArch {
     pub num_key_value_heads: usize,
     pub head_dim: usize,
     pub intermediate_size: usize,
+    pub use_double_wide_mlp: bool,
+    pub num_kv_shared_layers: usize,
     pub vocab_size: usize,
     pub rope_theta: f32,
     pub max_position_embeddings: usize,
@@ -109,7 +111,18 @@ impl ModelArch {
             .as_u64()
             .unwrap_or(num_attention_heads as u64) as usize;
         let intermediate_size = tc["intermediate_size"].as_u64().unwrap_or(0) as usize;
-        let vocab_size = tc["vocab_size"].as_u64().unwrap_or(0) as usize;
+        let use_double_wide_mlp = tc["use_double_wide_mlp"]
+            .as_bool()
+            .or_else(|| v["use_double_wide_mlp"].as_bool())
+            .unwrap_or(false);
+        let num_kv_shared_layers = tc["num_kv_shared_layers"]
+            .as_u64()
+            .or_else(|| v["num_kv_shared_layers"].as_u64())
+            .unwrap_or(0) as usize;
+        let vocab_size = tc["vocab_size"]
+            .as_u64()
+            .or_else(|| v["vocab_size"].as_u64())
+            .unwrap_or(0) as usize;
         // Gemma 4 nests rope_theta under rope_parameters.sliding_attention.
         let rope_theta = tc["rope_parameters"]["sliding_attention"]["rope_theta"]
             .as_f64()
@@ -162,9 +175,15 @@ impl ModelArch {
             .or_else(|| tc["hidden_activation"].as_str())
             .map(|s| s.to_string());
         let global_head_dim = tc["global_head_dim"].as_u64().map(|d| d as usize);
-        let num_global_key_value_heads = tc["num_global_key_value_heads"]
+        let raw_num_global_key_value_heads = tc["num_global_key_value_heads"]
             .as_u64()
+            .or_else(|| tc["num_key_value_heads_global"].as_u64())
             .map(|d| d as usize);
+        let num_global_key_value_heads = if global_head_dim.is_some() {
+            Some(raw_num_global_key_value_heads.unwrap_or(num_key_value_heads))
+        } else {
+            raw_num_global_key_value_heads
+        };
         let global_rope_theta = tc
             .get("rope_parameters")
             .and_then(|rp| rp["full_attention"]["rope_theta"].as_f64())
@@ -210,6 +229,20 @@ impl ModelArch {
                 hidden_activation, tie_word_embeddings,
             );
         }
+        if use_double_wide_mlp
+            && (num_kv_shared_layers == 0 || num_kv_shared_layers > num_hidden_layers)
+        {
+            return Err(RvllmError::Loader {
+                err: LoaderError::Corrupt {
+                    detail: "Gemma4 double-wide MLP requires num_kv_shared_layers in 1..=num_hidden_layers".into(),
+                },
+                ctx: LoaderCtx {
+                    path: p.clone(),
+                    tensor: None,
+                },
+                bt: std::backtrace::Backtrace::capture(),
+            });
+        }
 
         Ok(Self {
             num_hidden_layers,
@@ -218,6 +251,8 @@ impl ModelArch {
             num_key_value_heads,
             head_dim,
             intermediate_size,
+            use_double_wide_mlp,
+            num_kv_shared_layers,
             vocab_size,
             rope_theta,
             max_position_embeddings,
@@ -238,6 +273,17 @@ impl ModelArch {
 
     pub fn mlp_activation(&self) -> MlpActivation {
         MlpActivation::from_config_str(self.hidden_activation.as_deref())
+    }
+
+    pub fn intermediate_size_for_layer(&self, layer_idx: usize) -> usize {
+        if self.use_double_wide_mlp
+            && self.num_kv_shared_layers > 0
+            && layer_idx >= self.num_hidden_layers - self.num_kv_shared_layers
+        {
+            self.intermediate_size * 2
+        } else {
+            self.intermediate_size
+        }
     }
 }
 
@@ -306,8 +352,15 @@ pub fn load_model(model_dir: &Path, arena: &HbmArena, arch: &ModelArch) -> Resul
     } else {
         "model"
     };
-    let tie_embeddings = !tensors.contains_key("lm_head.weight")
-        && !tensors.contains_key(&format!("{wprefix}.lm_head.weight"));
+    let prefixed_lm_head = format!("{wprefix}.lm_head.weight");
+    let has_lm_head =
+        tensors.contains_key("lm_head.weight") || tensors.contains_key(&prefixed_lm_head);
+    let tie_embeddings = arch.tie_word_embeddings && !has_lm_head;
+    let lm_head_name = if tensors.contains_key("lm_head.weight") {
+        "lm_head.weight".to_owned()
+    } else {
+        prefixed_lm_head
+    };
 
     let bytes_of = |si: usize, e: &TensorEntry| -> &[u8] {
         let s = &shards[si].bytes();
@@ -355,7 +408,7 @@ pub fn load_model(model_dir: &Path, arena: &HbmArena, arch: &ModelArch) -> Resul
         upload_fp8_from(
             arena,
             "lm_head",
-            &must_get("lm_head.weight")?,
+            &must_get(&lm_head_name)?,
             &shards,
             model_dir,
         )?
@@ -441,7 +494,7 @@ pub fn load_model(model_dir: &Path, arena: &HbmArena, arch: &ModelArch) -> Resul
                 ],
                 layer_q_dim + 2 * layer_kv_dim,
             )
-        } else {
+        } else if arch.attention_k_eq_v && is_global {
             // attention_k_eq_v: V uses the same weight as K
             (
                 vec![q_entry, k_entry.clone(), k_entry],
@@ -452,6 +505,9 @@ pub fn load_model(model_dir: &Path, arena: &HbmArena, arch: &ModelArch) -> Resul
                 ],
                 layer_q_dim + 2 * layer_kv_dim,
             )
+        } else {
+            let _ = must_get(&ln("self_attn.v_proj.weight"))?;
+            unreachable!("must_get returns an error when v_proj is absent")
         };
 
         let qkv_cols = arch.hidden_size;
@@ -474,7 +530,7 @@ pub fn load_model(model_dir: &Path, arena: &HbmArena, arch: &ModelArch) -> Resul
             &shards,
         )?;
 
-        let gate_up_rows = 2 * arch.intermediate_size;
+        let gate_up_rows = 2 * arch.intermediate_size_for_layer(l);
         let gate_up_cols = arch.hidden_size;
         let gate_up = upload_fp8_fused_direct(
             arena,
@@ -920,6 +976,8 @@ mod tests {
             num_key_value_heads: 1,
             head_dim: 128,
             intermediate_size: 256,
+            use_double_wide_mlp: false,
+            num_kv_shared_layers: 0,
             vocab_size: 32,
             rope_theta: 10000.0,
             max_position_embeddings: 4,

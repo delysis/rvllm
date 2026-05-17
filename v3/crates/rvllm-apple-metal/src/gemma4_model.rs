@@ -34,6 +34,8 @@ const PROBE_METAL_SOFTCAP: f32 = 0.0;
 const PROBE_METAL_MAX_DEFAULT_LAYERS: usize = 8;
 #[cfg(target_os = "macos")]
 const PROBE_METAL_MAX_PROMPT_TOKENS: usize = 8;
+#[cfg(target_os = "macos")]
+const RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV: &str = "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE";
 
 #[cfg(target_os = "macos")]
 fn probe_ctx(op: &'static str) -> AppleCtx {
@@ -242,18 +244,25 @@ impl MetalProbeLayerDims {
             .get(layer_idx)
             .copied()
             .unwrap_or(LayerAttnType::Full);
-        let (attention_kind, head_dim, num_kv_heads) = match layer_type {
+        let (attention_kind, head_dim, num_kv_heads, rope_dim) = match layer_type {
             LayerAttnType::SlidingAttention => (
                 MetalProbeLayerAttentionKind::Sliding,
                 arch.head_dim,
                 arch.num_key_value_heads,
+                arch.head_dim,
             ),
-            LayerAttnType::Full => (
-                MetalProbeLayerAttentionKind::Full,
-                arch.global_head_dim.unwrap_or(arch.head_dim),
-                arch.num_global_key_value_heads
-                    .unwrap_or(arch.num_key_value_heads),
-            ),
+            LayerAttnType::Full => {
+                let head_dim = arch.global_head_dim.unwrap_or(arch.head_dim);
+                let rotary_factor = arch.partial_rotary_factor.unwrap_or(1.0);
+                let rope_dim = ((head_dim as f32 * rotary_factor) as usize / 2) * 2;
+                (
+                    MetalProbeLayerAttentionKind::Full,
+                    head_dim,
+                    arch.num_global_key_value_heads
+                        .unwrap_or(arch.num_key_value_heads),
+                    rope_dim,
+                )
+            }
             LayerAttnType::Linear => {
                 return Err(RvllmError::apple(
                     AppleError::FeatureNotAvailable {
@@ -270,10 +279,12 @@ impl MetalProbeLayerDims {
             || num_heads % num_kv_heads != 0
             || head_dim == 0
             || head_dim % 2 != 0
+            || rope_dim == 0
+            || rope_dim % 2 != 0
         {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
-                    reason: "synthetic probe requires nonzero grouped attention heads and even nonzero head_dim",
+                    reason: "synthetic probe requires nonzero grouped attention heads and even nonzero head/rope dims",
                 },
                 probe_ctx("prepare"),
             ));
@@ -286,7 +297,7 @@ impl MetalProbeLayerDims {
             num_heads,
             num_kv_heads,
             head_dim,
-            rope_dim: head_dim,
+            rope_dim,
             q_dim,
             kv_dim,
             qkv_rows: q_dim + 2 * kv_dim,
@@ -320,6 +331,7 @@ struct ProbeLayerNames {
     q_name: String,
     k_name: String,
     v_name: String,
+    v_uses_k_proj: bool,
     q_norm_name: Option<String>,
     k_norm_name: Option<String>,
     v_norm_name: Option<String>,
@@ -328,6 +340,7 @@ struct ProbeLayerNames {
     post_ff_norm_name: Option<String>,
     layer_scalar_name: Option<String>,
     layer_scalar_dim: usize,
+    intermediate_size: usize,
     prefused_gate_up_name: String,
     gate_name: String,
     up_name: String,
@@ -337,7 +350,8 @@ struct ProbeLayerNames {
 impl ProbeModelPlan {
     fn new(model_dir: &Path) -> Result<Self> {
         let arch = ModelArch::from_dir(model_dir)?;
-        if arch.num_hidden_layers > PROBE_METAL_MAX_DEFAULT_LAYERS {
+        if arch.num_hidden_layers > PROBE_METAL_MAX_DEFAULT_LAYERS && !large_gemma4_probe_opted_in()
+        {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
@@ -360,14 +374,15 @@ impl ProbeModelPlan {
         let embed_name = format!("{weight_prefix}.embed_tokens.weight");
         let final_norm_name = format!("{weight_prefix}.norm.weight");
         let prefixed_lm_head_name = format!("{weight_prefix}.lm_head.weight");
-        let tie_embeddings = !tensors.contains_key("lm_head.weight")
-            && !tensors.contains_key(&prefixed_lm_head_name);
-        let lm_head_name = if tie_embeddings {
-            embed_name.clone()
-        } else if tensors.contains_key("lm_head.weight") {
+        let has_lm_head =
+            tensors.contains_key("lm_head.weight") || tensors.contains_key(&prefixed_lm_head_name);
+        let tie_embeddings = arch.tie_word_embeddings && !has_lm_head;
+        let lm_head_name = if tensors.contains_key("lm_head.weight") {
             "lm_head.weight".to_owned()
         } else if tensors.contains_key(&prefixed_lm_head_name) {
             prefixed_lm_head_name.clone()
+        } else if tie_embeddings {
+            embed_name.clone()
         } else {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -448,9 +463,8 @@ impl ProbeModelPlan {
 
         if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
-            let intermediate = arch.intermediate_size;
 
-            if intermediate == 0 {
+            if arch.intermediate_size == 0 {
                 return Err(RvllmError::apple(
                     AppleError::InvalidWeightBlob {
                         reason: "one-layer probe requires nonzero intermediate",
@@ -477,6 +491,7 @@ impl ProbeModelPlan {
                 let q_dim = dims.q_dim;
                 let kv_dim = dims.kv_dim;
                 let qkv_rows = dims.qkv_rows;
+                let intermediate = arch.intermediate_size_for_layer(layer_idx);
                 let lprefix = format!("{weight_prefix}.layers.{layer_idx}");
                 let attn_norm_name = resolve_tensor_alias(
                     &tensors,
@@ -502,6 +517,11 @@ impl ProbeModelPlan {
                 let q_name = format!("{lprefix}.self_attn.q_proj.weight");
                 let k_name = format!("{lprefix}.self_attn.k_proj.weight");
                 let v_name = format!("{lprefix}.self_attn.v_proj.weight");
+                let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
+                let v_uses_k_proj = !use_prefused_qkv
+                    && !tensors.contains_key(&v_name)
+                    && arch.attention_k_eq_v
+                    && dims.attention_kind == MetalProbeLayerAttentionKind::Full;
                 let q_norm_name = resolve_optional_tensor_alias(
                     &tensors,
                     vec![format!("{lprefix}.self_attn.q_norm.weight")],
@@ -533,8 +553,6 @@ impl ProbeModelPlan {
                         format!("{lprefix}.layer_scalar.weight"),
                     ],
                 );
-                let use_prefused_qkv = tensors.contains_key(&prefused_qkv_name);
-
                 let prefused_gate_up_name = format!("{lprefix}.mlp.gate_up.weight");
                 let gate_name = format!("{lprefix}.mlp.gate_proj.weight");
                 let up_name = format!("{lprefix}.mlp.up_proj.weight");
@@ -598,32 +616,34 @@ impl ProbeModelPlan {
                     )?;
                     validate_tensor_shape(
                         &tensors,
-                        &v_name,
+                        if v_uses_k_proj { &k_name } else { &v_name },
                         &[kv_dim, hidden],
                         "v_proj weight shape mismatch",
                     )?;
                     add_tensor_size(&q_name)?;
                     add_tensor_size(&k_name)?;
-                    add_tensor_size(&v_name)?;
+                    if !v_uses_k_proj {
+                        add_tensor_size(&v_name)?;
+                    }
                     fused_qkv_bytes += qkv_rows * hidden * std::mem::size_of::<f16>();
                 }
 
                 validate_optional_norm_shape(
                     &tensors,
                     &q_norm_name,
-                    q_dim,
+                    dims.head_dim,
                     "q_norm weight shape mismatch",
                 )?;
                 validate_optional_norm_shape(
                     &tensors,
                     &k_norm_name,
-                    kv_dim,
+                    dims.head_dim,
                     "k_norm weight shape mismatch",
                 )?;
                 validate_optional_norm_shape(
                     &tensors,
                     &v_norm_name,
-                    kv_dim,
+                    dims.head_dim,
                     "v_norm weight shape mismatch",
                 )?;
                 for norm_name in [&q_norm_name, &k_norm_name, &v_norm_name]
@@ -704,6 +724,7 @@ impl ProbeModelPlan {
                     q_name,
                     k_name,
                     v_name,
+                    v_uses_k_proj,
                     q_norm_name,
                     k_norm_name,
                     v_norm_name,
@@ -712,6 +733,7 @@ impl ProbeModelPlan {
                     post_ff_norm_name,
                     layer_scalar_name,
                     layer_scalar_dim,
+                    intermediate_size: intermediate,
                     prefused_gate_up_name,
                     gate_name,
                     up_name,
@@ -761,9 +783,9 @@ impl ProbeModelPlan {
         let mut scratch_bytes = 0;
         if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
-            let intermediate = arch.intermediate_size;
             for layer_names in &layer_names {
                 let dims = layer_names.dims;
+                let intermediate = layer_names.intermediate_size;
                 let qkv_out_bytes = max_probe_tokens * dims.qkv_rows * half_bytes;
                 let q_bytes = max_probe_tokens * dims.q_dim * half_bytes;
                 let k_bytes = max_probe_tokens * dims.kv_dim * half_bytes;
@@ -843,6 +865,13 @@ impl ProbeModelPlan {
 }
 
 #[cfg(target_os = "macos")]
+fn large_gemma4_probe_opted_in() -> bool {
+    std::env::var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
 impl Gemma4MetalState {
     pub fn dry_run_validate_gemma4_model_dir(model_dir: &Path) -> Result<Gemma4DryRunValidation> {
         Gemma4DryRunValidation::from_model_dir(model_dir)
@@ -896,7 +925,7 @@ impl Gemma4MetalState {
                 )
             })?;
             let hidden = plan.arch.hidden_size;
-            let intermediate = plan.arch.intermediate_size;
+            let intermediate = layer_names.intermediate_size;
             let dims = layer_names.dims;
             let q_dim = dims.q_dim;
             let kv_dim = dims.kv_dim;
@@ -940,7 +969,11 @@ impl Gemma4MetalState {
                     &[
                         layer_names.q_name.clone(),
                         layer_names.k_name.clone(),
-                        layer_names.v_name.clone(),
+                        if layer_names.v_uses_k_proj {
+                            layer_names.k_name.clone()
+                        } else {
+                            layer_names.v_name.clone()
+                        },
                     ],
                     &[
                         vec![q_dim, hidden],
@@ -1567,7 +1600,11 @@ mod tests {
     "max_position_embeddings": 16,
     "rms_norm_eps": 0.000001,
     "final_logit_softcapping": 0.0,
-    "tie_word_embeddings": false
+    "tie_word_embeddings": false,
+    "rope_parameters": {{
+      "sliding_attention": {{"rope_theta": 10000.0}},
+      "full_attention": {{"rope_theta": 1000000.0, "partial_rotary_factor": 0.25}}
+    }}
   }}
 }}"#
             ),
@@ -1608,7 +1645,7 @@ mod tests {
         assert_eq!(full.num_heads, 1);
         assert_eq!(full.num_kv_heads, 1);
         assert_eq!(full.head_dim, 256);
-        assert_eq!(full.rope_dim, 256);
+        assert_eq!(full.rope_dim, 64);
         assert_eq!(full.q_dim, 256);
         assert_eq!(full.kv_dim, 256);
         assert_eq!(full.qkv_rows, 768);
@@ -1858,6 +1895,34 @@ mod tests {
     }
 
     #[test]
+    fn probe_model_plan_allows_tied_embeddings_without_lm_head() {
+        let dir =
+            write_dry_run_full_gemma_style_fixture(true, false, true, None, None, None, false);
+        let plan =
+            ProbeModelPlan::new(&dir).expect("tied embeddings can reuse embed_tokens in prepare");
+
+        assert!(plan.tie_embeddings);
+        assert_eq!(plan.lm_head_name, plan.embed_name);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn probe_model_plan_rejects_missing_lm_head_when_embeddings_are_not_tied() {
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, false, true, None, None, None, false);
+        let err = match ProbeModelPlan::new(&dir) {
+            Ok(_) => panic!("untied embeddings require lm_head in prepare plan"),
+            Err(err) => err,
+        };
+        let msg = format!("{err}");
+
+        assert!(msg.contains("missing lm_head weights"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn dry_run_allows_missing_v_proj_when_attention_k_eq_v() {
         let dir =
             write_dry_run_full_gemma_style_fixture(false, true, false, Some(1), None, None, false);
@@ -1992,6 +2057,30 @@ mod tests {
             validation.fp8_scale_summary.mode.as_str(),
             validation.fp8_scale_summary.scaled_weights
         );
+    }
+
+    #[test]
+    #[ignore = "set RVLLM_GEMMA4_MODEL_DIR to plan a real Gemma4 model directory"]
+    fn real_gemma4_model_dir_large_probe_arena_bytes_when_opted_in() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let model_dir = PathBuf::from(model_dir);
+        let previous = std::env::var_os(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV);
+        std::env::set_var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
+        let bytes = Gemma4MetalState::required_probe_model_arena_bytes(&model_dir)
+            .expect("large Gemma4 probe arena bytes should be computable under explicit opt-in");
+        if let Some(previous) = previous {
+            std::env::set_var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, previous);
+        } else {
+            std::env::remove_var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV);
+        }
+        eprintln!(
+            "large Gemma4 probe arena requirement: {bytes} bytes ({:.2} GiB)",
+            bytes as f64 / 1024.0 / 1024.0 / 1024.0
+        );
+        assert!(bytes > 1024 * 1024 * 1024);
     }
 }
 

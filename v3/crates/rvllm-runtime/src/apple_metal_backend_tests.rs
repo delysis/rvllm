@@ -7091,13 +7091,51 @@ fn real_gemma4_e2b_model_backend_prepare_reports_current_large_model_gate() {
     plan.ane_hidden_size = arch.hidden_size;
     plan.ane_intermediate_size = arch.intermediate_size;
 
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
     let mut backend = ModelMetalBackend::new(model_dir);
     let err = backend
         .prepare(&plan)
         .expect_err("current Metal prepare should report the large-model layer gate");
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    }
     let msg = format!("{err}");
     assert!(
         msg.contains("unsupported_probe_num_layers_without_large_model_opt_in"),
         "unexpected prepare error: {msg}"
     );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory in RVLLM_GEMMA4_MODEL_DIR and large Metal arena opt-in"]
+fn real_gemma4_e2b_model_backend_prepare_with_large_model_opt_in() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before prepare");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+    let prepare = backend.prepare(&plan);
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+
+    prepare.expect("real Gemma4 E2B Metal prepare/load should complete under explicit opt-in");
 }
