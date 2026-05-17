@@ -1006,12 +1006,12 @@ impl ModelMetalBackend {
                 model_ctx("launch_prefill"),
             ));
         }
-        const MAX_SYNTHETIC_PROBE_LAYERS: usize = 8;
-        if state.num_layers > MAX_SYNTHETIC_PROBE_LAYERS {
+        const MAX_DEFAULT_PROBE_LAYERS: usize = 8;
+        if state.num_layers > MAX_DEFAULT_PROBE_LAYERS {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
-                    op: "unsupported_synthetic_probe_num_layers",
+                    op: "unsupported_probe_num_layers_without_large_model_opt_in",
                 },
                 model_ctx("launch_prefill"),
             ));
@@ -1098,12 +1098,12 @@ impl ModelMetalBackend {
                 model_ctx("launch_rollout"),
             )
         })?;
-        const MAX_SYNTHETIC_PROBE_LAYERS: usize = 8;
-        if state.num_layers > MAX_SYNTHETIC_PROBE_LAYERS {
+        const MAX_DEFAULT_PROBE_LAYERS: usize = 8;
+        if state.num_layers > MAX_DEFAULT_PROBE_LAYERS {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
-                    op: "unsupported_synthetic_probe_num_layers",
+                    op: "unsupported_probe_num_layers_without_large_model_opt_in",
                 },
                 model_ctx("launch_rollout"),
             ));

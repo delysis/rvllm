@@ -7069,3 +7069,35 @@ fn model_metal_backend_prepare_rejects_missing_dir() {
     let s = format!("{err}");
     assert!(s.contains("InvalidWeightBlob") || s.contains("missing model path"));
 }
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory in RVLLM_GEMMA4_MODEL_DIR"]
+fn real_gemma4_e2b_model_backend_prepare_reports_current_large_model_gate() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let validation = rvllm_loader::Gemma4DryRunValidation::from_model_dir(&model_dir)
+        .expect("real Gemma4 E2B dry-run metadata should validate before prepare");
+    assert_eq!(validation.num_layers, 35);
+    assert_eq!(validation.hidden_size, 1536);
+    assert_eq!(validation.vocab_size, 262144);
+
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before prepare");
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+
+    let mut backend = ModelMetalBackend::new(model_dir);
+    let err = backend
+        .prepare(&plan)
+        .expect_err("current Metal prepare should report the large-model layer gate");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("unsupported_probe_num_layers_without_large_model_opt_in"),
+        "unexpected prepare error: {msg}"
+    );
+}

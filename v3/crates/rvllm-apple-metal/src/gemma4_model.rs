@@ -31,7 +31,7 @@ const PROBE_METAL_ARENA_BYTES: usize = 1024 * 1024;
 #[cfg(target_os = "macos")]
 const PROBE_METAL_SOFTCAP: f32 = 0.0;
 #[cfg(target_os = "macos")]
-const PROBE_METAL_MAX_SYNTHETIC_LAYERS: usize = 8;
+const PROBE_METAL_MAX_DEFAULT_LAYERS: usize = 8;
 #[cfg(target_os = "macos")]
 const PROBE_METAL_MAX_PROMPT_TOKENS: usize = 8;
 
@@ -337,11 +337,11 @@ struct ProbeLayerNames {
 impl ProbeModelPlan {
     fn new(model_dir: &Path) -> Result<Self> {
         let arch = ModelArch::from_dir(model_dir)?;
-        if arch.num_hidden_layers > PROBE_METAL_MAX_SYNTHETIC_LAYERS {
+        if arch.num_hidden_layers > PROBE_METAL_MAX_DEFAULT_LAYERS {
             return Err(RvllmError::apple(
                 AppleError::FeatureNotAvailable {
                     backend: "model-metal-backend",
-                    op: "unsupported_synthetic_probe_num_layers",
+                    op: "unsupported_probe_num_layers_without_large_model_opt_in",
                 },
                 probe_ctx("prepare"),
             ));
