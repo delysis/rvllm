@@ -105,7 +105,8 @@ use rvllm_apple_metal::{
     kernels,
     layer_forward::{
         metal_finalize_logits_blocking, metal_finalize_logits_encoder_count, metal_forward_layer,
-        MetalLayerDims, MetalLayerWeights, MetalMetadata, MetalPhase, MetalScratch,
+        metal_prepare_ple_inputs, MetalLayerDims, MetalLayerWeights, MetalMetadata, MetalPhase,
+        MetalPlePrepare, MetalScratch,
     },
     pipeline::PipelineCache,
 };
@@ -126,6 +127,8 @@ const METAL_ARENA_BYTES: usize = 1 * 1024 * 1024;
 pub const RVLLM_METAL_DEBUG_SYNC_ENV: &str = "RVLLM_METAL_DEBUG_SYNC";
 #[cfg(all(feature = "apple", target_os = "macos"))]
 pub const RVLLM_EXPERIMENTAL_METAL_KV_INT8_ENV: &str = "RVLLM_EXPERIMENTAL_METAL_KV_INT8";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_FINITE_LAYERS_ENV: &str = "RVLLM_METAL_DEBUG_FINITE_LAYERS";
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -257,6 +260,52 @@ fn experimental_metal_kv_int8_enabled() -> bool {
         .ok()
         .as_deref()
         == Some("1")
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_finite_layers_enabled() -> bool {
+    std::env::var(RVLLM_METAL_DEBUG_FINITE_LAYERS_ENV)
+        .ok()
+        .as_deref()
+        == Some("1")
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn debug_print_f16_region_token_stats(
+    arena: &MetalBufferArena,
+    label: &str,
+    offset: usize,
+    num_tokens: usize,
+    elems_per_token: usize,
+) -> usize {
+    let elem_count = num_tokens.saturating_mul(elems_per_token);
+    let region = MetalRegion {
+        name: label.to_owned(),
+        offset,
+        size: elem_count.saturating_mul(std::mem::size_of::<f16>()),
+    };
+    let ptr = unsafe { arena.host_ptr(&region) as *const u16 };
+    let bits = unsafe { std::slice::from_raw_parts(ptr, elem_count) };
+    let mut total_nonfinite = 0usize;
+    for token in 0..num_tokens {
+        let start = token.saturating_mul(elems_per_token);
+        let end = start.saturating_add(elems_per_token);
+        let mut nonfinite = 0usize;
+        let mut max_abs = 0.0f32;
+        for raw in &bits[start..end] {
+            let value = f16::from_bits(*raw).to_f32();
+            if value.is_finite() {
+                max_abs = max_abs.max(value.abs());
+            } else {
+                nonfinite += 1;
+            }
+        }
+        total_nonfinite += nonfinite;
+        eprintln!(
+            "metal debug finite: region={label} token={token} nonfinite={nonfinite}/{elems_per_token} max_abs={max_abs:e}"
+        );
+    }
+    total_nonfinite
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -630,6 +679,95 @@ impl ModelMetalBackend {
         Ok(())
     }
 
+    fn enqueue_ple_inputs(&self, state: &Gemma4MetalState, num_tokens: usize) -> Result<()> {
+        let Some(ple) = &state.ple else {
+            return Ok(());
+        };
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("enqueue_ple_inputs"),
+            )
+        })?;
+        let pipelines = self.pipelines.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("enqueue_ple_inputs"),
+            )
+        })?;
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("enqueue_ple_inputs"),
+            )
+        })?;
+        let params = MetalPlePrepare {
+            embedding_offset: ple.embed_tokens_per_layer.offset,
+            token_ids_offset: state.token_ids.offset,
+            residual_offset: state.residual.offset,
+            per_layer_model_projection_offset: ple.per_layer_model_projection.offset,
+            per_layer_projection_norm_offset: ple.per_layer_projection_norm.offset,
+            token_inputs_offset: ple.token_inputs.offset,
+            context_inputs_offset: ple.context_inputs.offset,
+            num_tokens: u32::try_from(num_tokens).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "token count exceeds u32",
+                    },
+                    model_ctx("enqueue_ple_inputs"),
+                )
+            })?,
+            hidden: u32::try_from(state.hidden_size).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "hidden_size exceeds u32",
+                    },
+                    model_ctx("enqueue_ple_inputs"),
+                )
+            })?,
+            vocab: u32::try_from(ple.ple_vocab_size).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "PLE vocab size exceeds u32",
+                    },
+                    model_ctx("enqueue_ple_inputs"),
+                )
+            })?,
+            num_layers: u32::try_from(state.num_layers).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "layer count exceeds u32",
+                    },
+                    model_ctx("enqueue_ple_inputs"),
+                )
+            })?,
+            ple_dim: u32::try_from(ple.ple_dim).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "PLE dim exceeds u32",
+                    },
+                    model_ctx("enqueue_ple_inputs"),
+                )
+            })?,
+            rms_eps: state.rms_norm_eps,
+        };
+        unsafe {
+            metal_prepare_ple_inputs(ctx, pipelines, arena, &params)?;
+        }
+        self.perf.add_command_buffers(1);
+        self.perf.add_encoders(4);
+        if self.debug_sync {
+            self.wait_for_metal_queue("enqueue_ple_inputs")?;
+        }
+        Ok(())
+    }
+
     fn write_i32_metadata_region(
         arena: &MetalBufferArena,
         region: &MetalRegion,
@@ -888,12 +1026,15 @@ impl ModelMetalBackend {
             let intermediate = one.gate_up.size / 2 / half_bytes / hidden;
 
             let dims = MetalLayerDims {
+                layer_idx: one.layer_idx as u32,
                 num_tokens: num_tokens_u32,
                 hidden: state.hidden_size as u32,
+                num_layers: state.num_layers as u32,
                 num_heads: one.dims.num_heads as u32,
                 num_kv_heads: one.dims.num_kv_heads as u32,
                 head_dim: one.dims.head_dim as u32,
                 intermediate: intermediate as u32,
+                ple_dim: state.ple.as_ref().map_or(0, |ple| ple.ple_dim as u32),
                 block_size: one.block_size,
                 max_blocks_per_seq: one.max_blocks_per_seq,
                 num_blocks_total: one.num_blocks_total,
@@ -919,6 +1060,19 @@ impl ModelMetalBackend {
                 layer_scalar_dim: one.layer_scalar_dim,
                 gate_up_offset: one.gate_up.offset,
                 down_proj_offset: one.down_proj.offset,
+                per_layer_inputs_offset: state.ple.as_ref().map(|ple| ple.token_inputs.offset),
+                per_layer_input_gate_offset: one
+                    .per_layer_input_gate
+                    .as_ref()
+                    .map(|region| region.offset),
+                per_layer_projection_offset: one
+                    .per_layer_projection
+                    .as_ref()
+                    .map(|region| region.offset),
+                post_per_layer_input_norm_offset: one
+                    .post_per_layer_input_norm
+                    .as_ref()
+                    .map(|region| region.offset),
             };
 
             let scratch = MetalScratch {
@@ -961,6 +1115,77 @@ impl ModelMetalBackend {
             self.perf.add_command_buffers(1);
             self.perf
                 .add_encoders(Self::estimate_layer_encoder_count(&weights));
+
+            #[cfg(test)]
+            if metal_debug_finite_layers_enabled() {
+                self.wait_for_metal_queue("debug_layer_finite")?;
+                let residual_nonfinite = debug_print_f16_region_token_stats(
+                    arena,
+                    "residual",
+                    state.residual.offset,
+                    num_tokens,
+                    state.hidden_size,
+                );
+                if residual_nonfinite > 0 {
+                    let q_dim = one.dims.q_dim;
+                    let kv_dim = one.dims.kv_dim;
+                    let two_intermediate = 2usize.saturating_mul(intermediate);
+                    eprintln!(
+                        "metal debug finite: op={op} layer={} residual_nonfinite={residual_nonfinite}/{}",
+                        one.layer_idx,
+                        num_tokens.saturating_mul(state.hidden_size)
+                    );
+                    debug_print_f16_region_token_stats(arena, "q", one.q.offset, num_tokens, q_dim);
+                    debug_print_f16_region_token_stats(
+                        arena,
+                        "k",
+                        one.k.offset,
+                        num_tokens,
+                        kv_dim,
+                    );
+                    debug_print_f16_region_token_stats(
+                        arena,
+                        "v",
+                        one.v.offset,
+                        num_tokens,
+                        kv_dim,
+                    );
+                    debug_print_f16_region_token_stats(
+                        arena,
+                        "attn_out",
+                        one.attn_out.offset,
+                        num_tokens,
+                        q_dim,
+                    );
+                    debug_print_f16_region_token_stats(
+                        arena,
+                        "gate_up_out",
+                        one.gate_up_out.offset,
+                        num_tokens,
+                        two_intermediate,
+                    );
+                    debug_print_f16_region_token_stats(
+                        arena,
+                        "activated",
+                        one.activated.offset,
+                        num_tokens,
+                        intermediate,
+                    );
+                    debug_print_f16_region_token_stats(
+                        arena,
+                        "mlp_out",
+                        one.mlp_out.offset,
+                        num_tokens,
+                        state.hidden_size,
+                    );
+                    return Err(RvllmError::apple(
+                        AppleError::InvalidWeightBlob {
+                            reason: "nonfinite residual after Metal layer",
+                        },
+                        model_ctx("debug_layer_finite"),
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -993,6 +1218,13 @@ impl ModelMetalBackend {
         count += weights.v_norm_offset.is_some() as u64;
         count += weights.post_attn_norm_offset.is_some() as u64;
         count += weights.post_ff_norm_offset.is_some() as u64;
+        if weights.per_layer_inputs_offset.is_some()
+            && weights.per_layer_input_gate_offset.is_some()
+            && weights.per_layer_projection_offset.is_some()
+            && weights.post_per_layer_input_norm_offset.is_some()
+        {
+            count += 4;
+        }
         count
     }
 
@@ -1064,6 +1296,7 @@ impl ModelMetalBackend {
 
         self.write_prefill_layer_metadata(state, handoff)?;
         self.enqueue_embedding_gather(state, num_tokens)?;
+        self.enqueue_ple_inputs(state, num_tokens)?;
         self.enqueue_probe_layers(
             state,
             num_tokens,
@@ -1163,6 +1396,7 @@ impl ModelMetalBackend {
 
         self.write_decode_layer_metadata(state, handoff)?;
         self.enqueue_embedding_gather(state, num_tokens)?;
+        self.enqueue_ple_inputs(state, num_tokens)?;
         self.enqueue_probe_layers(state, num_tokens, MetalPhase::Decode, "launch_rollout")?;
 
         let num_tokens_u32 = u32::try_from(num_tokens).map_err(|_| {

@@ -60,6 +60,8 @@ pub struct ModelArch {
     pub intermediate_size: usize,
     pub use_double_wide_mlp: bool,
     pub num_kv_shared_layers: usize,
+    pub hidden_size_per_layer_input: usize,
+    pub vocab_size_per_layer_input: usize,
     pub vocab_size: usize,
     pub rope_theta: f32,
     pub max_position_embeddings: usize,
@@ -118,6 +120,14 @@ impl ModelArch {
         let num_kv_shared_layers = tc["num_kv_shared_layers"]
             .as_u64()
             .or_else(|| v["num_kv_shared_layers"].as_u64())
+            .unwrap_or(0) as usize;
+        let hidden_size_per_layer_input = tc["hidden_size_per_layer_input"]
+            .as_u64()
+            .or_else(|| v["hidden_size_per_layer_input"].as_u64())
+            .unwrap_or(0) as usize;
+        let vocab_size_per_layer_input = tc["vocab_size_per_layer_input"]
+            .as_u64()
+            .or_else(|| v["vocab_size_per_layer_input"].as_u64())
             .unwrap_or(0) as usize;
         let vocab_size = tc["vocab_size"]
             .as_u64()
@@ -253,6 +263,8 @@ impl ModelArch {
             intermediate_size,
             use_double_wide_mlp,
             num_kv_shared_layers,
+            hidden_size_per_layer_input,
+            vocab_size_per_layer_input,
             vocab_size,
             rope_theta,
             max_position_embeddings,
@@ -978,6 +990,8 @@ mod tests {
             intermediate_size: 256,
             use_double_wide_mlp: false,
             num_kv_shared_layers: 0,
+            hidden_size_per_layer_input: 0,
+            vocab_size_per_layer_input: 0,
             vocab_size: 32,
             rope_theta: 10000.0,
             max_position_embeddings: 4,

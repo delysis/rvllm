@@ -3276,6 +3276,36 @@ fn assert_f32_slice_close(label: &str, got: &[f32], expected: &[f32], tolerance:
     }
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn read_e2b_hf_reference_selected_logits(path: &std::path::Path) -> (Vec<u32>, Vec<f32>, u32) {
+    let raw = fs::read_to_string(path).expect("read HF reference logits artifact");
+    let value: Value = serde_json::from_str(&raw).expect("parse HF reference logits artifact");
+
+    assert_eq!(
+        value["schema"].as_str(),
+        Some("rvllm.gemma4_hf_reference_logits.v1")
+    );
+    assert_eq!(
+        value["prompt_token_ids"]
+            .as_array()
+            .expect("prompt ids")
+            .as_slice(),
+        &[Value::from(2), Value::from(4)]
+    );
+    assert_eq!(value["decode_steps"].as_u64(), Some(1));
+
+    let step = &value["steps"].as_array().expect("steps")[0];
+    let next_token = step["next_token"].as_u64().expect("next token") as u32;
+    let selected = step["selected_logits"].as_array().expect("selected logits");
+    let mut token_ids = Vec::with_capacity(selected.len());
+    let mut logits = Vec::with_capacity(selected.len());
+    for item in selected {
+        token_ids.push(item["token_id"].as_u64().expect("selected token id") as u32);
+        logits.push(item["logit"].as_f64().expect("selected logit") as f32);
+    }
+    (token_ids, logits, next_token)
+}
+
 #[test]
 fn cpu_reference_one_layer_full_nonzero_selected_hidden_values_are_expected() {
     let reference = cpu_reference_one_layer_full_nonzero();
@@ -7138,4 +7168,117 @@ fn real_gemma4_e2b_model_backend_prepare_with_large_model_opt_in() {
     }
 
     prepare.expect("real Gemma4 E2B Metal prepare/load should complete under explicit opt-in");
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory, HF reference artifact, and large Metal arena opt-in"]
+fn real_gemma4_e2b_model_backend_prefill_decode_selected_logits_match_hf_reference() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let reference_path = std::path::PathBuf::from("/tmp/gemma4-e2b-hf-reference-logits.json");
+    if !reference_path.exists() {
+        eprintln!(
+            "skipping: HF reference logits artifact is missing at {}",
+            reference_path.display()
+        );
+        return;
+    }
+
+    let (selected_token_ids, expected_logits, expected_next_token) =
+        read_e2b_hf_reference_selected_logits(&reference_path);
+    assert_eq!(selected_token_ids, vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(expected_next_token, 954);
+
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before decode");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+    let result = (|| -> Result<(Vec<f32>, Vec<f32>, Vec<rvllm_apple::StepToken>)> {
+        backend.prepare(&plan)?;
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            vec![0, 2],
+            vec![1],
+            vec![2],
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill)?;
+        let prefill_out = backend.collect(prefill_ticket)?;
+        assert!(prefill_out.is_empty());
+
+        let decode = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(4)],
+            vec![0, 1],
+            vec![1],
+            vec![2],
+        );
+        let decode_ticket = backend.launch_rollout(&decode, None)?;
+        let logits = backend.debug_read_decode_logits_f32(1)?;
+        let residual = backend.debug_read_residual_f32(1)?;
+        let out = backend.collect(decode_ticket)?;
+        Ok((logits, residual, out))
+    })();
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+
+    let (metal_logits, metal_residual, out) =
+        result.expect("real Gemma4 E2B prefill/decode should launch");
+    assert_eq!(out.len(), 1);
+    assert_eq!(metal_logits.len(), arch.vocab_size);
+    assert_eq!(metal_residual.len(), arch.hidden_size);
+    let residual_nonfinite = metal_residual.iter().filter(|v| !v.is_finite()).count();
+    let logits_nonfinite = metal_logits.iter().filter(|v| !v.is_finite()).count();
+    if residual_nonfinite > 0 || logits_nonfinite > 0 {
+        eprintln!(
+            "real E2B nonfinite summary: residual={} logits={}",
+            residual_nonfinite, logits_nonfinite
+        );
+    }
+    assert!(metal_logits.iter().all(|v| v.is_finite()));
+
+    let selected_indices: Vec<usize> = selected_token_ids
+        .iter()
+        .map(|&token_id| token_id as usize)
+        .collect();
+    const FIRST_E2B_LOGIT_TOLERANCE: f32 = 1.0;
+    for (&idx, &expected) in selected_indices.iter().zip(expected_logits.iter()) {
+        eprintln!(
+            "real E2B selected logit[{idx}]: metal={} hf={} delta={}",
+            metal_logits[idx],
+            expected,
+            (metal_logits[idx] - expected).abs()
+        );
+        assert_f32_close(
+            &format!("real E2B selected logit[{idx}]"),
+            metal_logits[idx],
+            expected,
+            FIRST_E2B_LOGIT_TOLERANCE,
+        );
+    }
+    assert_eq!(
+        out[0].token_id,
+        rvllm_core::TokenId(expected_next_token),
+        "real E2B sampled token should match HF reference once selected logits are stable"
+    );
 }

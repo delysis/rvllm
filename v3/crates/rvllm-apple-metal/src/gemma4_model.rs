@@ -64,8 +64,21 @@ pub struct Gemma4MetalState {
     pub normed_hidden: MetalRegion,
     pub sampled: MetalRegion,
     pub token_ids: MetalRegion,
+    pub ple: Option<MetalPleState>,
 
     pub layers: Vec<MetalOneLayerState>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg(target_os = "macos")]
+pub struct MetalPleState {
+    pub ple_dim: usize,
+    pub ple_vocab_size: usize,
+    pub embed_tokens_per_layer: MetalRegion,
+    pub per_layer_model_projection: MetalRegion,
+    pub per_layer_projection_norm: MetalRegion,
+    pub token_inputs: MetalRegion,
+    pub context_inputs: MetalRegion,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +101,9 @@ pub struct MetalOneLayerState {
     pub layer_scalar_dim: u32,
     pub gate_up: MetalRegion,
     pub down_proj: MetalRegion,
+    pub per_layer_input_gate: Option<MetalRegion>,
+    pub per_layer_projection: Option<MetalRegion>,
+    pub post_per_layer_input_norm: Option<MetalRegion>,
 
     pub qkv_out: MetalRegion,
     pub q: MetalRegion,
@@ -129,6 +145,7 @@ pub struct MetalProbeLayerDims {
     pub num_kv_heads: usize,
     pub head_dim: usize,
     pub rope_dim: usize,
+    pub rope_theta: f32,
     pub q_dim: usize,
     pub kv_dim: usize,
     pub qkv_rows: usize,
@@ -244,12 +261,13 @@ impl MetalProbeLayerDims {
             .get(layer_idx)
             .copied()
             .unwrap_or(LayerAttnType::Full);
-        let (attention_kind, head_dim, num_kv_heads, rope_dim) = match layer_type {
+        let (attention_kind, head_dim, num_kv_heads, rope_dim, rope_theta) = match layer_type {
             LayerAttnType::SlidingAttention => (
                 MetalProbeLayerAttentionKind::Sliding,
                 arch.head_dim,
                 arch.num_key_value_heads,
                 arch.head_dim,
+                arch.rope_theta,
             ),
             LayerAttnType::Full => {
                 let head_dim = arch.global_head_dim.unwrap_or(arch.head_dim);
@@ -261,6 +279,7 @@ impl MetalProbeLayerDims {
                     arch.num_global_key_value_heads
                         .unwrap_or(arch.num_key_value_heads),
                     rope_dim,
+                    arch.global_rope_theta.unwrap_or(arch.rope_theta),
                 )
             }
             LayerAttnType::Linear => {
@@ -281,10 +300,12 @@ impl MetalProbeLayerDims {
             || head_dim % 2 != 0
             || rope_dim == 0
             || rope_dim % 2 != 0
+            || !rope_theta.is_finite()
+            || rope_theta <= 0.0
         {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
-                    reason: "synthetic probe requires nonzero grouped attention heads and even nonzero head/rope dims",
+                    reason: "synthetic probe requires nonzero grouped attention heads, even nonzero head/rope dims, and positive rope theta",
                 },
                 probe_ctx("prepare"),
             ));
@@ -298,10 +319,13 @@ impl MetalProbeLayerDims {
             num_kv_heads,
             head_dim,
             rope_dim,
+            rope_theta,
             q_dim,
             kv_dim,
             qkv_rows: q_dim + 2 * kv_dim,
-            attn_scale: 1.0 / (head_dim as f32).sqrt(),
+            // Gemma 4 text attention uses unscaled scores in HF
+            // (`Gemma4TextAttention.scaling = 1.0`).
+            attn_scale: 1.0,
         })
     }
 }
@@ -315,9 +339,19 @@ struct ProbeModelPlan {
     final_norm_name: String,
     lm_head_name: String,
     tie_embeddings: bool,
+    ple_names: Option<ProbePleNames>,
     layer_names: Vec<ProbeLayerNames>,
     names: Vec<String>,
     arena_bytes: usize,
+}
+
+#[cfg(target_os = "macos")]
+struct ProbePleNames {
+    ple_dim: usize,
+    ple_vocab_size: usize,
+    embed_tokens_per_layer_name: String,
+    per_layer_model_projection_name: String,
+    per_layer_projection_norm_name: String,
 }
 
 #[cfg(target_os = "macos")]
@@ -344,6 +378,9 @@ struct ProbeLayerNames {
     prefused_gate_up_name: String,
     gate_name: String,
     up_name: String,
+    per_layer_input_gate_name: Option<String>,
+    per_layer_projection_name: Option<String>,
+    post_per_layer_input_norm_name: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -456,6 +493,87 @@ impl ProbeModelPlan {
             names.push(lm_head_name.clone());
         }
 
+        let mut ple_weight_bytes = 0usize;
+        let ple_embed_name = format!("{weight_prefix}.embed_tokens_per_layer.weight");
+        let ple_names = if tensors.contains_key(&ple_embed_name) {
+            let ple_dim = arch.hidden_size_per_layer_input;
+            let ple_vocab_size = if arch.vocab_size_per_layer_input > 0 {
+                arch.vocab_size_per_layer_input
+            } else {
+                arch.vocab_size
+            };
+            if ple_dim == 0 {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "Gemma4 per-layer embedding dim is zero",
+                    },
+                    probe_ctx("prepare"),
+                ));
+            }
+            let ple_stride = arch.num_hidden_layers.checked_mul(ple_dim).ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "Gemma4 PLE stride overflow",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
+            let per_layer_model_projection_name =
+                format!("{weight_prefix}.per_layer_model_projection.weight");
+            let per_layer_projection_norm_name =
+                format!("{weight_prefix}.per_layer_projection_norm.weight");
+            validate_tensor_shape(
+                &tensors,
+                &ple_embed_name,
+                &[ple_vocab_size, ple_stride],
+                "embed_tokens_per_layer weight shape mismatch",
+            )?;
+            validate_tensor_shape(
+                &tensors,
+                &per_layer_model_projection_name,
+                &[ple_stride, arch.hidden_size],
+                "per_layer_model_projection weight shape mismatch",
+            )?;
+            validate_tensor_shape(
+                &tensors,
+                &per_layer_projection_norm_name,
+                &[ple_dim],
+                "per_layer_projection_norm weight shape mismatch",
+            )?;
+            for name in [
+                &ple_embed_name,
+                &per_layer_model_projection_name,
+                &per_layer_projection_norm_name,
+            ] {
+                let info = tensors.get(name).ok_or_else(|| {
+                    RvllmError::apple(
+                        AppleError::InvalidWeightBlob {
+                            reason: "missing Gemma4 PLE tensor",
+                        },
+                        probe_ctx("prepare"),
+                    )
+                })?;
+                ple_weight_bytes = ple_weight_bytes.checked_add(info.nbytes).ok_or_else(|| {
+                    RvllmError::apple(
+                        AppleError::InvalidWeightBlob {
+                            reason: "Gemma4 PLE byte size overflow",
+                        },
+                        probe_ctx("prepare"),
+                    )
+                })?;
+                names.push((*name).clone());
+            }
+            Some(ProbePleNames {
+                ple_dim,
+                ple_vocab_size,
+                embed_tokens_per_layer_name: ple_embed_name,
+                per_layer_model_projection_name,
+                per_layer_projection_norm_name,
+            })
+        } else {
+            None
+        };
+
         let mut layer_weight_bytes = 0;
         let mut fused_qkv_bytes = 0;
         let mut fused_gate_up_bytes = 0;
@@ -557,6 +675,40 @@ impl ProbeModelPlan {
                 let gate_name = format!("{lprefix}.mlp.gate_proj.weight");
                 let up_name = format!("{lprefix}.mlp.up_proj.weight");
                 let use_prefused_gate_up = tensors.contains_key(&prefused_gate_up_name);
+                let (
+                    per_layer_input_gate_name,
+                    per_layer_projection_name,
+                    post_per_layer_input_norm_name,
+                ) = if let Some(ple) = &ple_names {
+                    let input_gate = format!("{lprefix}.per_layer_input_gate.weight");
+                    let projection = format!("{lprefix}.per_layer_projection.weight");
+                    let post_norm = format!("{lprefix}.post_per_layer_input_norm.weight");
+                    validate_tensor_shape(
+                        &tensors,
+                        &input_gate,
+                        &[ple.ple_dim, hidden],
+                        "per_layer_input_gate weight shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &projection,
+                        &[hidden, ple.ple_dim],
+                        "per_layer_projection weight shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &post_norm,
+                        &[hidden],
+                        "post_per_layer_input_norm weight shape mismatch",
+                    )?;
+                    for name in [&input_gate, &projection, &post_norm] {
+                        add_tensor_size(name)?;
+                        names.push(name.clone());
+                    }
+                    (Some(input_gate), Some(projection), Some(post_norm))
+                } else {
+                    (None, None, None)
+                };
 
                 validate_tensor_shape(
                     &tensors,
@@ -737,6 +889,9 @@ impl ProbeModelPlan {
                     prefused_gate_up_name,
                     gate_name,
                     up_name,
+                    per_layer_input_gate_name,
+                    per_layer_projection_name,
+                    post_per_layer_input_norm_name,
                 });
             }
         }
@@ -779,6 +934,15 @@ impl ProbeModelPlan {
         let normed_hidden_bytes = residual_bytes;
         let sampled_bytes = max_probe_tokens * i32_bytes;
         let token_ids_bytes = max_probe_tokens * 4;
+        let ple_inputs_bytes = ple_names
+            .as_ref()
+            .map(|ple| {
+                max_probe_tokens
+                    * plan_num_layers_stride(arch.num_hidden_layers, ple.ple_dim)
+                    * half_bytes
+                    * 2
+            })
+            .unwrap_or(0);
 
         let mut scratch_bytes = 0;
         if arch.num_hidden_layers > 0 {
@@ -822,6 +986,7 @@ impl ProbeModelPlan {
         let mut arena_bytes = embed_bytes
             .checked_add(final_norm_bytes)
             .and_then(|v| v.checked_add(lm_head_bytes))
+            .and_then(|v| v.checked_add(ple_weight_bytes))
             .and_then(|v| v.checked_add(layer_weight_bytes))
             .and_then(|v| v.checked_add(fused_qkv_bytes))
             .and_then(|v| v.checked_add(fused_gate_up_bytes))
@@ -830,6 +995,7 @@ impl ProbeModelPlan {
             .and_then(|v| v.checked_add(normed_hidden_bytes))
             .and_then(|v| v.checked_add(sampled_bytes))
             .and_then(|v| v.checked_add(token_ids_bytes))
+            .and_then(|v| v.checked_add(ple_inputs_bytes))
             .and_then(|v| v.checked_add(scratch_bytes))
             .ok_or_else(|| {
                 RvllmError::apple(
@@ -857,6 +1023,7 @@ impl ProbeModelPlan {
             final_norm_name,
             lm_head_name,
             tie_embeddings,
+            ple_names,
             layer_names,
             names,
             arena_bytes,
@@ -869,6 +1036,11 @@ fn large_gemma4_probe_opted_in() -> bool {
     std::env::var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn plan_num_layers_stride(num_layers: usize, ple_dim: usize) -> usize {
+    num_layers.saturating_mul(ple_dim)
 }
 
 #[cfg(target_os = "macos")]
@@ -913,6 +1085,37 @@ impl Gemma4MetalState {
         let normed_hidden_bytes = residual_bytes;
         let sampled_bytes = max_probe_tokens * std::mem::size_of::<i32>();
         let token_ids_bytes = max_probe_tokens * 4;
+
+        let ple = if let Some(ple_names) = &plan.ple_names {
+            let embed_tokens_per_layer =
+                region_lookup(&mut mapped_refs, &ple_names.embed_tokens_per_layer_name)?;
+            let per_layer_model_projection =
+                region_lookup(&mut mapped_refs, &ple_names.per_layer_model_projection_name)?;
+            let per_layer_projection_norm =
+                region_lookup(&mut mapped_refs, &ple_names.per_layer_projection_norm_name)?;
+            let stride = plan_num_layers_stride(plan.arch.num_hidden_layers, ple_names.ple_dim);
+            let token_inputs = arena.region(
+                "metal_model_ple_token_inputs",
+                max_probe_tokens * stride * half_bytes,
+                16,
+            )?;
+            let context_inputs = arena.region(
+                "metal_model_ple_context_inputs",
+                max_probe_tokens * stride * half_bytes,
+                16,
+            )?;
+            Some(MetalPleState {
+                ple_dim: ple_names.ple_dim,
+                ple_vocab_size: ple_names.ple_vocab_size,
+                embed_tokens_per_layer,
+                per_layer_model_projection,
+                per_layer_projection_norm,
+                token_inputs,
+                context_inputs,
+            })
+        } else {
+            None
+        };
 
         let mut layers = Vec::new();
         for layer_idx in 0..plan.arch.num_hidden_layers {
@@ -959,6 +1162,18 @@ impl Gemma4MetalState {
             )?;
             let layer_scalar =
                 optional_region_lookup(&mut mapped_refs, layer_names.layer_scalar_name.as_deref())?;
+            let per_layer_input_gate = optional_region_lookup(
+                &mut mapped_refs,
+                layer_names.per_layer_input_gate_name.as_deref(),
+            )?;
+            let per_layer_projection = optional_region_lookup(
+                &mut mapped_refs,
+                layer_names.per_layer_projection_name.as_deref(),
+            )?;
+            let post_per_layer_input_norm = optional_region_lookup(
+                &mut mapped_refs,
+                layer_names.post_per_layer_input_norm_name.as_deref(),
+            )?;
 
             let qkv = if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
@@ -1104,8 +1319,10 @@ impl Gemma4MetalState {
             write_i32_region(arena, &context_lens, &vec![0; max_probe_tokens])?;
             write_i32_region(arena, &block_tables, &vec![0; max_probe_tokens])?;
             write_i32_region(arena, &cu_seqlens, &vec![0; max_probe_tokens + 1])?;
-            write_f32_region(arena, &cos, &vec![1.0; max_pos * half_rope])?;
-            write_f32_region(arena, &sin, &vec![0.0; max_pos * half_rope])?;
+            let (cos_table, sin_table) =
+                build_rope_tables(max_pos, half_rope, dims.head_dim, dims.rope_theta);
+            write_f32_region(arena, &cos, &cos_table)?;
+            write_f32_region(arena, &sin, &sin_table)?;
 
             layers.push(MetalOneLayerState {
                 layer_idx,
@@ -1124,6 +1341,9 @@ impl Gemma4MetalState {
                 layer_scalar_dim: layer_names.layer_scalar_dim as u32,
                 gate_up,
                 down_proj,
+                per_layer_input_gate,
+                per_layer_projection,
+                post_per_layer_input_norm,
                 qkv_out,
                 q,
                 k,
@@ -1181,6 +1401,7 @@ impl Gemma4MetalState {
             normed_hidden,
             sampled,
             token_ids,
+            ple,
             layers,
         })
     }
@@ -1430,6 +1651,28 @@ fn write_f32_region(arena: &MetalBufferArena, region: &MetalRegion, values: &[f3
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn build_rope_tables(
+    max_positions: usize,
+    half_rope: usize,
+    head_dim: usize,
+    rope_theta: f32,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut cos = vec![0.0f32; max_positions * half_rope];
+    let mut sin = vec![0.0f32; max_positions * half_rope];
+    for pos in 0..max_positions {
+        for pair in 0..half_rope {
+            let exponent = (2 * pair) as f32 / head_dim as f32;
+            let inv_freq = 1.0 / rope_theta.powf(exponent);
+            let angle = pos as f32 * inv_freq;
+            let idx = pos * half_rope + pair;
+            cos[idx] = angle.cos();
+            sin[idx] = angle.sin();
+        }
+    }
+    (cos, sin)
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
@@ -1636,6 +1879,7 @@ mod tests {
         assert_eq!(sliding.num_kv_heads, 1);
         assert_eq!(sliding.head_dim, 128);
         assert_eq!(sliding.rope_dim, 128);
+        assert_eq!(sliding.rope_theta, 10000.0);
         assert_eq!(sliding.q_dim, 128);
         assert_eq!(sliding.kv_dim, 128);
         assert_eq!(sliding.qkv_rows, 384);
@@ -1646,11 +1890,26 @@ mod tests {
         assert_eq!(full.num_kv_heads, 1);
         assert_eq!(full.head_dim, 256);
         assert_eq!(full.rope_dim, 64);
+        assert_eq!(full.rope_theta, 1000000.0);
         assert_eq!(full.q_dim, 256);
         assert_eq!(full.kv_dim, 256);
         assert_eq!(full.qkv_rows, 768);
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn build_rope_tables_position_zero_identity_position_one_uses_theta() {
+        let (cos, sin) = build_rope_tables(2, 2, 8, 10000.0);
+
+        assert_eq!(cos[0], 1.0);
+        assert_eq!(sin[0], 0.0);
+        assert_eq!(cos[1], 1.0);
+        assert_eq!(sin[1], 0.0);
+        assert!((cos[2] - 1.0f32.cos()).abs() < 1e-6);
+        assert!((sin[2] - 1.0f32.sin()).abs() < 1e-6);
+        assert!((cos[3] - 0.1f32.cos()).abs() < 1e-6);
+        assert!((sin[3] - 0.1f32.sin()).abs() < 1e-6);
     }
 
     fn add_zero_tensor(

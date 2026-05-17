@@ -10,6 +10,15 @@ pub const KERNEL_SOURCE: &str = r#"
 #include <metal_stdlib>
 using namespace metal;
 
+static inline half f16_sat(float x) {
+    return half(clamp(x, -65504.0f, 65504.0f));
+}
+
+static inline float gelu_tanh(float x) {
+    float c = 0.7978845608f; // sqrt(2/pi)
+    return 0.5f * x * (1.0f + tanh(c * (x + 0.044715f * x * x * x)));
+}
+
 // ============================================================================
 // RMSNorm (per-token, f16 in/out)
 // ============================================================================
@@ -53,7 +62,117 @@ kernel void rmsnorm_f16(
     // Phase 2: normalize and apply gamma
     for (uint i = tid; i < hidden; i += tg_size) {
         float v = float(input[base + i]);
-        output[base + i] = half(v * rms * float(gamma[i]));
+        output[base + i] = f16_sat(v * rms * float(gamma[i]));
+    }
+}
+
+kernel void rmsnorm_unit_f16(
+    device const half *input      [[buffer(0)]],
+    device half       *output     [[buffer(1)]],
+    constant uint     &hidden     [[buffer(2)]],
+    constant float    &eps        [[buffer(3)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid;
+    uint base = token * hidden;
+
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    for (uint i = tid; i < hidden; i += tg_size) {
+        float v = float(input[base + i]);
+        local_sum += v * v;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float rms = rsqrt(shared_sum[0] / float(hidden) + eps);
+    for (uint i = tid; i < hidden; i += tg_size) {
+        output[base + i] = f16_sat(float(input[base + i]) * rms);
+    }
+}
+
+kernel void rmsnorm_headwise_f16(
+    device const half *input      [[buffer(0)]],
+    device half       *output     [[buffer(1)]],
+    device const half *gamma      [[buffer(2)]],
+    constant uint     &head_dim   [[buffer(3)]],
+    constant float    &eps        [[buffer(4)]],
+    constant uint     &num_heads  [[buffer(5)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid / num_heads;
+    uint head = gid % num_heads;
+    uint hidden = num_heads * head_dim;
+    uint base = token * hidden + head * head_dim;
+
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        float v = float(input[base + i]);
+        local_sum += v * v;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float rms = rsqrt(shared_sum[0] / float(head_dim) + eps);
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        float v = float(input[base + i]);
+        output[base + i] = f16_sat(v * rms * float(gamma[i]));
+    }
+}
+
+kernel void rmsnorm_headwise_unit_f16(
+    device const half *input      [[buffer(0)]],
+    device half       *output     [[buffer(1)]],
+    constant uint     &head_dim   [[buffer(2)]],
+    constant float    &eps        [[buffer(3)]],
+    constant uint     &num_heads  [[buffer(4)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid / num_heads;
+    uint head = gid % num_heads;
+    uint hidden = num_heads * head_dim;
+    uint base = token * hidden + head * head_dim;
+
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        float v = float(input[base + i]);
+        local_sum += v * v;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float rms = rsqrt(shared_sum[0] / float(head_dim) + eps);
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        output[base + i] = f16_sat(float(input[base + i]) * rms);
     }
 }
 
@@ -94,7 +213,9 @@ kernel void gemm_f16(
         acc += a * b;
     }
 
-    C[row * N + col] = half(acc * alpha + float(C[row * N + col]) * beta);
+    uint idx = row * N + col;
+    float prior = beta == 0.0f ? 0.0f : float(C[idx]) * beta;
+    C[idx] = f16_sat(acc * alpha + prior);
 }
 
 // Small/probe matrix tiled GEMM: C[M,N] = A[M,K] * B[K,N].
@@ -134,7 +255,155 @@ kernel void gemm_f16_tiled16(
 
     if (row < M && col < N) {
         uint idx = row * N + col;
-        C[idx] = half(acc * alpha + float(C[idx]) * beta);
+        float prior = beta == 0.0f ? 0.0f : float(C[idx]) * beta;
+        C[idx] = f16_sat(acc * alpha + prior);
+    }
+}
+
+kernel void gemm_rmsnorm_f16(
+    device const half *A          [[buffer(0)]],  // [M, K] row-major
+    device const half *B          [[buffer(1)]],  // [N, K] col-major (transposed)
+    device const half *gamma      [[buffer(2)]],  // [N]
+    device half       *C          [[buffer(3)]],  // [M, N] row-major
+    constant uint     &M          [[buffer(4)]],
+    constant uint     &N          [[buffer(5)]],
+    constant uint     &K          [[buffer(6)]],
+    constant float    &eps        [[buffer(7)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint row                      [[threadgroup_position_in_grid]]
+) {
+    if (row >= M) return;
+
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    for (uint col = tid; col < N; col += tg_size) {
+        float acc = 0.0f;
+        for (uint k = 0; k < K; k++) {
+            acc += float(A[row * K + k]) * float(B[col * K + k]);
+        }
+        local_sum += acc * acc;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float rms = rsqrt(shared_sum[0] / float(N) + eps);
+    for (uint col = tid; col < N; col += tg_size) {
+        float acc = 0.0f;
+        for (uint k = 0; k < K; k++) {
+            acc += float(A[row * K + k]) * float(B[col * K + k]);
+        }
+        C[row * N + col] = f16_sat(acc * rms * float(gamma[col]));
+    }
+}
+
+kernel void gemm_headwise_rmsnorm_f16(
+    device const half *A          [[buffer(0)]],  // [M, K] row-major
+    device const half *B          [[buffer(1)]],  // [total_rows, K] col-major (transposed)
+    device const half *gamma      [[buffer(2)]],  // [head_dim]
+    device half       *C          [[buffer(3)]],  // [M, num_heads * head_dim]
+    constant uint     &M          [[buffer(4)]],
+    constant uint     &K          [[buffer(5)]],
+    constant uint     &head_dim   [[buffer(6)]],
+    constant uint     &num_heads  [[buffer(7)]],
+    constant uint     &b_row_offset [[buffer(8)]],
+    constant float    &eps        [[buffer(9)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid / num_heads;
+    uint head = gid % num_heads;
+    if (token >= M) return;
+
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    uint b_head_base = b_row_offset + head * head_dim;
+    uint c_head_base = token * num_heads * head_dim + head * head_dim;
+    for (uint d = tid; d < head_dim; d += tg_size) {
+        uint row = b_head_base + d;
+        float acc = 0.0f;
+        for (uint k = 0; k < K; k++) {
+            acc += float(A[token * K + k]) * float(B[row * K + k]);
+        }
+        local_sum += acc * acc;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float rms = rsqrt(shared_sum[0] / float(head_dim) + eps);
+    for (uint d = tid; d < head_dim; d += tg_size) {
+        uint row = b_head_base + d;
+        float acc = 0.0f;
+        for (uint k = 0; k < K; k++) {
+            acc += float(A[token * K + k]) * float(B[row * K + k]);
+        }
+        C[c_head_base + d] = f16_sat(acc * rms * float(gamma[d]));
+    }
+}
+
+kernel void gemm_headwise_rmsnorm_unit_f16(
+    device const half *A          [[buffer(0)]],
+    device const half *B          [[buffer(1)]],
+    device half       *C          [[buffer(2)]],
+    constant uint     &M          [[buffer(3)]],
+    constant uint     &K          [[buffer(4)]],
+    constant uint     &head_dim   [[buffer(5)]],
+    constant uint     &num_heads  [[buffer(6)]],
+    constant uint     &b_row_offset [[buffer(7)]],
+    constant float    &eps        [[buffer(8)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid / num_heads;
+    uint head = gid % num_heads;
+    if (token >= M) return;
+
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    uint b_head_base = b_row_offset + head * head_dim;
+    uint c_head_base = token * num_heads * head_dim + head * head_dim;
+    for (uint d = tid; d < head_dim; d += tg_size) {
+        uint row = b_head_base + d;
+        float acc = 0.0f;
+        for (uint k = 0; k < K; k++) {
+            acc += float(A[token * K + k]) * float(B[row * K + k]);
+        }
+        local_sum += acc * acc;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float rms = rsqrt(shared_sum[0] / float(head_dim) + eps);
+    for (uint d = tid; d < head_dim; d += tg_size) {
+        uint row = b_head_base + d;
+        float acc = 0.0f;
+        for (uint k = 0; k < K; k++) {
+            acc += float(A[token * K + k]) * float(B[row * K + k]);
+        }
+        C[c_head_base + d] = f16_sat(acc * rms);
     }
 }
 
@@ -170,7 +439,7 @@ kernel void gemm_residual_f16(
     } else if (layer_scale_dim == N) {
         scale = float(layer_scale[col]);
     }
-    C[idx] = half(acc * scale + float(residual[idx]));
+    C[idx] = f16_sat(acc * scale + float(residual[idx]));
 }
 
 // ============================================================================
@@ -227,7 +496,7 @@ kernel void embedding_gather_f16(
         return;
     }
 
-    out[token * hidden + dim] = half(float(embedding[tok * hidden + dim]) * scale);
+    out[token * hidden + dim] = f16_sat(float(embedding[tok * hidden + dim]) * scale);
 }
 
 // ============================================================================
@@ -262,11 +531,11 @@ kernel void rope_partial_f16(
     for (uint h = 0; h < num_heads; h++) {
         uint base = token * q_dim + h * head_dim;
         uint i0 = base + pair;
-        uint i1 = base + pair + half_rope;
+        uint i1 = base + pair + head_dim / 2;
         float x0 = float(q[i0]);
         float x1 = float(q[i1]);
-        q[i0] = half(x0 * cos_val - x1 * sin_val);
-        q[i1] = half(x0 * sin_val + x1 * cos_val);
+        q[i0] = f16_sat(x0 * cos_val - x1 * sin_val);
+        q[i1] = f16_sat(x0 * sin_val + x1 * cos_val);
     }
 
     // Apply to all KV heads
@@ -274,11 +543,11 @@ kernel void rope_partial_f16(
     for (uint h = 0; h < num_kv_heads; h++) {
         uint base = token * kv_dim + h * head_dim;
         uint i0 = base + pair;
-        uint i1 = base + pair + half_rope;
+        uint i1 = base + pair + head_dim / 2;
         float x0 = float(k[i0]);
         float x1 = float(k[i1]);
-        k[i0] = half(x0 * cos_val - x1 * sin_val);
-        k[i1] = half(x0 * sin_val + x1 * cos_val);
+        k[i0] = f16_sat(x0 * cos_val - x1 * sin_val);
+        k[i1] = f16_sat(x0 * sin_val + x1 * cos_val);
     }
 }
 
@@ -361,7 +630,7 @@ kernel void experimental_kv_dequantize_int8_f16(
     uint total = num_rows * kv_dim;
     if (gid >= total) return;
     uint row = gid / kv_dim;
-    dst[gid] = half(float(src[gid]) * scales[row]);
+    dst[gid] = f16_sat(float(src[gid]) * scales[row]);
 }
 
 // ============================================================================
@@ -447,7 +716,7 @@ kernel void attention_decode_f16(
     // Write output
     float inv_sum = 1.0f / sum_exp;
     for (uint d = 0; d < head_dim; d++) {
-        output[seq * q_dim + head * head_dim + d] = half(out_accum[d] * inv_sum);
+        output[seq * q_dim + head * head_dim + d] = f16_sat(out_accum[d] * inv_sum);
     }
 }
 
@@ -560,7 +829,7 @@ kernel void attention_decode_reduction_f16(
             uint v_idx = block_base + block_offset * kv_dim + kv_head * head_dim + d;
             acc += weight * float(v_cache[v_idx]);
         }
-        output[seq * q_dim + head * head_dim + d] = half(acc);
+        output[seq * q_dim + head * head_dim + d] = f16_sat(acc);
     }
 }
 
@@ -646,7 +915,7 @@ kernel void attention_prefill_f16(
 
     float inv_sum = (sum_exp > 0.0f) ? (1.0f / sum_exp) : 0.0f;
     for (uint d = 0; d < head_dim; d++) {
-        output[q_pos * q_dim + head * head_dim + d] = half(out_vals[d] * inv_sum);
+        output[q_pos * q_dim + head * head_dim + d] = f16_sat(out_vals[d] * inv_sum);
     }
 }
 
@@ -667,12 +936,38 @@ kernel void gelu_mul_f16(
     float gate = float(gate_up[token * 2 * intermediate + dim]);
     float up = float(gate_up[token * 2 * intermediate + intermediate + dim]);
 
-    // GELU(tanh) approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
-    float x = gate;
-    float c = 0.7978845608f; // sqrt(2/pi)
-    float gelu = 0.5f * x * (1.0f + tanh(c * (x + 0.044715f * x * x * x)));
+    output[token * intermediate + dim] = f16_sat(gelu_tanh(gate) * up);
+}
 
-    output[token * intermediate + dim] = half(gelu * up);
+kernel void ple_combine_f16(
+    device half       *token_ple   [[buffer(0)]],
+    device const half *context_ple [[buffer(1)]],
+    constant uint     &num_tokens  [[buffer(2)]],
+    constant uint     &stride      [[buffer(3)]],
+    uint2 gid                     [[thread_position_in_grid]]
+) {
+    uint token = gid.x;
+    uint dim = gid.y;
+    if (token >= num_tokens || dim >= stride) return;
+    uint idx = token * stride + dim;
+    token_ple[idx] = f16_sat((float(token_ple[idx]) + float(context_ple[idx])) * 0.70710678118f);
+}
+
+kernel void ple_gelu_mul_f16(
+    device half       *gate        [[buffer(0)]],
+    device const half *packed_ple  [[buffer(1)]],
+    constant uint     &num_tokens  [[buffer(2)]],
+    constant uint     &num_layers  [[buffer(3)]],
+    constant uint     &layer_idx   [[buffer(4)]],
+    constant uint     &ple_dim     [[buffer(5)]],
+    uint2 gid                     [[thread_position_in_grid]]
+) {
+    uint token = gid.x;
+    uint dim = gid.y;
+    if (token >= num_tokens || dim >= ple_dim || layer_idx >= num_layers) return;
+    uint gate_idx = token * ple_dim + dim;
+    uint ple_idx = token * num_layers * ple_dim + layer_idx * ple_dim + dim;
+    gate[gate_idx] = f16_sat(gelu_tanh(float(gate[gate_idx])) * float(packed_ple[ple_idx]));
 }
 
 // ============================================================================
@@ -685,7 +980,25 @@ kernel void residual_add_f16(
     uint gid                      [[thread_position_in_grid]]
 ) {
     if (gid >= count) return;
-    residual[gid] = half(float(residual[gid]) + float(addition[gid]));
+    residual[gid] = f16_sat(float(residual[gid]) + float(addition[gid]));
+}
+
+kernel void layer_scale_f16(
+    device half       *x          [[buffer(0)]],
+    device const half *scale      [[buffer(1)]],
+    constant uint     &count      [[buffer(2)]],
+    constant uint     &hidden     [[buffer(3)]],
+    constant uint     &scale_dim  [[buffer(4)]],
+    uint gid                      [[thread_position_in_grid]]
+) {
+    if (gid >= count) return;
+    float s = 1.0f;
+    if (scale_dim == 1) {
+        s = float(scale[0]);
+    } else if (scale_dim == hidden) {
+        s = float(scale[gid % hidden]);
+    }
+    x[gid] = f16_sat(float(x[gid]) * s);
 }
 
 // ============================================================================
@@ -787,7 +1100,7 @@ kernel void final_norm_lm_head_argmax_small_f16(
         if (softcap > 0.0f) {
             acc = softcap * tanh(acc / softcap);
         }
-        logits[token * vocab + v] = half(acc);
+        logits[token * vocab + v] = f16_sat(acc);
         if (argmax_better(acc, int(v), local_max, local_idx)) {
             local_max = acc;
             local_idx = int(v);
@@ -821,7 +1134,7 @@ kernel void softcap_f16(
 ) {
     if (gid >= count) return;
     float x = float(logits[gid]);
-    logits[gid] = half(cap * tanh(x / cap));
+    logits[gid] = f16_sat(cap * tanh(x / cap));
 }
 
 // ============================================================================
@@ -838,7 +1151,7 @@ kernel void bf16_to_f16(
     uint bf16_bits = uint(bf16_in[gid]);
     uint f32_bits = bf16_bits << 16;
     float f32_val = as_type<float>(f32_bits);
-    f16_out[gid] = half(f32_val);
+    f16_out[gid] = f16_sat(f32_val);
 }
 "#;
 
@@ -848,8 +1161,14 @@ pub const KERNEL_COUNT: usize = KERNEL_NAMES.len();
 /// List of all kernel function names.
 pub const KERNEL_NAMES: &[&str] = &[
     "rmsnorm_f16",
+    "rmsnorm_unit_f16",
+    "rmsnorm_headwise_f16",
+    "rmsnorm_headwise_unit_f16",
     "gemm_f16",
     "gemm_f16_tiled16",
+    "gemm_rmsnorm_f16",
+    "gemm_headwise_rmsnorm_f16",
+    "gemm_headwise_rmsnorm_unit_f16",
     "gemm_residual_f16",
     "split_qkv_f16",
     "rope_partial_f16",
@@ -861,7 +1180,10 @@ pub const KERNEL_NAMES: &[&str] = &[
     "attention_prefill_f16",
     "embedding_gather_f16",
     "gelu_mul_f16",
+    "ple_combine_f16",
+    "ple_gelu_mul_f16",
     "residual_add_f16",
+    "layer_scale_f16",
     "argmax_f16",
     "final_norm_lm_head_argmax_small_f16",
     "softcap_f16",
@@ -1016,7 +1338,7 @@ mod tests {
                 for h in 0..num_heads {
                     let base = token * q_dim + h * head_dim;
                     let i0 = base + pair;
-                    let i1 = base + pair + half_rope;
+                    let i1 = base + pair + head_dim / 2;
                     let x0 = q[i0];
                     let x1 = q[i1];
                     q[i0] = x0 * cos_val - x1 * sin_val;
@@ -1026,7 +1348,7 @@ mod tests {
                 for h in 0..num_kv_heads {
                     let base = token * kv_dim + h * head_dim;
                     let i0 = base + pair;
-                    let i1 = base + pair + half_rope;
+                    let i1 = base + pair + head_dim / 2;
                     let x0 = k[i0];
                     let x1 = k[i1];
                     k[i0] = x0 * cos_val - x1 * sin_val;
@@ -1357,6 +1679,24 @@ mod tests {
         rope_partial_ref(&mut q, &mut k, &cos, &sin, &pos, 1, 2, 1, 8, 8);
         assert_ne!(q, vec![1.0; 16]);
         assert_ne!(k, vec![2.0; 8]);
+    }
+
+    #[test]
+    fn kernel_rope_reference_partial_pairs_across_full_split_half() {
+        let mut q = (0..8).map(|v| v as f32).collect::<Vec<_>>();
+        let mut k = (10..18).map(|v| v as f32).collect::<Vec<_>>();
+        let cos = vec![0.0f32];
+        let sin = vec![1.0f32];
+        let pos = vec![0_i32];
+
+        rope_partial_ref(&mut q, &mut k, &cos, &sin, &pos, 1, 1, 1, 8, 2);
+
+        assert_eq!(q[0], -4.0);
+        assert_eq!(q[4], 0.0);
+        assert_eq!(q[1], 1.0);
+        assert_eq!(k[0], -14.0);
+        assert_eq!(k[4], 10.0);
+        assert_eq!(k[1], 11.0);
     }
 
     #[test]

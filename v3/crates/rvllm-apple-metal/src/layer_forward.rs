@@ -17,12 +17,15 @@ use rvllm_core::Result;
 /// Dimensions for a single decoder layer, matching rvllm-runtime's LayerDims.
 #[derive(Copy, Clone, Debug)]
 pub struct MetalLayerDims {
+    pub layer_idx: u32,
     pub num_tokens: u32,
     pub hidden: u32,
+    pub num_layers: u32,
     pub num_heads: u32,
     pub num_kv_heads: u32,
     pub head_dim: u32,
     pub intermediate: u32,
+    pub ple_dim: u32,
     pub block_size: u32,
     pub max_blocks_per_seq: u32,
     pub num_blocks_total: u32,
@@ -50,6 +53,10 @@ pub struct MetalLayerWeights {
     pub layer_scalar_dim: u32,
     pub gate_up_offset: usize,
     pub down_proj_offset: usize,
+    pub per_layer_inputs_offset: Option<usize>,
+    pub per_layer_input_gate_offset: Option<usize>,
+    pub per_layer_projection_offset: Option<usize>,
+    pub post_per_layer_input_norm_offset: Option<usize>,
 }
 
 /// Pre-allocated scratch buffer offsets.
@@ -76,6 +83,24 @@ pub struct MetalMetadata {
     pub block_tables_offset: usize,
     pub context_lens_offset: usize,
     pub cu_seqlens_offset: Option<usize>,
+}
+
+/// Offsets for Gemma 4 per-layer embedding input preparation.
+#[derive(Copy, Clone, Debug)]
+pub struct MetalPlePrepare {
+    pub embedding_offset: usize,
+    pub token_ids_offset: usize,
+    pub residual_offset: usize,
+    pub per_layer_model_projection_offset: usize,
+    pub per_layer_projection_norm_offset: usize,
+    pub token_inputs_offset: usize,
+    pub context_inputs_offset: usize,
+    pub num_tokens: u32,
+    pub hidden: u32,
+    pub vocab: u32,
+    pub num_layers: u32,
+    pub ple_dim: u32,
+    pub rms_eps: f32,
 }
 
 /// Which phase: decode (1 token/seq) or prefill (multi-token/seq).
@@ -184,6 +209,148 @@ pub fn metal_finalize_logits_encoder_count(
     }
 }
 
+pub unsafe fn metal_prepare_ple_inputs(
+    ctx: &MetalContext,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    params: &MetalPlePrepare,
+) -> Result<()> {
+    let queue = ctx.queue_retained();
+    let buf = arena.buffer_retained();
+    let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "ple_prepare",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+
+    let stride = params.num_layers.saturating_mul(params.ple_dim);
+    let ple_scale = (params.ple_dim as f32).sqrt();
+    {
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "ple_embedding_gather",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let pso = pipelines.get("embedding_gather_f16")?;
+        encoder.setComputePipelineState(pso);
+        encoder.setBuffer_offset_atIndex(Some(buf), params.embedding_offset, 0);
+        encoder.setBuffer_offset_atIndex(Some(buf), params.token_ids_offset, 1);
+        encoder.setBuffer_offset_atIndex(Some(buf), params.token_inputs_offset, 2);
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&params.num_tokens as *const _ as *mut _),
+            4,
+            3,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&stride as *const _ as *mut _),
+            4,
+            4,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&params.vocab as *const _ as *mut _),
+            4,
+            5,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&ple_scale as *const _ as *mut _),
+            4,
+            6,
+        );
+        let threads_per_group = MTLSize {
+            width: 1,
+            height: (stride as usize).clamp(1, 256),
+            depth: 1,
+        };
+        let groups = MTLSize {
+            width: params.num_tokens as usize,
+            height: (stride as usize + threads_per_group.height - 1) / threads_per_group.height,
+            depth: 1,
+        };
+        encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
+        encoder.endEncoding();
+    }
+
+    let alpha = 1.0f32 / (params.hidden as f32).sqrt();
+    encode_gemm(
+        &cmd_buf,
+        pipelines,
+        buf,
+        params.residual_offset,
+        params.per_layer_model_projection_offset,
+        params.context_inputs_offset,
+        params.num_tokens,
+        stride,
+        params.hidden,
+        alpha,
+        0.0,
+    )?;
+    encode_headwise_rmsnorm(
+        &cmd_buf,
+        pipelines,
+        buf,
+        params.context_inputs_offset,
+        params.context_inputs_offset,
+        params.per_layer_projection_norm_offset,
+        params.ple_dim,
+        params.num_layers,
+        params.rms_eps,
+        params.num_tokens,
+        "ple_context_norm",
+    )?;
+
+    {
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "ple_combine",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let pso = pipelines.get("ple_combine_f16")?;
+        encoder.setComputePipelineState(pso);
+        encoder.setBuffer_offset_atIndex(Some(buf), params.token_inputs_offset, 0);
+        encoder.setBuffer_offset_atIndex(Some(buf), params.context_inputs_offset, 1);
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&params.num_tokens as *const _ as *mut _),
+            4,
+            2,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&stride as *const _ as *mut _),
+            4,
+            3,
+        );
+        let groups = MTLSize {
+            width: params.num_tokens as usize,
+            height: stride as usize,
+            depth: 1,
+        };
+        let tpg = MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        };
+        encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+        encoder.endEncoding();
+    }
+
+    cmd_buf.commit();
+    Ok(())
+}
+
 /// Execute one decoder layer on Metal.
 ///
 /// All buffers are pre-allocated in the arena. This function only
@@ -271,77 +438,151 @@ pub unsafe fn metal_forward_layer(
         encoder.endEncoding();
     }
 
-    // 2. QKV GEMM: normed_hidden[M,K] × W_qkv[K,N] → qkv_out[M,N]
-    encode_gemm(
-        &cmd_buf,
-        pipelines,
-        buf,
-        scratch.normed_hidden,
-        weights.qkv_offset,
-        scratch.qkv_out,
-        num_tokens,
-        qkv_n,
-        hidden,
-        1.0,
-        0.0,
-    )?;
-
-    // 3. Split fused QKV into planar Q/K/V scratch regions.
-    encode_split_qkv(
-        &cmd_buf,
-        pipelines,
-        buf,
-        scratch.qkv_out,
-        scratch.q_offset,
-        scratch.k_offset,
-        scratch.v_offset,
-        num_tokens,
-        q_dim,
-        kv_dim,
-    )?;
-
-    // 4. Optional Gemma-style Q/K/V norms before RoPE and KV cache write.
-    if let Some(q_norm_offset) = weights.q_norm_offset {
-        encode_rmsnorm(
+    // 2-4. QKV projection and optional Gemma-style Q/K/V norms before RoPE.
+    if let (Some(q_norm_offset), Some(k_norm_offset)) =
+        (weights.q_norm_offset, weights.k_norm_offset)
+    {
+        encode_gemm_headwise_rmsnorm(
             &cmd_buf,
             pipelines,
             buf,
-            scratch.q_offset,
-            scratch.q_offset,
+            scratch.normed_hidden,
+            weights.qkv_offset,
             q_norm_offset,
-            q_dim,
-            dims.rms_eps,
+            scratch.q_offset,
             num_tokens,
+            hidden,
+            dims.head_dim,
+            dims.num_heads,
+            0,
+            dims.rms_eps,
             "q_norm",
         )?;
-    }
-    if let Some(k_norm_offset) = weights.k_norm_offset {
-        encode_rmsnorm(
+        encode_gemm_headwise_rmsnorm(
             &cmd_buf,
             pipelines,
             buf,
-            scratch.k_offset,
-            scratch.k_offset,
+            scratch.normed_hidden,
+            weights.qkv_offset,
             k_norm_offset,
-            kv_dim,
-            dims.rms_eps,
+            scratch.k_offset,
             num_tokens,
+            hidden,
+            dims.head_dim,
+            dims.num_kv_heads,
+            q_dim,
+            dims.rms_eps,
             "k_norm",
         )?;
-    }
-    if let Some(v_norm_offset) = weights.v_norm_offset {
-        encode_rmsnorm(
+        if let Some(v_norm_offset) = weights.v_norm_offset {
+            encode_gemm_headwise_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                weights.qkv_offset,
+                v_norm_offset,
+                scratch.v_offset,
+                num_tokens,
+                hidden,
+                dims.head_dim,
+                dims.num_kv_heads,
+                q_dim + kv_dim,
+                dims.rms_eps,
+                "v_norm",
+            )?;
+        } else {
+            // Gemma 4 uses an unscaled RMSNorm for V; there is no v_norm.weight
+            // tensor in the checkpoint.
+            encode_gemm_headwise_rmsnorm_unit(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                weights.qkv_offset,
+                scratch.v_offset,
+                num_tokens,
+                hidden,
+                dims.head_dim,
+                dims.num_kv_heads,
+                q_dim + kv_dim,
+                dims.rms_eps,
+                "v_norm_unit",
+            )?;
+        }
+    } else {
+        encode_gemm(
             &cmd_buf,
             pipelines,
             buf,
-            scratch.v_offset,
-            scratch.v_offset,
-            v_norm_offset,
-            kv_dim,
-            dims.rms_eps,
+            scratch.normed_hidden,
+            weights.qkv_offset,
+            scratch.qkv_out,
             num_tokens,
-            "v_norm",
+            qkv_n,
+            hidden,
+            1.0,
+            0.0,
         )?;
+
+        encode_split_qkv(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.qkv_out,
+            scratch.q_offset,
+            scratch.k_offset,
+            scratch.v_offset,
+            num_tokens,
+            q_dim,
+            kv_dim,
+        )?;
+
+        if let Some(q_norm_offset) = weights.q_norm_offset {
+            encode_headwise_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.q_offset,
+                scratch.q_offset,
+                q_norm_offset,
+                dims.head_dim,
+                dims.num_heads,
+                dims.rms_eps,
+                num_tokens,
+                "q_norm",
+            )?;
+        }
+        if let Some(k_norm_offset) = weights.k_norm_offset {
+            encode_headwise_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.k_offset,
+                scratch.k_offset,
+                k_norm_offset,
+                dims.head_dim,
+                dims.num_kv_heads,
+                dims.rms_eps,
+                num_tokens,
+                "k_norm",
+            )?;
+        }
+        if let Some(v_norm_offset) = weights.v_norm_offset {
+            encode_headwise_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.v_offset,
+                scratch.v_offset,
+                v_norm_offset,
+                dims.head_dim,
+                dims.num_kv_heads,
+                dims.rms_eps,
+                num_tokens,
+                "v_norm",
+            )?;
+        }
     }
 
     // 5. RoPE: apply partial RoPE to Q and K
@@ -602,37 +843,47 @@ pub unsafe fn metal_forward_layer(
         }
     }
 
-    // 8. O projection with residual: residual += attn_out × W_o
-    encode_gemm_residual(
-        &cmd_buf,
-        pipelines,
-        buf,
-        scratch.attn_out,
-        weights.o_proj_offset,
-        residual_offset,
-        residual_offset,
-        num_tokens,
-        hidden,
-        q_dim,
-        weights.layer_scalar_offset,
-        weights.layer_scalar_dim,
-    )?;
-
-    // 9. Optional Gemma-style post-attention RMSNorm on the residual stream.
-    if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
-        encode_rmsnorm(
+    // 8. O projection, post-attention norm, then residual add.
+    let attn_addition_offset = if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
+        encode_gemm_rmsnorm(
             &cmd_buf,
             pipelines,
             buf,
-            residual_offset,
-            residual_offset,
+            scratch.attn_out,
+            weights.o_proj_offset,
             post_attn_norm_offset,
-            hidden,
-            dims.rms_eps,
+            scratch.normed_hidden,
             num_tokens,
+            hidden,
+            q_dim,
+            dims.rms_eps,
             "post_attn_norm",
         )?;
-    }
+        scratch.normed_hidden
+    } else {
+        encode_gemm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.attn_out,
+            weights.o_proj_offset,
+            scratch.mlp_out,
+            num_tokens,
+            hidden,
+            q_dim,
+            1.0,
+            0.0,
+        )?;
+        scratch.mlp_out
+    };
+    encode_residual_add(
+        &cmd_buf,
+        pipelines,
+        buf,
+        residual_offset,
+        attn_addition_offset,
+        num_tokens * hidden,
+    )?;
 
     // 10. Pre-FFN RMSNorm. Explicit pre-FF Gemma norm overrides the legacy MLP norm.
     encode_rmsnorm(
@@ -706,35 +957,119 @@ pub unsafe fn metal_forward_layer(
         encoder.endEncoding();
     }
 
-    // 13. Down projection with residual: residual += activated × W_down
-    encode_gemm_residual(
+    // 13. Down projection, post-FFN norm, then residual add.
+    let ffn_addition_offset = if let Some(post_ff_norm_offset) = weights.post_ff_norm_offset {
+        encode_gemm_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.activated,
+            weights.down_proj_offset,
+            post_ff_norm_offset,
+            scratch.normed_hidden,
+            num_tokens,
+            hidden,
+            dims.intermediate,
+            dims.rms_eps,
+            "post_ff_norm",
+        )?;
+        scratch.normed_hidden
+    } else {
+        encode_gemm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.activated,
+            weights.down_proj_offset,
+            scratch.mlp_out,
+            num_tokens,
+            hidden,
+            dims.intermediate,
+            1.0,
+            0.0,
+        )?;
+        scratch.mlp_out
+    };
+    encode_residual_add(
         &cmd_buf,
         pipelines,
         buf,
-        scratch.activated,
-        weights.down_proj_offset,
         residual_offset,
-        residual_offset,
-        num_tokens,
-        hidden,
-        dims.intermediate,
-        weights.layer_scalar_offset,
-        weights.layer_scalar_dim,
+        ffn_addition_offset,
+        num_tokens * hidden,
     )?;
 
-    // 14. Optional Gemma-style post-FF RMSNorm on the residual stream.
-    if let Some(post_ff_norm_offset) = weights.post_ff_norm_offset {
-        encode_rmsnorm(
+    if let (
+        Some(per_layer_inputs_offset),
+        Some(per_layer_input_gate_offset),
+        Some(per_layer_projection_offset),
+        Some(post_per_layer_input_norm_offset),
+    ) = (
+        weights.per_layer_inputs_offset,
+        weights.per_layer_input_gate_offset,
+        weights.per_layer_projection_offset,
+        weights.post_per_layer_input_norm_offset,
+    ) {
+        if dims.ple_dim > 0 {
+            encode_gemm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                residual_offset,
+                per_layer_input_gate_offset,
+                scratch.activated,
+                num_tokens,
+                dims.ple_dim,
+                hidden,
+                1.0,
+                0.0,
+            )?;
+            encode_ple_gelu_mul(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.activated,
+                per_layer_inputs_offset,
+                num_tokens,
+                dims.num_layers,
+                dims.layer_idx,
+                dims.ple_dim,
+            )?;
+            encode_gemm_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.activated,
+                per_layer_projection_offset,
+                post_per_layer_input_norm_offset,
+                scratch.normed_hidden,
+                num_tokens,
+                hidden,
+                dims.ple_dim,
+                dims.rms_eps,
+                "post_per_layer_input_norm",
+            )?;
+            encode_residual_add(
+                &cmd_buf,
+                pipelines,
+                buf,
+                residual_offset,
+                scratch.normed_hidden,
+                num_tokens * hidden,
+            )?;
+        }
+    }
+
+    if let Some(layer_scalar_offset) = weights.layer_scalar_offset {
+        encode_layer_scale(
             &cmd_buf,
             pipelines,
             buf,
             residual_offset,
-            residual_offset,
-            post_ff_norm_offset,
+            layer_scalar_offset,
+            num_tokens * hidden,
             hidden,
-            dims.rms_eps,
-            num_tokens,
-            "post_ff_norm",
+            weights.layer_scalar_dim,
         )?;
     }
 
@@ -791,6 +1126,543 @@ unsafe fn encode_rmsnorm(
         depth: 1,
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_rmsnorm_unit(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    input_offset: usize,
+    output_offset: usize,
+    hidden: u32,
+    eps: f32,
+    num_tokens: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("rmsnorm_unit_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        3,
+    );
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    let groups = MTLSize {
+        width: num_tokens as usize,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_headwise_rmsnorm(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    input_offset: usize,
+    output_offset: usize,
+    gamma_offset: usize,
+    head_dim: u32,
+    num_heads: u32,
+    eps: f32,
+    num_tokens: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("rmsnorm_headwise_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), gamma_offset, 2);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&head_dim as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_heads as *const _ as *mut _),
+        4,
+        5,
+    );
+    let groups = MTLSize {
+        width: num_tokens.saturating_mul(num_heads) as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_headwise_rmsnorm_unit(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    input_offset: usize,
+    output_offset: usize,
+    head_dim: u32,
+    num_heads: u32,
+    eps: f32,
+    num_tokens: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("rmsnorm_headwise_unit_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&head_dim as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_heads as *const _ as *mut _),
+        4,
+        4,
+    );
+    let groups = MTLSize {
+        width: num_tokens.saturating_mul(num_heads) as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_gemm_rmsnorm(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    a_offset: usize,
+    b_offset: usize,
+    gamma_offset: usize,
+    c_offset: usize,
+    m: u32,
+    n: u32,
+    k: u32,
+    eps: f32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("gemm_rmsnorm_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), gamma_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), c_offset, 3);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&n as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        7,
+    );
+    let groups = MTLSize {
+        width: m as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_gemm_headwise_rmsnorm(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    a_offset: usize,
+    b_offset: usize,
+    gamma_offset: usize,
+    c_offset: usize,
+    m: u32,
+    k: u32,
+    head_dim: u32,
+    num_heads: u32,
+    b_row_offset: u32,
+    eps: f32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("gemm_headwise_rmsnorm_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), gamma_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), c_offset, 3);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&head_dim as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_heads as *const _ as *mut _),
+        4,
+        7,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&b_row_offset as *const _ as *mut _),
+        4,
+        8,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        9,
+    );
+    let groups = MTLSize {
+        width: m.saturating_mul(num_heads) as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_gemm_headwise_rmsnorm_unit(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    a_offset: usize,
+    b_offset: usize,
+    c_offset: usize,
+    m: u32,
+    k: u32,
+    head_dim: u32,
+    num_heads: u32,
+    b_row_offset: u32,
+    eps: f32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("gemm_headwise_rmsnorm_unit_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), c_offset, 2);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&head_dim as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_heads as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&b_row_offset as *const _ as *mut _),
+        4,
+        7,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        8,
+    );
+    let groups = MTLSize {
+        width: m.saturating_mul(num_heads) as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_residual_add(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    residual_offset: usize,
+    addition_offset: usize,
+    count: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "residual_add",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("residual_add_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), addition_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
+        4,
+        2,
+    );
+    let groups = MTLSize {
+        width: count as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 1,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_ple_gelu_mul(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    gate_offset: usize,
+    packed_ple_offset: usize,
+    num_tokens: u32,
+    num_layers: u32,
+    layer_idx: u32,
+    ple_dim: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "ple_gelu_mul",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("ple_gelu_mul_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), gate_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), packed_ple_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_layers as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&layer_idx as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&ple_dim as *const _ as *mut _),
+        4,
+        5,
+    );
+    let groups = MTLSize {
+        width: num_tokens as usize,
+        height: ple_dim as usize,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 1,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_layer_scale(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    x_offset: usize,
+    scale_offset: usize,
+    count: u32,
+    hidden: u32,
+    scale_dim: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "layer_scale",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("layer_scale_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), x_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), scale_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&scale_dim as *const _ as *mut _),
+        4,
+        4,
+    );
+    let groups = MTLSize {
+        width: count as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 1,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
     Ok(())
 }

@@ -41,6 +41,8 @@ pub struct Gemma4Arch {
     pub intermediate_size: usize,
     pub use_double_wide_mlp: bool,
     pub num_kv_shared_layers: usize,
+    pub hidden_size_per_layer_input: usize,
+    pub vocab_size_per_layer_input: usize,
     pub vocab_size: usize,
     pub rms_norm_eps: f32,
     pub max_position_embeddings: usize,
@@ -97,6 +99,14 @@ impl Gemma4Arch {
         let num_kv_shared_layers = tc["num_kv_shared_layers"]
             .as_u64()
             .or_else(|| v["num_kv_shared_layers"].as_u64())
+            .unwrap_or(0) as usize;
+        let hidden_size_per_layer_input = tc["hidden_size_per_layer_input"]
+            .as_u64()
+            .or_else(|| v["hidden_size_per_layer_input"].as_u64())
+            .unwrap_or(0) as usize;
+        let vocab_size_per_layer_input = tc["vocab_size_per_layer_input"]
+            .as_u64()
+            .or_else(|| v["vocab_size_per_layer_input"].as_u64())
             .unwrap_or(0) as usize;
         let vocab_size = tc["vocab_size"]
             .as_u64()
@@ -185,6 +195,8 @@ impl Gemma4Arch {
             intermediate_size,
             use_double_wide_mlp,
             num_kv_shared_layers,
+            hidden_size_per_layer_input,
+            vocab_size_per_layer_input,
             vocab_size,
             rms_norm_eps,
             max_position_embeddings,
@@ -814,6 +826,8 @@ mod tests {
             intermediate_size: 21504,
             use_double_wide_mlp: false,
             num_kv_shared_layers: 0,
+            hidden_size_per_layer_input: 0,
+            vocab_size_per_layer_input: 0,
             vocab_size: 262144,
             rms_norm_eps: 1e-6,
             max_position_embeddings: 262144,
@@ -843,6 +857,8 @@ mod tests {
             intermediate_size: 21504,
             use_double_wide_mlp: false,
             num_kv_shared_layers: 0,
+            hidden_size_per_layer_input: 0,
+            vocab_size_per_layer_input: 0,
             vocab_size: 262144,
             rms_norm_eps: 1e-6,
             max_position_embeddings: 262144,
