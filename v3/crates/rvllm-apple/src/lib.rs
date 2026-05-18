@@ -46,10 +46,10 @@ pub use plan::{
     PRIVATE_ANE_ENV_VAR, ROLLOUT_BUCKETS,
 };
 pub use profiling::{
-    current_apple_production_acceptance_report, evaluate_apple_production_acceptance,
-    AcceptanceCriterion, AcceptanceFailure, AppleProductionAcceptanceEvidence,
-    AppleProductionAcceptanceReport, BackendProfileMetrics, BackendProfileSample,
-    BenchmarkCategory, EvidenceState, OptionalMetric, PerformanceRegressionEvidence,
-    ProductionCandidateStatus, ROADMAP_BENCHMARK_CATEGORIES,
+    current_apple_production_acceptance_report, current_real_e2b_probe_acceptance_report,
+    evaluate_apple_production_acceptance, AcceptanceCriterion, AcceptanceFailure,
+    AppleProductionAcceptanceEvidence, AppleProductionAcceptanceReport, BackendProfileMetrics,
+    BackendProfileSample, BenchmarkCategory, EvidenceState, OptionalMetric,
+    PerformanceRegressionEvidence, ProductionCandidateStatus, ROADMAP_BENCHMARK_CATEGORIES,
 };
 pub use weight_blob::{build_weight_blob_fp16, build_weight_blob_fp16_named, WeightChunkDesc};

@@ -311,6 +311,71 @@ impl AppleProductionAcceptanceEvidence {
             },
         }
     }
+
+    #[must_use]
+    pub fn current_real_e2b_probe() -> Self {
+        let mut metal_probe_sample = BackendProfileSample::new(
+            "real-e2b-metal-probe-command-buffer-combined-2026-05-18",
+            BenchmarkCategory::MetalOnly,
+            "rvllm-runtime-model-metal-backend-probe",
+            "google/gemma-4-E2B",
+            BackendProfileMetrics {
+                first_token_latency_ms: OptionalMetric::unmeasured(
+                    "probe harness reports aggregate prefill and decode wall time, not isolated first-token latency",
+                ),
+                steady_decode_tokens_per_second: OptionalMetric::measured(2.2384),
+                prefill_tokens_per_second: OptionalMetric::measured(3.3557),
+                memory_peak_bytes: OptionalMetric::unmeasured(
+                    "probe reports planned arena bytes separately; no external peak RSS/GPU allocation profile was captured",
+                ),
+                command_buffers_per_token: OptionalMetric::measured(0.8333),
+                cpu_utilization_percent: OptionalMetric::unmeasured(
+                    "no Instruments or powermetrics CPU utilization capture was attached",
+                ),
+                gpu_utilization_percent: OptionalMetric::unmeasured(
+                    "no Metal System Trace GPU utilization capture was attached",
+                ),
+                ane_utilization_percent: OptionalMetric::unsupported(
+                    "real E2B probe currently uses Metal only; private ANE execution is not established",
+                ),
+                energy_joules: OptionalMetric::unmeasured(
+                    "energy measurement requires an external powermetrics capture",
+                ),
+            },
+        );
+        metal_probe_sample.prompt_tokens = 2;
+        metal_probe_sample.generated_tokens = 4;
+
+        Self {
+            evidence_id: "current-real-e2b-probe-partial".to_string(),
+            samples: vec![metal_probe_sample],
+            correctness_against_reference: EvidenceState::present(
+                "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
+            ),
+            default_toy_path_disabled: EvidenceState::missing(
+                "direct probe tests bypass production default routing; no production-default toy-disabled rollout evidence supplied",
+            ),
+            unsupported_models_fail_clearly: EvidenceState::present(
+                "real-e2b-large-model-default-gate-and-dry-run-validation-errors",
+            ),
+            no_hot_path_allocation: EvidenceState::missing(
+                "no hot-path allocation audit has been attached to the real E2B probe",
+            ),
+            no_hot_path_pipeline_compilation: EvidenceState::missing(
+                "no pipeline-compilation counter/audit has been attached to the real E2B probe",
+            ),
+            direct_backend_smoke: EvidenceState::present(
+                "real-e2b-direct-model-metal-backend-full-vocab-parity",
+            ),
+            engine_smoke: EvidenceState::missing(
+                "real E2B scheduler/Engine smoke and batching evidence has not been supplied",
+            ),
+            performance_regression: PerformanceRegressionEvidence::NotTracked {
+                reason: "single-host probe measurement has no baseline/current comparison or dashboard evidence"
+                    .to_string(),
+            },
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -496,6 +561,13 @@ pub fn current_apple_production_acceptance_report() -> AppleProductionAcceptance
     evaluate_apple_production_acceptance(&AppleProductionAcceptanceEvidence::current_incomplete())
 }
 
+#[must_use]
+pub fn current_real_e2b_probe_acceptance_report() -> AppleProductionAcceptanceReport {
+    evaluate_apple_production_acceptance(
+        &AppleProductionAcceptanceEvidence::current_real_e2b_probe(),
+    )
+}
+
 fn push_evidence_failure(
     failures: &mut Vec<AcceptanceFailure>,
     criterion: AcceptanceCriterion,
@@ -593,6 +665,50 @@ mod tests {
         assert!(report.failures.iter().any(|failure| failure
             .reason
             .contains("performance regressions are not tracked")));
+    }
+
+    #[test]
+    fn current_real_e2b_probe_evidence_records_progress_but_not_production_readiness() {
+        let report = current_real_e2b_probe_acceptance_report();
+
+        assert_eq!(
+            report.status,
+            ProductionCandidateStatus::NotProductionCandidate
+        );
+        assert!(!report.failures.iter().any(|failure| failure
+            .reason
+            .contains("correctness against reference is missing")));
+        assert!(report.failures.iter().any(|failure| failure
+            .reason
+            .contains("missing ane_partitioned benchmark sample")));
+        assert!(report.failures.iter().any(|failure| failure
+            .reason
+            .contains("missing fallback_path benchmark sample")));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::ProfileMetrics
+                && failure
+                    .reason
+                    .contains("missing measured core latency/throughput/memory/CPU/GPU/command-buffer metrics")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::DefaultToyPathDisabled
+                && failure.reason.contains("production-default toy-disabled")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::NoHotPathAllocation
+                && failure.reason.contains("hot-path allocation")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::NoHotPathPipelineCompilation
+                && failure.reason.contains("pipeline-compilation")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::CorrectnessAgainstReference
+                && failure.reason.contains("scheduler/Engine")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::PerformanceRegressionsTracked
+        }));
     }
 
     #[test]
