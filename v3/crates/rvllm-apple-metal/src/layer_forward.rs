@@ -73,6 +73,37 @@ pub struct MetalScratch {
     pub mlp_out: usize,
 }
 
+/// Optional trace-only snapshot offsets within the arena buffer.
+///
+/// These regions are populated only when a caller passes a trace scratch block
+/// into `metal_forward_layer`. Normal production execution passes `None` and
+/// keeps the original scratch plan unchanged.
+#[derive(Copy, Clone, Debug)]
+pub struct MetalLayerTraceScratch {
+    pub input_to_layer: usize,
+    pub after_input_layernorm: usize,
+    pub q_projection: usize,
+    pub k_projection: usize,
+    pub v_projection: usize,
+    pub after_q_norm: usize,
+    pub after_k_norm: usize,
+    pub after_v_norm: usize,
+    pub after_rope_q: usize,
+    pub after_rope_k: usize,
+    pub attention_output: usize,
+    pub after_o_proj: usize,
+    pub after_post_attention_layernorm: usize,
+    pub after_pre_feedforward_layernorm: usize,
+    pub gate_up_out: usize,
+    pub ffn_activation: usize,
+    pub after_ffn_branch: usize,
+    pub after_post_feedforward_layernorm: usize,
+    pub per_layer_input: Option<usize>,
+    pub per_layer_input_gate: Option<usize>,
+    pub per_layer_projection: Option<usize>,
+    pub post_per_layer_input_norm: Option<usize>,
+}
+
 /// Metadata buffer offsets (positions, slot mapping, etc).
 #[derive(Copy, Clone, Debug)]
 pub struct MetalMetadata {
@@ -366,6 +397,7 @@ pub unsafe fn metal_forward_layer(
     dims: &MetalLayerDims,
     weights: &MetalLayerWeights,
     scratch: &MetalScratch,
+    trace: Option<&MetalLayerTraceScratch>,
     meta: &MetalMetadata,
     residual_offset: usize,
     phase: MetalPhase,
@@ -396,6 +428,17 @@ pub unsafe fn metal_forward_layer(
         q_dim as usize,
         kv_dim as usize,
     )?;
+    if let Some(trace) = trace {
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            residual_offset,
+            trace.input_to_layer,
+            num_tokens * hidden,
+            "trace_input_to_layer",
+        )?;
+    }
 
     // 1. RMSNorm(residual) → normed_hidden
     {
@@ -437,11 +480,76 @@ pub unsafe fn metal_forward_layer(
         encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
         encoder.endEncoding();
     }
+    if let Some(trace) = trace {
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.normed_hidden,
+            trace.after_input_layernorm,
+            num_tokens * hidden,
+            "trace_after_input_layernorm",
+        )?;
+    }
 
     // 2-4. QKV projection and optional Gemma-style Q/K/V norms before RoPE.
     if let (Some(q_norm_offset), Some(k_norm_offset)) =
         (weights.q_norm_offset, weights.k_norm_offset)
     {
+        if let Some(trace) = trace {
+            encode_gemm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                weights.qkv_offset,
+                scratch.qkv_out,
+                num_tokens,
+                qkv_n,
+                hidden,
+                1.0,
+                0.0,
+            )?;
+            encode_split_qkv(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.qkv_out,
+                scratch.q_offset,
+                scratch.k_offset,
+                scratch.v_offset,
+                num_tokens,
+                q_dim,
+                kv_dim,
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.q_offset,
+                trace.q_projection,
+                num_tokens * q_dim,
+                "trace_q_projection",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.k_offset,
+                trace.k_projection,
+                num_tokens * kv_dim,
+                "trace_k_projection",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.v_offset,
+                trace.v_projection,
+                num_tokens * kv_dim,
+                "trace_v_projection",
+            )?;
+        }
         encode_gemm_headwise_rmsnorm(
             &cmd_buf,
             pipelines,
@@ -510,6 +618,35 @@ pub unsafe fn metal_forward_layer(
                 "v_norm_unit",
             )?;
         }
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.q_offset,
+                trace.after_q_norm,
+                num_tokens * q_dim,
+                "trace_after_q_norm",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.k_offset,
+                trace.after_k_norm,
+                num_tokens * kv_dim,
+                "trace_after_k_norm",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.v_offset,
+                trace.after_v_norm,
+                num_tokens * kv_dim,
+                "trace_after_v_norm",
+            )?;
+        }
     } else {
         encode_gemm(
             &cmd_buf,
@@ -537,6 +674,35 @@ pub unsafe fn metal_forward_layer(
             q_dim,
             kv_dim,
         )?;
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.q_offset,
+                trace.q_projection,
+                num_tokens * q_dim,
+                "trace_q_projection",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.k_offset,
+                trace.k_projection,
+                num_tokens * kv_dim,
+                "trace_k_projection",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.v_offset,
+                trace.v_projection,
+                num_tokens * kv_dim,
+                "trace_v_projection",
+            )?;
+        }
 
         if let Some(q_norm_offset) = weights.q_norm_offset {
             encode_headwise_rmsnorm(
@@ -581,6 +747,35 @@ pub unsafe fn metal_forward_layer(
                 dims.rms_eps,
                 num_tokens,
                 "v_norm",
+            )?;
+        }
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.q_offset,
+                trace.after_q_norm,
+                num_tokens * q_dim,
+                "trace_after_q_norm",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.k_offset,
+                trace.after_k_norm,
+                num_tokens * kv_dim,
+                "trace_after_k_norm",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.v_offset,
+                trace.after_v_norm,
+                num_tokens * kv_dim,
+                "trace_after_v_norm",
             )?;
         }
     }
@@ -642,6 +837,26 @@ pub unsafe fn metal_forward_layer(
         };
         encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
         encoder.endEncoding();
+    }
+    if let Some(trace) = trace {
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.q_offset,
+            trace.after_rope_q,
+            num_tokens * q_dim,
+            "trace_after_rope_q",
+        )?;
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.k_offset,
+            trace.after_rope_k,
+            num_tokens * kv_dim,
+            "trace_after_rope_k",
+        )?;
     }
 
     // 6. KV cache write
@@ -842,9 +1057,35 @@ pub unsafe fn metal_forward_layer(
             encoder.endEncoding();
         }
     }
+    if let Some(trace) = trace {
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.attn_out,
+            trace.attention_output,
+            num_tokens * q_dim,
+            "trace_attention_output",
+        )?;
+    }
 
     // 8. O projection, post-attention norm, then residual add.
     let attn_addition_offset = if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
+        if let Some(trace) = trace {
+            encode_gemm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.attn_out,
+                weights.o_proj_offset,
+                trace.after_o_proj,
+                num_tokens,
+                hidden,
+                q_dim,
+                1.0,
+                0.0,
+            )?;
+        }
         encode_gemm_rmsnorm(
             &cmd_buf,
             pipelines,
@@ -859,6 +1100,17 @@ pub unsafe fn metal_forward_layer(
             dims.rms_eps,
             "post_attn_norm",
         )?;
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                trace.after_post_attention_layernorm,
+                num_tokens * hidden,
+                "trace_after_post_attention_layernorm",
+            )?;
+        }
         scratch.normed_hidden
     } else {
         encode_gemm(
@@ -874,6 +1126,26 @@ pub unsafe fn metal_forward_layer(
             1.0,
             0.0,
         )?;
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                trace.after_o_proj,
+                num_tokens * hidden,
+                "trace_after_o_proj",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                trace.after_post_attention_layernorm,
+                num_tokens * hidden,
+                "trace_after_post_attention_layernorm",
+            )?;
+        }
         scratch.mlp_out
     };
     encode_residual_add(
@@ -900,6 +1172,17 @@ pub unsafe fn metal_forward_layer(
         num_tokens,
         "ffn_norm",
     )?;
+    if let Some(trace) = trace {
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.normed_hidden,
+            trace.after_pre_feedforward_layernorm,
+            num_tokens * hidden,
+            "trace_after_pre_feedforward_layernorm",
+        )?;
+    }
 
     // 11. Gate||Up projection: normed_hidden × W_gate_up → gate_up_out
     let two_inter = 2 * dims.intermediate;
@@ -916,6 +1199,17 @@ pub unsafe fn metal_forward_layer(
         1.0,
         0.0,
     )?;
+    if let Some(trace) = trace {
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.gate_up_out,
+            trace.gate_up_out,
+            num_tokens * two_inter,
+            "trace_gate_up_out",
+        )?;
+    }
 
     // 12. GELU(gate) * up → activated
     {
@@ -956,9 +1250,35 @@ pub unsafe fn metal_forward_layer(
         encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
         encoder.endEncoding();
     }
+    if let Some(trace) = trace {
+        encode_trace_copy(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.activated,
+            trace.ffn_activation,
+            num_tokens * dims.intermediate,
+            "trace_ffn_activation",
+        )?;
+    }
 
     // 13. Down projection, post-FFN norm, then residual add.
     let ffn_addition_offset = if let Some(post_ff_norm_offset) = weights.post_ff_norm_offset {
+        if let Some(trace) = trace {
+            encode_gemm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.activated,
+                weights.down_proj_offset,
+                trace.after_ffn_branch,
+                num_tokens,
+                hidden,
+                dims.intermediate,
+                1.0,
+                0.0,
+            )?;
+        }
         encode_gemm_rmsnorm(
             &cmd_buf,
             pipelines,
@@ -973,6 +1293,17 @@ pub unsafe fn metal_forward_layer(
             dims.rms_eps,
             "post_ff_norm",
         )?;
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                trace.after_post_feedforward_layernorm,
+                num_tokens * hidden,
+                "trace_after_post_feedforward_layernorm",
+            )?;
+        }
         scratch.normed_hidden
     } else {
         encode_gemm(
@@ -988,6 +1319,26 @@ pub unsafe fn metal_forward_layer(
             1.0,
             0.0,
         )?;
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                trace.after_ffn_branch,
+                num_tokens * hidden,
+                "trace_after_ffn_branch",
+            )?;
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                trace.after_post_feedforward_layernorm,
+                num_tokens * hidden,
+                "trace_after_post_feedforward_layernorm",
+            )?;
+        }
         scratch.mlp_out
     };
     encode_residual_add(
@@ -1011,6 +1362,21 @@ pub unsafe fn metal_forward_layer(
         weights.post_per_layer_input_norm_offset,
     ) {
         if dims.ple_dim > 0 {
+            if let Some(trace) = trace {
+                if let Some(per_layer_input) = trace.per_layer_input {
+                    encode_trace_copy_ple_layer(
+                        &cmd_buf,
+                        pipelines,
+                        buf,
+                        per_layer_inputs_offset,
+                        per_layer_input,
+                        num_tokens,
+                        dims.num_layers,
+                        dims.layer_idx,
+                        dims.ple_dim,
+                    )?;
+                }
+            }
             encode_gemm(
                 &cmd_buf,
                 pipelines,
@@ -1024,6 +1390,19 @@ pub unsafe fn metal_forward_layer(
                 1.0,
                 0.0,
             )?;
+            if let Some(trace) = trace {
+                if let Some(per_layer_input_gate) = trace.per_layer_input_gate {
+                    encode_trace_copy(
+                        &cmd_buf,
+                        pipelines,
+                        buf,
+                        scratch.activated,
+                        per_layer_input_gate,
+                        num_tokens * dims.ple_dim,
+                        "trace_per_layer_input_gate",
+                    )?;
+                }
+            }
             encode_ple_gelu_mul(
                 &cmd_buf,
                 pipelines,
@@ -1035,6 +1414,23 @@ pub unsafe fn metal_forward_layer(
                 dims.layer_idx,
                 dims.ple_dim,
             )?;
+            if let Some(trace) = trace {
+                if let Some(per_layer_projection) = trace.per_layer_projection {
+                    encode_gemm(
+                        &cmd_buf,
+                        pipelines,
+                        buf,
+                        scratch.activated,
+                        per_layer_projection_offset,
+                        per_layer_projection,
+                        num_tokens,
+                        hidden,
+                        dims.ple_dim,
+                        1.0,
+                        0.0,
+                    )?;
+                }
+            }
             encode_gemm_rmsnorm(
                 &cmd_buf,
                 pipelines,
@@ -1049,6 +1445,19 @@ pub unsafe fn metal_forward_layer(
                 dims.rms_eps,
                 "post_per_layer_input_norm",
             )?;
+            if let Some(trace) = trace {
+                if let Some(post_per_layer_input_norm) = trace.post_per_layer_input_norm {
+                    encode_trace_copy(
+                        &cmd_buf,
+                        pipelines,
+                        buf,
+                        scratch.normed_hidden,
+                        post_per_layer_input_norm,
+                        num_tokens * hidden,
+                        "trace_post_per_layer_input_norm",
+                    )?;
+                }
+            }
             encode_residual_add(
                 &cmd_buf,
                 pipelines,
@@ -1075,6 +1484,111 @@ pub unsafe fn metal_forward_layer(
 
     cmd_buf.commit();
 
+    Ok(())
+}
+
+unsafe fn encode_trace_copy(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    src_offset: usize,
+    dst_offset: usize,
+    len: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("copy_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), src_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), dst_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&len as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.dispatchThreads_threadsPerThreadgroup(
+        MTLSize {
+            width: len as usize,
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_trace_copy_ple_layer(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    packed_ple_offset: usize,
+    dst_offset: usize,
+    num_tokens: u32,
+    num_layers: u32,
+    layer_idx: u32,
+    ple_dim: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "trace_copy_ple_layer",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("copy_ple_layer_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), packed_ple_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), dst_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_layers as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&layer_idx as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&ple_dim as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.dispatchThreads_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens as usize,
+            height: ple_dim as usize,
+            depth: 1,
+        },
+        MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
     Ok(())
 }
 

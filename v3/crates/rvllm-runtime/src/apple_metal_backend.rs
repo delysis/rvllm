@@ -101,12 +101,12 @@ use rvllm_apple_metal::arena::{MetalBufferArena, MetalRegion};
 #[cfg(all(feature = "apple", target_os = "macos"))]
 use rvllm_apple_metal::{
     context::MetalContext,
-    gemma4_model::Gemma4MetalState,
+    gemma4_model::{Gemma4MetalState, MetalLayerTraceState},
     kernels,
     layer_forward::{
         metal_finalize_logits_blocking, metal_finalize_logits_encoder_count, metal_forward_layer,
-        metal_prepare_ple_inputs, MetalLayerDims, MetalLayerWeights, MetalMetadata, MetalPhase,
-        MetalPlePrepare, MetalScratch,
+        metal_prepare_ple_inputs, MetalLayerDims, MetalLayerTraceScratch, MetalLayerWeights,
+        MetalMetadata, MetalPhase, MetalPlePrepare, MetalScratch,
     },
     pipeline::PipelineCache,
 };
@@ -376,6 +376,10 @@ fn debug_f16_summary_json(
     let mut max_abs = 0.0f32;
     let mut abs_sum = 0.0f64;
     let mut first_values = String::new();
+    let mut selected_values = Vec::new();
+    const SELECTED_TRACE_INDICES: &[usize] = &[
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 16, 32, 64, 128, 256, 512, 1024, 1535,
+    ];
     for (idx, raw) in bits.iter().enumerate() {
         let value = f16::from_bits(*raw).to_f32();
         if idx < 16 {
@@ -387,6 +391,14 @@ fn debug_f16_summary_json(
             } else {
                 first_values.push_str("null");
             }
+        }
+        if SELECTED_TRACE_INDICES.contains(&idx) {
+            let value_json = if value.is_finite() {
+                format!("{value:.9e}")
+            } else {
+                "null".to_owned()
+            };
+            selected_values.push(format!("{{\"index\":{idx},\"value\":{value_json}}}"));
         }
         if value.is_finite() {
             finite_count += 1;
@@ -404,7 +416,8 @@ fn debug_f16_summary_json(
     let first_nonfinite =
         first_nonfinite_index.map_or_else(|| "null".to_owned(), |idx| idx.to_string());
     format!(
-        "\"{label}\":{{\"shape\":[{num_tokens},{elems_per_token}],\"total_count\":{elem_count},\"finite_count\":{finite_count},\"max_abs\":{max_abs:.9e},\"mean_abs\":{mean_abs:.9e},\"first_nonfinite_index\":{first_nonfinite},\"first_values\":[{first_values}]}}"
+        "\"{label}\":{{\"shape\":[{num_tokens},{elems_per_token}],\"total_count\":{elem_count},\"finite_count\":{finite_count},\"max_abs\":{max_abs:.9e},\"mean_abs\":{mean_abs:.9e},\"first_nonfinite_index\":{first_nonfinite},\"first_values\":[{first_values}],\"selected\":[{}]}}",
+        selected_values.join(",")
     )
 }
 
@@ -428,44 +441,214 @@ fn debug_write_layer_trace_json(
     attn_out_offset: usize,
     gate_up_out_offset: usize,
     activated_offset: usize,
+    ple_dim: usize,
+    trace: Option<&MetalLayerTraceState>,
 ) -> Result<()> {
     let phase_name = match phase {
         MetalPhase::Decode => "decode",
         MetalPhase::Prefill { .. } => "prefill",
     };
-    let summaries = [
-        debug_f16_summary_json(
-            arena,
-            "final_residual_after_layer",
-            residual_offset,
-            num_tokens,
-            hidden,
-        ),
-        debug_f16_summary_json(arena, "after_rope_q", q_offset, num_tokens, q_dim),
-        debug_f16_summary_json(arena, "after_rope_k", k_offset, num_tokens, kv_dim),
-        debug_f16_summary_json(arena, "after_v_norm", v_offset, num_tokens, kv_dim),
-        debug_f16_summary_json(
-            arena,
-            "attention_output",
-            attn_out_offset,
-            num_tokens,
-            q_dim,
-        ),
-        debug_f16_summary_json(
-            arena,
-            "gate_up_out",
-            gate_up_out_offset,
-            num_tokens,
-            intermediate.saturating_mul(2),
-        ),
-        debug_f16_summary_json(
-            arena,
-            "ffn_activation",
-            activated_offset,
-            num_tokens,
-            intermediate,
-        ),
-    ];
+    let mut summaries = Vec::new();
+    if let Some(trace) = trace {
+        summaries.extend([
+            debug_f16_summary_json(
+                arena,
+                "input_to_layer",
+                trace.input_to_layer.offset,
+                num_tokens,
+                hidden,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_input_layernorm",
+                trace.after_input_layernorm.offset,
+                num_tokens,
+                hidden,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "q_projection",
+                trace.q_projection.offset,
+                num_tokens,
+                q_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "k_projection",
+                trace.k_projection.offset,
+                num_tokens,
+                kv_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "v_projection",
+                trace.v_projection.offset,
+                num_tokens,
+                kv_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_q_norm",
+                trace.after_q_norm.offset,
+                num_tokens,
+                q_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_k_norm",
+                trace.after_k_norm.offset,
+                num_tokens,
+                kv_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_v_norm",
+                trace.after_v_norm.offset,
+                num_tokens,
+                kv_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_rope_q",
+                trace.after_rope_q.offset,
+                num_tokens,
+                q_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_rope_k",
+                trace.after_rope_k.offset,
+                num_tokens,
+                kv_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "attention_output",
+                trace.attention_output.offset,
+                num_tokens,
+                q_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_o_proj",
+                trace.after_o_proj.offset,
+                num_tokens,
+                hidden,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_post_attention_layernorm",
+                trace.after_post_attention_layernorm.offset,
+                num_tokens,
+                hidden,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_pre_feedforward_layernorm",
+                trace.after_pre_feedforward_layernorm.offset,
+                num_tokens,
+                hidden,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "gate_up_out",
+                trace.gate_up_out.offset,
+                num_tokens,
+                intermediate.saturating_mul(2),
+            ),
+            debug_f16_summary_json(
+                arena,
+                "ffn_activation",
+                trace.ffn_activation.offset,
+                num_tokens,
+                intermediate,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_ffn_branch",
+                trace.after_ffn_branch.offset,
+                num_tokens,
+                hidden,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "after_post_feedforward_layernorm",
+                trace.after_post_feedforward_layernorm.offset,
+                num_tokens,
+                hidden,
+            ),
+        ]);
+        if let Some(region) = &trace.per_layer_input {
+            summaries.push(debug_f16_summary_json(
+                arena,
+                "per_layer_input",
+                region.offset,
+                num_tokens,
+                ple_dim,
+            ));
+        }
+        if let Some(region) = &trace.per_layer_input_gate {
+            summaries.push(debug_f16_summary_json(
+                arena,
+                "per_layer_input_gate",
+                region.offset,
+                num_tokens,
+                ple_dim,
+            ));
+        }
+        if let Some(region) = &trace.per_layer_projection {
+            summaries.push(debug_f16_summary_json(
+                arena,
+                "per_layer_projection",
+                region.offset,
+                num_tokens,
+                hidden,
+            ));
+        }
+        if let Some(region) = &trace.post_per_layer_input_norm {
+            summaries.push(debug_f16_summary_json(
+                arena,
+                "post_per_layer_input_norm",
+                region.offset,
+                num_tokens,
+                hidden,
+            ));
+        }
+    } else {
+        summaries.extend([
+            debug_f16_summary_json(arena, "after_rope_q", q_offset, num_tokens, q_dim),
+            debug_f16_summary_json(arena, "after_rope_k", k_offset, num_tokens, kv_dim),
+            debug_f16_summary_json(arena, "after_v_norm", v_offset, num_tokens, kv_dim),
+            debug_f16_summary_json(
+                arena,
+                "attention_output",
+                attn_out_offset,
+                num_tokens,
+                q_dim,
+            ),
+            debug_f16_summary_json(
+                arena,
+                "gate_up_out",
+                gate_up_out_offset,
+                num_tokens,
+                intermediate.saturating_mul(2),
+            ),
+            debug_f16_summary_json(
+                arena,
+                "ffn_activation",
+                activated_offset,
+                num_tokens,
+                intermediate,
+            ),
+        ]);
+    }
+    summaries.push(debug_f16_summary_json(
+        arena,
+        "final_residual_after_layer",
+        residual_offset,
+        num_tokens,
+        hidden,
+    ));
     let json = format!(
         "{{\"schema\":\"rvllm.gemma4_metal_layer_trace.v1\",\"op\":\"{op}\",\"phase\":\"{phase_name}\",\"layer\":{layer_idx},\"num_tokens\":{num_tokens},\"summaries\":{{{}}},\"claim\":\"rvLLM Metal layer debug summary only; no final logits, ANE, or production claim.\"}}\n",
         summaries.join(",")
@@ -1275,6 +1458,48 @@ impl ModelMetalBackend {
                 cu_seqlens_offset: Some(one.cu_seqlens.offset),
             };
 
+            #[cfg(test)]
+            let layer_trace_state = if trace_layer == Some(one.layer_idx) {
+                one.trace.as_ref()
+            } else {
+                None
+            };
+            #[cfg(not(test))]
+            let layer_trace_state: Option<&MetalLayerTraceState> = None;
+            let layer_trace_scratch = layer_trace_state.map(|trace| MetalLayerTraceScratch {
+                input_to_layer: trace.input_to_layer.offset,
+                after_input_layernorm: trace.after_input_layernorm.offset,
+                q_projection: trace.q_projection.offset,
+                k_projection: trace.k_projection.offset,
+                v_projection: trace.v_projection.offset,
+                after_q_norm: trace.after_q_norm.offset,
+                after_k_norm: trace.after_k_norm.offset,
+                after_v_norm: trace.after_v_norm.offset,
+                after_rope_q: trace.after_rope_q.offset,
+                after_rope_k: trace.after_rope_k.offset,
+                attention_output: trace.attention_output.offset,
+                after_o_proj: trace.after_o_proj.offset,
+                after_post_attention_layernorm: trace.after_post_attention_layernorm.offset,
+                after_pre_feedforward_layernorm: trace.after_pre_feedforward_layernorm.offset,
+                gate_up_out: trace.gate_up_out.offset,
+                ffn_activation: trace.ffn_activation.offset,
+                after_ffn_branch: trace.after_ffn_branch.offset,
+                after_post_feedforward_layernorm: trace.after_post_feedforward_layernorm.offset,
+                per_layer_input: trace.per_layer_input.as_ref().map(|region| region.offset),
+                per_layer_input_gate: trace
+                    .per_layer_input_gate
+                    .as_ref()
+                    .map(|region| region.offset),
+                per_layer_projection: trace
+                    .per_layer_projection
+                    .as_ref()
+                    .map(|region| region.offset),
+                post_per_layer_input_norm: trace
+                    .post_per_layer_input_norm
+                    .as_ref()
+                    .map(|region| region.offset),
+            });
+
             unsafe {
                 metal_forward_layer(
                     ctx,
@@ -1283,6 +1508,7 @@ impl ModelMetalBackend {
                     &dims,
                     &weights,
                     &scratch,
+                    layer_trace_scratch.as_ref(),
                     &meta,
                     state.residual.offset,
                     phase,
@@ -1388,6 +1614,8 @@ impl ModelMetalBackend {
                             one.attn_out.offset,
                             one.gate_up_out.offset,
                             one.activated.offset,
+                            state.ple.as_ref().map_or(0, |ple| ple.ple_dim),
+                            layer_trace_state,
                         )?;
                         eprintln!(
                             "metal debug trace: wrote layer {} summary to {}",

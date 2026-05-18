@@ -407,6 +407,32 @@ kernel void gemm_headwise_rmsnorm_unit_f16(
     }
 }
 
+kernel void copy_f16(
+    device const half *src [[buffer(0)]],
+    device half       *dst [[buffer(1)]],
+    constant uint     &len [[buffer(2)]],
+    uint gid               [[thread_position_in_grid]]
+) {
+    if (gid >= len) return;
+    dst[gid] = src[gid];
+}
+
+kernel void copy_ple_layer_f16(
+    device const half *packed_ple [[buffer(0)]],
+    device half       *dst        [[buffer(1)]],
+    constant uint     &num_tokens [[buffer(2)]],
+    constant uint     &num_layers [[buffer(3)]],
+    constant uint     &layer_idx  [[buffer(4)]],
+    constant uint     &ple_dim    [[buffer(5)]],
+    uint2 gid                    [[thread_position_in_grid]]
+) {
+    uint token = gid.x;
+    uint dim = gid.y;
+    if (token >= num_tokens || dim >= ple_dim || layer_idx >= num_layers) return;
+    uint src_idx = token * num_layers * ple_dim + layer_idx * ple_dim + dim;
+    dst[token * ple_dim + dim] = packed_ple[src_idx];
+}
+
 // ============================================================================
 // GEMM with residual add: C = alpha * A*B + residual
 // ============================================================================
@@ -1169,6 +1195,8 @@ pub const KERNEL_NAMES: &[&str] = &[
     "gemm_rmsnorm_f16",
     "gemm_headwise_rmsnorm_f16",
     "gemm_headwise_rmsnorm_unit_f16",
+    "copy_f16",
+    "copy_ple_layer_f16",
     "gemm_residual_f16",
     "split_qkv_f16",
     "rope_partial_f16",

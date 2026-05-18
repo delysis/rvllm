@@ -7367,7 +7367,12 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
         eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
         return;
     };
-    let hf_trace_path = std::path::PathBuf::from("/tmp/gemma4-e2b-hf-layer4-trace.json");
+    let trace_layer = std::env::var("RVLLM_E2B_TRACE_COMPARE_LAYER")
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(4);
+    let hf_trace_path =
+        std::path::PathBuf::from(format!("/tmp/gemma4-e2b-hf-layer{trace_layer}-trace.json"));
     if !hf_trace_path.exists() {
         eprintln!(
             "skipping: HF layer trace artifact is missing at {}",
@@ -7375,7 +7380,9 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
         );
         return;
     }
-    let metal_trace_path = std::path::PathBuf::from("/tmp/gemma4-e2b-metal-layer4-trace.json");
+    let metal_trace_path = std::path::PathBuf::from(format!(
+        "/tmp/gemma4-e2b-metal-layer{trace_layer}-trace.json"
+    ));
     let _ = fs::remove_file(&metal_trace_path);
 
     let model_dir = std::path::PathBuf::from(model_dir);
@@ -7393,8 +7400,11 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
     ]);
     env_guard.set(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
     env_guard.set(RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV, "1");
-    env_guard.set(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV, "4");
-    env_guard.set(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV, "4");
+    env_guard.set(
+        RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV,
+        trace_layer.to_string(),
+    );
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV, trace_layer.to_string());
     env_guard.set(RVLLM_METAL_DEBUG_TRACE_JSON_ENV, &metal_trace_path);
 
     let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
@@ -7440,15 +7450,31 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
             .as_slice(),
         &[Value::from(2), Value::from(4)]
     );
-    assert_eq!(hf["layer"].as_u64(), Some(4));
-    assert_eq!(metal["layer"].as_u64(), Some(4));
+    assert_eq!(hf["layer"].as_u64(), Some(trace_layer as u64));
+    assert_eq!(metal["layer"].as_u64(), Some(trace_layer as u64));
     assert_eq!(metal["phase"].as_str(), Some("prefill"));
 
     for name in [
+        "input_to_layer",
+        "after_input_layernorm",
+        "q_projection",
+        "k_projection",
+        "v_projection",
+        "after_q_norm",
+        "after_k_norm",
+        "after_v_norm",
         "after_rope_q",
         "after_rope_k",
-        "after_v_norm",
         "attention_output",
+        "after_o_proj",
+        "after_post_attention_layernorm",
+        "after_pre_feedforward_layernorm",
+        "after_ffn_branch",
+        "after_post_feedforward_layernorm",
+        "per_layer_input",
+        "per_layer_input_gate",
+        "per_layer_projection",
+        "post_per_layer_input_norm",
         "final_residual_after_layer",
     ] {
         compare_trace_summary_stats(&hf, &metal, name);

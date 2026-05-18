@@ -36,6 +36,8 @@ const PROBE_METAL_MAX_DEFAULT_LAYERS: usize = 8;
 const PROBE_METAL_MAX_PROMPT_TOKENS: usize = 8;
 #[cfg(target_os = "macos")]
 const RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV: &str = "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE";
+#[cfg(target_os = "macos")]
+const RVLLM_METAL_DEBUG_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_LAYER";
 
 #[cfg(target_os = "macos")]
 fn probe_ctx(op: &'static str) -> AppleCtx {
@@ -44,6 +46,13 @@ fn probe_ctx(op: &'static str) -> AppleCtx {
         op,
         device: "apple-silicon",
     }
+}
+
+#[cfg(target_os = "macos")]
+fn debug_trace_layer_from_env() -> Option<usize> {
+    std::env::var(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV)
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +122,7 @@ pub struct MetalOneLayerState {
     pub gate_up_out: MetalRegion,
     pub activated: MetalRegion,
     pub mlp_out: MetalRegion,
+    pub trace: Option<MetalLayerTraceState>,
 
     pub positions: MetalRegion,
     pub slot_mapping: MetalRegion,
@@ -128,6 +138,33 @@ pub struct MetalOneLayerState {
     pub block_size: u32,
     pub max_blocks_per_seq: u32,
     pub num_blocks_total: u32,
+}
+
+#[derive(Debug, Clone)]
+#[cfg(target_os = "macos")]
+pub struct MetalLayerTraceState {
+    pub input_to_layer: MetalRegion,
+    pub after_input_layernorm: MetalRegion,
+    pub q_projection: MetalRegion,
+    pub k_projection: MetalRegion,
+    pub v_projection: MetalRegion,
+    pub after_q_norm: MetalRegion,
+    pub after_k_norm: MetalRegion,
+    pub after_v_norm: MetalRegion,
+    pub after_rope_q: MetalRegion,
+    pub after_rope_k: MetalRegion,
+    pub attention_output: MetalRegion,
+    pub after_o_proj: MetalRegion,
+    pub after_post_attention_layernorm: MetalRegion,
+    pub after_pre_feedforward_layernorm: MetalRegion,
+    pub gate_up_out: MetalRegion,
+    pub ffn_activation: MetalRegion,
+    pub after_ffn_branch: MetalRegion,
+    pub after_post_feedforward_layernorm: MetalRegion,
+    pub per_layer_input: Option<MetalRegion>,
+    pub per_layer_input_gate: Option<MetalRegion>,
+    pub per_layer_projection: Option<MetalRegion>,
+    pub post_per_layer_input_norm: Option<MetalRegion>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -900,6 +937,7 @@ impl ProbeModelPlan {
         let i32_bytes = std::mem::size_of::<i32>();
         let f32_bytes = std::mem::size_of::<f32>();
         let max_probe_tokens = PROBE_METAL_MAX_PROMPT_TOKENS;
+        let debug_trace_layer = debug_trace_layer_from_env();
         let embed_bytes = embed_info.nbytes;
         let final_norm_bytes = final_norm_info.nbytes;
         let lm_head_bytes = if tie_embeddings {
@@ -947,7 +985,7 @@ impl ProbeModelPlan {
         let mut scratch_bytes = 0;
         if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
-            for layer_names in &layer_names {
+            for (layer_idx, layer_names) in layer_names.iter().enumerate() {
                 let dims = layer_names.dims;
                 let intermediate = layer_names.intermediate_size;
                 let qkv_out_bytes = max_probe_tokens * dims.qkv_rows * half_bytes;
@@ -958,6 +996,23 @@ impl ProbeModelPlan {
                 let gate_up_out_bytes = max_probe_tokens * 2 * intermediate * half_bytes;
                 let activated_bytes = max_probe_tokens * intermediate * half_bytes;
                 let mlp_out_bytes = max_probe_tokens * hidden * half_bytes;
+                let trace_bytes = if debug_trace_layer == Some(layer_idx) {
+                    let ple_dim = ple_names.as_ref().map_or(0, |ple| ple.ple_dim);
+                    let ple_trace_elems = if ple_dim > 0 {
+                        2 * ple_dim + 2 * hidden
+                    } else {
+                        0
+                    };
+                    max_probe_tokens
+                        * (7 * hidden
+                            + 4 * dims.q_dim
+                            + 5 * dims.kv_dim
+                            + 3 * intermediate
+                            + ple_trace_elems)
+                        * half_bytes
+                } else {
+                    0
+                };
 
                 let block_size = max_probe_tokens;
                 let num_blocks_total = max_probe_tokens;
@@ -976,6 +1031,7 @@ impl ProbeModelPlan {
                     + gate_up_out_bytes
                     + activated_bytes
                     + mlp_out_bytes
+                    + trace_bytes
                     + kv_cache_bytes
                     + rope_table_bytes * 2
                     + metadata_bytes
@@ -1060,6 +1116,7 @@ impl Gemma4MetalState {
     ) -> Result<Self> {
         let _ = ctx;
         let plan = ProbeModelPlan::new(model_dir)?;
+        let debug_trace_layer = debug_trace_layer_from_env();
         let mut mapped_refs = map_safetensor_to_arena(
             arena,
             model_dir,
@@ -1260,6 +1317,65 @@ impl Gemma4MetalState {
                 max_probe_tokens * hidden * half_bytes,
                 16,
             )?;
+            let trace = if debug_trace_layer == Some(layer_idx) {
+                let trace_region = |arena: &mut MetalBufferArena,
+                                    name: &str,
+                                    elems_per_token: usize|
+                 -> Result<MetalRegion> {
+                    arena.region(
+                        &format!("metal_layer_{layer_idx}_trace_{name}"),
+                        max_probe_tokens * elems_per_token * half_bytes,
+                        16,
+                    )
+                };
+                let ple_dim = plan.ple_names.as_ref().map_or(0, |ple| ple.ple_dim);
+                Some(MetalLayerTraceState {
+                    input_to_layer: trace_region(arena, "input_to_layer", hidden)?,
+                    after_input_layernorm: trace_region(arena, "after_input_layernorm", hidden)?,
+                    q_projection: trace_region(arena, "q_projection", q_dim)?,
+                    k_projection: trace_region(arena, "k_projection", kv_dim)?,
+                    v_projection: trace_region(arena, "v_projection", kv_dim)?,
+                    after_q_norm: trace_region(arena, "after_q_norm", q_dim)?,
+                    after_k_norm: trace_region(arena, "after_k_norm", kv_dim)?,
+                    after_v_norm: trace_region(arena, "after_v_norm", kv_dim)?,
+                    after_rope_q: trace_region(arena, "after_rope_q", q_dim)?,
+                    after_rope_k: trace_region(arena, "after_rope_k", kv_dim)?,
+                    attention_output: trace_region(arena, "attention_output", q_dim)?,
+                    after_o_proj: trace_region(arena, "after_o_proj", hidden)?,
+                    after_post_attention_layernorm: trace_region(
+                        arena,
+                        "after_post_attention_layernorm",
+                        hidden,
+                    )?,
+                    after_pre_feedforward_layernorm: trace_region(
+                        arena,
+                        "after_pre_feedforward_layernorm",
+                        hidden,
+                    )?,
+                    gate_up_out: trace_region(arena, "gate_up_out", 2 * intermediate)?,
+                    ffn_activation: trace_region(arena, "ffn_activation", intermediate)?,
+                    after_ffn_branch: trace_region(arena, "after_ffn_branch", hidden)?,
+                    after_post_feedforward_layernorm: trace_region(
+                        arena,
+                        "after_post_feedforward_layernorm",
+                        hidden,
+                    )?,
+                    per_layer_input: (ple_dim > 0)
+                        .then(|| trace_region(arena, "per_layer_input", ple_dim))
+                        .transpose()?,
+                    per_layer_input_gate: (ple_dim > 0)
+                        .then(|| trace_region(arena, "per_layer_input_gate", ple_dim))
+                        .transpose()?,
+                    per_layer_projection: (ple_dim > 0)
+                        .then(|| trace_region(arena, "per_layer_projection", hidden))
+                        .transpose()?,
+                    post_per_layer_input_norm: (ple_dim > 0)
+                        .then(|| trace_region(arena, "post_per_layer_input_norm", hidden))
+                        .transpose()?,
+                })
+            } else {
+                None
+            };
 
             let block_size = max_probe_tokens as u32;
             let num_blocks_total = max_probe_tokens as u32;
@@ -1352,6 +1468,7 @@ impl Gemma4MetalState {
                 gate_up_out,
                 activated,
                 mlp_out,
+                trace,
                 positions,
                 slot_mapping,
                 cos,
