@@ -1,6 +1,6 @@
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{class, msg_send};
+use objc2::{class, msg_send, sel};
 use std::ffi::c_void;
 use std::ffi::CString;
 
@@ -25,6 +25,39 @@ pub fn load_frameworks() -> Result<(), String> {
 pub fn get_ane_client() -> Option<Retained<AnyObject>> {
     let cls = class!(_ANEClient);
     unsafe { msg_send![cls, sharedConnection] }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AneClientConnection {
+    Shared,
+    // Keep SharedPrivate use isolated in child-process diagnostics.
+    SharedPrivate,
+}
+
+impl AneClientConnection {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Shared => "sharedConnection",
+            Self::SharedPrivate => "sharedPrivateConnection",
+        }
+    }
+}
+
+pub fn get_ane_client_with_connection(
+    connection: AneClientConnection,
+) -> Option<Retained<AnyObject>> {
+    let cls = class!(_ANEClient);
+    match connection {
+        AneClientConnection::Shared => get_ane_client(),
+        AneClientConnection::SharedPrivate => {
+            let selector = sel!(sharedPrivateConnection);
+            let responds: bool = unsafe { msg_send![cls, respondsToSelector: selector] };
+            if !responds {
+                return None;
+            }
+            unsafe { msg_send![cls, sharedPrivateConnection] }
+        }
+    }
 }
 
 pub fn coreml_compile_model(model_url_path: &str) -> Result<String, String> {
@@ -112,6 +145,21 @@ pub fn create_ane_options() -> Retained<AnyObject> {
     dict
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AneLoadOptions {
+    Nil,
+    ForceEspresso,
+}
+
+impl AneLoadOptions {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Nil => "nil",
+            Self::ForceEspresso => "ForceEspresso",
+        }
+    }
+}
+
 pub fn compile_and_load_ane_model(
     compiled_url_path: &str,
     client: &Retained<AnyObject>,
@@ -123,6 +171,33 @@ pub fn compile_and_load_ane_model_with_standardize_url(
     compiled_url_path: &str,
     client: &Retained<AnyObject>,
     standardize_url: bool,
+) -> Result<Retained<AnyObject>, String> {
+    compile_and_load_ane_model_with_standardize_url_and_load_options(
+        compiled_url_path,
+        client,
+        standardize_url,
+        AneLoadOptions::Nil,
+    )
+}
+
+pub fn compile_and_load_ane_model_with_load_options(
+    compiled_url_path: &str,
+    client: &Retained<AnyObject>,
+    load_options: AneLoadOptions,
+) -> Result<Retained<AnyObject>, String> {
+    compile_and_load_ane_model_with_standardize_url_and_load_options(
+        compiled_url_path,
+        client,
+        true,
+        load_options,
+    )
+}
+
+pub fn compile_and_load_ane_model_with_standardize_url_and_load_options(
+    compiled_url_path: &str,
+    client: &Retained<AnyObject>,
+    standardize_url: bool,
+    load_options: AneLoadOptions,
 ) -> Result<Retained<AnyObject>, String> {
     let cls_model = class!(_ANEModel);
     let cls_url = class!(NSURL);
@@ -145,9 +220,18 @@ pub fn compile_and_load_ane_model_with_standardize_url(
         return Err("_ANEModel initWithModelAtURL returned null".to_string());
     }
 
+    let load_options_object = match load_options {
+        AneLoadOptions::Nil => None,
+        AneLoadOptions::ForceEspresso => Some(create_ane_options()),
+    };
+    let load_options_ptr = load_options_object
+        .as_ref()
+        .map(|options| Retained::as_ptr(options) as *mut AnyObject)
+        .unwrap_or(std::ptr::null_mut());
+
     let mut error: *mut AnyObject = std::ptr::null_mut();
     let load_res: bool = unsafe {
-        msg_send![client, loadModel: model, options: std::ptr::null_mut::<AnyObject>(), qos: 0_u32, error: &mut error]
+        msg_send![client, loadModel: model, options: load_options_ptr, qos: 0_u32, error: &mut error]
     };
 
     if !load_res {

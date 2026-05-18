@@ -889,6 +889,113 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires private ANE compile/load opt-in; records load option/client boundaries only"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_tiny_projection_load_options_boundaries_are_reported() {
+        struct EnvGuard {
+            name: &'static str,
+            previous: Option<std::ffi::OsString>,
+        }
+
+        impl EnvGuard {
+            fn set(name: &'static str, value: &std::path::Path) -> Self {
+                let previous = std::env::var_os(name);
+                std::env::set_var(name, value);
+                Self { name, previous }
+            }
+        }
+
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                if let Some(previous) = self.previous.take() {
+                    std::env::set_var(self.name, previous);
+                } else {
+                    std::env::remove_var(self.name);
+                }
+            }
+        }
+
+        fn report_load_options_boundary(
+            path: &std::path::Path,
+            connection: &'static str,
+            load_options: &'static str,
+        ) {
+            let current_exe =
+                std::env::current_exe().expect("test binary path should be available");
+            let output = std::process::Command::new(current_exe)
+                .arg("private_ane_load_options_child_probe")
+                .arg("--ignored")
+                .arg("--nocapture")
+                .env("RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_PATH", path)
+                .env("RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_CONNECTION", connection)
+                .env("RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_OPTIONS", load_options)
+                .output()
+                .expect("private load-options boundary child process should launch");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stdout.trim().is_empty() {
+                eprint!("{stdout}");
+            }
+            if !stderr.trim().is_empty() {
+                eprint!("{stderr}");
+            }
+            if output.status.success() {
+                return;
+            }
+
+            eprintln!(
+                "[ANE DIAG] _ANEClient loadModel child exited with status {} for connection={connection} options={load_options} {}; treating this as a load-options/client boundary, no ANE execution claim made",
+                output.status,
+                path.display()
+            );
+        }
+
+        let config = AneRolloutConfig {
+            bucket: RolloutBucket {
+                seqs: 1,
+                tokens: 16,
+            },
+            hidden_size: 16,
+            intermediate_size: 16,
+            num_layers: 1,
+        };
+        let mut plan = AneProgramPlan::proj_only(config);
+        plan.id = "proj_test_load_options_boundary".to_string();
+
+        let temp_dir = std::env::temp_dir().join("rvllm_test_load_options_boundary_ane");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let _cache_guard = EnvGuard::set("RVLLM_ANE_CACHE_DIR", &temp_dir.join("cache"));
+        let weights_path = temp_dir.join("weights.bin");
+        std::fs::write(&weights_path, vec![0u8; 1024 * 1024]).unwrap();
+
+        let compiled = match compile_private_ane_program(&plan, &weights_path) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("[ANE ERROR] {e}");
+                for diag in last_ane_diagnostics() {
+                    eprintln!("[ANE DIAG] {diag}");
+                }
+                panic!("private ANE compile failed before load-options diagnostic: {e}");
+            }
+        };
+
+        for (connection, load_options) in [
+            ("sharedConnection", "nil"),
+            ("sharedConnection", "ForceEspresso"),
+            ("sharedPrivateConnection", "nil"),
+            ("sharedPrivateConnection", "ForceEspresso"),
+        ] {
+            report_load_options_boundary(&compiled, connection, load_options);
+        }
+
+        eprintln!(
+            "[ANE DIAG] load-options/client-boundary diagnostic completed for {}; no ANE execution claim made",
+            compiled.display()
+        );
+    }
+
+    #[test]
     #[ignore = "requires private ANE compile opt-in; records private compile boundary only"]
     #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
     fn private_ane_tiny_projection_private_compile_boundary_is_reported() {
@@ -1058,6 +1165,69 @@ mod tests {
                 );
                 eprintln!(
                     "[ANE DIAG] _ANEClient compileModel rejected {kind} {}; no ANE execution claim made: {err}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "child process for private ANE load-options/client boundary diagnostics"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_load_options_child_probe() {
+        let Some(path) = std::env::var_os("RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_PATH") else {
+            eprintln!("skipping: RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_PATH is not set");
+            return;
+        };
+        let connection_name = std::env::var("RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_CONNECTION")
+            .unwrap_or_else(|_| "sharedConnection".to_string());
+        let load_options_name = std::env::var("RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_OPTIONS")
+            .unwrap_or_else(|_| "nil".to_string());
+        let connection = match connection_name.as_str() {
+            "sharedConnection" => rvllm_apple_ane_sys::AneClientConnection::Shared,
+            "sharedPrivateConnection" => rvllm_apple_ane_sys::AneClientConnection::SharedPrivate,
+            other => panic!("unknown private ANE client connection boundary case: {other}"),
+        };
+        let load_options = match load_options_name.as_str() {
+            "nil" => rvllm_apple_ane_sys::AneLoadOptions::Nil,
+            "ForceEspresso" => rvllm_apple_ane_sys::AneLoadOptions::ForceEspresso,
+            other => panic!("unknown private ANE load options boundary case: {other}"),
+        };
+        let path = std::path::PathBuf::from(path);
+        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
+        let Some(client) = rvllm_apple_ane_sys::get_ane_client_with_connection(connection) else {
+            eprintln!(
+                "[ANE DIAG] _ANEClient {} unavailable for loadModel options={}; no ANE execution claim made",
+                connection.label(),
+                load_options.label()
+            );
+            return;
+        };
+        let path_str = path.to_str().expect("ANE model path should be UTF-8");
+        match rvllm_apple_ane_sys::compile_and_load_ane_model_with_load_options(
+            path_str,
+            &client,
+            load_options,
+        ) {
+            Ok(_) => {
+                eprintln!(
+                    "[ANE DIAG] _ANEClient loadModel accepted connection={} options={} {}; evaluation intentionally not run, no ANE execution claim made",
+                    connection.label(),
+                    load_options.label(),
+                    path.display()
+                );
+            }
+            Err(err) => {
+                assert!(
+                    !err.trim().is_empty(),
+                    "_ANEClient loadModel rejection for connection={} options={} should include a reason",
+                    connection.label(),
+                    load_options.label()
+                );
+                eprintln!(
+                    "[ANE DIAG] _ANEClient loadModel rejected connection={} options={} {}; no ANE execution claim made: {err}",
+                    connection.label(),
+                    load_options.label(),
                     path.display()
                 );
             }
