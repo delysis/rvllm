@@ -9362,6 +9362,179 @@ fn real_gemma4_e2b_engine_batch_two_mixed_prompt_lengths_two_steps_forced_hf_tok
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
+#[ignore = "requires cached Gemma4 E2B model directory, batch-three HF reference artifacts, and large Metal arena opt-in"]
+fn real_gemma4_e2b_engine_batch_three_mixed_prompt_lengths_one_step_full_vocab_logits_match_hf_reference(
+) {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let reference_paths = [
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-4-step1.json"),
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-17-step1.json"),
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-17-42-4-step1.json"),
+    ];
+    let expected_prompts: [&[u32]; 3] = [&[2, 4], &[2, 17], &[2, 17, 42, 4]];
+    if let Some(missing) = reference_paths.iter().find(|path| !path.exists()) {
+        eprintln!(
+            "skipping: Engine batch-three HF reference logits artifact is missing at {}",
+            missing.display()
+        );
+        return;
+    }
+
+    let references = reference_paths
+        .iter()
+        .zip(expected_prompts.iter())
+        .map(|(path, expected)| read_e2b_hf_reference_logits(path, expected, 1))
+        .collect::<Vec<_>>();
+
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before Engine batch-three decode");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+
+    let result = (|| -> Result<(Vec<Vec<f32>>, Vec<crate::engine::StepOutput>)> {
+        let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+        plan.ane_hidden_size = arch.hidden_size;
+        plan.ane_intermediate_size = arch.intermediate_size;
+        let shared_backend = SharedModelMetalBackend::new(model_dir.clone());
+        let mut engine = crate::engine::Engine::new()
+            .with_apple_backend(Box::new(shared_backend.clone()))
+            .with_apple_runtime_plan(plan)
+            .expect("engine with shared real Gemma4 E2B model backend");
+
+        for (req_idx, reference) in references.iter().enumerate() {
+            let prompt = reference
+                .prompt_token_ids
+                .iter()
+                .map(|&token| rvllm_core::TokenId(token))
+                .collect::<Vec<_>>();
+            engine.scheduler.enqueue(crate::sched_state::Request::new(
+                rvllm_core::ReqId((req_idx + 1) as u64),
+                prompt,
+                1,
+            ));
+        }
+
+        let prefill = engine
+            .step_launch()
+            .expect("launch Engine batch-three prefill");
+        match prefill.plan().expect("Engine prefill plan") {
+            crate::scheduler::BatchPlan::Prefill { req_ids, .. } => {
+                assert_eq!(
+                    req_ids,
+                    &vec![
+                        rvllm_core::ReqId(1),
+                        rvllm_core::ReqId(2),
+                        rvllm_core::ReqId(3)
+                    ]
+                );
+            }
+            other => panic!("expected Engine Prefill, got {other:?}"),
+        }
+        assert!(prefill.collect()?.is_empty());
+
+        let decode = engine
+            .step_launch()
+            .expect("launch Engine batch-three decode");
+        match decode.plan().expect("Engine decode plan") {
+            crate::scheduler::BatchPlan::Decode {
+                req_ids,
+                bucket,
+                positions,
+                context_lens,
+                ..
+            } => {
+                assert_eq!(
+                    req_ids,
+                    &vec![
+                        rvllm_core::ReqId(1),
+                        rvllm_core::ReqId(2),
+                        rvllm_core::ReqId(3)
+                    ]
+                );
+                assert_eq!(*bucket, 4);
+                assert_eq!(positions, &vec![1, 1, 3]);
+                assert_eq!(context_lens, &vec![2, 2, 4]);
+            }
+            other => panic!("expected Engine Decode, got {other:?}"),
+        }
+        let out = decode.collect()?;
+        assert_eq!(out.len(), references.len());
+        assert!(!engine.has_pending_work());
+
+        let flat_logits = shared_backend.debug_read_decode_logits_f32(references.len())?;
+        assert_eq!(flat_logits.len(), references.len() * arch.vocab_size);
+        let logits_by_seq = flat_logits
+            .chunks_exact(arch.vocab_size)
+            .map(|chunk| chunk.to_vec())
+            .collect::<Vec<_>>();
+        Ok((logits_by_seq, out))
+    })();
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+
+    let (metal_logits_by_seq, out) =
+        result.expect("Engine real Gemma4 E2B batch-three decode should launch");
+    assert_eq!(metal_logits_by_seq.len(), references.len());
+    assert_eq!(out.len(), references.len());
+    for (seq_idx, ((metal_logits, reference), token)) in metal_logits_by_seq
+        .iter()
+        .zip(references.iter())
+        .zip(out.iter())
+        .enumerate()
+    {
+        let step = &reference.steps[0];
+        let expected_full_logits = step
+            .full_logits
+            .as_ref()
+            .expect("HF reference artifact must include full logits");
+        assert_eq!(expected_full_logits.len(), arch.vocab_size);
+
+        const FULL_E2B_LOGIT_TOLERANCE: f32 = 1.0;
+        assert_e2b_full_vocab_logits_close(
+            &format!(
+                "real E2B Engine batch-three seq {} full-vocab logits",
+                seq_idx + 1
+            ),
+            metal_logits,
+            expected_full_logits,
+            FULL_E2B_LOGIT_TOLERANCE,
+        );
+        assert_e2b_sample_matches_or_hf_tie(
+            &format!(
+                "real E2B Engine batch-three seq {} logit argmax",
+                seq_idx + 1
+            ),
+            expected_full_logits,
+            cpu_full_nonzero_argmax(expected_full_logits) as u32,
+            cpu_full_nonzero_argmax(metal_logits) as u32,
+        );
+        assert_eq!(token.req_id, rvllm_core::ReqId((seq_idx + 1) as u64));
+        assert_e2b_sample_matches_or_hf_tie(
+            &format!(
+                "real E2B Engine batch-three seq {} sampled token",
+                seq_idx + 1
+            ),
+            expected_full_logits,
+            step.next_token,
+            token.new_token.raw(),
+        );
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
 #[ignore = "requires cached Gemma4 E2B model directory, batch two-step HF reference artifacts, and large Metal arena opt-in"]
 fn real_gemma4_e2b_engine_batch_two_prefill_decode_two_steps_forced_hf_tokens_full_vocab_logits_match_hf_reference(
 ) {

@@ -368,7 +368,7 @@ impl AppleProductionAcceptanceEvidence {
                 "real-e2b-direct-model-metal-backend-full-vocab-parity",
             ),
             engine_smoke: EvidenceState::present(
-                "real-e2b-engine-batch-two-same-length-and-mixed-length-two-step-full-vocab-hf-parity",
+                "real-e2b-engine-batch-same-length-mixed-length-and-bucket-four-full-vocab-hf-parity",
             ),
             performance_regression: PerformanceRegressionEvidence::NotTracked {
                 reason: "single-host probe measurement has no baseline/current comparison or dashboard evidence"
