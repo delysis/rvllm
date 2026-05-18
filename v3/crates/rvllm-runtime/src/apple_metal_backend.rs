@@ -104,9 +104,10 @@ use rvllm_apple_metal::{
     gemma4_model::{Gemma4MetalState, MetalLayerTraceState},
     kernels,
     layer_forward::{
-        metal_finalize_logits_blocking, metal_finalize_logits_encoder_count, metal_forward_layer,
-        metal_prepare_ple_inputs, MetalLayerDims, MetalLayerTraceScratch, MetalLayerWeights,
-        MetalMetadata, MetalPhase, MetalPlePrepare, MetalScratch,
+        metal_encode_forward_layer, metal_finalize_logits_blocking,
+        metal_finalize_logits_encoder_count, metal_forward_layer, metal_prepare_ple_inputs,
+        MetalLayerDims, MetalLayerTraceScratch, MetalLayerWeights, MetalMetadata, MetalPhase,
+        MetalPlePrepare, MetalScratch,
     },
     pipeline::PipelineCache,
 };
@@ -1464,6 +1465,22 @@ impl ModelMetalBackend {
         let trace_layer = metal_debug_trace_layer();
         #[cfg(test)]
         let trace_json_path = metal_debug_trace_json_path();
+        #[cfg(test)]
+        let debug_layer_checks = metal_debug_finite_layers_enabled()
+            || stop_after_layer.is_some()
+            || trace_layer.is_some();
+        #[cfg(not(test))]
+        let debug_layer_checks = false;
+
+        let batched_cmd_buf =
+            if debug_layer_checks {
+                None
+            } else {
+                let queue = ctx.queue_retained();
+                Some(queue.commandBuffer().ok_or_else(|| {
+                    RvllmError::apple(AppleError::MetalUnavailable, model_ctx(op))
+                })?)
+            };
 
         for one in &state.layers {
             if one.layer_idx >= state.num_layers {
@@ -1602,24 +1619,43 @@ impl ModelMetalBackend {
                 .unwrap_or(one.kv_cache_v.offset);
 
             unsafe {
-                metal_forward_layer(
-                    ctx,
-                    pipelines,
-                    arena,
-                    &dims,
-                    &weights,
-                    &scratch,
-                    layer_trace_scratch.as_ref(),
-                    &meta,
-                    state.residual.offset,
-                    phase,
-                    one.kv_cache_k.offset,
-                    one.kv_cache_v.offset,
-                    attention_kv_cache_k_offset,
-                    attention_kv_cache_v_offset,
-                )?;
+                if let Some(cmd_buf) = batched_cmd_buf.as_ref() {
+                    metal_encode_forward_layer(
+                        cmd_buf,
+                        pipelines,
+                        arena,
+                        &dims,
+                        &weights,
+                        &scratch,
+                        layer_trace_scratch.as_ref(),
+                        &meta,
+                        state.residual.offset,
+                        phase,
+                        one.kv_cache_k.offset,
+                        one.kv_cache_v.offset,
+                        attention_kv_cache_k_offset,
+                        attention_kv_cache_v_offset,
+                    )?;
+                } else {
+                    metal_forward_layer(
+                        ctx,
+                        pipelines,
+                        arena,
+                        &dims,
+                        &weights,
+                        &scratch,
+                        layer_trace_scratch.as_ref(),
+                        &meta,
+                        state.residual.offset,
+                        phase,
+                        one.kv_cache_k.offset,
+                        one.kv_cache_v.offset,
+                        attention_kv_cache_k_offset,
+                        attention_kv_cache_v_offset,
+                    )?;
+                    self.perf.add_command_buffers(1);
+                }
             }
-            self.perf.add_command_buffers(1);
             self.perf
                 .add_encoders(Self::estimate_layer_encoder_count(&weights));
 
@@ -1737,6 +1773,11 @@ impl ModelMetalBackend {
                 );
                 break;
             }
+        }
+
+        if let Some(cmd_buf) = batched_cmd_buf {
+            cmd_buf.commit();
+            self.perf.add_command_buffers(1);
         }
 
         Ok(())

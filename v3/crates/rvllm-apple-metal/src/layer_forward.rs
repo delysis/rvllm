@@ -6,7 +6,6 @@
 use crate::arena::MetalBufferArena;
 use crate::context::MetalContext;
 use crate::pipeline::PipelineCache;
-use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
     MTLBuffer, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder,
@@ -407,7 +406,6 @@ pub unsafe fn metal_forward_layer(
     attention_kv_cache_v_offset: usize,
 ) -> Result<()> {
     let queue = ctx.queue_retained();
-    let buf = arena.buffer_retained();
     let cmd_buf = queue.commandBuffer().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,
@@ -418,7 +416,45 @@ pub unsafe fn metal_forward_layer(
             },
         )
     })?;
+    metal_encode_forward_layer(
+        &cmd_buf,
+        pipelines,
+        arena,
+        dims,
+        weights,
+        scratch,
+        trace,
+        meta,
+        residual_offset,
+        phase,
+        kv_cache_k_offset,
+        kv_cache_v_offset,
+        attention_kv_cache_k_offset,
+        attention_kv_cache_v_offset,
+    )?;
+    cmd_buf.commit();
 
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn metal_encode_forward_layer(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    dims: &MetalLayerDims,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    trace: Option<&MetalLayerTraceScratch>,
+    meta: &MetalMetadata,
+    residual_offset: usize,
+    phase: MetalPhase,
+    kv_cache_k_offset: usize,
+    kv_cache_v_offset: usize,
+    attention_kv_cache_k_offset: usize,
+    attention_kv_cache_v_offset: usize,
+) -> Result<()> {
+    let buf = arena.buffer_retained();
     let num_tokens = dims.num_tokens;
     let hidden = dims.hidden;
     let q_dim = dims.num_heads * dims.head_dim;
@@ -1483,8 +1519,6 @@ pub unsafe fn metal_forward_layer(
             weights.layer_scalar_dim,
         )?;
     }
-
-    cmd_buf.commit();
 
     Ok(())
 }
