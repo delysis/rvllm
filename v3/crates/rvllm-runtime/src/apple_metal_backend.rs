@@ -1499,6 +1499,15 @@ impl ModelMetalBackend {
                     .as_ref()
                     .map(|region| region.offset),
             });
+            let attention_kv_layer = one
+                .shared_kv_source_layer
+                .and_then(|source_idx| state.layers.get(source_idx));
+            let attention_kv_cache_k_offset = attention_kv_layer
+                .map(|layer| layer.kv_cache_k.offset)
+                .unwrap_or(one.kv_cache_k.offset);
+            let attention_kv_cache_v_offset = attention_kv_layer
+                .map(|layer| layer.kv_cache_v.offset)
+                .unwrap_or(one.kv_cache_v.offset);
 
             unsafe {
                 metal_forward_layer(
@@ -1514,6 +1523,8 @@ impl ModelMetalBackend {
                     phase,
                     one.kv_cache_k.offset,
                     one.kv_cache_v.offset,
+                    attention_kv_cache_k_offset,
+                    attention_kv_cache_v_offset,
                 )?;
             }
             self.perf.add_command_buffers(1);

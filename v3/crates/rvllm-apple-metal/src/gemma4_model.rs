@@ -95,6 +95,7 @@ pub struct MetalPleState {
 pub struct MetalOneLayerState {
     pub layer_idx: usize,
     pub dims: MetalProbeLayerDims,
+    pub shared_kv_source_layer: Option<usize>,
 
     pub attn_norm: MetalRegion,
     pub qkv: MetalRegion,
@@ -1175,6 +1176,8 @@ impl Gemma4MetalState {
         };
 
         let mut layers = Vec::new();
+        let shared_kv_source_layers = shared_kv_source_layers(&plan.arch);
+
         for layer_idx in 0..plan.arch.num_hidden_layers {
             let layer_names = plan.layer_names.get(layer_idx).ok_or_else(|| {
                 RvllmError::apple(
@@ -1443,6 +1446,7 @@ impl Gemma4MetalState {
             layers.push(MetalOneLayerState {
                 layer_idx,
                 dims,
+                shared_kv_source_layer: shared_kv_source_layers[layer_idx],
                 attn_norm,
                 qkv,
                 q_norm,
@@ -1694,6 +1698,32 @@ fn optional_region_or_alias_lookup(
         Some(name) => Ok(Some(region_lookup(refs, name)?)),
         None => Ok(None),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn shared_kv_source_layers(arch: &ModelArch) -> Vec<Option<usize>> {
+    let mut out = vec![None; arch.num_hidden_layers];
+    if arch.num_kv_shared_layers == 0 || arch.num_kv_shared_layers > arch.num_hidden_layers {
+        return out;
+    }
+    let first_shared = arch.num_hidden_layers - arch.num_kv_shared_layers;
+    let mut last_sliding = None;
+    let mut last_full = None;
+    for layer_idx in 0..first_shared {
+        match arch.layer_types[layer_idx] {
+            LayerAttnType::SlidingAttention => last_sliding = Some(layer_idx),
+            LayerAttnType::Full => last_full = Some(layer_idx),
+            LayerAttnType::Linear => {}
+        }
+    }
+    for layer_idx in first_shared..arch.num_hidden_layers {
+        out[layer_idx] = match arch.layer_types[layer_idx] {
+            LayerAttnType::SlidingAttention => last_sliding,
+            LayerAttnType::Full => last_full,
+            LayerAttnType::Linear => None,
+        };
+    }
+    out
 }
 
 #[cfg(target_os = "macos")]

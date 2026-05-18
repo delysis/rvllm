@@ -175,6 +175,10 @@ def require_module(modules: dict[str, Any], name: str):
         raise RuntimeError(f"module not found in HF model: {name}") from exc
 
 
+def maybe_module(modules: dict[str, Any], name: str):
+    return modules.get(name)
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     try:
         import torch
@@ -215,20 +219,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         require_module(modules, f"{prefix}.self_attn.q_proj").register_forward_hook(
             capture_output(trace_tensors, "q_projection")
         ),
-        require_module(modules, f"{prefix}.self_attn.k_proj").register_forward_hook(
-            capture_output(trace_tensors, "k_projection")
-        ),
-        require_module(modules, f"{prefix}.self_attn.v_proj").register_forward_hook(
-            capture_output(trace_tensors, "v_projection")
-        ),
         require_module(modules, f"{prefix}.self_attn.q_norm").register_forward_hook(
             capture_output(trace_tensors, "after_q_norm")
-        ),
-        require_module(modules, f"{prefix}.self_attn.k_norm").register_forward_hook(
-            capture_output(trace_tensors, "after_k_norm")
-        ),
-        require_module(modules, f"{prefix}.self_attn.v_norm").register_forward_hook(
-            capture_output(trace_tensors, "after_v_norm")
         ),
         require_module(modules, f"{prefix}.self_attn.o_proj").register_forward_pre_hook(
             capture_input(trace_tensors, "attention_output")
@@ -270,6 +262,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             capture_output(trace_tensors, "final_residual_after_layer")
         ),
     ]
+    for module_name, trace_name in [
+        (f"{prefix}.self_attn.k_proj", "k_projection"),
+        (f"{prefix}.self_attn.v_proj", "v_projection"),
+        (f"{prefix}.self_attn.k_norm", "after_k_norm"),
+        (f"{prefix}.self_attn.v_norm", "after_v_norm"),
+    ]:
+        module = maybe_module(modules, module_name)
+        if module is not None:
+            handles.append(module.register_forward_hook(capture_output(trace_tensors, trace_name)))
 
     input_ids = torch.tensor([args.prompt_token_ids], dtype=torch.long, device=next(model.parameters()).device)
     with torch.no_grad():
@@ -277,15 +278,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     for handle in handles:
         handle.remove()
 
-    if {"after_q_norm", "after_k_norm", "rope_cos", "rope_sin"} <= trace_tensors.keys():
+    if {"after_q_norm", "rope_cos", "rope_sin"} <= trace_tensors.keys():
         cos = trace_tensors["rope_cos"].to(trace_tensors["after_q_norm"].device)
         sin = trace_tensors["rope_sin"].to(trace_tensors["after_q_norm"].device)
         trace_tensors["after_rope_q"] = apply_rotary_pos_emb(
             trace_tensors["after_q_norm"], cos, sin, unsqueeze_dim=2
         ).detach()
-        trace_tensors["after_rope_k"] = apply_rotary_pos_emb(
-            trace_tensors["after_k_norm"], cos, sin, unsqueeze_dim=2
-        ).detach()
+        if "after_k_norm" in trace_tensors:
+            trace_tensors["after_rope_k"] = apply_rotary_pos_emb(
+                trace_tensors["after_k_norm"], cos, sin, unsqueeze_dim=2
+            ).detach()
     if {"gate_projection", "up_projection"} <= trace_tensors.keys():
         trace_tensors["gate_up_out"] = torch.cat(
             [trace_tensors["gate_projection"], trace_tensors["up_projection"]],

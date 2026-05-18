@@ -403,6 +403,8 @@ pub unsafe fn metal_forward_layer(
     phase: MetalPhase,
     kv_cache_k_offset: usize,
     kv_cache_v_offset: usize,
+    attention_kv_cache_k_offset: usize,
+    attention_kv_cache_v_offset: usize,
 ) -> Result<()> {
     let queue = ctx.queue_retained();
     let buf = arena.buffer_retained();
@@ -923,8 +925,8 @@ pub unsafe fn metal_forward_layer(
             })?;
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
-            encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_k_offset, 1);
-            encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_v_offset, 2);
+            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_v_offset, 2);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.attn_out, 3);
             encoder.setBuffer_offset_atIndex(Some(buf), meta.block_tables_offset, 4);
             encoder.setBuffer_offset_atIndex(Some(buf), meta.context_lens_offset, 5);
@@ -995,8 +997,8 @@ pub unsafe fn metal_forward_layer(
             let pso = pipelines.get("attention_prefill_f16")?;
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
-            encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_k_offset, 1);
-            encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_v_offset, 2);
+            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_v_offset, 2);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.attn_out, 3);
             encoder.setBuffer_offset_atIndex(Some(buf), meta.block_tables_offset, 4);
             encoder.setBuffer_offset_atIndex(Some(buf), meta.context_lens_offset, 5);

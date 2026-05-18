@@ -7479,6 +7479,10 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
         "post_per_layer_input_norm",
         "final_residual_after_layer",
     ] {
+        if !hf["summaries"][name].is_object() {
+            eprintln!("E2B layer trace: skipping HF-missing summary {name}");
+            continue;
+        }
         compare_trace_summary_stats(&hf, &metal, name);
     }
 }
