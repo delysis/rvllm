@@ -3091,11 +3091,14 @@ fn cpu_reference_generated_tiny_gemma4_hf_decode_loop(
             }
         }
 
-        let projected = cpu_full_nonzero_matvec(&o_proj, hidden, hidden, &attn_out);
+        let projected = cpu_full_nonzero_rms_norm(
+            &cpu_full_nonzero_matvec(&o_proj, hidden, hidden, &attn_out),
+            &norm,
+            eps,
+        );
         for dim in 0..hidden {
             residual[dim] += projected[dim] * layer_scalar[dim];
         }
-        residual = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
 
         let mlp_normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
         let gate = cpu_full_nonzero_matvec(&gate_proj, intermediate, hidden, &mlp_normed);
@@ -3105,11 +3108,14 @@ fn cpu_reference_generated_tiny_gemma4_hf_decode_loop(
             .zip(up.iter())
             .map(|(g, u)| cpu_full_nonzero_gelu_tanh(*g) * u)
             .collect::<Vec<_>>();
-        let mlp_out = cpu_full_nonzero_matvec(&down_proj, hidden, intermediate, &activated);
+        let mlp_out = cpu_full_nonzero_rms_norm(
+            &cpu_full_nonzero_matvec(&down_proj, hidden, intermediate, &activated),
+            &norm,
+            eps,
+        );
         for dim in 0..hidden {
             residual[dim] += mlp_out[dim] * layer_scalar[dim];
         }
-        residual = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
 
         let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
         let mut logits = cpu_full_nonzero_matvec(&lm_head, vocab, hidden, &final_hidden);
@@ -4103,7 +4109,7 @@ fn cpu_reference_generated_tiny_hf_full_logits_are_stable() {
 
     let expected_logits = [
         [0.0f32, 0.0, 0.281_43, 24.286_85, 0.0, 0.0, 0.0, 0.0],
-        [0.0f32, 0.0, 0.094_23, 0.0, 0.0, 24.338_19, 0.0, 0.0],
+        [0.0f32, 0.0, 0.281_43, 0.0, 0.0, 24.286_85, 0.0, 0.0],
     ];
 
     for (step_idx, expected) in expected_logits.iter().enumerate() {

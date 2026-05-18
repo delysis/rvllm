@@ -1213,6 +1213,8 @@ pub unsafe fn metal_encode_forward_layer(
         hidden,
         dims.rms_eps,
         num_tokens,
+        weights.layer_scalar_offset,
+        weights.layer_scalar_dim,
     )?;
     if let Some(trace) = trace {
         encode_trace_copy(
@@ -1390,6 +1392,9 @@ pub unsafe fn metal_encode_forward_layer(
         residual_offset,
         ffn_addition_offset,
         num_tokens * hidden,
+        hidden,
+        weights.layer_scalar_offset,
+        weights.layer_scalar_dim,
     )?;
 
     if let (
@@ -1507,21 +1512,11 @@ pub unsafe fn metal_encode_forward_layer(
                 residual_offset,
                 scratch.normed_hidden,
                 num_tokens * hidden,
+                hidden,
+                None,
+                0,
             )?;
         }
-    }
-
-    if let Some(layer_scalar_offset) = weights.layer_scalar_offset {
-        encode_layer_scale(
-            &cmd_buf,
-            pipelines,
-            buf,
-            residual_offset,
-            layer_scalar_offset,
-            num_tokens * hidden,
-            hidden,
-            weights.layer_scalar_dim,
-        )?;
     }
 
     Ok(())
@@ -2072,6 +2067,9 @@ unsafe fn encode_residual_add(
     residual_offset: usize,
     addition_offset: usize,
     count: u32,
+    hidden: u32,
+    layer_scalar_offset: Option<usize>,
+    layer_scalar_dim: u32,
 ) -> Result<()> {
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
@@ -2091,6 +2089,22 @@ unsafe fn encode_residual_add(
         std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
         4,
         2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        3,
+    );
+    let layer_scalar_dim = if layer_scalar_offset.is_some() {
+        layer_scalar_dim
+    } else {
+        0
+    };
+    encoder.setBuffer_offset_atIndex(Some(buf), layer_scalar_offset.unwrap_or(residual_offset), 4);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&layer_scalar_dim as *const _ as *mut _),
+        4,
+        5,
     );
     let groups = MTLSize {
         width: count as usize,
@@ -2118,6 +2132,8 @@ unsafe fn encode_residual_add_rmsnorm(
     hidden: u32,
     eps: f32,
     num_tokens: u32,
+    layer_scalar_offset: Option<usize>,
+    layer_scalar_dim: u32,
 ) -> Result<()> {
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
@@ -2144,6 +2160,17 @@ unsafe fn encode_residual_add_rmsnorm(
         std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
         4,
         5,
+    );
+    let layer_scalar_dim = if layer_scalar_offset.is_some() {
+        layer_scalar_dim
+    } else {
+        0
+    };
+    encoder.setBuffer_offset_atIndex(Some(buf), layer_scalar_offset.unwrap_or(residual_offset), 6);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&layer_scalar_dim as *const _ as *mut _),
+        4,
+        7,
     );
     let groups = MTLSize {
         width: num_tokens as usize,
@@ -2208,60 +2235,6 @@ unsafe fn encode_ple_gelu_mul(
     let groups = MTLSize {
         width: num_tokens as usize,
         height: ple_dim as usize,
-        depth: 1,
-    };
-    let tpg = MTLSize {
-        width: 1,
-        height: 1,
-        depth: 1,
-    };
-    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
-    encoder.endEncoding();
-    Ok(())
-}
-
-unsafe fn encode_layer_scale(
-    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
-    pipelines: &PipelineCache,
-    buf: &ProtocolObject<dyn MTLBuffer>,
-    x_offset: usize,
-    scale_offset: usize,
-    count: u32,
-    hidden: u32,
-    scale_dim: u32,
-) -> Result<()> {
-    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-        rvllm_core::RvllmError::apple(
-            rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx {
-                backend: "metal",
-                op: "layer_scale",
-                device: "apple-silicon",
-            },
-        )
-    })?;
-    let pso = pipelines.get("layer_scale_f16")?;
-    encoder.setComputePipelineState(pso);
-    encoder.setBuffer_offset_atIndex(Some(buf), x_offset, 0);
-    encoder.setBuffer_offset_atIndex(Some(buf), scale_offset, 1);
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
-        4,
-        2,
-    );
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
-        4,
-        3,
-    );
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&scale_dim as *const _ as *mut _),
-        4,
-        4,
-    );
-    let groups = MTLSize {
-        width: count as usize,
-        height: 1,
         depth: 1,
     };
     let tpg = MTLSize {

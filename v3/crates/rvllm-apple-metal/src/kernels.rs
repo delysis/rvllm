@@ -1009,10 +1009,19 @@ kernel void residual_add_f16(
     device half       *residual   [[buffer(0)]],
     device const half *addition   [[buffer(1)]],
     constant uint     &count      [[buffer(2)]],
+    constant uint     &hidden     [[buffer(3)]],
+    device const half *layer_scale [[buffer(4)]],
+    constant uint     &layer_scale_dim [[buffer(5)]],
     uint gid                      [[thread_position_in_grid]]
 ) {
     if (gid >= count) return;
-    residual[gid] = f16_sat(float(residual[gid]) + float(addition[gid]));
+    float scale = 1.0f;
+    if (layer_scale_dim == 1) {
+        scale = float(layer_scale[0]);
+    } else if (layer_scale_dim == hidden) {
+        scale = float(layer_scale[gid % hidden]);
+    }
+    residual[gid] = f16_sat(float(residual[gid]) + float(addition[gid]) * scale);
 }
 
 kernel void residual_add_rmsnorm_f16(
@@ -1022,6 +1031,8 @@ kernel void residual_add_rmsnorm_f16(
     device const half *gamma      [[buffer(3)]],
     constant uint     &hidden     [[buffer(4)]],
     constant float    &eps        [[buffer(5)]],
+    device const half *layer_scale [[buffer(6)]],
+    constant uint     &layer_scale_dim [[buffer(7)]],
     uint tid                      [[thread_index_in_threadgroup]],
     uint tg_size                  [[threads_per_threadgroup]],
     uint gid                      [[threadgroup_position_in_grid]]
@@ -1033,7 +1044,13 @@ kernel void residual_add_rmsnorm_f16(
     float local_sum = 0.0f;
     for (uint i = tid; i < hidden; i += tg_size) {
         uint idx = base + i;
-        half updated = f16_sat(float(residual[idx]) + float(addition[idx]));
+        float scale = 1.0f;
+        if (layer_scale_dim == 1) {
+            scale = float(layer_scale[0]);
+        } else if (layer_scale_dim == hidden) {
+            scale = float(layer_scale[i]);
+        }
+        half updated = f16_sat(float(residual[idx]) + float(addition[idx]) * scale);
         residual[idx] = updated;
         float v = float(updated);
         local_sum += v * v;
@@ -2680,6 +2697,9 @@ mod tests {
         let gamma = (0..HIDDEN as usize)
             .map(|idx| 0.75 + idx as f32 * 0.0625)
             .collect::<Vec<_>>();
+        let layer_scale = (0..HIDDEN as usize)
+            .map(|idx| 0.5 + idx as f32 * 0.03125)
+            .collect::<Vec<_>>();
 
         let mut expected_residual = vec![0.0f32; residual.len()];
         let mut expected_normed = vec![0.0f32; residual.len()];
@@ -2687,7 +2707,9 @@ mod tests {
             let base = token * HIDDEN as usize;
             let mut sum = 0.0f32;
             for dim in 0..HIDDEN as usize {
-                let updated = f16::from_f32(residual[base + dim] + addition[base + dim]).to_f32();
+                let updated =
+                    f16::from_f32(residual[base + dim] + addition[base + dim] * layer_scale[dim])
+                        .to_f32();
                 expected_residual[base + dim] = updated;
                 sum += updated * updated;
             }
@@ -2709,6 +2731,11 @@ mod tests {
             .map(f16::from_f32)
             .collect::<Vec<_>>();
         let gamma_f16 = gamma.iter().copied().map(f16::from_f32).collect::<Vec<_>>();
+        let layer_scale_f16 = layer_scale
+            .iter()
+            .copied()
+            .map(f16::from_f32)
+            .collect::<Vec<_>>();
         let half_bytes = std::mem::size_of::<f16>();
         let residual_region = arena.region(
             "residual_add_rmsnorm_residual",
@@ -2730,10 +2757,16 @@ mod tests {
             residual_f16.len() * half_bytes,
             2,
         )?;
+        let scale_region = arena.region(
+            "residual_add_rmsnorm_layer_scale",
+            layer_scale_f16.len() * half_bytes,
+            2,
+        )?;
         unsafe {
             write_f16_region(&arena, &residual_region, &residual_f16);
             write_f16_region(&arena, &addition_region, &addition_f16);
             write_f16_region(&arena, &gamma_region, &gamma_f16);
+            write_f16_region(&arena, &scale_region, &layer_scale_f16);
             write_f16_region(&arena, &output_region, &vec![f16::NAN; residual_f16.len()]);
         }
 
@@ -2774,6 +2807,12 @@ mod tests {
                 std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
                 4,
                 5,
+            );
+            encoder.setBuffer_offset_atIndex(Some(buf), scale_region.offset, 6);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&HIDDEN as *const _ as *mut _),
+                4,
+                7,
             );
             encoder.dispatchThreadgroups_threadsPerThreadgroup(
                 MTLSize {
