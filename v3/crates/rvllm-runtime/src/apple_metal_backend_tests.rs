@@ -2407,6 +2407,209 @@ fn write_tiny_qdim_not_hidden_attention_fixture() -> std::path::PathBuf {
     write_tiny_gqa_attention_fixture(64, 256, 4, 2, 32)
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn write_tiny_shared_kv_tail_poison_fixture(
+    poison_tail_local_kv: bool,
+    poison_source_v: bool,
+) -> std::path::PathBuf {
+    let dir = temp_fixture_dir();
+    let hidden = 128;
+    let intermediate = 256;
+    let vocab = 8;
+    let source_layer = 1usize;
+    let tail_layer = 2usize;
+
+    let mut embedding = vec![0.0f32; vocab * hidden];
+    embedding[2 * hidden + GQA_SOURCE_DIM] = 10.0;
+
+    let norm = vec![1.0f32; hidden];
+    let mut lm_head = vec![0.0f32; vocab * hidden];
+    lm_head[2 * hidden + GQA_SOURCE_DIM] = 1.0;
+    lm_head[3 * hidden + GQA_OUTPUT_DIM] = 4.0;
+
+    let mut header = Map::<String, Value>::new();
+    let mut payload = Vec::new();
+
+    let add_tensor = |name: &str,
+                      data: &[f32],
+                      shape: &[usize],
+                      payload: &mut Vec<u8>,
+                      header: &mut Map<String, Value>| {
+        let start = payload.len();
+        let bytes = f16_bytes(data);
+        payload.extend_from_slice(&bytes);
+        let end = payload.len();
+        let mut meta = Map::new();
+        meta.insert("dtype".to_owned(), Value::String("F16".to_string()));
+        meta.insert(
+            "shape".to_owned(),
+            Value::Array(
+                shape
+                    .iter()
+                    .map(|n| Value::Number((*n as u64).into()))
+                    .collect(),
+            ),
+        );
+        meta.insert(
+            "data_offsets".to_owned(),
+            Value::Array(vec![
+                Value::Number((start as u64).into()),
+                Value::Number((end as u64).into()),
+            ]),
+        );
+        header.insert(name.to_string(), Value::Object(meta));
+    };
+
+    add_tensor(
+        "model.embed_tokens.weight",
+        &embedding,
+        &[vocab, hidden],
+        &mut payload,
+        &mut header,
+    );
+    add_tensor(
+        "model.norm.weight",
+        &norm,
+        &[hidden],
+        &mut payload,
+        &mut header,
+    );
+    add_tensor(
+        "lm_head.weight",
+        &lm_head,
+        &[vocab, hidden],
+        &mut payload,
+        &mut header,
+    );
+
+    let ones = vec![1.0f32; hidden];
+    let zeros_gate_up = vec![0.0f32; intermediate * hidden];
+    let zeros_down = vec![0.0f32; hidden * intermediate];
+    let zeros_proj = vec![0.0f32; hidden * hidden];
+
+    for layer_idx in 0..3 {
+        let lprefix = format!("model.layers.{layer_idx}");
+        let mut q_proj = vec![0.0f32; hidden * hidden];
+        let mut k_proj = vec![0.0f32; hidden * hidden];
+        let mut v_proj = vec![0.0f32; hidden * hidden];
+        let mut o_proj = vec![0.0f32; hidden * hidden];
+
+        if layer_idx == source_layer {
+            v_proj[GQA_VALUE_DIM * hidden + GQA_SOURCE_DIM] =
+                if poison_source_v { 0.0 } else { 2.0 };
+        }
+        if layer_idx == tail_layer {
+            q_proj[GQA_SOURCE_DIM * hidden + GQA_SOURCE_DIM] = 0.25;
+            o_proj[GQA_OUTPUT_DIM * hidden + GQA_VALUE_DIM] = 6.0;
+            if poison_tail_local_kv {
+                k_proj[GQA_VALUE_DIM * hidden + GQA_SOURCE_DIM] = 100.0;
+                v_proj[GQA_VALUE_DIM * hidden + GQA_SOURCE_DIM] = -100.0;
+            }
+        }
+
+        add_tensor(
+            &format!("{lprefix}.input_layernorm.weight"),
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.self_attn.q_proj.weight"),
+            &q_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.self_attn.k_proj.weight"),
+            &k_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.self_attn.v_proj.weight"),
+            &v_proj,
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.self_attn.o_proj.weight"),
+            if layer_idx == tail_layer {
+                &o_proj
+            } else {
+                &zeros_proj
+            },
+            &[hidden, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.mlp_norm.weight"),
+            &ones,
+            &[hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.mlp.gate_proj.weight"),
+            &zeros_gate_up,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.mlp.up_proj.weight"),
+            &zeros_gate_up,
+            &[intermediate, hidden],
+            &mut payload,
+            &mut header,
+        );
+        add_tensor(
+            &format!("{lprefix}.mlp.down_proj.weight"),
+            &zeros_down,
+            &[hidden, intermediate],
+            &mut payload,
+            &mut header,
+        );
+    }
+
+    let config = format!(
+        r#"{{
+  "architectures": ["Gemma4ForCausalLM"],
+  "text_config": {{
+    "num_hidden_layers": 3,
+    "hidden_size": {hidden},
+    "intermediate_size": {intermediate},
+    "num_attention_heads": 1,
+    "num_key_value_heads": 1,
+    "head_dim": {hidden},
+    "num_kv_shared_layers": 1,
+    "layer_types": ["sliding_attention", "sliding_attention", "sliding_attention"],
+    "vocab_size": {vocab},
+    "max_position_embeddings": 16,
+    "sliding_window": 16,
+    "rms_norm_eps": 0.000001,
+    "final_logit_softcapping": 0.0,
+    "tie_word_embeddings": false
+  }}
+}}"#
+    );
+
+    fs::write(dir.join("config.json"), config).expect("write config");
+
+    let header_json = serde_json::to_string(&header).expect("serialize fixture header");
+    let mut out = File::create(dir.join("model.safetensors")).expect("create fixture safetensors");
+    out.write_all(&(header_json.len() as u64).to_le_bytes())
+        .expect("write header len");
+    out.write_all(header_json.as_bytes())
+        .expect("write header bytes");
+    out.write_all(&payload).expect("write payload");
+    dir
+}
+
 fn cpu_full_nonzero_rms_norm(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
     let mean_square = input.iter().map(|v| v * v).sum::<f32>() / input.len() as f32;
     let scale = (mean_square + eps).sqrt().recip();
@@ -7435,6 +7638,68 @@ fn tiny_qdim_not_hidden_model_backend_full_residual_matches_cpu() {
     );
 
     let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn run_tiny_shared_kv_tail_poison_fixture(
+    poison_tail_local_kv: bool,
+    poison_source_v: bool,
+) -> (Vec<f32>, rvllm_core::TokenId) {
+    let dir = write_tiny_shared_kv_tail_poison_fixture(poison_tail_local_kv, poison_source_v);
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = n_layer_plan(dir.clone(), 3);
+    backend
+        .prepare(&plan)
+        .expect("prepare tiny shared-KV poison model");
+    let state = backend.state.as_ref().expect("prepared model state");
+    assert_eq!(state.layers[2].shared_kv_source_layer, Some(1));
+
+    let handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+    let out = backend.collect(ticket).expect("collect");
+    assert_eq!(out.len(), 1);
+    let logits = backend
+        .debug_read_decode_logits_f32(1)
+        .expect("read tiny shared-KV poison logits");
+    assert_eq!(logits.len(), 8);
+
+    let _ = fs::remove_dir_all(dir);
+    (logits, out[0].token_id)
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
+fn tiny_shared_kv_tail_local_kv_poison_does_not_change_logits_but_source_v_does() {
+    let (base_logits, base_token) = run_tiny_shared_kv_tail_poison_fixture(false, false);
+    let (tail_poison_logits, tail_poison_token) =
+        run_tiny_shared_kv_tail_poison_fixture(true, false);
+    let (source_poison_logits, source_poison_token) =
+        run_tiny_shared_kv_tail_poison_fixture(false, true);
+
+    assert_eq!(base_token, rvllm_core::TokenId(3));
+    assert_eq!(tail_poison_token, base_token);
+    assert_f32_slice_close(
+        "tail-local K/V poison should not affect shared-KV tail logits",
+        &tail_poison_logits,
+        &base_logits,
+        0.02,
+    );
+
+    let source_delta = (source_poison_logits[3] - base_logits[3]).abs();
+    assert!(
+        source_delta > 1.0,
+        "poisoning source-layer V should affect tail logits: base_token={base_token:?} source_token={source_poison_token:?} base_logit3={} source_logit3={} delta={source_delta}",
+        base_logits[3],
+        source_poison_logits[3]
+    );
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
