@@ -578,4 +578,59 @@ mod tests {
             "zero-weight projection should write near-zero output: {values:?}"
         );
     }
+
+    #[test]
+    #[ignore = "requires private ANE compile/load opt-in; records load boundary only"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_tiny_projection_load_boundary_is_reported() {
+        let config = AneRolloutConfig {
+            bucket: RolloutBucket {
+                seqs: 1,
+                tokens: 16,
+            },
+            hidden_size: 16,
+            intermediate_size: 16,
+            num_layers: 1,
+        };
+        let plan = AneProgramPlan::proj_only(config);
+
+        let temp_dir = std::env::temp_dir().join("rvllm_test_load_boundary_ane");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let weights_path = temp_dir.join("weights.bin");
+        std::fs::write(&weights_path, vec![0u8; 1024 * 1024]).unwrap();
+
+        let compiled = match compile_private_ane_program(&plan, &weights_path) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("[ANE ERROR] {e}");
+                for diag in last_ane_diagnostics() {
+                    eprintln!("[ANE DIAG] {diag}");
+                }
+                panic!("private ANE compile failed before load-boundary diagnostic: {e}");
+            }
+        };
+
+        let compiled_str = compiled
+            .to_str()
+            .expect("compiled model path should be UTF-8");
+        match rvllm_apple_ane_sys::AneModelHandle::load_with_error(compiled_str) {
+            Ok(_) => {
+                eprintln!(
+                    "[ANE DIAG] _ANEClient loadModel accepted {}; evaluation intentionally not run in this boundary test",
+                    compiled.display()
+                );
+            }
+            Err(err) => {
+                assert!(
+                    !err.trim().is_empty(),
+                    "_ANEClient loadModel rejection should include a reason"
+                );
+                eprintln!(
+                    "[ANE DIAG] _ANEClient loadModel rejected {}; no ANE execution claim made: {err}",
+                    compiled.display()
+                );
+            }
+        }
+    }
 }
