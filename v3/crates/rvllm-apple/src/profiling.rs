@@ -811,4 +811,27 @@ mod tests {
             ProductionCandidateStatus::ProductionCandidate
         );
     }
+
+    #[test]
+    fn performance_regression_over_threshold_blocks_production_candidate_status() {
+        let mut evidence = complete_evidence();
+        evidence.performance_regression = PerformanceRegressionEvidence::SampleComparison {
+            baseline_sample_id: "baseline-metal-only".to_string(),
+            current_sample_id: "candidate-metal-only".to_string(),
+            max_allowed_regression_percent: 10.0,
+            observed_regression_percent: 35.71,
+        };
+
+        let report = evaluate_apple_production_acceptance(&evidence);
+
+        assert_eq!(
+            report.status,
+            ProductionCandidateStatus::NotProductionCandidate
+        );
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::PerformanceRegressionsTracked
+                && failure.reason.contains("35.71")
+                && failure.reason.contains("10.00")
+        }));
+    }
 }
