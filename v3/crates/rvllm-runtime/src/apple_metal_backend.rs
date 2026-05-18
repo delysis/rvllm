@@ -147,6 +147,8 @@ pub struct MetalProbePerfStats {
     pub prefill_steps: u64,
     pub decode_steps: u64,
     pub tokens: u64,
+    pub library_compiles: u64,
+    pub pipeline_state_compiles: u64,
     pub command_buffers: u64,
     pub encoders: u64,
     pub forced_waits: u64,
@@ -164,6 +166,8 @@ struct MetalProbePerfCounters {
     prefill_steps: Cell<u64>,
     decode_steps: Cell<u64>,
     tokens: Cell<u64>,
+    library_compiles: Cell<u64>,
+    pipeline_state_compiles: Cell<u64>,
     command_buffers: Cell<u64>,
     encoders: Cell<u64>,
     forced_waits: Cell<u64>,
@@ -181,6 +185,8 @@ impl MetalProbePerfCounters {
         self.prefill_steps.set(0);
         self.decode_steps.set(0);
         self.tokens.set(0);
+        self.library_compiles.set(0);
+        self.pipeline_state_compiles.set(0);
         self.command_buffers.set(0);
         self.encoders.set(0);
         self.forced_waits.set(0);
@@ -197,6 +203,8 @@ impl MetalProbePerfCounters {
             prefill_steps: self.prefill_steps.get(),
             decode_steps: self.decode_steps.get(),
             tokens: self.tokens.get(),
+            library_compiles: self.library_compiles.get(),
+            pipeline_state_compiles: self.pipeline_state_compiles.get(),
             command_buffers: self.command_buffers.get(),
             encoders: self.encoders.get(),
             forced_waits: self.forced_waits.get(),
@@ -212,6 +220,16 @@ impl MetalProbePerfCounters {
     fn add_command_buffers(&self, count: u64) {
         self.command_buffers
             .set(self.command_buffers.get().saturating_add(count));
+    }
+
+    fn add_library_compile(&self) {
+        self.library_compiles
+            .set(self.library_compiles.get().saturating_add(1));
+    }
+
+    fn add_pipeline_state_compiles(&self, count: u64) {
+        self.pipeline_state_compiles
+            .set(self.pipeline_state_compiles.get().saturating_add(count));
     }
 
     fn add_encoders(&self, count: u64) {
@@ -922,6 +940,9 @@ impl ModelMetalBackend {
         ctx.compile_library(kernels::KERNEL_SOURCE)?;
         let mut pipelines = PipelineCache::new();
         pipelines.compile_all(&ctx)?;
+        self.perf.add_library_compile();
+        self.perf
+            .add_pipeline_state_compiles(pipelines.len() as u64);
 
         let arena_bytes = Gemma4MetalState::required_probe_model_arena_bytes(&self.model_dir)?;
         let mut arena = MetalBufferArena::new(ctx.device(), arena_bytes)?;

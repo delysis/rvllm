@@ -6014,6 +6014,87 @@ fn metal_probe_perf_counters_are_populated_and_monotonic() {
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
 #[ignore = "requires Apple Silicon Metal device"]
+fn metal_probe_pipeline_compilation_counters_do_not_change_after_rollout() {
+    let env_guard = MetalDebugSyncEnvGuard::new();
+    env_guard.set_current(None);
+    let dir = write_tiny_zero_layer_decode_loop_fixture();
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = zero_layer_plan(dir.clone());
+    backend
+        .prepare(&plan)
+        .expect("prepare zero-layer decode-loop tiny model");
+
+    let after_prepare = backend.probe_perf_stats();
+    assert_eq!(
+        after_prepare.library_compiles, 1,
+        "prepare should compile the Metal library exactly once"
+    );
+    assert_eq!(
+        after_prepare.pipeline_state_compiles,
+        kernels::KERNEL_COUNT as u64,
+        "prepare should compile all known PSOs before rollout"
+    );
+    assert_eq!(after_prepare.command_buffers, 0);
+    assert_eq!(after_prepare.encoders, 0);
+
+    let first = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let first_ticket = backend
+        .launch_rollout(&first, None)
+        .expect("run first rollout");
+    let first_out = backend
+        .collect(first_ticket)
+        .expect("collect first rollout");
+    assert_eq!(first_out[0].token_id, rvllm_core::TokenId(3));
+    let after_first = backend.probe_perf_stats();
+    assert_eq!(
+        after_first.library_compiles, after_prepare.library_compiles,
+        "rollout must not compile a Metal library"
+    );
+    assert_eq!(
+        after_first.pipeline_state_compiles, after_prepare.pipeline_state_compiles,
+        "rollout must not compile PSOs"
+    );
+    assert!(after_first.command_buffers > after_prepare.command_buffers);
+    assert!(after_first.encoders > after_prepare.encoders);
+
+    let second = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![first_out[0].token_id],
+        vec![0, 1],
+        vec![1],
+        vec![2],
+    );
+    let second_ticket = backend
+        .launch_rollout(&second, None)
+        .expect("run second rollout");
+    let second_out = backend
+        .collect(second_ticket)
+        .expect("collect second rollout");
+    assert_eq!(second_out[0].token_id, rvllm_core::TokenId(4));
+    let after_second = backend.probe_perf_stats();
+    assert_eq!(
+        after_second.library_compiles, after_prepare.library_compiles,
+        "subsequent rollout must not compile a Metal library"
+    );
+    assert_eq!(
+        after_second.pipeline_state_compiles, after_prepare.pipeline_state_compiles,
+        "subsequent rollout must not compile PSOs"
+    );
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
 fn tiny_zero_layer_decode_loop_model_backend_generates_3_4_5() {
     let expected = cpu_reference_zero_layer_decode_loop_sequence()
         .into_iter()
@@ -8934,6 +9015,8 @@ fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
         stats.prefill_steps + stats.decode_steps,
         "combined E2B probe submission should use one command buffer per prefill/decode step"
     );
+    assert_eq!(stats.library_compiles, 1);
+    assert_eq!(stats.pipeline_state_compiles, kernels::KERNEL_COUNT as u64);
     assert!(stats.encoders > 0);
     assert!(stats.forced_waits > 0);
     assert!(stats.cpu_wall_ns > 0);
@@ -8943,8 +9026,10 @@ fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
     let command_buffers_per_token = stats.command_buffers as f64 / stats.tokens as f64;
     let encoders_per_token = stats.encoders as f64 / stats.tokens as f64;
     eprintln!(
-        "real E2B profile probe: prepare_ms={prepare_ms} prefill_ms={prefill_ms} decode_ms={decode_ms} decode_tok_s={decode_tok_s:.4} total_tokens={} command_buffers={} encoders={} forced_waits={} command_buffers_per_token={command_buffers_per_token:.4} encoders_per_token={encoders_per_token:.4} last_step_cpu_wall_ns={} debug_sync={}",
+        "real E2B profile probe: prepare_ms={prepare_ms} prefill_ms={prefill_ms} decode_ms={decode_ms} decode_tok_s={decode_tok_s:.4} total_tokens={} library_compiles={} pipeline_state_compiles={} command_buffers={} encoders={} forced_waits={} command_buffers_per_token={command_buffers_per_token:.4} encoders_per_token={encoders_per_token:.4} last_step_cpu_wall_ns={} debug_sync={}",
         stats.tokens,
+        stats.library_compiles,
+        stats.pipeline_state_compiles,
         stats.command_buffers,
         stats.encoders,
         stats.forced_waits,
