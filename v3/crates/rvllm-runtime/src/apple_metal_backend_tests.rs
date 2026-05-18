@@ -8008,3 +8008,83 @@ fn real_gemma4_e2b_model_backend_prefill_decode_two_steps_full_vocab_logits_matc
         .collect::<Vec<_>>();
     assert_eq!(generated, reference.generated_tokens);
 }
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory, broader-prompt full HF reference artifact, and large Metal arena opt-in"]
+fn real_gemma4_e2b_model_backend_broader_prompt_full_vocab_logits_match_hf_reference() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let reference_path =
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-17-42-4-step1.json");
+    if !reference_path.exists() {
+        eprintln!(
+            "skipping: broader-prompt full HF reference logits artifact is missing at {}",
+            reference_path.display()
+        );
+        return;
+    }
+
+    let reference = read_e2b_hf_reference_logits(&reference_path, &[2, 17, 42, 4], 1);
+    assert_eq!(reference.prompt_token_ids, vec![2, 17, 42, 4]);
+    assert_eq!(reference.steps.len(), 1);
+
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before broader prompt decode");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let (metal_logits_by_step, out) = run_real_e2b_model_backend_decode_loop(
+        model_dir,
+        &arch,
+        &reference.prompt_token_ids,
+        reference.steps.len(),
+    )
+    .expect("real Gemma4 E2B broader prompt prefill/decode should launch");
+
+    assert_eq!(metal_logits_by_step.len(), 1);
+    assert_eq!(out.len(), 1);
+    let step = &reference.steps[0];
+    let expected_full_logits = step
+        .full_logits
+        .as_ref()
+        .expect("HF reference artifact must include full logits");
+    assert_eq!(expected_full_logits.len(), arch.vocab_size);
+    let metal_logits = &metal_logits_by_step[0];
+    for (&token_id, &expected) in step
+        .selected_token_ids
+        .iter()
+        .zip(step.selected_logits.iter())
+    {
+        let idx = token_id as usize;
+        eprintln!(
+            "real E2B broader prompt selected logit[{idx}]: metal={} hf={} delta={}",
+            metal_logits[idx],
+            expected,
+            (metal_logits[idx] - expected).abs()
+        );
+    }
+
+    const FULL_E2B_LOGIT_TOLERANCE: f32 = 1.0;
+    assert_e2b_full_vocab_logits_close(
+        "real E2B broader prompt full-vocab logits",
+        metal_logits,
+        expected_full_logits,
+        FULL_E2B_LOGIT_TOLERANCE,
+    );
+    assert_eq!(
+        cpu_full_nonzero_argmax(metal_logits),
+        cpu_full_nonzero_argmax(expected_full_logits),
+        "real E2B broader prompt argmax should match HF reference"
+    );
+    assert_eq!(
+        out[0].token_id,
+        rvllm_core::TokenId(step.next_token),
+        "real E2B broader prompt sampled token should match HF reference"
+    );
+    assert_eq!(vec![out[0].token_id.raw()], reference.generated_tokens);
+}
