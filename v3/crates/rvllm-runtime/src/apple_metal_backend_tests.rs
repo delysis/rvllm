@@ -8088,3 +8088,82 @@ fn real_gemma4_e2b_model_backend_broader_prompt_full_vocab_logits_match_hf_refer
     );
     assert_eq!(vec![out[0].token_id.raw()], reference.generated_tokens);
 }
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory, four-step full HF reference artifact, and large Metal arena opt-in"]
+fn real_gemma4_e2b_model_backend_prefill_decode_four_steps_full_vocab_logits_match_hf_reference() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let reference_path =
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-4-steps4.json");
+    if !reference_path.exists() {
+        eprintln!(
+            "skipping: four-step full HF reference logits artifact is missing at {}",
+            reference_path.display()
+        );
+        return;
+    }
+
+    let reference = read_e2b_hf_reference_logits(&reference_path, &[2, 4], 4);
+    assert_eq!(reference.prompt_token_ids, vec![2, 4]);
+    assert_eq!(reference.steps.len(), 4);
+
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before four-step decode loop");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let (metal_logits_by_step, out) = run_real_e2b_model_backend_decode_loop(
+        model_dir,
+        &arch,
+        &reference.prompt_token_ids,
+        reference.steps.len(),
+    )
+    .expect("real Gemma4 E2B four-step prefill/decode should launch");
+
+    assert_eq!(metal_logits_by_step.len(), reference.steps.len());
+    assert_eq!(out.len(), reference.steps.len());
+    for (step_idx, (metal_logits, step)) in metal_logits_by_step
+        .iter()
+        .zip(reference.steps.iter())
+        .enumerate()
+    {
+        let expected_full_logits = step
+            .full_logits
+            .as_ref()
+            .expect("HF reference artifact must include full logits");
+        assert_eq!(expected_full_logits.len(), arch.vocab_size);
+        const FULL_E2B_LOGIT_TOLERANCE: f32 = 1.0;
+        assert_e2b_full_vocab_logits_close(
+            &format!(
+                "real E2B four-step decode step {} full-vocab logits",
+                step_idx + 1
+            ),
+            metal_logits,
+            expected_full_logits,
+            FULL_E2B_LOGIT_TOLERANCE,
+        );
+        assert_eq!(
+            cpu_full_nonzero_argmax(metal_logits),
+            cpu_full_nonzero_argmax(expected_full_logits),
+            "real E2B four-step argmax should match HF reference at step {}",
+            step_idx + 1
+        );
+        assert_eq!(
+            out[step_idx].token_id,
+            rvllm_core::TokenId(step.next_token),
+            "real E2B four-step sampled token should match HF reference at step {}",
+            step_idx + 1
+        );
+    }
+    let generated = out
+        .iter()
+        .map(|token| token.token_id.raw())
+        .collect::<Vec<_>>();
+    assert_eq!(generated, reference.generated_tokens);
+}
