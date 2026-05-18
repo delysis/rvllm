@@ -3811,6 +3811,126 @@ fn run_real_e2b_model_backend_batch_one_step(
     result
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn run_real_e2b_model_backend_batch_decode_loop_with_forced_next_tokens(
+    model_dir: std::path::PathBuf,
+    arch: &rvllm_loader::gemma4_arch::Gemma4Arch,
+    prompts: &[Vec<u32>],
+    decode_steps: usize,
+    forced_next_tokens: &[Vec<u32>],
+) -> Result<(Vec<Vec<Vec<f32>>>, Vec<Vec<rvllm_apple::StepToken>>)> {
+    assert!(!prompts.is_empty());
+    assert_eq!(forced_next_tokens.len(), prompts.len());
+    assert!(forced_next_tokens
+        .iter()
+        .all(|tokens| tokens.len() >= decode_steps));
+    assert!(
+        prompts
+            .iter()
+            .all(|prompt| !prompt.is_empty() && prompt.len() + decode_steps <= 16),
+        "real E2B probe arena currently supports each batch prompt_len + decode_steps <= 16"
+    );
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+
+    let result = (|| -> Result<(Vec<Vec<Vec<f32>>>, Vec<Vec<rvllm_apple::StepToken>>)> {
+        let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+        plan.ane_hidden_size = arch.hidden_size;
+        plan.ane_intermediate_size = arch.intermediate_size;
+        let mut backend = ModelMetalBackend::new(model_dir);
+        backend.prepare(&plan)?;
+
+        let req_ids = (0..prompts.len())
+            .map(|idx| rvllm_core::ReqId((idx + 1) as u64))
+            .collect::<Vec<_>>();
+        let mut prefill_tokens = Vec::new();
+        let mut prefill_cu_seqlens = Vec::with_capacity(prompts.len() + 1);
+        prefill_cu_seqlens.push(0);
+        for prompt in prompts {
+            prefill_tokens.extend(prompt.iter().map(|&token| rvllm_core::TokenId(token)));
+            prefill_cu_seqlens.push(prefill_tokens.len() as u32);
+        }
+        let prefill_positions = prompts
+            .iter()
+            .map(|prompt| (prompt.len() - 1) as u32)
+            .collect::<Vec<_>>();
+        let prefill_context_lens = prompts
+            .iter()
+            .map(|prompt| prompt.len() as u32)
+            .collect::<Vec<_>>();
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            req_ids.clone(),
+            prefill_tokens,
+            prefill_cu_seqlens,
+            prefill_positions,
+            prefill_context_lens,
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill)?;
+        let prefill_out = backend.collect(prefill_ticket)?;
+        assert!(prefill_out.is_empty());
+
+        let decode_cu_seqlens = (0..=prompts.len())
+            .map(|idx| idx as u32)
+            .collect::<Vec<_>>();
+        let mut current_tokens = prompts
+            .iter()
+            .map(|prompt| rvllm_core::TokenId(*prompt.last().expect("prompt token")))
+            .collect::<Vec<_>>();
+        let mut logits_by_step = Vec::with_capacity(decode_steps);
+        let mut outputs_by_step = Vec::with_capacity(decode_steps);
+        for step_idx in 0..decode_steps {
+            let positions = prompts
+                .iter()
+                .map(|prompt| (prompt.len() - 1 + step_idx) as u32)
+                .collect::<Vec<_>>();
+            let context_lens = prompts
+                .iter()
+                .map(|prompt| (prompt.len() + step_idx) as u32)
+                .collect::<Vec<_>>();
+            let decode = rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                req_ids.clone(),
+                current_tokens.clone(),
+                decode_cu_seqlens.clone(),
+                positions,
+                context_lens,
+            );
+            let decode_ticket = backend.launch_rollout(&decode, None)?;
+            let flat_logits = backend.debug_read_decode_logits_f32(prompts.len())?;
+            let residual = backend.debug_read_residual_f32(prompts.len())?;
+            assert_eq!(flat_logits.len(), prompts.len() * arch.vocab_size);
+            assert_eq!(residual.len(), prompts.len() * arch.hidden_size);
+            assert!(flat_logits.iter().all(|v| v.is_finite()));
+            assert!(residual.iter().all(|v| v.is_finite()));
+            let out = backend.collect(decode_ticket)?;
+            assert_eq!(out.len(), prompts.len());
+            current_tokens = forced_next_tokens
+                .iter()
+                .map(|tokens| rvllm_core::TokenId(tokens[step_idx]))
+                .collect();
+            logits_by_step.push(
+                flat_logits
+                    .chunks_exact(arch.vocab_size)
+                    .map(|chunk| chunk.to_vec())
+                    .collect::<Vec<_>>(),
+            );
+            outputs_by_step.push(out);
+        }
+        Ok((logits_by_step, outputs_by_step))
+    })();
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+
+    result
+}
+
 #[test]
 fn cpu_reference_one_layer_full_nonzero_selected_hidden_values_are_expected() {
     let reference = cpu_reference_one_layer_full_nonzero();
@@ -8615,6 +8735,106 @@ fn real_gemma4_e2b_batch_two_prefill_decode_full_vocab_logits_match_hf_reference
             "real E2B batch seq {} sampled token should match HF reference",
             seq_idx + 1
         );
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory, batch two-step HF reference artifacts, and large Metal arena opt-in"]
+fn real_gemma4_e2b_batch_two_prefill_decode_two_steps_forced_hf_tokens_full_vocab_logits_match_hf_reference(
+) {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let reference_paths = [
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-4-steps2.json"),
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-17-steps2.json"),
+    ];
+    let expected_prompts: [&[u32]; 2] = [&[2, 4], &[2, 17]];
+    if let Some(missing) = reference_paths.iter().find(|path| !path.exists()) {
+        eprintln!(
+            "skipping: batch two-step HF reference logits artifact is missing at {}",
+            missing.display()
+        );
+        return;
+    }
+
+    let references = reference_paths
+        .iter()
+        .zip(expected_prompts.iter())
+        .map(|(path, expected)| read_e2b_hf_reference_logits(path, expected, 2))
+        .collect::<Vec<_>>();
+    let prompts = references
+        .iter()
+        .map(|reference| reference.prompt_token_ids.clone())
+        .collect::<Vec<_>>();
+    let forced_tokens = references
+        .iter()
+        .map(|reference| reference.generated_tokens.clone())
+        .collect::<Vec<_>>();
+
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before batch two-step decode");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let (metal_logits_by_step, out_by_step) =
+        run_real_e2b_model_backend_batch_decode_loop_with_forced_next_tokens(
+            model_dir,
+            &arch,
+            &prompts,
+            2,
+            &forced_tokens,
+        )
+        .expect("real Gemma4 E2B batch two-step forced-token prefill/decode should launch");
+
+    assert_eq!(metal_logits_by_step.len(), 2);
+    assert_eq!(out_by_step.len(), 2);
+    for step_idx in 0..2usize {
+        assert_eq!(metal_logits_by_step[step_idx].len(), references.len());
+        assert_eq!(out_by_step[step_idx].len(), references.len());
+        for seq_idx in 0..references.len() {
+            let reference_step = &references[seq_idx].steps[step_idx];
+            let expected_full_logits = reference_step
+                .full_logits
+                .as_ref()
+                .expect("HF reference artifact must include full logits");
+            assert_eq!(expected_full_logits.len(), arch.vocab_size);
+            const FULL_E2B_LOGIT_TOLERANCE: f32 = 1.0;
+            assert_e2b_full_vocab_logits_close(
+                &format!(
+                    "real E2B batch seq {} two-step decode step {} full-vocab logits",
+                    seq_idx + 1,
+                    step_idx + 1
+                ),
+                &metal_logits_by_step[step_idx][seq_idx],
+                expected_full_logits,
+                FULL_E2B_LOGIT_TOLERANCE,
+            );
+            assert_e2b_sample_matches_or_hf_tie(
+                &format!(
+                    "real E2B batch seq {} two-step logit argmax at step {}",
+                    seq_idx + 1,
+                    step_idx + 1
+                ),
+                expected_full_logits,
+                cpu_full_nonzero_argmax(expected_full_logits) as u32,
+                cpu_full_nonzero_argmax(&metal_logits_by_step[step_idx][seq_idx]) as u32,
+            );
+            assert_e2b_sample_matches_or_hf_tie(
+                &format!(
+                    "real E2B batch seq {} two-step sampled token at step {}",
+                    seq_idx + 1,
+                    step_idx + 1
+                ),
+                expected_full_logits,
+                reference_step.next_token,
+                out_by_step[step_idx][seq_idx].token_id.raw(),
+            );
+        }
     }
 }
 
