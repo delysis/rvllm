@@ -9920,3 +9920,112 @@ fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
         metal_debug_sync_enabled()
     );
 }
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory and large Metal arena opt-in"]
+fn real_gemma4_e2b_arena_and_pipeline_counters_do_not_change_after_rollout() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before hot-path invariant test");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+
+    let result = (|| -> Result<()> {
+        backend.prepare(&plan)?;
+        let after_prepare_stats = backend.probe_perf_stats();
+        let after_prepare_arena = backend
+            .probe_arena_stats()
+            .expect("arena stats after real E2B prepare");
+        assert_eq!(after_prepare_stats.library_compiles, 1);
+        assert_eq!(
+            after_prepare_stats.pipeline_state_compiles,
+            kernels::KERNEL_COUNT as u64
+        );
+        assert_eq!(after_prepare_stats.command_buffers, 0);
+        assert_eq!(after_prepare_stats.encoders, 0);
+        assert!(after_prepare_arena.region_count > 0);
+        assert!(after_prepare_arena.allocated_bytes > 0);
+        assert!(after_prepare_arena.capacity_bytes >= after_prepare_arena.allocated_bytes);
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            vec![0, 2],
+            vec![1],
+            vec![2],
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill)?;
+        let prefill_out = backend.collect(prefill_ticket)?;
+        assert!(prefill_out.is_empty());
+        let after_prefill_stats = backend.probe_perf_stats();
+        let after_prefill_arena = backend
+            .probe_arena_stats()
+            .expect("arena stats after real E2B prefill");
+        assert_eq!(
+            after_prefill_stats.library_compiles, after_prepare_stats.library_compiles,
+            "real E2B prefill must not compile a Metal library after prepare"
+        );
+        assert_eq!(
+            after_prefill_stats.pipeline_state_compiles,
+            after_prepare_stats.pipeline_state_compiles,
+            "real E2B prefill must not compile PSOs after prepare"
+        );
+        assert_eq!(
+            after_prefill_arena, after_prepare_arena,
+            "real E2B prefill must reuse the prepared Metal arena"
+        );
+
+        let decode = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(4)],
+            vec![0, 1],
+            vec![1],
+            vec![2],
+        );
+        let decode_ticket = backend.launch_rollout(&decode, None)?;
+        let decode_out = backend.collect(decode_ticket)?;
+        assert_eq!(decode_out.len(), 1);
+        assert_eq!(decode_out[0].token_id, rvllm_core::TokenId(954));
+        let after_decode_stats = backend.probe_perf_stats();
+        let after_decode_arena = backend
+            .probe_arena_stats()
+            .expect("arena stats after real E2B decode");
+        assert_eq!(
+            after_decode_stats.library_compiles, after_prepare_stats.library_compiles,
+            "real E2B decode must not compile a Metal library after prepare"
+        );
+        assert_eq!(
+            after_decode_stats.pipeline_state_compiles, after_prepare_stats.pipeline_state_compiles,
+            "real E2B decode must not compile PSOs after prepare"
+        );
+        assert_eq!(
+            after_decode_arena, after_prepare_arena,
+            "real E2B decode must reuse the prepared Metal arena"
+        );
+        Ok(())
+    })();
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+
+    result.expect("real Gemma4 E2B hot-path arena and pipeline invariant test should run");
+}

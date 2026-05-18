@@ -359,10 +359,10 @@ impl AppleProductionAcceptanceEvidence {
                 "real-e2b-large-model-default-gate-and-dry-run-validation-errors",
             ),
             no_hot_path_allocation: EvidenceState::present(
-                "metal-probe-arena-region-count-stable-after-rollout",
+                "real-e2b-metal-arena-region-count-stable-after-prefill-and-decode",
             ),
             no_hot_path_pipeline_compilation: EvidenceState::present(
-                "metal-probe-pipeline-compile-counters-stable-after-rollout",
+                "real-e2b-metal-pipeline-compile-counters-stable-after-prefill-and-decode",
             ),
             direct_backend_smoke: EvidenceState::present(
                 "real-e2b-direct-model-metal-backend-full-vocab-parity",
