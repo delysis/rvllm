@@ -7469,6 +7469,8 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
         "after_o_proj",
         "after_post_attention_layernorm",
         "after_pre_feedforward_layernorm",
+        "gate_up_out",
+        "ffn_activation",
         "after_ffn_branch",
         "after_post_feedforward_layernorm",
         "per_layer_input",

@@ -15,6 +15,12 @@ static inline half f16_sat(float x) {
 }
 
 static inline float gelu_tanh(float x) {
+    if (x >= 5.0f) {
+        return x;
+    }
+    if (x <= -5.0f) {
+        return 0.0f;
+    }
     float c = 0.7978845608f; // sqrt(2/pi)
     return 0.5f * x * (1.0f + tanh(c * (x + 0.044715f * x * x * x)));
 }
@@ -1836,6 +1842,122 @@ mod tests {
         };
         assert!((got_single - expected).abs() < 1e-6);
         assert_eq!(got_pair.len(), 4);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn gelu_mul_large_intermediate_matches_cpu_and_overwrites_output() -> rvllm_core::Result<()> {
+        const NUM_TOKENS: u32 = 2;
+        const INTERMEDIATE: u32 = 6144;
+        let half_bytes = std::mem::size_of::<f16>();
+        let gate_up_len = (NUM_TOKENS * 2 * INTERMEDIATE) as usize;
+        let output_len = (NUM_TOKENS * INTERMEDIATE) as usize;
+        let (ctx, pipelines, mut arena) =
+            metal_test_context((gate_up_len + output_len + 4096) * half_bytes)?;
+        let gate_up_region = arena.region("gelu_gate_up", gate_up_len * half_bytes, 16)?;
+        let output_region = arena.region("gelu_output", output_len * half_bytes, 16)?;
+
+        let mut gate_up = vec![f16::ZERO; gate_up_len];
+        let mut expected = vec![0.0f32; output_len];
+        for token in 0..NUM_TOKENS as usize {
+            let gate_base = token * 2 * INTERMEDIATE as usize;
+            let up_base = gate_base + INTERMEDIATE as usize;
+            let out_base = token * INTERMEDIATE as usize;
+            for dim in 0..INTERMEDIATE as usize {
+                let gate = ((dim % 97) as f32 - 48.0) / 3.0;
+                let up = (((dim * 7 + token * 13) % 113) as f32 - 56.0) / 4.0;
+                gate_up[gate_base + dim] = f16::from_f32(gate);
+                gate_up[up_base + dim] = f16::from_f32(up);
+                expected[out_base + dim] = f16::from_f32(gelu_tanh_ref(gate) * up).to_f32();
+            }
+        }
+        unsafe {
+            write_f16_region(&arena, &gate_up_region, &gate_up);
+            write_f16_region(&arena, &output_region, &vec![f16::NAN; output_len]);
+        }
+
+        let queue = ctx.queue_retained();
+        let buf = arena.buffer_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "gelu_mul_large_command_buffer",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "gelu_mul_large_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        unsafe {
+            encoder.setComputePipelineState(pipelines.get("gelu_mul_f16")?);
+            encoder.setBuffer_offset_atIndex(Some(buf), gate_up_region.offset, 0);
+            encoder.setBuffer_offset_atIndex(Some(buf), output_region.offset, 1);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&NUM_TOKENS as *const _ as *mut _),
+                4,
+                2,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&INTERMEDIATE as *const _ as *mut _),
+                4,
+                3,
+            );
+            encoder.dispatchThreads_threadsPerThreadgroup(
+                MTLSize {
+                    width: NUM_TOKENS as usize,
+                    height: INTERMEDIATE as usize,
+                    depth: 1,
+                },
+                MTLSize {
+                    width: 1,
+                    height: 1,
+                    depth: 1,
+                },
+            );
+            encoder.endEncoding();
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let got = unsafe { read_f16_region(&arena, &output_region, output_len) };
+        let mut max_delta = 0.0f32;
+        let mut max_abs = 0.0f32;
+        for (idx, (&actual, &want)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(actual.is_finite(), "gelu output[{idx}] should be finite");
+            max_abs = max_abs.max(actual.abs());
+            max_delta = max_delta.max((actual - want).abs());
+            if actual.abs() >= 1024.0 {
+                let token = idx / INTERMEDIATE as usize;
+                let dim = idx % INTERMEDIATE as usize;
+                let gate_base = token * 2 * INTERMEDIATE as usize;
+                let up_base = gate_base + INTERMEDIATE as usize;
+                eprintln!(
+                    "large gelu output idx={idx} token={token} dim={dim} actual={actual} want={want} gate={} up={}",
+                    gate_up[gate_base + dim].to_f32(),
+                    gate_up[up_base + dim].to_f32()
+                );
+                break;
+            }
+        }
+        assert!(
+            max_abs < 256.0,
+            "gelu large-intermediate output unexpectedly large: {max_abs}"
+        );
+        assert!(
+            max_delta <= 0.25,
+            "gelu large-intermediate max delta {max_delta}"
+        );
+        Ok(())
     }
 
     #[test]

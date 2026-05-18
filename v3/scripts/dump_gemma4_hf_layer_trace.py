@@ -242,6 +242,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         require_module(modules, f"{prefix}.pre_feedforward_layernorm").register_forward_hook(
             capture_output(trace_tensors, "after_pre_feedforward_layernorm")
         ),
+        require_module(modules, f"{prefix}.mlp.gate_proj").register_forward_hook(
+            capture_output(trace_tensors, "gate_projection")
+        ),
+        require_module(modules, f"{prefix}.mlp.up_proj").register_forward_hook(
+            capture_output(trace_tensors, "up_projection")
+        ),
+        require_module(modules, f"{prefix}.mlp.down_proj").register_forward_pre_hook(
+            capture_input(trace_tensors, "ffn_activation")
+        ),
         require_module(modules, f"{prefix}.mlp").register_forward_hook(
             capture_output(trace_tensors, "after_ffn_branch")
         ),
@@ -276,6 +285,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         ).detach()
         trace_tensors["after_rope_k"] = apply_rotary_pos_emb(
             trace_tensors["after_k_norm"], cos, sin, unsqueeze_dim=2
+        ).detach()
+    if {"gate_projection", "up_projection"} <= trace_tensors.keys():
+        trace_tensors["gate_up_out"] = torch.cat(
+            [trace_tensors["gate_projection"], trace_tensors["up_projection"]],
+            dim=-1,
         ).detach()
 
     summaries = {
@@ -342,6 +356,8 @@ def main(argv: Sequence[str]) -> int:
         "after_rope_q",
         "attention_output",
         "after_o_proj",
+        "gate_up_out",
+        "ffn_activation",
         "after_ffn_branch",
         "final_residual_after_layer",
     ]:
