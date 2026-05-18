@@ -230,12 +230,12 @@ pub fn metal_finalize_logits_encoder_count(
     num_tokens: u32,
     hidden: u32,
     vocab: u32,
-    softcap: f32,
+    _softcap: f32,
 ) -> u64 {
     if supports_fused_final_logits_small(num_tokens, hidden, vocab) {
         1
     } else {
-        3 + (softcap > 0.0) as u64
+        3
     }
 }
 
@@ -2401,34 +2401,39 @@ unsafe fn encode_logits_head(
         0.0,
     )?;
 
-    // 3) optional softcap
+    // 3) optional fused softcap + argmax, or plain argmax when softcap is disabled.
     if softcap > 0.0 {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
                 rvllm_core::AppleCtx {
                     backend: "metal",
-                    op: "final_softcap_encoder",
+                    op: "final_softcap_argmax_encoder",
                     device: "apple-silicon",
                 },
             )
         })?;
-        let pso = pipelines.get("softcap_f16")?;
+        let pso = pipelines.get("softcap_argmax_f16")?;
         encoder.setComputePipelineState(pso);
         encoder.setBuffer_offset_atIndex(Some(buf), logits_offset, 0);
-        let count = num_tokens.saturating_mul(vocab);
+        encoder.setBuffer_offset_atIndex(Some(buf), sampled_tokens_offset, 1);
         encoder.setBytes_length_atIndex(
-            std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
+            std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
             4,
-            1,
+            2,
+        );
+        encoder.setBytes_length_atIndex(
+            std::ptr::NonNull::new_unchecked(&vocab as *const _ as *mut _),
+            4,
+            3,
         );
         encoder.setBytes_length_atIndex(
             std::ptr::NonNull::new_unchecked(&softcap as *const _ as *mut _),
             4,
-            2,
+            4,
         );
         let groups = MTLSize {
-            width: (count as usize + 255) / 256,
+            width: num_tokens as usize,
             height: 1,
             depth: 1,
         };
@@ -2439,10 +2444,7 @@ unsafe fn encode_logits_head(
         };
         encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
         encoder.endEncoding();
-    }
-
-    // 4) argmax -> sampled token IDs
-    {
+    } else {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
@@ -3030,7 +3032,7 @@ mod tests {
     #[test]
     fn final_logits_encoder_count_gates_fused_small_vocab_path() {
         assert_eq!(metal_finalize_logits_encoder_count(2, 4, 3, 30.0), 1);
-        assert_eq!(metal_finalize_logits_encoder_count(2, 4, 257, 30.0), 4);
+        assert_eq!(metal_finalize_logits_encoder_count(2, 4, 257, 30.0), 3);
         assert_eq!(metal_finalize_logits_encoder_count(2, 4, 257, 0.0), 3);
     }
 

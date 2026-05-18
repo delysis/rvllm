@@ -323,8 +323,8 @@ impl AppleProductionAcceptanceEvidence {
                 first_token_latency_ms: OptionalMetric::unmeasured(
                     "probe harness reports aggregate prefill and decode wall time, not isolated first-token latency",
                 ),
-                steady_decode_tokens_per_second: OptionalMetric::measured(2.2384),
-                prefill_tokens_per_second: OptionalMetric::measured(3.3557),
+                steady_decode_tokens_per_second: OptionalMetric::measured(2.2637),
+                prefill_tokens_per_second: OptionalMetric::measured(3.4130),
                 memory_peak_bytes: OptionalMetric::unmeasured(
                     "probe reports planned arena bytes separately; no external peak RSS/GPU allocation profile was captured",
                 ),

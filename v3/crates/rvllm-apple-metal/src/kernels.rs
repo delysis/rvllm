@@ -1121,6 +1121,50 @@ kernel void argmax_f16(
     }
 }
 
+kernel void softcap_argmax_f16(
+    device half       *logits     [[buffer(0)]],  // [num_seqs, vocab]
+    device int        *output     [[buffer(1)]],  // [num_seqs]
+    constant uint     &num_seqs   [[buffer(2)]],
+    constant uint     &vocab      [[buffer(3)]],
+    constant float    &cap        [[buffer(4)]],
+    uint gid                      [[threadgroup_position_in_grid]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]]
+) {
+    if (gid >= num_seqs) return;
+    uint base = gid * vocab;
+
+    threadgroup float shared_max[256];
+    threadgroup int shared_idx[256];
+
+    float local_max = -INFINITY;
+    int local_idx = 0;
+    for (uint i = tid; i < vocab; i += tg_size) {
+        half capped = f16_sat(cap * tanh(float(logits[base + i]) / cap));
+        logits[base + i] = capped;
+        float v = float(capped);
+        if (v > local_max) {
+            local_max = v;
+            local_idx = int(i);
+        }
+    }
+    shared_max[tid] = local_max;
+    shared_idx[tid] = local_idx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s && shared_max[tid + s] > shared_max[tid]) {
+            shared_max[tid] = shared_max[tid + s];
+            shared_idx[tid] = shared_idx[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    if (tid == 0) {
+        output[gid] = shared_idx[0];
+    }
+}
+
 // ============================================================================
 // Fused final RMSNorm + lm_head + optional softcap + argmax
 // ============================================================================
@@ -1260,6 +1304,7 @@ pub const KERNEL_NAMES: &[&str] = &[
     "residual_add_rmsnorm_f16",
     "layer_scale_f16",
     "argmax_f16",
+    "softcap_argmax_f16",
     "final_norm_lm_head_argmax_small_f16",
     "softcap_f16",
     "bf16_to_f16",
@@ -3029,6 +3074,120 @@ mod tests {
         ];
         let got = argmax_ref(&logits, 2, 3);
         assert_eq!(got, vec![2, 1]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires Apple Silicon Metal device"]
+    fn softcap_argmax_macos_smoke_matches_separate_softcap_then_argmax() -> rvllm_core::Result<()> {
+        let (ctx, pipelines, mut arena) = metal_test_context(16 * 1024)?;
+        const NUM_SEQS: u32 = 2;
+        const VOCAB: u32 = 6;
+        const CAP: f32 = 3.0;
+        let logits = vec![
+            f16::from_f32(-9.0),
+            f16::from_f32(0.5),
+            f16::from_f32(4.0),
+            f16::from_f32(1.25),
+            f16::from_f32(3.5),
+            f16::from_f32(-0.25),
+            f16::from_f32(2.0),
+            f16::from_f32(-1.5),
+            f16::from_f32(0.0),
+            f16::from_f32(6.0),
+            f16::from_f32(5.5),
+            f16::from_f32(-7.0),
+        ];
+        let expected_logits = logits
+            .iter()
+            .map(|value| f16::from_f32(CAP * (value.to_f32() / CAP).tanh()))
+            .collect::<Vec<_>>();
+        let expected_tokens = argmax_ref(&expected_logits, NUM_SEQS, VOCAB);
+
+        let half_bytes = std::mem::size_of::<f16>();
+        let i32_bytes = std::mem::size_of::<i32>();
+        let logits_region = arena.region("softcap_argmax_logits", logits.len() * half_bytes, 2)?;
+        let output_region =
+            arena.region("softcap_argmax_output", NUM_SEQS as usize * i32_bytes, 4)?;
+        unsafe {
+            write_f16_region(&arena, &logits_region, &logits);
+        }
+
+        let queue = ctx.queue_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "softcap_argmax_smoke_cmdbuf",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "softcap_argmax_smoke_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let buf = arena.buffer_retained();
+        unsafe {
+            encoder.setComputePipelineState(pipelines.get("softcap_argmax_f16")?);
+            encoder.setBuffer_offset_atIndex(Some(buf), logits_region.offset, 0);
+            encoder.setBuffer_offset_atIndex(Some(buf), output_region.offset, 1);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&NUM_SEQS as *const _ as *mut _),
+                4,
+                2,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&VOCAB as *const _ as *mut _),
+                4,
+                3,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&CAP as *const _ as *mut _),
+                4,
+                4,
+            );
+            encoder.dispatchThreadgroups_threadsPerThreadgroup(
+                MTLSize {
+                    width: NUM_SEQS as usize,
+                    height: 1,
+                    depth: 1,
+                },
+                MTLSize {
+                    width: 256,
+                    height: 1,
+                    depth: 1,
+                },
+            );
+            encoder.endEncoding();
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let got_logits = unsafe { read_f16_region(&arena, &logits_region, logits.len()) };
+        for (idx, (got, expected)) in got_logits.iter().zip(expected_logits.iter()).enumerate() {
+            assert!(
+                (got - expected.to_f32()).abs() < 0.0001,
+                "logit {idx}: got {got}, expected {}",
+                expected.to_f32()
+            );
+        }
+        let got_tokens = unsafe {
+            std::slice::from_raw_parts(
+                arena.host_ptr(&output_region) as *const i32,
+                NUM_SEQS as usize,
+            )
+            .to_vec()
+        };
+        assert_eq!(got_tokens, expected_tokens);
+        Ok(())
     }
 
     #[test]
