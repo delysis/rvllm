@@ -1833,6 +1833,72 @@ mod tests {
 
     static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
 
+    fn shared_kv_test_arch(layer_types: Vec<LayerAttnType>, shared_layers: usize) -> ModelArch {
+        let num_hidden_layers = layer_types.len();
+        ModelArch {
+            num_hidden_layers,
+            hidden_size: 1536,
+            num_attention_heads: 8,
+            num_key_value_heads: 4,
+            head_dim: 192,
+            intermediate_size: 4096,
+            use_double_wide_mlp: true,
+            num_kv_shared_layers: shared_layers,
+            hidden_size_per_layer_input: 0,
+            vocab_size_per_layer_input: 0,
+            vocab_size: 262_144,
+            rope_theta: 10_000.0,
+            max_position_embeddings: 4096,
+            attention_bias: false,
+            rms_norm_eps: 1e-6,
+            layer_types,
+            global_head_dim: Some(256),
+            num_global_key_value_heads: Some(4),
+            global_rope_theta: Some(1_000_000.0),
+            partial_rotary_factor: Some(0.25),
+            sliding_window: Some(1024),
+            final_logit_softcapping: Some(30.0),
+            hidden_activation: Some("gelu_pytorch_tanh".to_string()),
+            tie_word_embeddings: true,
+            attention_k_eq_v: false,
+        }
+    }
+
+    #[test]
+    fn shared_kv_source_layers_maps_tail_to_last_unshared_same_attention_kind() {
+        let arch = shared_kv_test_arch(
+            vec![
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+            ],
+            2,
+        );
+
+        let sources = shared_kv_source_layers(&arch);
+
+        assert_eq!(sources, vec![None, None, None, None, Some(2), Some(3)]);
+    }
+
+    #[test]
+    fn shared_kv_source_layers_leave_tail_without_matching_source_unmapped() {
+        let arch = shared_kv_test_arch(
+            vec![
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+            ],
+            1,
+        );
+
+        let sources = shared_kv_source_layers(&arch);
+
+        assert_eq!(sources, vec![None, None, None]);
+    }
+
     fn test_fixture_dir(name: &str) -> PathBuf {
         let id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
