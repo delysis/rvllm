@@ -1357,6 +1357,69 @@ mod tests {
         out
     }
 
+    fn gemm_headwise_rmsnorm_ref(
+        a: &[f32],
+        b: &[f32],
+        gamma: Option<&[f32]>,
+        m: usize,
+        k: usize,
+        head_dim: usize,
+        num_heads: usize,
+        b_row_offset: usize,
+        eps: f32,
+    ) -> Vec<f32> {
+        if let Some(gamma) = gamma {
+            assert_eq!(gamma.len(), head_dim);
+        }
+        let mut out = vec![0.0f32; m * num_heads * head_dim];
+        for token in 0..m {
+            for head in 0..num_heads {
+                let mut raw = vec![0.0f32; head_dim];
+                for dim in 0..head_dim {
+                    let row = b_row_offset + head * head_dim + dim;
+                    for kk in 0..k {
+                        raw[dim] += a[token * k + kk] * b[row * k + kk];
+                    }
+                }
+                let mean_sq = raw.iter().map(|value| value * value).sum::<f32>() / head_dim as f32;
+                let rms = (mean_sq + eps).sqrt();
+                let base = token * num_heads * head_dim + head * head_dim;
+                for dim in 0..head_dim {
+                    let scale = gamma.map_or(1.0, |gamma| gamma[dim]);
+                    out[base + dim] = raw[dim] / rms * scale;
+                }
+            }
+        }
+        out
+    }
+
+    fn gemm_rmsnorm_ref(
+        a: &[f32],
+        b: &[f32],
+        gamma: &[f32],
+        m: usize,
+        n: usize,
+        k: usize,
+        eps: f32,
+    ) -> Vec<f32> {
+        assert_eq!(gamma.len(), n);
+        let mut out = vec![0.0f32; m * n];
+        for row in 0..m {
+            let mut raw = vec![0.0f32; n];
+            for col in 0..n {
+                for kk in 0..k {
+                    raw[col] += a[row * k + kk] * b[col * k + kk];
+                }
+            }
+            let mean_sq = raw.iter().map(|value| value * value).sum::<f32>() / n as f32;
+            let rms = (mean_sq + eps).sqrt();
+            for col in 0..n {
+                out[row * n + col] = raw[col] / rms * gamma[col];
+            }
+        }
+        out
+    }
+
     fn gemm_ref_f32(a: &[f32], b: &[f32], m: usize, n: usize, k: usize) -> Vec<f32> {
         let mut out = vec![0.0f32; m * n];
         for row in 0..m {
@@ -2025,6 +2088,339 @@ mod tests {
                     "{name} output {idx}: got={got} expected={expected}"
                 );
             }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn headwise_qkv_projection_norm_matches_cpu_for_multihead_fixture() -> rvllm_core::Result<()> {
+        let (ctx, pipelines, mut arena) = metal_test_context(64 * 1024)?;
+        const M: u32 = 2;
+        const K: u32 = 5;
+        const HEAD_DIM: u32 = 4;
+        const Q_HEADS: u32 = 3;
+        const KV_HEADS: u32 = 2;
+        const Q_DIM: u32 = Q_HEADS * HEAD_DIM;
+        const KV_DIM: u32 = KV_HEADS * HEAD_DIM;
+        const QKV_ROWS: u32 = Q_DIM + 2 * KV_DIM;
+        let eps = 1e-6f32;
+
+        let a = (0..(M * K) as usize)
+            .map(|idx| ((idx as f32 % 7.0) - 3.0) * 0.25)
+            .collect::<Vec<_>>();
+        let b = (0..(QKV_ROWS * K) as usize)
+            .map(|idx| ((idx as f32 % 11.0) - 5.0) * 0.125)
+            .collect::<Vec<_>>();
+        let q_gamma = [0.75f32, 1.0, 1.25, 1.5];
+        let k_gamma = [1.5f32, 1.25, 1.0, 0.75];
+        let a_f16 = a.iter().copied().map(f16::from_f32).collect::<Vec<_>>();
+        let b_f16 = b.iter().copied().map(f16::from_f32).collect::<Vec<_>>();
+        let q_gamma_f16 = q_gamma
+            .iter()
+            .copied()
+            .map(f16::from_f32)
+            .collect::<Vec<_>>();
+        let k_gamma_f16 = k_gamma
+            .iter()
+            .copied()
+            .map(f16::from_f32)
+            .collect::<Vec<_>>();
+        let half_bytes = std::mem::size_of::<f16>();
+        let a_region = arena.region("qkv_headwise_a", a_f16.len() * half_bytes, 2)?;
+        let b_region = arena.region("qkv_headwise_b", b_f16.len() * half_bytes, 2)?;
+        let q_gamma_region =
+            arena.region("qkv_headwise_q_gamma", q_gamma_f16.len() * half_bytes, 2)?;
+        let k_gamma_region =
+            arena.region("qkv_headwise_k_gamma", k_gamma_f16.len() * half_bytes, 2)?;
+        let q_region = arena.region("qkv_headwise_q", (M * Q_DIM) as usize * half_bytes, 2)?;
+        let k_region = arena.region("qkv_headwise_k", (M * KV_DIM) as usize * half_bytes, 2)?;
+        let v_region =
+            arena.region("qkv_headwise_v_unit", (M * KV_DIM) as usize * half_bytes, 2)?;
+        unsafe {
+            write_f16_region(&arena, &a_region, &a_f16);
+            write_f16_region(&arena, &b_region, &b_f16);
+            write_f16_region(&arena, &q_gamma_region, &q_gamma_f16);
+            write_f16_region(&arena, &k_gamma_region, &k_gamma_f16);
+            write_f16_region(&arena, &q_region, &vec![f16::NAN; (M * Q_DIM) as usize]);
+            write_f16_region(&arena, &k_region, &vec![f16::NAN; (M * KV_DIM) as usize]);
+            write_f16_region(&arena, &v_region, &vec![f16::NAN; (M * KV_DIM) as usize]);
+        }
+
+        let queue = ctx.queue_retained();
+        let buf = arena.buffer_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "qkv_headwise_command_buffer",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        for (kernel, gamma_offset, output_offset, heads, b_row_offset, op) in [
+            (
+                "gemm_headwise_rmsnorm_f16",
+                Some(q_gamma_region.offset),
+                q_region.offset,
+                Q_HEADS,
+                0u32,
+                "q_headwise_projection_norm",
+            ),
+            (
+                "gemm_headwise_rmsnorm_f16",
+                Some(k_gamma_region.offset),
+                k_region.offset,
+                KV_HEADS,
+                Q_DIM,
+                "k_headwise_projection_norm",
+            ),
+            (
+                "gemm_headwise_rmsnorm_unit_f16",
+                None,
+                v_region.offset,
+                KV_HEADS,
+                Q_DIM + KV_DIM,
+                "v_headwise_projection_unit_norm",
+            ),
+        ] {
+            let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+                rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::MetalUnavailable,
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op,
+                        device: "apple-silicon",
+                    },
+                )
+            })?;
+            unsafe {
+                encoder.setComputePipelineState(pipelines.get(kernel)?);
+                encoder.setBuffer_offset_atIndex(Some(buf), a_region.offset, 0);
+                encoder.setBuffer_offset_atIndex(Some(buf), b_region.offset, 1);
+                let mut index = 2;
+                if let Some(gamma_offset) = gamma_offset {
+                    encoder.setBuffer_offset_atIndex(Some(buf), gamma_offset, index);
+                    index += 1;
+                }
+                encoder.setBuffer_offset_atIndex(Some(buf), output_offset, index);
+                index += 1;
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&M as *const _ as *mut _),
+                    4,
+                    index,
+                );
+                index += 1;
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&K as *const _ as *mut _),
+                    4,
+                    index,
+                );
+                index += 1;
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&HEAD_DIM as *const _ as *mut _),
+                    4,
+                    index,
+                );
+                index += 1;
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&heads as *const _ as *mut _),
+                    4,
+                    index,
+                );
+                index += 1;
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&b_row_offset as *const _ as *mut _),
+                    4,
+                    index,
+                );
+                index += 1;
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+                    4,
+                    index,
+                );
+                encoder.dispatchThreadgroups_threadsPerThreadgroup(
+                    MTLSize {
+                        width: (M * heads) as usize,
+                        height: 1,
+                        depth: 1,
+                    },
+                    MTLSize {
+                        width: 256,
+                        height: 1,
+                        depth: 1,
+                    },
+                );
+                encoder.endEncoding();
+            }
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let q_expected = gemm_headwise_rmsnorm_ref(
+            &a,
+            &b,
+            Some(&q_gamma),
+            M as usize,
+            K as usize,
+            HEAD_DIM as usize,
+            Q_HEADS as usize,
+            0,
+            eps,
+        );
+        let k_expected = gemm_headwise_rmsnorm_ref(
+            &a,
+            &b,
+            Some(&k_gamma),
+            M as usize,
+            K as usize,
+            HEAD_DIM as usize,
+            KV_HEADS as usize,
+            Q_DIM as usize,
+            eps,
+        );
+        let v_expected = gemm_headwise_rmsnorm_ref(
+            &a,
+            &b,
+            None,
+            M as usize,
+            K as usize,
+            HEAD_DIM as usize,
+            KV_HEADS as usize,
+            (Q_DIM + KV_DIM) as usize,
+            eps,
+        );
+        for (name, region, expected) in [
+            ("q", &q_region, q_expected),
+            ("k", &k_region, k_expected),
+            ("v_unit", &v_region, v_expected),
+        ] {
+            let got = unsafe { read_f16_region(&arena, region, expected.len()) };
+            for (idx, (got, expected)) in got.iter().zip(expected.iter()).enumerate() {
+                assert!(got.is_finite(), "{name} output {idx} is non-finite");
+                assert!(
+                    (got - expected).abs() < 0.004,
+                    "{name} output {idx}: got={got} expected={expected}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn fused_projection_rmsnorm_handles_large_accumulation_without_nan() -> rvllm_core::Result<()> {
+        let (ctx, pipelines, mut arena) = metal_test_context(64 * 1024)?;
+        const M: u32 = 2;
+        const N: u32 = 8;
+        const K: u32 = 8;
+        let eps = 1e-6f32;
+        let a = (0..(M * K) as usize)
+            .map(|idx| if idx % 2 == 0 { 64.0 } else { -48.0 })
+            .collect::<Vec<_>>();
+        let b = (0..(N * K) as usize)
+            .map(|idx| {
+                let sign = if idx % 3 == 0 { -1.0 } else { 1.0 };
+                sign * (32.0 + (idx % 5) as f32)
+            })
+            .collect::<Vec<_>>();
+        let gamma = (0..N as usize)
+            .map(|idx| 0.75 + idx as f32 * 0.05)
+            .collect::<Vec<_>>();
+        let a_f16 = a.iter().copied().map(f16::from_f32).collect::<Vec<_>>();
+        let b_f16 = b.iter().copied().map(f16::from_f32).collect::<Vec<_>>();
+        let gamma_f16 = gamma.iter().copied().map(f16::from_f32).collect::<Vec<_>>();
+        let half_bytes = std::mem::size_of::<f16>();
+        let a_region = arena.region("large_gemm_rmsnorm_a", a_f16.len() * half_bytes, 2)?;
+        let b_region = arena.region("large_gemm_rmsnorm_b", b_f16.len() * half_bytes, 2)?;
+        let gamma_region =
+            arena.region("large_gemm_rmsnorm_gamma", gamma_f16.len() * half_bytes, 2)?;
+        let c_region = arena.region("large_gemm_rmsnorm_c", (M * N) as usize * half_bytes, 2)?;
+        unsafe {
+            write_f16_region(&arena, &a_region, &a_f16);
+            write_f16_region(&arena, &b_region, &b_f16);
+            write_f16_region(&arena, &gamma_region, &gamma_f16);
+            write_f16_region(&arena, &c_region, &vec![f16::NAN; (M * N) as usize]);
+        }
+
+        let queue = ctx.queue_retained();
+        let buf = arena.buffer_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "large_gemm_rmsnorm_command_buffer",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "large_gemm_rmsnorm_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        unsafe {
+            encoder.setComputePipelineState(pipelines.get("gemm_rmsnorm_f16")?);
+            encoder.setBuffer_offset_atIndex(Some(buf), a_region.offset, 0);
+            encoder.setBuffer_offset_atIndex(Some(buf), b_region.offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(buf), gamma_region.offset, 2);
+            encoder.setBuffer_offset_atIndex(Some(buf), c_region.offset, 3);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&M as *const _ as *mut _),
+                4,
+                4,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&N as *const _ as *mut _),
+                4,
+                5,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&K as *const _ as *mut _),
+                4,
+                6,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+                4,
+                7,
+            );
+            encoder.dispatchThreadgroups_threadsPerThreadgroup(
+                MTLSize {
+                    width: M as usize,
+                    height: 1,
+                    depth: 1,
+                },
+                MTLSize {
+                    width: 256,
+                    height: 1,
+                    depth: 1,
+                },
+            );
+            encoder.endEncoding();
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let expected = gemm_rmsnorm_ref(&a, &b, &gamma, M as usize, N as usize, K as usize, eps);
+        let got = unsafe { read_f16_region(&arena, &c_region, expected.len()) };
+        for (idx, (got, expected)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                got.is_finite(),
+                "fused projection RMSNorm output {idx} is non-finite"
+            );
+            assert!(
+                (got - expected).abs() < 0.004,
+                "fused projection RMSNorm output {idx}: got={got} expected={expected}"
+            );
         }
         Ok(())
     }
