@@ -8499,6 +8499,151 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
+#[ignore = "requires cached Gemma4 E2B model directory and large Metal arena opt-in"]
+fn real_gemma4_e2b_shared_kv_layers_13_to_16_decode_trace_explains_tail_cache_use() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before shared-KV trace");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+
+    let trace_path_template =
+        std::path::PathBuf::from("/tmp/gemma4-e2b-shared-kv-layer{layer}-decode-trace.json");
+    for layer_idx in [13usize, 14, 15, 16] {
+        let path = std::path::PathBuf::from(format!(
+            "/tmp/gemma4-e2b-shared-kv-layer{layer_idx}-decode-trace.json"
+        ));
+        let _ = fs::remove_file(path);
+    }
+
+    let env_guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_JSON_ENV,
+        RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV,
+    ]);
+    env_guard.set(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV, "13,14,15,16");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_JSON_ENV, &trace_path_template);
+    env_guard.set(RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV, "1");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+    backend
+        .prepare(&plan)
+        .expect("real Gemma4 E2B Metal prepare/load should complete before shared-KV trace");
+
+    let prefill = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+        vec![0, 2],
+        vec![1],
+        vec![2],
+    );
+    let prefill_ticket = backend
+        .launch_prefill(&prefill)
+        .expect("real E2B shared-KV trace prefill should launch");
+    let prefill_out = backend
+        .collect(prefill_ticket)
+        .expect("real E2B shared-KV trace prefill collect should succeed");
+    assert!(prefill_out.is_empty());
+
+    let decode = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(4)],
+        vec![0, 1],
+        vec![1],
+        vec![2],
+    );
+    let decode_ticket = backend
+        .launch_rollout(&decode, None)
+        .expect("real E2B shared-KV trace decode should launch");
+    let decode_out = backend
+        .collect(decode_ticket)
+        .expect("real E2B shared-KV trace decode collect should succeed");
+    assert_eq!(
+        decode_out.len(),
+        1,
+        "debug skip-final-logits path must still return one placeholder token"
+    );
+
+    for (layer_idx, expected_source) in
+        [(13usize, None), (14, None), (15, Some(13)), (16, Some(13))]
+    {
+        let path = std::path::PathBuf::from(format!(
+            "/tmp/gemma4-e2b-shared-kv-layer{layer_idx}-decode-trace.json"
+        ));
+        let raw = fs::read_to_string(&path).unwrap_or_else(|err| {
+            panic!(
+                "read real E2B shared-KV layer {layer_idx} trace at {}: {err}",
+                path.display()
+            )
+        });
+        let trace: Value = serde_json::from_str(&raw)
+            .unwrap_or_else(|err| panic!("parse shared-KV layer {layer_idx} trace: {err}"));
+        assert_eq!(
+            trace["schema"].as_str(),
+            Some("rvllm.gemma4_metal_layer_trace.v1")
+        );
+        assert_eq!(trace["phase"].as_str(), Some("decode"));
+        assert_eq!(trace["layer"].as_u64(), Some(layer_idx as u64));
+        assert_eq!(
+            trace["shared_kv_source_layer"]
+                .as_u64()
+                .map(|value| value as usize),
+            expected_source,
+            "unexpected shared-KV source layer for E2B layer {layer_idx}"
+        );
+        for name in [
+            "q_projection",
+            "k_projection",
+            "v_projection",
+            "after_q_norm",
+            "after_k_norm",
+            "after_v_norm",
+            "after_rope_q",
+            "after_rope_k",
+            "attention_output",
+            "final_residual_after_layer",
+            "local_kv_cache_k",
+            "local_kv_cache_v",
+            "attention_kv_cache_k",
+            "attention_kv_cache_v",
+        ] {
+            let summary = &trace["summaries"][name];
+            assert!(
+                summary.is_object(),
+                "shared-KV layer {layer_idx} missing summary {name}"
+            );
+            let total = summary["total_count"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("shared-KV layer {layer_idx} {name} total_count"));
+            let finite = summary["finite_count"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("shared-KV layer {layer_idx} {name} finite_count"));
+            assert_eq!(
+                finite, total,
+                "shared-KV layer {layer_idx} {name} has non-finite values"
+            );
+            let max_abs = summary["max_abs"].as_f64().unwrap_or(0.0);
+            let mean_abs = summary["mean_abs"].as_f64().unwrap_or(0.0);
+            eprintln!(
+                "E2B shared-KV trace layer {layer_idx} {name}: finite={finite}/{total} max_abs={max_abs:.6e} mean_abs={mean_abs:.6e}"
+            );
+        }
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
 #[ignore = "requires cached Gemma4 E2B model directory, HF reference artifact, and large Metal arena opt-in"]
 fn real_gemma4_e2b_model_backend_prefill_decode_selected_logits_match_hf_reference() {
     let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {

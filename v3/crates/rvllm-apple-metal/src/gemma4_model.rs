@@ -49,10 +49,20 @@ fn probe_ctx(op: &'static str) -> AppleCtx {
 }
 
 #[cfg(target_os = "macos")]
-fn debug_trace_layer_from_env() -> Option<usize> {
+fn debug_trace_layers_from_env() -> Vec<usize> {
     std::env::var(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV)
         .ok()
-        .and_then(|raw| raw.parse::<usize>().ok())
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|part| part.trim().parse::<usize>().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "macos")]
+fn debug_trace_layer_enabled(layers: &[usize], layer_idx: usize) -> bool {
+    layers.contains(&layer_idx)
 }
 
 #[derive(Debug, Clone)]
@@ -938,7 +948,7 @@ impl ProbeModelPlan {
         let i32_bytes = std::mem::size_of::<i32>();
         let f32_bytes = std::mem::size_of::<f32>();
         let max_probe_tokens = PROBE_METAL_MAX_PROMPT_TOKENS;
-        let debug_trace_layer = debug_trace_layer_from_env();
+        let debug_trace_layers = debug_trace_layers_from_env();
         let embed_bytes = embed_info.nbytes;
         let final_norm_bytes = final_norm_info.nbytes;
         let lm_head_bytes = if tie_embeddings {
@@ -997,7 +1007,7 @@ impl ProbeModelPlan {
                 let gate_up_out_bytes = max_probe_tokens * 2 * intermediate * half_bytes;
                 let activated_bytes = max_probe_tokens * intermediate * half_bytes;
                 let mlp_out_bytes = max_probe_tokens * hidden * half_bytes;
-                let trace_bytes = if debug_trace_layer == Some(layer_idx) {
+                let trace_bytes = if debug_trace_layer_enabled(&debug_trace_layers, layer_idx) {
                     let ple_dim = ple_names.as_ref().map_or(0, |ple| ple.ple_dim);
                     let ple_trace_elems = if ple_dim > 0 {
                         2 * ple_dim + 2 * hidden
@@ -1117,7 +1127,7 @@ impl Gemma4MetalState {
     ) -> Result<Self> {
         let _ = ctx;
         let plan = ProbeModelPlan::new(model_dir)?;
-        let debug_trace_layer = debug_trace_layer_from_env();
+        let debug_trace_layers = debug_trace_layers_from_env();
         let mut mapped_refs = map_safetensor_to_arena(
             arena,
             model_dir,
@@ -1320,7 +1330,7 @@ impl Gemma4MetalState {
                 max_probe_tokens * hidden * half_bytes,
                 16,
             )?;
-            let trace = if debug_trace_layer == Some(layer_idx) {
+            let trace = if debug_trace_layer_enabled(&debug_trace_layers, layer_idx) {
                 let trace_region = |arena: &mut MetalBufferArena,
                                     name: &str,
                                     elems_per_token: usize|
