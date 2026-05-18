@@ -1931,7 +1931,7 @@ impl ModelMetalBackend {
     }
 
     fn estimate_layer_encoder_count(weights: &MetalLayerWeights) -> u64 {
-        let mut count = 11;
+        let mut count = 10;
         count += weights.q_norm_offset.is_some() as u64;
         count += weights.k_norm_offset.is_some() as u64;
         count += weights.v_norm_offset.is_some() as u64;

@@ -1015,6 +1015,46 @@ kernel void residual_add_f16(
     residual[gid] = f16_sat(float(residual[gid]) + float(addition[gid]));
 }
 
+kernel void residual_add_rmsnorm_f16(
+    device half       *residual   [[buffer(0)]],
+    device const half *addition   [[buffer(1)]],
+    device half       *output     [[buffer(2)]],
+    device const half *gamma      [[buffer(3)]],
+    constant uint     &hidden     [[buffer(4)]],
+    constant float    &eps        [[buffer(5)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid;
+    uint base = token * hidden;
+
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    for (uint i = tid; i < hidden; i += tg_size) {
+        uint idx = base + i;
+        half updated = f16_sat(float(residual[idx]) + float(addition[idx]));
+        residual[idx] = updated;
+        float v = float(updated);
+        local_sum += v * v;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            shared_sum[tid] += shared_sum[tid + s];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    float rms = rsqrt(shared_sum[0] / float(hidden) + eps);
+    for (uint i = tid; i < hidden; i += tg_size) {
+        uint idx = base + i;
+        output[idx] = f16_sat(float(residual[idx]) * rms * float(gamma[i]));
+    }
+}
+
 kernel void layer_scale_f16(
     device half       *x          [[buffer(0)]],
     device const half *scale      [[buffer(1)]],
@@ -1217,6 +1257,7 @@ pub const KERNEL_NAMES: &[&str] = &[
     "ple_combine_f16",
     "ple_gelu_mul_f16",
     "residual_add_f16",
+    "residual_add_rmsnorm_f16",
     "layer_scale_f16",
     "argmax_f16",
     "final_norm_lm_head_argmax_small_f16",
@@ -2570,6 +2611,156 @@ mod tests {
             assert!(
                 (got - expected).abs() < 0.004,
                 "fused projection RMSNorm output {idx}: got={got} expected={expected}"
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn residual_add_rmsnorm_matches_sequential_half_rounded_reference() -> rvllm_core::Result<()> {
+        let (ctx, pipelines, mut arena) = metal_test_context(16 * 1024)?;
+        const NUM_TOKENS: u32 = 2;
+        const HIDDEN: u32 = 8;
+        let eps = 1e-5f32;
+        let residual = (0..(NUM_TOKENS * HIDDEN) as usize)
+            .map(|idx| (idx as f32 - 5.0) * 0.25)
+            .collect::<Vec<_>>();
+        let addition = (0..(NUM_TOKENS * HIDDEN) as usize)
+            .map(|idx| {
+                let sign = if idx % 2 == 0 { 1.0 } else { -1.0 };
+                sign * (0.5 + (idx % 3) as f32 * 0.125)
+            })
+            .collect::<Vec<_>>();
+        let gamma = (0..HIDDEN as usize)
+            .map(|idx| 0.75 + idx as f32 * 0.0625)
+            .collect::<Vec<_>>();
+
+        let mut expected_residual = vec![0.0f32; residual.len()];
+        let mut expected_normed = vec![0.0f32; residual.len()];
+        for token in 0..NUM_TOKENS as usize {
+            let base = token * HIDDEN as usize;
+            let mut sum = 0.0f32;
+            for dim in 0..HIDDEN as usize {
+                let updated = f16::from_f32(residual[base + dim] + addition[base + dim]).to_f32();
+                expected_residual[base + dim] = updated;
+                sum += updated * updated;
+            }
+            let rms = (sum / HIDDEN as f32 + eps).sqrt();
+            for dim in 0..HIDDEN as usize {
+                expected_normed[base + dim] =
+                    f16::from_f32(expected_residual[base + dim] / rms * gamma[dim]).to_f32();
+            }
+        }
+
+        let residual_f16 = residual
+            .iter()
+            .copied()
+            .map(f16::from_f32)
+            .collect::<Vec<_>>();
+        let addition_f16 = addition
+            .iter()
+            .copied()
+            .map(f16::from_f32)
+            .collect::<Vec<_>>();
+        let gamma_f16 = gamma.iter().copied().map(f16::from_f32).collect::<Vec<_>>();
+        let half_bytes = std::mem::size_of::<f16>();
+        let residual_region = arena.region(
+            "residual_add_rmsnorm_residual",
+            residual_f16.len() * half_bytes,
+            2,
+        )?;
+        let addition_region = arena.region(
+            "residual_add_rmsnorm_addition",
+            addition_f16.len() * half_bytes,
+            2,
+        )?;
+        let gamma_region = arena.region(
+            "residual_add_rmsnorm_gamma",
+            gamma_f16.len() * half_bytes,
+            2,
+        )?;
+        let output_region = arena.region(
+            "residual_add_rmsnorm_output",
+            residual_f16.len() * half_bytes,
+            2,
+        )?;
+        unsafe {
+            write_f16_region(&arena, &residual_region, &residual_f16);
+            write_f16_region(&arena, &addition_region, &addition_f16);
+            write_f16_region(&arena, &gamma_region, &gamma_f16);
+            write_f16_region(&arena, &output_region, &vec![f16::NAN; residual_f16.len()]);
+        }
+
+        let queue = ctx.queue_retained();
+        let buf = arena.buffer_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "residual_add_rmsnorm_command_buffer",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::MetalUnavailable,
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "residual_add_rmsnorm_encoder",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        unsafe {
+            encoder.setComputePipelineState(pipelines.get("residual_add_rmsnorm_f16")?);
+            encoder.setBuffer_offset_atIndex(Some(buf), residual_region.offset, 0);
+            encoder.setBuffer_offset_atIndex(Some(buf), addition_region.offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(buf), output_region.offset, 2);
+            encoder.setBuffer_offset_atIndex(Some(buf), gamma_region.offset, 3);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&HIDDEN as *const _ as *mut _),
+                4,
+                4,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+                4,
+                5,
+            );
+            encoder.dispatchThreadgroups_threadsPerThreadgroup(
+                MTLSize {
+                    width: NUM_TOKENS as usize,
+                    height: 1,
+                    depth: 1,
+                },
+                MTLSize {
+                    width: 256,
+                    height: 1,
+                    depth: 1,
+                },
+            );
+            encoder.endEncoding();
+        }
+        cmd_buf.commit();
+        cmd_buf.waitUntilCompleted();
+
+        let got_residual = unsafe { read_f16_region(&arena, &residual_region, residual.len()) };
+        let got_normed = unsafe { read_f16_region(&arena, &output_region, residual.len()) };
+        for idx in 0..residual.len() {
+            assert!(
+                (got_residual[idx] - expected_residual[idx]).abs() < 0.0001,
+                "residual[{idx}]: got={} expected={}",
+                got_residual[idx],
+                expected_residual[idx]
+            );
+            assert!(
+                (got_normed[idx] - expected_normed[idx]).abs() < 0.0001,
+                "normed[{idx}]: got={} expected={}",
+                got_normed[idx],
+                expected_normed[idx]
             );
         }
         Ok(())

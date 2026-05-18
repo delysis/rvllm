@@ -1197,21 +1197,15 @@ pub unsafe fn metal_encode_forward_layer(
         }
         scratch.mlp_out
     };
-    encode_residual_add(
+    // Fuse the half-rounded attention residual add with the immediately
+    // following pre-FFN RMSNorm. The kernel stores the updated residual before
+    // accumulating the RMS sum, preserving the prior two-kernel rounding order.
+    encode_residual_add_rmsnorm(
         &cmd_buf,
         pipelines,
         buf,
         residual_offset,
         attn_addition_offset,
-        num_tokens * hidden,
-    )?;
-
-    // 10. Pre-FFN RMSNorm. Explicit pre-FF Gemma norm overrides the legacy MLP norm.
-    encode_rmsnorm(
-        &cmd_buf,
-        pipelines,
-        buf,
-        residual_offset,
         scratch.normed_hidden,
         weights
             .pre_ff_norm_offset
@@ -1219,7 +1213,6 @@ pub unsafe fn metal_encode_forward_layer(
         hidden,
         dims.rms_eps,
         num_tokens,
-        "ffn_norm",
     )?;
     if let Some(trace) = trace {
         encode_trace_copy(
@@ -2110,6 +2103,59 @@ unsafe fn encode_residual_add(
         depth: 1,
     };
     encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_residual_add_rmsnorm(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    residual_offset: usize,
+    addition_offset: usize,
+    output_offset: usize,
+    gamma_offset: usize,
+    hidden: u32,
+    eps: f32,
+    num_tokens: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "residual_add_rmsnorm",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("residual_add_rmsnorm_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), addition_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), gamma_offset, 3);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        5,
+    );
+    let groups = MTLSize {
+        width: num_tokens as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
     Ok(())
 }
