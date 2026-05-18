@@ -633,4 +633,180 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    #[ignore = "requires private ANE compile opt-in; records private compile boundary only"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_tiny_projection_private_compile_boundary_is_reported() {
+        struct EnvGuard {
+            name: &'static str,
+            previous: Option<std::ffi::OsString>,
+        }
+
+        impl EnvGuard {
+            fn set(name: &'static str, value: &std::path::Path) -> Self {
+                let previous = std::env::var_os(name);
+                std::env::set_var(name, value);
+                Self { name, previous }
+            }
+        }
+
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                if let Some(previous) = self.previous.take() {
+                    std::env::set_var(self.name, previous);
+                } else {
+                    std::env::remove_var(self.name);
+                }
+            }
+        }
+
+        fn report_private_compile_boundary(kind: &str, path: &std::path::Path) -> bool {
+            let current_exe =
+                std::env::current_exe().expect("test binary path should be available");
+            let output = std::process::Command::new(current_exe)
+                .arg("private_ane_compile_model_child_probe")
+                .arg("--ignored")
+                .arg("--nocapture")
+                .env("RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_KIND", kind)
+                .env("RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_PATH", path)
+                .output()
+                .expect("private compile boundary child process should launch");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stdout.trim().is_empty() {
+                eprint!("{stdout}");
+            }
+            if !stderr.trim().is_empty() {
+                eprint!("{stderr}");
+            }
+            if output.status.success() {
+                let accepted = stdout.contains("_ANEClient compileModel accepted")
+                    || stderr.contains("_ANEClient compileModel accepted");
+                return accepted;
+            }
+
+            eprintln!(
+                "[ANE DIAG] _ANEClient compileModel child exited with status {} for {kind} {}; treating this as a private compile boundary, no ANE execution claim made",
+                output.status,
+                path.display()
+            );
+            false
+        }
+
+        let config = AneRolloutConfig {
+            bucket: RolloutBucket {
+                seqs: 1,
+                tokens: 16,
+            },
+            hidden_size: 16,
+            intermediate_size: 16,
+            num_layers: 1,
+        };
+        let plan = AneProgramPlan::proj_only(config);
+
+        let temp_dir = std::env::temp_dir().join("rvllm_test_private_compile_boundary_ane");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let _cache_guard = EnvGuard::set("RVLLM_ANE_CACHE_DIR", &temp_dir.join("cache"));
+        let weights_path = temp_dir.join("weights.bin");
+        std::fs::write(&weights_path, vec![0u8; 1024 * 1024]).unwrap();
+
+        let compiled = match compile_private_ane_program(&plan, &weights_path) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("[ANE ERROR] {e}");
+                for diag in last_ane_diagnostics() {
+                    eprintln!("[ANE DIAG] {diag}");
+                }
+                panic!(
+                    "private ANE compile failed before private compile-boundary diagnostic: {e}"
+                );
+            }
+        };
+        let workspace = compiled
+            .parent()
+            .expect("compiled model should live under a cache workspace");
+        let source_model = workspace.join("model.mlmodel");
+        assert!(
+            source_model.exists(),
+            "private compile-boundary test needs generated source model at {}",
+            source_model.display()
+        );
+
+        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
+        let public_compiled = rvllm_apple_ane_sys::coreml_compile_model(
+            source_model
+                .to_str()
+                .expect("source model path should be UTF-8"),
+        )
+        .expect("public CoreML compile should accept generated tiny projection model");
+        eprintln!(
+            "[ANE DIAG] public MLModel compileModelAtURL accepted source {}; compiled to {}",
+            source_model.display(),
+            public_compiled
+        );
+
+        let source_private_ok = report_private_compile_boundary("source .mlmodel", &source_model);
+        let compiled_private_ok = report_private_compile_boundary("compiled .mlmodelc", &compiled);
+
+        if source_private_ok || compiled_private_ok {
+            let compiled_str = compiled
+                .to_str()
+                .expect("compiled model path should be UTF-8");
+            match rvllm_apple_ane_sys::AneModelHandle::load_with_error(compiled_str) {
+                Ok(_) => {
+                    eprintln!(
+                        "[ANE DIAG] _ANEClient loadModel accepted {} after private compile boundary; evaluation intentionally not run",
+                        compiled.display()
+                    );
+                }
+                Err(err) => {
+                    assert!(
+                        !err.trim().is_empty(),
+                        "_ANEClient loadModel rejection after private compile should include a reason"
+                    );
+                    eprintln!(
+                        "[ANE DIAG] _ANEClient loadModel rejected {} after private compile boundary; no ANE execution claim made: {err}",
+                        compiled.display()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "child process for private ANE compile-boundary diagnostics"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_compile_model_child_probe() {
+        let Some(path) = std::env::var_os("RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_PATH") else {
+            eprintln!("skipping: RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_PATH is not set");
+            return;
+        };
+        let kind = std::env::var("RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_KIND")
+            .unwrap_or_else(|_| "model".to_string());
+        let path = std::path::PathBuf::from(path);
+        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
+        let client = rvllm_apple_ane_sys::get_ane_client()
+            .expect("_ANEClient sharedConnection should be available");
+        let path_str = path.to_str().expect("ANE model path should be UTF-8");
+        match rvllm_apple_ane_sys::compile_model_with_ane_client(path_str, &client) {
+            Ok(()) => {
+                eprintln!(
+                    "[ANE DIAG] _ANEClient compileModel accepted {kind} {}; no ANE execution claim made",
+                    path.display()
+                );
+            }
+            Err(err) => {
+                assert!(
+                    !err.trim().is_empty(),
+                    "_ANEClient compileModel rejection for {kind} should include a reason"
+                );
+                eprintln!(
+                    "[ANE DIAG] _ANEClient compileModel rejected {kind} {}; no ANE execution claim made: {err}",
+                    path.display()
+                );
+            }
+        }
+    }
 }
