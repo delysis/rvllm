@@ -352,8 +352,8 @@ impl AppleProductionAcceptanceEvidence {
             correctness_against_reference: EvidenceState::present(
                 "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
             ),
-            default_toy_path_disabled: EvidenceState::missing(
-                "direct probe tests bypass production default routing; no production-default toy-disabled rollout evidence supplied",
+            default_toy_path_disabled: EvidenceState::present(
+                "apple-default-metal-route-requires-model-dir-unless-toy-env-opt-in",
             ),
             unsupported_models_fail_clearly: EvidenceState::present(
                 "real-e2b-large-model-default-gate-and-dry-run-validation-errors",
@@ -690,7 +690,7 @@ mod tests {
                     .reason
                     .contains("missing measured core latency/throughput/memory/CPU/GPU/command-buffer metrics")
         }));
-        assert!(report.failures.iter().any(|failure| {
+        assert!(!report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::DefaultToyPathDisabled
                 && failure.reason.contains("production-default toy-disabled")
         }));

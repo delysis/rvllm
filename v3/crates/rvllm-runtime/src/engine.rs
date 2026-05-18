@@ -249,6 +249,36 @@ mod tests {
     use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
     use rvllm_core::{ReqId, TokenId};
 
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    static TOY_METAL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    struct ToyMetalEnvGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl ToyMetalEnvGuard {
+        fn new() -> Self {
+            Self {
+                _guard: TOY_METAL_ENV_LOCK.lock().expect("lock toy Metal env"),
+                previous: std::env::var_os("RVLLM_APPLE_TOY_METAL"),
+            }
+        }
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl Drop for ToyMetalEnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.as_ref() {
+                std::env::set_var("RVLLM_APPLE_TOY_METAL", previous);
+            } else {
+                std::env::remove_var("RVLLM_APPLE_TOY_METAL");
+            }
+        }
+    }
+
     #[test]
     fn empty_engine_has_no_pending_work() {
         let e = Engine::new();
@@ -364,6 +394,49 @@ mod tests {
             "Decode should return tokens from Metal backend"
         );
         assert_eq!(outputs2[0].new_token, seed);
+    }
+
+    #[test]
+    #[cfg(feature = "apple")]
+    #[cfg(target_os = "macos")]
+    fn apple_default_metal_route_requires_model_dir_unless_toy_is_explicitly_enabled() {
+        use rvllm_apple::AppleRuntimePlan;
+
+        let _guard = ToyMetalEnvGuard::new();
+        std::env::remove_var("RVLLM_APPLE_TOY_METAL");
+
+        let plan = AppleRuntimePlan {
+            target: rvllm_apple::device::AppleAcceleratorTarget::from_device_name(
+                "Apple M4 Max",
+                1,
+            ),
+            mode: rvllm_apple::plan::AppleBackendMode::MetalPrefillMetalDecode,
+            rollout_bucket: None,
+            rollout_tokens: 1,
+            private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: 1,
+            ane_intermediate_size: 1,
+            ane_num_layers: 1,
+            model_layout_hash: [0u8; 32],
+            weights_path: None,
+        };
+
+        let err = match Engine::new().with_apple_runtime_plan(plan.clone()) {
+            Ok(_) => panic!("default Metal route should require a model directory"),
+            Err(err) => err,
+        };
+        assert!(
+            format!("{err}").contains("metal_model_dir_required"),
+            "unexpected default Metal route error: {err}"
+        );
+
+        std::env::set_var("RVLLM_APPLE_TOY_METAL", "1");
+        Engine::new()
+            .with_apple_runtime_plan(plan)
+            .expect("toy Metal route should be available only with explicit env opt-in");
     }
 
     #[test]
