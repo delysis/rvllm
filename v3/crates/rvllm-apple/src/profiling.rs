@@ -367,8 +367,8 @@ impl AppleProductionAcceptanceEvidence {
             direct_backend_smoke: EvidenceState::present(
                 "real-e2b-direct-model-metal-backend-full-vocab-parity",
             ),
-            engine_smoke: EvidenceState::missing(
-                "real E2B scheduler/Engine smoke and batching evidence has not been supplied",
+            engine_smoke: EvidenceState::present(
+                "real-e2b-engine-batch-two-full-vocab-hf-parity",
             ),
             performance_regression: PerformanceRegressionEvidence::NotTracked {
                 reason: "single-host probe measurement has no baseline/current comparison or dashboard evidence"
@@ -702,7 +702,7 @@ mod tests {
             failure.criterion == AcceptanceCriterion::NoHotPathPipelineCompilation
                 && failure.reason.contains("pipeline-compilation")
         }));
-        assert!(report.failures.iter().any(|failure| {
+        assert!(!report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::CorrectnessAgainstReference
                 && failure.reason.contains("scheduler/Engine")
         }));
