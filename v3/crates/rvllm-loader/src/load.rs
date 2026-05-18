@@ -81,6 +81,31 @@ pub struct ModelArch {
 }
 
 impl ModelArch {
+    pub fn shared_kv_source_layers(&self) -> Vec<Option<usize>> {
+        let mut out = vec![None; self.num_hidden_layers];
+        if self.num_kv_shared_layers == 0 || self.num_kv_shared_layers > self.num_hidden_layers {
+            return out;
+        }
+        let first_shared = self.num_hidden_layers - self.num_kv_shared_layers;
+        let mut last_sliding = None;
+        let mut last_full = None;
+        for layer_idx in 0..first_shared {
+            match self.layer_types[layer_idx] {
+                LayerAttnType::SlidingAttention => last_sliding = Some(layer_idx),
+                LayerAttnType::Full => last_full = Some(layer_idx),
+                LayerAttnType::Linear => {}
+            }
+        }
+        for layer_idx in first_shared..self.num_hidden_layers {
+            out[layer_idx] = match self.layer_types[layer_idx] {
+                LayerAttnType::SlidingAttention => last_sliding,
+                LayerAttnType::Full => last_full,
+                LayerAttnType::Linear => None,
+            };
+        }
+        out
+    }
+
     pub fn from_dir(dir: &Path) -> Result<Self> {
         let p = dir.join("config.json");
         let bytes = std::fs::read(&p).map_err(|source| RvllmError::Io {
@@ -961,6 +986,37 @@ fn rope_cos_sin_bytes(arch: &ModelArch) -> (Vec<u8>, Vec<u8>) {
 mod tests {
     use super::*;
 
+    fn test_model_arch(layer_types: Vec<LayerAttnType>, shared_layers: usize) -> ModelArch {
+        let num_hidden_layers = layer_types.len();
+        ModelArch {
+            num_hidden_layers,
+            hidden_size: 1536,
+            num_attention_heads: 8,
+            num_key_value_heads: 1,
+            head_dim: 192,
+            intermediate_size: 4096,
+            use_double_wide_mlp: true,
+            num_kv_shared_layers: shared_layers,
+            hidden_size_per_layer_input: 0,
+            vocab_size_per_layer_input: 0,
+            vocab_size: 262_144,
+            rope_theta: 10_000.0,
+            max_position_embeddings: 4096,
+            attention_bias: false,
+            rms_norm_eps: 1e-6,
+            layer_types,
+            global_head_dim: Some(512),
+            num_global_key_value_heads: Some(1),
+            global_rope_theta: Some(1_000_000.0),
+            partial_rotary_factor: Some(0.25),
+            sliding_window: Some(1024),
+            final_logit_softcapping: Some(30.0),
+            hidden_activation: Some("gelu_pytorch_tanh".to_string()),
+            tie_word_embeddings: true,
+            attention_k_eq_v: false,
+        }
+    }
+
     #[test]
     fn fp8_encode_zero_is_zero() {
         assert_eq!(fp8_e4m3_encode(0.0), 0);
@@ -1012,5 +1068,68 @@ mod tests {
         // 4 positions * 64 half * 2 bytes = 512
         assert_eq!(cos.len(), 512);
         assert_eq!(sin.len(), 512);
+    }
+
+    #[test]
+    fn shared_kv_source_layers_map_tail_by_attention_kind() {
+        let arch = test_model_arch(
+            vec![
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+            ],
+            2,
+        );
+
+        assert_eq!(
+            arch.shared_kv_source_layers(),
+            vec![None, None, None, None, None, Some(3), Some(4)]
+        );
+    }
+
+    #[test]
+    fn shared_kv_source_layers_leave_unmatched_tail_kind_unmapped() {
+        let arch = test_model_arch(
+            vec![
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::SlidingAttention,
+                LayerAttnType::Full,
+            ],
+            1,
+        );
+
+        assert_eq!(arch.shared_kv_source_layers(), vec![None, None, None]);
+    }
+
+    #[test]
+    fn gemma4_real_model_shared_kv_source_map_is_resolved_by_attention_kind_when_env_is_set() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let arch = ModelArch::from_dir(Path::new(&model_dir))
+            .expect("real Gemma4 E2B arch should parse before shared-KV source map audit");
+
+        if arch.num_hidden_layers != 35 || arch.num_kv_shared_layers != 20 {
+            eprintln!(
+                "skipping: expected Gemma4 E2B 35-layer/20-shared config, got layers={} shared={}",
+                arch.num_hidden_layers, arch.num_kv_shared_layers
+            );
+            return;
+        }
+
+        let sources = arch.shared_kv_source_layers();
+        assert_eq!(sources.len(), 35);
+        assert_eq!(sources[13], None);
+        assert_eq!(sources[14], None);
+        assert_eq!(sources[15], Some(13));
+        assert_eq!(sources[18], Some(13));
+        assert_eq!(sources[19], Some(14));
+        assert_eq!(sources[34], Some(14));
+        eprintln!("Gemma4 E2B shared-KV source layers: {sources:?}");
     }
 }

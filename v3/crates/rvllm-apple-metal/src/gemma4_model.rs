@@ -1176,7 +1176,7 @@ impl Gemma4MetalState {
         };
 
         let mut layers = Vec::new();
-        let shared_kv_source_layers = shared_kv_source_layers(&plan.arch);
+        let shared_kv_source_layers = plan.arch.shared_kv_source_layers();
 
         for layer_idx in 0..plan.arch.num_hidden_layers {
             let layer_names = plan.layer_names.get(layer_idx).ok_or_else(|| {
@@ -1701,32 +1701,6 @@ fn optional_region_or_alias_lookup(
 }
 
 #[cfg(target_os = "macos")]
-fn shared_kv_source_layers(arch: &ModelArch) -> Vec<Option<usize>> {
-    let mut out = vec![None; arch.num_hidden_layers];
-    if arch.num_kv_shared_layers == 0 || arch.num_kv_shared_layers > arch.num_hidden_layers {
-        return out;
-    }
-    let first_shared = arch.num_hidden_layers - arch.num_kv_shared_layers;
-    let mut last_sliding = None;
-    let mut last_full = None;
-    for layer_idx in 0..first_shared {
-        match arch.layer_types[layer_idx] {
-            LayerAttnType::SlidingAttention => last_sliding = Some(layer_idx),
-            LayerAttnType::Full => last_full = Some(layer_idx),
-            LayerAttnType::Linear => {}
-        }
-    }
-    for layer_idx in first_shared..arch.num_hidden_layers {
-        out[layer_idx] = match arch.layer_types[layer_idx] {
-            LayerAttnType::SlidingAttention => last_sliding,
-            LayerAttnType::Full => last_full,
-            LayerAttnType::Linear => None,
-        };
-    }
-    out
-}
-
-#[cfg(target_os = "macos")]
 fn map_fused_bytes_to_arena(
     arena: &mut MetalBufferArena,
     name: &str,
@@ -1878,7 +1852,7 @@ mod tests {
             2,
         );
 
-        let sources = shared_kv_source_layers(&arch);
+        let sources = arch.shared_kv_source_layers();
 
         assert_eq!(sources, vec![None, None, None, None, Some(2), Some(3)]);
     }
@@ -1894,7 +1868,7 @@ mod tests {
             1,
         );
 
-        let sources = shared_kv_source_layers(&arch);
+        let sources = arch.shared_kv_source_layers();
 
         assert_eq!(sources, vec![None, None, None]);
     }
