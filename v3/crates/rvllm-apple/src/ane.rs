@@ -204,6 +204,19 @@ impl AneProgramPlan {
 
 #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
 pub fn compile_private_ane_program(plan: &AneProgramPlan, weights_path: &Path) -> Result<PathBuf> {
+    compile_private_ane_program_with_mil_options(
+        plan,
+        weights_path,
+        crate::mil::MilPatchOptions::default(),
+    )
+}
+
+#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+fn compile_private_ane_program_with_mil_options(
+    plan: &AneProgramPlan,
+    weights_path: &Path,
+    mil_options: crate::mil::MilPatchOptions,
+) -> Result<PathBuf> {
     if !crate::plan::private_ane_env_opted_in() {
         return Err(RvllmError::apple(
             AppleError::PrivateApiUnavailable {
@@ -308,7 +321,7 @@ pub fn compile_private_ane_program(plan: &AneProgramPlan, weights_path: &Path) -
         })?;
 
         let mut model = crate::mil::load_template(&plan.template_name);
-        crate::mil::patch_ast(
+        crate::mil::patch_ast_with_options(
             &mut model,
             "main",
             plan.spatial,
@@ -316,6 +329,7 @@ pub fn compile_private_ane_program(plan: &AneProgramPlan, weights_path: &Path) -
             plan.hidden_ch,
             plan.out_ch,
             &plan.offsets,
+            mil_options,
         );
 
         if let Some(rvllm_apple_coreml_sys::specification::model::Type::MlProgram(ref mut mlp)) =
@@ -444,6 +458,7 @@ pub fn compile_private_ane_program(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(target_os = "macos", feature = "private-ane"))]
     use super::*;
 
     #[test]
@@ -630,6 +645,125 @@ mod tests {
                     "[ANE DIAG] _ANEClient loadModel rejected {}; no ANE execution claim made: {err}",
                     compiled.display()
                 );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires private ANE compile/load opt-in; records FP16/rank-4 private boundaries only"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_tiny_projection_fp16_and_rank4_boundaries_are_reported() {
+        struct EnvGuard {
+            name: &'static str,
+            previous: Option<std::ffi::OsString>,
+        }
+
+        impl EnvGuard {
+            fn set(name: &'static str, value: &std::path::Path) -> Self {
+                let previous = std::env::var_os(name);
+                std::env::set_var(name, value);
+                Self { name, previous }
+            }
+        }
+
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                if let Some(previous) = self.previous.take() {
+                    std::env::set_var(self.name, previous);
+                } else {
+                    std::env::remove_var(self.name);
+                }
+            }
+        }
+
+        let variants = [
+            (
+                "fp16_weights_rank3",
+                crate::mil::MilPatchOptions {
+                    weight_encoding: crate::mil::NeuralNetworkWeightEncoding::Float16,
+                    ..crate::mil::MilPatchOptions::default()
+                },
+            ),
+            (
+                "fp32_weights_rank4",
+                crate::mil::MilPatchOptions {
+                    feature_rank: crate::mil::FeatureRank::Rank4,
+                    ..crate::mil::MilPatchOptions::default()
+                },
+            ),
+            (
+                "fp16_weights_rank4",
+                crate::mil::MilPatchOptions {
+                    feature_rank: crate::mil::FeatureRank::Rank4,
+                    weight_encoding: crate::mil::NeuralNetworkWeightEncoding::Float16,
+                    ..crate::mil::MilPatchOptions::default()
+                },
+            ),
+        ];
+
+        for (variant_name, mil_options) in variants {
+            let config = AneRolloutConfig {
+                bucket: RolloutBucket {
+                    seqs: 1,
+                    tokens: 16,
+                },
+                hidden_size: 16,
+                intermediate_size: 16,
+                num_layers: 1,
+            };
+            let mut plan = AneProgramPlan::proj_only(config);
+            plan.id = format!("proj_test_{variant_name}");
+
+            let temp_dir =
+                std::env::temp_dir().join(format!("rvllm_test_load_boundary_ane_{variant_name}"));
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            std::fs::create_dir_all(&temp_dir).unwrap();
+            let _cache_guard = EnvGuard::set("RVLLM_ANE_CACHE_DIR", &temp_dir.join("cache"));
+            let weights_path = temp_dir.join("weights.bin");
+            std::fs::write(&weights_path, vec![0u8; 1024 * 1024]).unwrap();
+
+            let compiled = match compile_private_ane_program_with_mil_options(
+                &plan,
+                &weights_path,
+                mil_options,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    let rendered = e.to_string();
+                    assert!(
+                        !rendered.trim().is_empty(),
+                        "private ANE compile rejection for {variant_name} should include a reason"
+                    );
+                    eprintln!(
+                        "[ANE DIAG] private ANE compile rejected {variant_name}; no ANE execution claim made: {rendered}"
+                    );
+                    for diag in last_ane_diagnostics() {
+                        eprintln!("[ANE DIAG] {variant_name}: {diag}");
+                    }
+                    continue;
+                }
+            };
+
+            let compiled_str = compiled
+                .to_str()
+                .expect("compiled model path should be UTF-8");
+            match rvllm_apple_ane_sys::AneModelHandle::load_with_error(compiled_str) {
+                Ok(_) => {
+                    eprintln!(
+                        "[ANE DIAG] _ANEClient loadModel accepted {variant_name} {}; evaluation intentionally not run in this boundary test",
+                        compiled.display()
+                    );
+                }
+                Err(err) => {
+                    assert!(
+                        !err.trim().is_empty(),
+                        "_ANEClient loadModel rejection for {variant_name} should include a reason"
+                    );
+                    eprintln!(
+                        "[ANE DIAG] _ANEClient loadModel rejected {variant_name} {}; no ANE execution claim made: {err}",
+                        compiled.display()
+                    );
+                }
             }
         }
     }
