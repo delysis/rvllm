@@ -3395,11 +3395,19 @@ fn compare_trace_summary_stats(hf: &Value, metal: &Value, name: &str) {
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Debug)]
-struct E2bHfReferenceLogits {
+struct E2bHfReferenceStep {
     selected_token_ids: Vec<u32>,
     selected_logits: Vec<f32>,
     full_logits: Option<Vec<f32>>,
     next_token: u32,
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[derive(Debug)]
+struct E2bHfReferenceLogits {
+    prompt_token_ids: Vec<u32>,
+    generated_tokens: Vec<u32>,
+    steps: Vec<E2bHfReferenceStep>,
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -3424,38 +3432,63 @@ fn read_e2b_hf_reference_logits(
     assert_eq!(prompt_token_ids.as_slice(), expected_prompt_token_ids);
     assert_eq!(value["decode_steps"].as_u64(), Some(expected_decode_steps));
 
-    let step = &value["steps"].as_array().expect("steps")[0];
-    let next_token = step["next_token"].as_u64().expect("next token") as u32;
-    let selected = step["selected_logits"].as_array().expect("selected logits");
-    let mut token_ids = Vec::with_capacity(selected.len());
-    let mut logits = Vec::with_capacity(selected.len());
-    for item in selected {
-        token_ids.push(item["token_id"].as_u64().expect("selected token id") as u32);
-        logits.push(item["logit"].as_f64().expect("selected logit") as f32);
-    }
-    let full_logits = step.get("logits").and_then(|logits_value| {
-        logits_value.as_array().map(|values| {
-            values
-                .iter()
-                .map(|value| value.as_f64().expect("full logit") as f32)
-                .collect::<Vec<_>>()
+    let generated_tokens = value["generated_tokens"]
+        .as_array()
+        .expect("generated tokens")
+        .iter()
+        .map(|item| item.as_u64().expect("generated token id") as u32)
+        .collect::<Vec<_>>();
+    let steps = value["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .enumerate()
+        .map(|(step_idx, step)| {
+            assert_eq!(step["step"].as_u64(), Some(step_idx as u64));
+            let next_token = step["next_token"].as_u64().expect("next token") as u32;
+            let selected = step["selected_logits"].as_array().expect("selected logits");
+            let mut token_ids = Vec::with_capacity(selected.len());
+            let mut logits = Vec::with_capacity(selected.len());
+            for item in selected {
+                token_ids.push(item["token_id"].as_u64().expect("selected token id") as u32);
+                logits.push(item["logit"].as_f64().expect("selected logit") as f32);
+            }
+            let full_logits = step.get("logits").and_then(|logits_value| {
+                logits_value.as_array().map(|values| {
+                    values
+                        .iter()
+                        .map(|value| value.as_f64().expect("full logit") as f32)
+                        .collect::<Vec<_>>()
+                })
+            });
+            E2bHfReferenceStep {
+                selected_token_ids: token_ids,
+                selected_logits: logits,
+                full_logits,
+                next_token,
+            }
         })
-    });
+        .collect::<Vec<_>>();
+    assert_eq!(steps.len(), expected_decode_steps as usize);
+    assert_eq!(generated_tokens.len(), steps.len());
+    for (step, &generated) in steps.iter().zip(generated_tokens.iter()) {
+        assert_eq!(step.next_token, generated);
+    }
     E2bHfReferenceLogits {
-        selected_token_ids: token_ids,
-        selected_logits: logits,
-        full_logits,
-        next_token,
+        prompt_token_ids,
+        generated_tokens,
+        steps,
     }
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn read_e2b_hf_reference_selected_logits(path: &std::path::Path) -> (Vec<u32>, Vec<f32>, u32) {
     let reference = read_e2b_hf_reference_logits(path, &[2, 4], 1);
+    let step = &reference.steps[0];
     (
-        reference.selected_token_ids,
-        reference.selected_logits,
-        reference.next_token,
+        step.selected_token_ids.clone(),
+        step.selected_logits.clone(),
+        step.next_token,
     )
 }
 
@@ -3507,6 +3540,83 @@ fn assert_e2b_full_vocab_logits_close(
         max_delta <= tolerance,
         "{label} max delta exceeds tolerance: max_delta={max_delta} token={max_delta_token} tol={tolerance}"
     );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn run_real_e2b_model_backend_decode_loop(
+    model_dir: std::path::PathBuf,
+    arch: &rvllm_loader::gemma4_arch::Gemma4Arch,
+    prompt_token_ids: &[u32],
+    decode_steps: usize,
+) -> Result<(Vec<Vec<f32>>, Vec<rvllm_apple::StepToken>)> {
+    assert!(!prompt_token_ids.is_empty());
+    assert!(
+        prompt_token_ids.len() + decode_steps <= 8,
+        "real E2B probe arena currently supports prompt_len + decode_steps <= 8"
+    );
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+
+    let result = (|| -> Result<(Vec<Vec<f32>>, Vec<rvllm_apple::StepToken>)> {
+        let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+        plan.ane_hidden_size = arch.hidden_size;
+        plan.ane_intermediate_size = arch.intermediate_size;
+        let mut backend = ModelMetalBackend::new(model_dir);
+        backend.prepare(&plan)?;
+
+        let prompt_tokens = prompt_token_ids
+            .iter()
+            .map(|&token| rvllm_core::TokenId(token))
+            .collect::<Vec<_>>();
+        let prompt_len = prompt_tokens.len();
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            prompt_tokens.clone(),
+            vec![0, prompt_len as u32],
+            vec![(prompt_len - 1) as u32],
+            vec![prompt_len as u32],
+        );
+        let prefill_ticket = backend.launch_prefill(&prefill)?;
+        let prefill_out = backend.collect(prefill_ticket)?;
+        assert!(prefill_out.is_empty());
+
+        let mut current = *prompt_tokens.last().expect("prompt token");
+        let mut logits_by_step = Vec::with_capacity(decode_steps);
+        let mut generated = Vec::with_capacity(decode_steps);
+        for step_idx in 0..decode_steps {
+            let decode = rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                vec![rvllm_core::ReqId(1)],
+                vec![current],
+                vec![0, 1],
+                vec![(prompt_len - 1 + step_idx) as u32],
+                vec![(prompt_len + step_idx) as u32],
+            );
+            let decode_ticket = backend.launch_rollout(&decode, None)?;
+            let logits = backend.debug_read_decode_logits_f32(1)?;
+            let residual = backend.debug_read_residual_f32(1)?;
+            assert_eq!(logits.len(), arch.vocab_size);
+            assert_eq!(residual.len(), arch.hidden_size);
+            assert!(logits.iter().all(|v| v.is_finite()));
+            assert!(residual.iter().all(|v| v.is_finite()));
+            let out = backend.collect(decode_ticket)?;
+            assert_eq!(out.len(), 1);
+            current = out[0].token_id;
+            logits_by_step.push(logits);
+            generated.push(out[0].clone());
+        }
+        Ok((logits_by_step, generated))
+    })();
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+
+    result
 }
 
 #[test]
@@ -7705,9 +7815,12 @@ fn real_gemma4_e2b_model_backend_prefill_decode_full_vocab_logits_match_hf_refer
     }
 
     let reference = read_e2b_hf_reference_logits(&reference_path, &[2, 4], 1);
-    assert_eq!(reference.selected_token_ids, vec![0, 1, 2, 3, 4, 5]);
-    assert_eq!(reference.next_token, 954);
-    let expected_full_logits = reference
+    let step = &reference.steps[0];
+    assert_eq!(reference.prompt_token_ids, vec![2, 4]);
+    assert_eq!(reference.generated_tokens, vec![954]);
+    assert_eq!(step.selected_token_ids, vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(step.next_token, 954);
+    let expected_full_logits = step
         .full_logits
         .as_ref()
         .expect("HF reference artifact must include full logits");
@@ -7771,10 +7884,10 @@ fn real_gemma4_e2b_model_backend_prefill_decode_full_vocab_logits_match_hf_refer
     assert!(metal_residual.iter().all(|v| v.is_finite()));
     assert!(metal_logits.iter().all(|v| v.is_finite()));
 
-    for (&token_id, &expected) in reference
+    for (&token_id, &expected) in step
         .selected_token_ids
         .iter()
-        .zip(reference.selected_logits.iter())
+        .zip(step.selected_logits.iter())
     {
         let idx = token_id as usize;
         eprintln!(
@@ -7799,7 +7912,99 @@ fn real_gemma4_e2b_model_backend_prefill_decode_full_vocab_logits_match_hf_refer
     );
     assert_eq!(
         out[0].token_id,
-        rvllm_core::TokenId(reference.next_token),
+        rvllm_core::TokenId(step.next_token),
         "real E2B sampled token should match HF reference after full-vocab comparison"
     );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory, two-step full HF reference artifact, and large Metal arena opt-in"]
+fn real_gemma4_e2b_model_backend_prefill_decode_two_steps_full_vocab_logits_match_hf_reference() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let reference_path =
+        std::path::PathBuf::from("/tmp/gemma4-e2b-hf-full-logits-prompt-2-4-steps2.json");
+    if !reference_path.exists() {
+        eprintln!(
+            "skipping: two-step full HF reference logits artifact is missing at {}",
+            reference_path.display()
+        );
+        return;
+    }
+
+    let reference = read_e2b_hf_reference_logits(&reference_path, &[2, 4], 2);
+    assert_eq!(reference.prompt_token_ids, vec![2, 4]);
+    assert_eq!(reference.steps.len(), 2);
+    assert_eq!(reference.generated_tokens[0], 954);
+
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before decode loop");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let (metal_logits_by_step, out) = run_real_e2b_model_backend_decode_loop(
+        model_dir,
+        &arch,
+        &reference.prompt_token_ids,
+        reference.steps.len(),
+    )
+    .expect("real Gemma4 E2B two-step prefill/decode should launch");
+
+    assert_eq!(metal_logits_by_step.len(), reference.steps.len());
+    assert_eq!(out.len(), reference.steps.len());
+    for (step_idx, (metal_logits, step)) in metal_logits_by_step
+        .iter()
+        .zip(reference.steps.iter())
+        .enumerate()
+    {
+        let expected_full_logits = step
+            .full_logits
+            .as_ref()
+            .expect("HF reference artifact must include full logits");
+        assert_eq!(expected_full_logits.len(), arch.vocab_size);
+        for (&token_id, &expected) in step
+            .selected_token_ids
+            .iter()
+            .zip(step.selected_logits.iter())
+        {
+            let idx = token_id as usize;
+            eprintln!(
+                "real E2B two-step guard step={} selected logit[{idx}]: metal={} hf={} delta={}",
+                step_idx,
+                metal_logits[idx],
+                expected,
+                (metal_logits[idx] - expected).abs()
+            );
+        }
+
+        const FULL_E2B_LOGIT_TOLERANCE: f32 = 1.0;
+        assert_e2b_full_vocab_logits_close(
+            &format!("real E2B step {} full-vocab logits", step_idx + 1),
+            metal_logits,
+            expected_full_logits,
+            FULL_E2B_LOGIT_TOLERANCE,
+        );
+        assert_eq!(
+            cpu_full_nonzero_argmax(metal_logits),
+            cpu_full_nonzero_argmax(expected_full_logits),
+            "real E2B full-vocab argmax should match HF reference at step {}",
+            step_idx + 1
+        );
+        assert_eq!(
+            out[step_idx].token_id,
+            rvllm_core::TokenId(step.next_token),
+            "real E2B sampled token should match HF reference at step {}",
+            step_idx + 1
+        );
+    }
+    let generated = out
+        .iter()
+        .map(|token| token.token_id.raw())
+        .collect::<Vec<_>>();
+    assert_eq!(generated, reference.generated_tokens);
 }
