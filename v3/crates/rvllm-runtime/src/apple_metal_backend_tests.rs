@@ -7607,6 +7607,87 @@ fn real_gemma4_e2b_prefill_layers_0_to_4_residuals_are_finite() {
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
+#[ignore = "requires cached Gemma4 E2B model directory and bounded layer finite debug opt-in"]
+fn real_gemma4_e2b_batch_two_prefill_layers_0_to_4_residuals_are_finite() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before bounded batch finite run");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+
+    let env_guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV,
+        RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV,
+        RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV,
+    ]);
+    env_guard.set(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV, "1");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+    backend
+        .prepare(&plan)
+        .expect("real Gemma4 E2B Metal prepare/load should complete before batch finite run");
+
+    for stop_after_layer in 0usize..=4 {
+        env_guard.set(
+            RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV,
+            stop_after_layer.to_string(),
+        );
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1), rvllm_core::ReqId(2)],
+            vec![
+                rvllm_core::TokenId(2),
+                rvllm_core::TokenId(4),
+                rvllm_core::TokenId(2),
+                rvllm_core::TokenId(17),
+            ],
+            vec![0, 2, 4],
+            vec![1, 1],
+            vec![2, 2],
+        );
+        let ticket = backend.launch_prefill(&prefill).unwrap_or_else(|err| {
+            panic!("bounded E2B batch prefill failed at layer {stop_after_layer}: {err}")
+        });
+        let out = backend.collect(ticket).unwrap_or_else(|err| {
+            panic!("bounded E2B batch prefill collect failed at layer {stop_after_layer}: {err}")
+        });
+        assert!(
+            out.is_empty(),
+            "bounded batch prefill must not sample logits"
+        );
+
+        let residual = backend.debug_read_residual_f32(4).unwrap_or_else(|err| {
+            panic!("bounded E2B batch residual read failed at layer {stop_after_layer}: {err}")
+        });
+        assert_eq!(residual.len(), 4 * arch.hidden_size);
+        let summary = finite_summary(&residual);
+        eprintln!(
+            "bounded E2B batch residual after layer {stop_after_layer}: finite={}/{} max_abs={:e} mean_abs={:e} first_nonfinite_index={:?}",
+            summary.finite_count,
+            summary.total_count,
+            summary.max_abs,
+            summary.mean_abs,
+            summary.first_nonfinite_index
+        );
+        assert_eq!(
+            summary.first_nonfinite_index, None,
+            "first non-finite batch residual appears at or before layer {stop_after_layer}: {summary:?}"
+        );
+        assert_eq!(summary.finite_count, summary.total_count);
+    }
+    env_guard.remove(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
 #[ignore = "requires cached Gemma4 E2B model directory and /tmp/gemma4-e2b-hf-layer4-trace.json"]
 fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
     let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
