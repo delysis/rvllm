@@ -4,7 +4,7 @@ use rvllm_apple_metal::weight_loader::scan_safetensor_tensors;
 use serde_json::{Map, Value};
 use std::fs::{self, File};
 use std::io::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const FULL_NONZERO_ZERO_DIM: usize = 0;
 const FULL_NONZERO_ORIGINAL_DIM: usize = 7;
@@ -8297,4 +8297,114 @@ fn real_gemma4_e2b_model_backend_prefill_decode_four_steps_full_vocab_logits_mat
         .map(|token| token.token_id.raw())
         .collect::<Vec<_>>();
     assert_eq!(generated, reference.generated_tokens);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory and large Metal arena opt-in"]
+fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before profiling harness");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+
+    let prepare_start = Instant::now();
+    let result = (|| -> Result<(Vec<rvllm_core::TokenId>, MetalProbePerfStats, u128, u128, u128)> {
+        backend.prepare(&plan)?;
+        let prepare_ms = prepare_start.elapsed().as_millis();
+
+        let prefill = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+            vec![0, 2],
+            vec![1],
+            vec![2],
+        );
+        let prefill_start = Instant::now();
+        let prefill_ticket = backend.launch_prefill(&prefill)?;
+        let prefill_out = backend.collect(prefill_ticket)?;
+        let prefill_ms = prefill_start.elapsed().as_millis();
+        assert!(prefill_out.is_empty());
+
+        let mut current = rvllm_core::TokenId(4);
+        let mut generated = Vec::new();
+        let decode_start = Instant::now();
+        for step_idx in 0..4usize {
+            let decode = rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                vec![rvllm_core::ReqId(1)],
+                vec![current],
+                vec![0, 1],
+                vec![1 + step_idx as u32],
+                vec![2 + step_idx as u32],
+            );
+            let ticket = backend.launch_rollout(&decode, None)?;
+            let out = backend.collect(ticket)?;
+            assert_eq!(out.len(), 1);
+            current = out[0].token_id;
+            generated.push(current);
+        }
+        let decode_ms = decode_start.elapsed().as_millis();
+        Ok((
+            generated,
+            backend.probe_perf_stats(),
+            prepare_ms,
+            prefill_ms,
+            decode_ms,
+        ))
+    })();
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+
+    let (generated, stats, prepare_ms, prefill_ms, decode_ms) =
+        result.expect("real Gemma4 E2B profiling harness should run");
+    assert_eq!(
+        generated,
+        vec![
+            rvllm_core::TokenId(954),
+            rvllm_core::TokenId(1289),
+            rvllm_core::TokenId(236813),
+            rvllm_core::TokenId(655),
+        ]
+    );
+    assert_eq!(stats.prefill_steps, 1);
+    assert_eq!(stats.decode_steps, 4);
+    assert_eq!(stats.tokens, 6);
+    assert!(stats.command_buffers > 0);
+    assert!(stats.encoders > 0);
+    assert!(stats.forced_waits > 0);
+    assert!(stats.cpu_wall_ns > 0);
+
+    let decode_seconds = (decode_ms as f64 / 1000.0).max(f64::EPSILON);
+    let decode_tok_s = stats.decode_steps as f64 / decode_seconds;
+    let command_buffers_per_token = stats.command_buffers as f64 / stats.tokens as f64;
+    let encoders_per_token = stats.encoders as f64 / stats.tokens as f64;
+    eprintln!(
+        "real E2B profile probe: prepare_ms={prepare_ms} prefill_ms={prefill_ms} decode_ms={decode_ms} decode_tok_s={decode_tok_s:.4} total_tokens={} command_buffers={} encoders={} forced_waits={} command_buffers_per_token={command_buffers_per_token:.4} encoders_per_token={encoders_per_token:.4} last_step_cpu_wall_ns={} debug_sync={}",
+        stats.tokens,
+        stats.command_buffers,
+        stats.encoders,
+        stats.forced_waits,
+        stats.last_step_cpu_wall_ns,
+        metal_debug_sync_enabled()
+    );
 }
