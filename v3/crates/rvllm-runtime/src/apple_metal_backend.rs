@@ -91,6 +91,8 @@ impl AppleBackend for RuntimeMetalBackend {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+use objc2::runtime::ProtocolObject;
+#[cfg(all(feature = "apple", target_os = "macos"))]
 use objc2_metal::{
     MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder, MTLSize,
 };
@@ -104,10 +106,10 @@ use rvllm_apple_metal::{
     gemma4_model::{Gemma4MetalState, MetalLayerTraceState},
     kernels,
     layer_forward::{
-        metal_encode_forward_layer, metal_finalize_logits_blocking,
-        metal_finalize_logits_encoder_count, metal_forward_layer, metal_prepare_ple_inputs,
-        MetalLayerDims, MetalLayerTraceScratch, MetalLayerWeights, MetalMetadata, MetalPhase,
-        MetalPlePrepare, MetalScratch,
+        metal_encode_finalize_logits, metal_encode_forward_layer, metal_encode_prepare_ple_inputs,
+        metal_finalize_logits_blocking, metal_finalize_logits_encoder_count, metal_forward_layer,
+        metal_prepare_ple_inputs, MetalLayerDims, MetalLayerTraceScratch, MetalLayerWeights,
+        MetalMetadata, MetalPhase, MetalPlePrepare, MetalScratch,
     },
     pipeline::PipelineCache,
 };
@@ -316,6 +318,18 @@ fn metal_debug_trace_json_path() -> Option<PathBuf> {
     std::env::var_os(RVLLM_METAL_DEBUG_TRACE_JSON_ENV)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_layer_controls_enabled() -> bool {
+    metal_debug_finite_layers_enabled()
+        || metal_debug_stop_after_layer().is_some()
+        || metal_debug_trace_layer().is_some()
+}
+
+#[cfg(all(not(test), feature = "apple", target_os = "macos"))]
+fn metal_debug_layer_controls_enabled() -> bool {
+    false
 }
 
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
@@ -928,12 +942,36 @@ impl ModelMetalBackend {
                 model_ctx("enqueue_embedding_gather"),
             )
         })?;
+        let queue = ctx.queue_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::MetalUnavailable,
+                model_ctx("embedding_gather_command_buffer"),
+            )
+        })?;
+        self.encode_embedding_gather(&cmd_buf, state, num_tokens)?;
+        cmd_buf.commit();
+        self.perf.add_command_buffers(1);
+        self.perf.add_encoders(1);
+        if self.debug_sync {
+            cmd_buf.waitUntilCompleted();
+            self.perf.add_forced_wait();
+        }
+        Ok(())
+    }
+
+    fn encode_embedding_gather(
+        &self,
+        cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+        state: &Gemma4MetalState,
+        num_tokens: usize,
+    ) -> Result<()> {
         let pipelines = self.pipelines.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::NotPrepared {
                     backend: "model-metal-backend",
                 },
-                model_ctx("enqueue_embedding_gather"),
+                model_ctx("embedding_gather"),
             )
         })?;
         let arena = self.arena.as_ref().ok_or_else(|| {
@@ -941,15 +979,7 @@ impl ModelMetalBackend {
                 AppleError::NotPrepared {
                     backend: "model-metal-backend",
                 },
-                model_ctx("enqueue_embedding_gather"),
-            )
-        })?;
-
-        let queue = ctx.queue_retained();
-        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::MetalUnavailable,
-                model_ctx("embedding_gather_command_buffer"),
+                model_ctx("embedding_gather"),
             )
         })?;
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
@@ -1025,13 +1055,6 @@ impl ModelMetalBackend {
         };
         encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, threads_per_group);
         encoder.endEncoding();
-        cmd_buf.commit();
-        self.perf.add_command_buffers(1);
-        self.perf.add_encoders(1);
-        if self.debug_sync {
-            cmd_buf.waitUntilCompleted();
-            self.perf.add_forced_wait();
-        }
         Ok(())
     }
 
@@ -1122,6 +1145,87 @@ impl ModelMetalBackend {
             self.wait_for_metal_queue("enqueue_ple_inputs")?;
         }
         Ok(())
+    }
+
+    fn encode_ple_inputs(
+        &self,
+        cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+        state: &Gemma4MetalState,
+        num_tokens: usize,
+    ) -> Result<u64> {
+        let Some(ple) = &state.ple else {
+            return Ok(0);
+        };
+        let pipelines = self.pipelines.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("encode_ple_inputs"),
+            )
+        })?;
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("encode_ple_inputs"),
+            )
+        })?;
+        let params = MetalPlePrepare {
+            embedding_offset: ple.embed_tokens_per_layer.offset,
+            token_ids_offset: state.token_ids.offset,
+            residual_offset: state.residual.offset,
+            per_layer_model_projection_offset: ple.per_layer_model_projection.offset,
+            per_layer_projection_norm_offset: ple.per_layer_projection_norm.offset,
+            token_inputs_offset: ple.token_inputs.offset,
+            context_inputs_offset: ple.context_inputs.offset,
+            num_tokens: u32::try_from(num_tokens).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "token count exceeds u32",
+                    },
+                    model_ctx("encode_ple_inputs"),
+                )
+            })?,
+            hidden: u32::try_from(state.hidden_size).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "hidden_size exceeds u32",
+                    },
+                    model_ctx("encode_ple_inputs"),
+                )
+            })?,
+            vocab: u32::try_from(ple.ple_vocab_size).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "PLE vocab size exceeds u32",
+                    },
+                    model_ctx("encode_ple_inputs"),
+                )
+            })?,
+            num_layers: u32::try_from(state.num_layers).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "layer count exceeds u32",
+                    },
+                    model_ctx("encode_ple_inputs"),
+                )
+            })?,
+            ple_dim: u32::try_from(ple.ple_dim).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "PLE dim exceeds u32",
+                    },
+                    model_ctx("encode_ple_inputs"),
+                )
+            })?,
+            rms_eps: state.rms_norm_eps,
+        };
+        unsafe {
+            metal_encode_prepare_ple_inputs(cmd_buf, pipelines, arena, &params)?;
+        }
+        Ok(4)
     }
 
     fn write_i32_metadata_region(
@@ -1402,6 +1506,7 @@ impl ModelMetalBackend {
 
     fn enqueue_probe_layers(
         &self,
+        external_cmd_buf: Option<&ProtocolObject<dyn MTLCommandBuffer>>,
         state: &Gemma4MetalState,
         num_tokens: usize,
         phase: MetalPhase,
@@ -1472,8 +1577,8 @@ impl ModelMetalBackend {
         #[cfg(not(test))]
         let debug_layer_checks = false;
 
-        let batched_cmd_buf =
-            if debug_layer_checks {
+        let owned_cmd_buf =
+            if debug_layer_checks || external_cmd_buf.is_some() {
                 None
             } else {
                 let queue = ctx.queue_retained();
@@ -1481,6 +1586,7 @@ impl ModelMetalBackend {
                     RvllmError::apple(AppleError::MetalUnavailable, model_ctx(op))
                 })?)
             };
+        let batched_cmd_buf = external_cmd_buf.or_else(|| owned_cmd_buf.as_deref());
 
         for one in &state.layers {
             if one.layer_idx >= state.num_layers {
@@ -1775,7 +1881,7 @@ impl ModelMetalBackend {
             }
         }
 
-        if let Some(cmd_buf) = batched_cmd_buf {
+        if let Some(cmd_buf) = owned_cmd_buf {
             cmd_buf.commit();
             self.perf.add_command_buffers(1);
         }
@@ -1884,9 +1990,45 @@ impl ModelMetalBackend {
             .max()
             .unwrap_or(0);
         self.write_prefill_layer_metadata(state, handoff)?;
+        if !self.debug_sync && !metal_debug_layer_controls_enabled() {
+            let ctx = self.ctx.as_ref().ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::NotPrepared {
+                        backend: "model-metal-backend",
+                    },
+                    model_ctx("launch_prefill"),
+                )
+            })?;
+            let queue = ctx.queue_retained();
+            let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+                RvllmError::apple(AppleError::MetalUnavailable, model_ctx("launch_prefill"))
+            })?;
+            self.encode_embedding_gather(&cmd_buf, state, num_tokens)?;
+            self.perf.add_encoders(1);
+            let ple_encoders = self.encode_ple_inputs(&cmd_buf, state, num_tokens)?;
+            self.perf.add_encoders(ple_encoders);
+            self.enqueue_probe_layers(
+                Some(&cmd_buf),
+                state,
+                num_tokens,
+                MetalPhase::Prefill {
+                    max_seqlen_q,
+                    batch_size: handoff.num_sequences() as u32,
+                },
+                "launch_prefill",
+            )?;
+            cmd_buf.commit();
+            self.perf.add_command_buffers(1);
+            cmd_buf.waitUntilCompleted();
+            self.perf.add_forced_wait();
+            self.perf
+                .finish_step(false, num_tokens as u64, perf_before, wall_start.elapsed());
+            return Ok(());
+        }
         self.enqueue_embedding_gather(state, num_tokens)?;
         self.enqueue_ple_inputs(state, num_tokens)?;
         self.enqueue_probe_layers(
+            None,
             state,
             num_tokens,
             MetalPhase::Prefill {
@@ -1983,11 +2125,6 @@ impl ModelMetalBackend {
             ptr::copy_nonoverlapping(token_ids.as_ptr(), dst, token_ids.len());
         }
 
-        self.write_decode_layer_metadata(state, handoff)?;
-        self.enqueue_embedding_gather(state, num_tokens)?;
-        self.enqueue_ple_inputs(state, num_tokens)?;
-        self.enqueue_probe_layers(state, num_tokens, MetalPhase::Decode, "launch_rollout")?;
-
         let num_tokens_u32 = u32::try_from(num_tokens).map_err(|_| {
             RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -2013,32 +2150,89 @@ impl ModelMetalBackend {
             )
         })?;
 
-        unsafe {
-            metal_finalize_logits_blocking(
-                ctx,
-                pipelines,
-                arena,
+        self.write_decode_layer_metadata(state, handoff)?;
+        if !self.debug_sync && !metal_debug_layer_controls_enabled() {
+            let queue = ctx.queue_retained();
+            let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+                RvllmError::apple(AppleError::MetalUnavailable, model_ctx("launch_rollout"))
+            })?;
+            self.encode_embedding_gather(&cmd_buf, state, num_tokens)?;
+            self.perf.add_encoders(1);
+            let ple_encoders = self.encode_ple_inputs(&cmd_buf, state, num_tokens)?;
+            self.perf.add_encoders(ple_encoders);
+            self.enqueue_probe_layers(
+                Some(&cmd_buf),
+                state,
+                num_tokens,
+                MetalPhase::Decode,
+                "launch_rollout",
+            )?;
+            unsafe {
+                metal_encode_finalize_logits(
+                    &cmd_buf,
+                    pipelines,
+                    arena,
+                    num_tokens_u32,
+                    hidden_u32,
+                    vocab_u32,
+                    state.rms_norm_eps,
+                    state.final_logit_softcap,
+                    state.residual.offset,
+                    state.final_norm.offset,
+                    state.lm_head.offset,
+                    state.logits.offset,
+                    state.normed_hidden.offset,
+                    state.sampled.offset,
+                )?;
+            }
+            self.perf.add_encoders(metal_finalize_logits_encoder_count(
                 num_tokens_u32,
                 hidden_u32,
                 vocab_u32,
-                state.rms_norm_eps,
                 state.final_logit_softcap,
-                state.residual.offset,
-                state.final_norm.offset,
-                state.lm_head.offset,
-                state.logits.offset,
-                state.normed_hidden.offset,
-                state.sampled.offset,
+            ));
+            cmd_buf.commit();
+            self.perf.add_command_buffers(1);
+            cmd_buf.waitUntilCompleted();
+            self.perf.add_forced_wait();
+        } else {
+            self.enqueue_embedding_gather(state, num_tokens)?;
+            self.enqueue_ple_inputs(state, num_tokens)?;
+            self.enqueue_probe_layers(
+                None,
+                state,
+                num_tokens,
+                MetalPhase::Decode,
+                "launch_rollout",
             )?;
+
+            unsafe {
+                metal_finalize_logits_blocking(
+                    ctx,
+                    pipelines,
+                    arena,
+                    num_tokens_u32,
+                    hidden_u32,
+                    vocab_u32,
+                    state.rms_norm_eps,
+                    state.final_logit_softcap,
+                    state.residual.offset,
+                    state.final_norm.offset,
+                    state.lm_head.offset,
+                    state.logits.offset,
+                    state.normed_hidden.offset,
+                    state.sampled.offset,
+                )?;
+            }
+            self.perf.add_command_buffers(1);
+            self.perf.add_encoders(metal_finalize_logits_encoder_count(
+                num_tokens_u32,
+                hidden_u32,
+                vocab_u32,
+                state.final_logit_softcap,
+            ));
+            self.perf.add_forced_wait();
         }
-        self.perf.add_command_buffers(1);
-        self.perf.add_encoders(metal_finalize_logits_encoder_count(
-            num_tokens_u32,
-            hidden_u32,
-            vocab_u32,
-            state.final_logit_softcap,
-        ));
-        self.perf.add_forced_wait();
 
         let sampled_ptr = unsafe { arena.host_ptr(&state.sampled) as *const i32 };
         let sampled = unsafe { std::slice::from_raw_parts(sampled_ptr, num_tokens) };

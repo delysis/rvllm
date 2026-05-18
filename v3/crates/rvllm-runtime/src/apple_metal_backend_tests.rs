@@ -8709,10 +8709,10 @@ fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
     assert_eq!(stats.decode_steps, 4);
     assert_eq!(stats.tokens, 6);
     assert!(stats.command_buffers > 0);
-    assert!(
-        stats.command_buffers <= 32,
-        "batched probe layer submission should keep command buffers bounded; got {}",
-        stats.command_buffers
+    assert_eq!(
+        stats.command_buffers,
+        stats.prefill_steps + stats.decode_steps,
+        "combined E2B probe submission should use one command buffer per prefill/decode step"
     );
     assert!(stats.encoders > 0);
     assert!(stats.forced_waits > 0);

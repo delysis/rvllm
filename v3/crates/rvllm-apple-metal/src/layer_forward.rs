@@ -246,7 +246,6 @@ pub unsafe fn metal_prepare_ple_inputs(
     params: &MetalPlePrepare,
 ) -> Result<()> {
     let queue = ctx.queue_retained();
-    let buf = arena.buffer_retained();
     let cmd_buf = queue.commandBuffer().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,
@@ -258,8 +257,21 @@ pub unsafe fn metal_prepare_ple_inputs(
         )
     })?;
 
+    metal_encode_prepare_ple_inputs(&cmd_buf, pipelines, arena, params)?;
+
+    cmd_buf.commit();
+    Ok(())
+}
+
+pub unsafe fn metal_encode_prepare_ple_inputs(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    params: &MetalPlePrepare,
+) -> Result<()> {
     let stride = params.num_layers.saturating_mul(params.ple_dim);
     let ple_scale = (params.ple_dim as f32).sqrt();
+    let buf = arena.buffer_retained();
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
@@ -377,7 +389,6 @@ pub unsafe fn metal_prepare_ple_inputs(
         encoder.endEncoding();
     }
 
-    cmd_buf.commit();
     Ok(())
 }
 
@@ -2460,7 +2471,7 @@ pub unsafe fn metal_finalize_logits(
         )
     })?;
 
-    encode_logits_head(
+    metal_encode_finalize_logits(
         &cmd_buf,
         pipelines,
         arena,
@@ -2479,6 +2490,43 @@ pub unsafe fn metal_finalize_logits(
 
     cmd_buf.commit();
     Ok(())
+}
+
+/// Encode final normalization + LM head projection + optional softcap + argmax
+/// onto an existing command buffer.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn metal_encode_finalize_logits(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+    rms_eps: f32,
+    softcap: f32,
+    residual_offset: usize,
+    final_norm_offset: usize,
+    lm_head_offset: usize,
+    logits_offset: usize,
+    normed_hidden_offset: usize,
+    sampled_tokens_offset: usize,
+) -> Result<()> {
+    encode_logits_head(
+        cmd_buf,
+        pipelines,
+        arena,
+        num_tokens,
+        hidden,
+        vocab,
+        rms_eps,
+        softcap,
+        residual_offset,
+        final_norm_offset,
+        lm_head_offset,
+        logits_offset,
+        normed_hidden_offset,
+        sampled_tokens_offset,
+    )
 }
 
 /// Same as `metal_finalize_logits`, but blocks until completion.
@@ -2511,7 +2559,7 @@ pub unsafe fn metal_finalize_logits_blocking(
         )
     })?;
 
-    encode_logits_head(
+    metal_encode_finalize_logits(
         &cmd_buf,
         pipelines,
         arena,
