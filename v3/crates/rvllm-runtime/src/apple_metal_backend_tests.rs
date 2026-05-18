@@ -6095,6 +6095,75 @@ fn metal_probe_pipeline_compilation_counters_do_not_change_after_rollout() {
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
 #[ignore = "requires Apple Silicon Metal device"]
+fn metal_probe_arena_regions_do_not_change_after_rollout() {
+    let env_guard = MetalDebugSyncEnvGuard::new();
+    env_guard.set_current(None);
+    let dir = write_tiny_zero_layer_decode_loop_fixture();
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = zero_layer_plan(dir.clone());
+    backend
+        .prepare(&plan)
+        .expect("prepare zero-layer decode-loop tiny model");
+
+    let after_prepare = backend
+        .probe_arena_stats()
+        .expect("arena stats after prepare");
+    assert!(after_prepare.region_count > 0);
+    assert!(after_prepare.allocated_bytes > 0);
+    assert!(after_prepare.capacity_bytes >= after_prepare.allocated_bytes);
+
+    let first = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let first_ticket = backend
+        .launch_rollout(&first, None)
+        .expect("run first rollout");
+    let first_out = backend
+        .collect(first_ticket)
+        .expect("collect first rollout");
+    assert_eq!(first_out[0].token_id, rvllm_core::TokenId(3));
+    let after_first = backend
+        .probe_arena_stats()
+        .expect("arena stats after first rollout");
+    assert_eq!(
+        after_first, after_prepare,
+        "rollout must reuse the prepared Metal arena without allocating regions"
+    );
+
+    let second = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![first_out[0].token_id],
+        vec![0, 1],
+        vec![1],
+        vec![2],
+    );
+    let second_ticket = backend
+        .launch_rollout(&second, None)
+        .expect("run second rollout");
+    let second_out = backend
+        .collect(second_ticket)
+        .expect("collect second rollout");
+    assert_eq!(second_out[0].token_id, rvllm_core::TokenId(4));
+    let after_second = backend
+        .probe_arena_stats()
+        .expect("arena stats after second rollout");
+    assert_eq!(
+        after_second, after_prepare,
+        "subsequent rollout must not grow the Metal arena"
+    );
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
 fn tiny_zero_layer_decode_loop_model_backend_generates_3_4_5() {
     let expected = cpu_reference_zero_layer_decode_loop_sequence()
         .into_iter()

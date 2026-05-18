@@ -161,6 +161,14 @@ pub struct MetalProbePerfStats {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct MetalProbeArenaStats {
+    pub region_count: usize,
+    pub allocated_bytes: usize,
+    pub capacity_bytes: usize,
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Debug, Default)]
 struct MetalProbePerfCounters {
     prefill_steps: Cell<u64>,
@@ -784,6 +792,15 @@ impl ModelMetalBackend {
     #[must_use]
     pub fn probe_perf_stats(&self) -> MetalProbePerfStats {
         self.perf.snapshot()
+    }
+
+    #[must_use]
+    pub fn probe_arena_stats(&self) -> Option<MetalProbeArenaStats> {
+        self.arena.as_ref().map(|arena| MetalProbeArenaStats {
+            region_count: arena.regions().len(),
+            allocated_bytes: arena.allocated(),
+            capacity_bytes: arena.capacity(),
+        })
     }
 
     #[must_use]

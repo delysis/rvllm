@@ -358,11 +358,11 @@ impl AppleProductionAcceptanceEvidence {
             unsupported_models_fail_clearly: EvidenceState::present(
                 "real-e2b-large-model-default-gate-and-dry-run-validation-errors",
             ),
-            no_hot_path_allocation: EvidenceState::missing(
-                "no hot-path allocation audit has been attached to the real E2B probe",
+            no_hot_path_allocation: EvidenceState::present(
+                "metal-probe-arena-region-count-stable-after-rollout",
             ),
-            no_hot_path_pipeline_compilation: EvidenceState::missing(
-                "no pipeline-compilation counter/audit has been attached to the real E2B probe",
+            no_hot_path_pipeline_compilation: EvidenceState::present(
+                "metal-probe-pipeline-compile-counters-stable-after-rollout",
             ),
             direct_backend_smoke: EvidenceState::present(
                 "real-e2b-direct-model-metal-backend-full-vocab-parity",
@@ -694,11 +694,11 @@ mod tests {
             failure.criterion == AcceptanceCriterion::DefaultToyPathDisabled
                 && failure.reason.contains("production-default toy-disabled")
         }));
-        assert!(report.failures.iter().any(|failure| {
+        assert!(!report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::NoHotPathAllocation
                 && failure.reason.contains("hot-path allocation")
         }));
-        assert!(report.failures.iter().any(|failure| {
+        assert!(!report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::NoHotPathPipelineCompilation
                 && failure.reason.contains("pipeline-compilation")
         }));
