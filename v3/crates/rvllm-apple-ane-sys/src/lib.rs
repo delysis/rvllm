@@ -102,6 +102,16 @@ mod platform {
             Ok(Self { client, model })
         }
 
+        pub fn load_with_standardize_url_error(
+            path: &str,
+            standardize_url: bool,
+        ) -> Result<Self, String> {
+            let client = get_ane_client().ok_or_else(|| "_ANEClient unavailable".to_string())?;
+            let model =
+                compile_and_load_ane_model_with_standardize_url(path, &client, standardize_url)?;
+            Ok(Self { client, model })
+        }
+
         pub fn evaluate(&self, request: &AneRequest) -> Result<(), String> {
             evaluate_ane_request(&self.client, &self.model, &request.inner)
         }

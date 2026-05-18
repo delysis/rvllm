@@ -116,6 +116,14 @@ pub fn compile_and_load_ane_model(
     compiled_url_path: &str,
     client: &Retained<AnyObject>,
 ) -> Result<Retained<AnyObject>, String> {
+    compile_and_load_ane_model_with_standardize_url(compiled_url_path, client, true)
+}
+
+pub fn compile_and_load_ane_model_with_standardize_url(
+    compiled_url_path: &str,
+    client: &Retained<AnyObject>,
+    standardize_url: bool,
+) -> Result<Retained<AnyObject>, String> {
     let cls_model = class!(_ANEModel);
     let cls_url = class!(NSURL);
     let cls_nsstring = class!(NSString);
@@ -130,7 +138,7 @@ pub fn compile_and_load_ane_model(
 
     let model: *mut AnyObject = unsafe { msg_send![cls_model, alloc] };
     let model: *mut AnyObject = unsafe {
-        msg_send![model, initWithModelAtURL: url, key: ns_key, identifierSource: 1_i64, cacheURLIdentifier: std::ptr::null_mut::<AnyObject>(), modelAttributes: std::ptr::null_mut::<AnyObject>(), standardizeURL: true]
+        msg_send![model, initWithModelAtURL: url, key: ns_key, identifierSource: 1_i64, cacheURLIdentifier: std::ptr::null_mut::<AnyObject>(), modelAttributes: std::ptr::null_mut::<AnyObject>(), standardizeURL: standardize_url]
     };
 
     if model.is_null() {

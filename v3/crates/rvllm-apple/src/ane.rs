@@ -769,6 +769,126 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires private ANE compile/load opt-in; records rank-3 source/compiled load boundaries only"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_tiny_projection_rank3_load_source_boundaries_are_reported() {
+        struct EnvGuard {
+            name: &'static str,
+            previous: Option<std::ffi::OsString>,
+        }
+
+        impl EnvGuard {
+            fn set(name: &'static str, value: &std::path::Path) -> Self {
+                let previous = std::env::var_os(name);
+                std::env::set_var(name, value);
+                Self { name, previous }
+            }
+        }
+
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                if let Some(previous) = self.previous.take() {
+                    std::env::set_var(self.name, previous);
+                } else {
+                    std::env::remove_var(self.name);
+                }
+            }
+        }
+
+        fn report_load_boundary(kind: &str, path: &std::path::Path, standardize_url: bool) {
+            let path_str = path.to_str().expect("ANE model path should be UTF-8");
+            match rvllm_apple_ane_sys::AneModelHandle::load_with_standardize_url_error(
+                path_str,
+                standardize_url,
+            ) {
+                Ok(_) => {
+                    eprintln!(
+                        "[ANE DIAG] _ANEClient loadModel accepted {kind} standardizeURL={standardize_url} {}; evaluation intentionally not run in this boundary test",
+                        path.display()
+                    );
+                }
+                Err(err) => {
+                    assert!(
+                        !err.trim().is_empty(),
+                        "_ANEClient loadModel rejection for {kind} standardizeURL={standardize_url} should include a reason"
+                    );
+                    eprintln!(
+                        "[ANE DIAG] _ANEClient loadModel rejected {kind} standardizeURL={standardize_url} {}; no ANE execution claim made: {err}",
+                        path.display()
+                    );
+                }
+            }
+        }
+
+        let config = AneRolloutConfig {
+            bucket: RolloutBucket {
+                seqs: 1,
+                tokens: 16,
+            },
+            hidden_size: 16,
+            intermediate_size: 16,
+            num_layers: 1,
+        };
+        let mut plan = AneProgramPlan::proj_only(config);
+        plan.id = "proj_test_rank3_load_source_boundary".to_string();
+
+        let temp_dir = std::env::temp_dir().join("rvllm_test_rank3_load_source_boundary_ane");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let _cache_guard = EnvGuard::set("RVLLM_ANE_CACHE_DIR", &temp_dir.join("cache"));
+        let weights_path = temp_dir.join("weights.bin");
+        std::fs::write(&weights_path, vec![0u8; 1024 * 1024]).unwrap();
+
+        let compiled = match compile_private_ane_program_with_mil_options(
+            &plan,
+            &weights_path,
+            crate::mil::MilPatchOptions::default(),
+        ) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("[ANE ERROR] {e}");
+                for diag in last_ane_diagnostics() {
+                    eprintln!("[ANE DIAG] {diag}");
+                }
+                panic!("private ANE compile failed before rank-3 load-source diagnostic: {e}");
+            }
+        };
+        let workspace = compiled
+            .parent()
+            .expect("compiled model should live under a cache workspace");
+        let source_model = workspace.join("model.mlmodel");
+        assert!(
+            source_model.exists(),
+            "rank-3 load-source diagnostic needs generated source model at {}",
+            source_model.display()
+        );
+
+        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
+        let public_compiled = rvllm_apple_ane_sys::coreml_compile_model(
+            source_model
+                .to_str()
+                .expect("source model path should be UTF-8"),
+        )
+        .expect("public CoreML compile should accept generated rank-3 projection model");
+        let public_compiled = std::path::PathBuf::from(public_compiled);
+        eprintln!(
+            "[ANE DIAG] public MLModel compileModelAtURL accepted source {}; compiled to {}",
+            source_model.display(),
+            public_compiled.display()
+        );
+
+        for standardize_url in [true, false] {
+            report_load_boundary("source .mlmodel", &source_model, standardize_url);
+            report_load_boundary("private compiled .mlmodelc", &compiled, standardize_url);
+            report_load_boundary(
+                "public compiled .mlmodelc",
+                &public_compiled,
+                standardize_url,
+            );
+        }
+    }
+
+    #[test]
     #[ignore = "requires private ANE compile opt-in; records private compile boundary only"]
     #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
     fn private_ane_tiny_projection_private_compile_boundary_is_reported() {
