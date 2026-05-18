@@ -108,8 +108,8 @@ use rvllm_apple_metal::{
     layer_forward::{
         metal_encode_finalize_logits, metal_encode_forward_layer, metal_encode_prepare_ple_inputs,
         metal_finalize_logits_blocking, metal_finalize_logits_encoder_count, metal_forward_layer,
-        metal_prepare_ple_inputs, MetalLayerDims, MetalLayerTraceScratch, MetalLayerWeights,
-        MetalMetadata, MetalPhase, MetalPlePrepare, MetalScratch,
+        metal_prepare_ple_inputs, MetalLayerDebugSkip, MetalLayerDims, MetalLayerTraceScratch,
+        MetalLayerWeights, MetalMetadata, MetalPhase, MetalPlePrepare, MetalScratch,
     },
     pipeline::PipelineCache,
 };
@@ -142,6 +142,18 @@ const RVLLM_METAL_DEBUG_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_LAYER";
 const RVLLM_METAL_DEBUG_TRACE_JSON_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_JSON";
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV: &str = "RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_SHARED_KV_SKIP_MODE_ENV: &str = "RVLLM_METAL_DEBUG_SHARED_KV_SKIP_MODE";
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+enum MetalDebugSharedKvSkipMode {
+    #[default]
+    None,
+    SkipLocalKvCacheWriteOnly,
+    SkipTailKvProjectionAndCache,
+}
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -375,6 +387,26 @@ fn metal_debug_skip_final_logits_enabled() -> bool {
     std::env::var(RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_shared_kv_skip_mode() -> MetalDebugSharedKvSkipMode {
+    match std::env::var(RVLLM_METAL_DEBUG_SHARED_KV_SKIP_MODE_ENV)
+        .unwrap_or_default()
+        .trim()
+    {
+        "" | "none" => MetalDebugSharedKvSkipMode::None,
+        "skip_local_kv_cache_write_only" => MetalDebugSharedKvSkipMode::SkipLocalKvCacheWriteOnly,
+        "skip_tail_kv_projection_and_cache" => {
+            MetalDebugSharedKvSkipMode::SkipTailKvProjectionAndCache
+        }
+        raw => {
+            eprintln!(
+                "metal debug shared-KV: ignoring invalid {RVLLM_METAL_DEBUG_SHARED_KV_SKIP_MODE_ENV}={raw:?}"
+            );
+            MetalDebugSharedKvSkipMode::None
+        }
+    }
 }
 
 #[cfg(not(all(test, feature = "apple", target_os = "macos")))]
@@ -1684,6 +1716,10 @@ impl ModelMetalBackend {
         #[cfg(test)]
         let trace_json_path = metal_debug_trace_json_path();
         #[cfg(test)]
+        let shared_kv_skip_mode = metal_debug_shared_kv_skip_mode();
+        #[cfg(not(test))]
+        let shared_kv_skip_mode = MetalDebugSharedKvSkipMode::None;
+        #[cfg(test)]
         let debug_layer_checks = metal_debug_finite_layers_enabled()
             || stop_after_layer.is_some()
             || !trace_layers.is_empty();
@@ -1836,6 +1872,22 @@ impl ModelMetalBackend {
             let attention_kv_cache_v_offset = attention_kv_layer
                 .map(|layer| layer.kv_cache_v.offset)
                 .unwrap_or(one.kv_cache_v.offset);
+            let shared_kv_debug_skip =
+                match (one.shared_kv_source_layer.is_some(), shared_kv_skip_mode) {
+                    (true, MetalDebugSharedKvSkipMode::SkipLocalKvCacheWriteOnly) => {
+                        MetalLayerDebugSkip {
+                            skip_kv_projection: false,
+                            skip_local_kv_cache_write: true,
+                        }
+                    }
+                    (true, MetalDebugSharedKvSkipMode::SkipTailKvProjectionAndCache) => {
+                        MetalLayerDebugSkip {
+                            skip_kv_projection: true,
+                            skip_local_kv_cache_write: true,
+                        }
+                    }
+                    _ => MetalLayerDebugSkip::default(),
+                };
 
             unsafe {
                 if let Some(cmd_buf) = batched_cmd_buf.as_ref() {
@@ -1854,6 +1906,7 @@ impl ModelMetalBackend {
                         one.kv_cache_v.offset,
                         attention_kv_cache_k_offset,
                         attention_kv_cache_v_offset,
+                        shared_kv_debug_skip,
                     )?;
                 } else {
                     metal_forward_layer(
@@ -1871,6 +1924,7 @@ impl ModelMetalBackend {
                         one.kv_cache_v.offset,
                         attention_kv_cache_k_offset,
                         attention_kv_cache_v_offset,
+                        shared_kv_debug_skip,
                     )?;
                     self.perf.add_command_buffers(1);
                 }

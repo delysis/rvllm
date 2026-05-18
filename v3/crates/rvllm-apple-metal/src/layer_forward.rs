@@ -103,6 +103,17 @@ pub struct MetalLayerTraceScratch {
     pub post_per_layer_input_norm: Option<usize>,
 }
 
+/// Test/debug-only execution switches for bounded diagnostics.
+///
+/// Normal callers pass `Default::default()`. These flags deliberately do not
+/// encode an optimization contract; they exist so the runtime can compare the
+/// current E2B shared-KV path against narrower skip hypotheses.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct MetalLayerDebugSkip {
+    pub skip_kv_projection: bool,
+    pub skip_local_kv_cache_write: bool,
+}
+
 /// Metadata buffer offsets (positions, slot mapping, etc).
 #[derive(Copy, Clone, Debug)]
 pub struct MetalMetadata {
@@ -415,6 +426,7 @@ pub unsafe fn metal_forward_layer(
     kv_cache_v_offset: usize,
     attention_kv_cache_k_offset: usize,
     attention_kv_cache_v_offset: usize,
+    debug_skip: MetalLayerDebugSkip,
 ) -> Result<()> {
     let queue = ctx.queue_retained();
     let cmd_buf = queue.commandBuffer().ok_or_else(|| {
@@ -442,6 +454,7 @@ pub unsafe fn metal_forward_layer(
         kv_cache_v_offset,
         attention_kv_cache_k_offset,
         attention_kv_cache_v_offset,
+        debug_skip,
     )?;
     cmd_buf.commit();
 
@@ -464,6 +477,7 @@ pub unsafe fn metal_encode_forward_layer(
     kv_cache_v_offset: usize,
     attention_kv_cache_k_offset: usize,
     attention_kv_cache_v_offset: usize,
+    debug_skip: MetalLayerDebugSkip,
 ) -> Result<()> {
     let buf = arena.buffer_retained();
     let num_tokens = dims.num_tokens;
@@ -615,57 +629,59 @@ pub unsafe fn metal_encode_forward_layer(
             dims.rms_eps,
             "q_norm",
         )?;
-        encode_gemm_headwise_rmsnorm(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.normed_hidden,
-            weights.qkv_offset,
-            k_norm_offset,
-            scratch.k_offset,
-            num_tokens,
-            hidden,
-            dims.head_dim,
-            dims.num_kv_heads,
-            q_dim,
-            dims.rms_eps,
-            "k_norm",
-        )?;
-        if let Some(v_norm_offset) = weights.v_norm_offset {
+        if !debug_skip.skip_kv_projection {
             encode_gemm_headwise_rmsnorm(
                 &cmd_buf,
                 pipelines,
                 buf,
                 scratch.normed_hidden,
                 weights.qkv_offset,
-                v_norm_offset,
-                scratch.v_offset,
+                k_norm_offset,
+                scratch.k_offset,
                 num_tokens,
                 hidden,
                 dims.head_dim,
                 dims.num_kv_heads,
-                q_dim + kv_dim,
+                q_dim,
                 dims.rms_eps,
-                "v_norm",
+                "k_norm",
             )?;
-        } else {
-            // Gemma 4 uses an unscaled RMSNorm for V; there is no v_norm.weight
-            // tensor in the checkpoint.
-            encode_gemm_headwise_rmsnorm_unit(
-                &cmd_buf,
-                pipelines,
-                buf,
-                scratch.normed_hidden,
-                weights.qkv_offset,
-                scratch.v_offset,
-                num_tokens,
-                hidden,
-                dims.head_dim,
-                dims.num_kv_heads,
-                q_dim + kv_dim,
-                dims.rms_eps,
-                "v_norm_unit",
-            )?;
+            if let Some(v_norm_offset) = weights.v_norm_offset {
+                encode_gemm_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.normed_hidden,
+                    weights.qkv_offset,
+                    v_norm_offset,
+                    scratch.v_offset,
+                    num_tokens,
+                    hidden,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    q_dim + kv_dim,
+                    dims.rms_eps,
+                    "v_norm",
+                )?;
+            } else {
+                // Gemma 4 uses an unscaled RMSNorm for V; there is no v_norm.weight
+                // tensor in the checkpoint.
+                encode_gemm_headwise_rmsnorm_unit(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.normed_hidden,
+                    weights.qkv_offset,
+                    scratch.v_offset,
+                    num_tokens,
+                    hidden,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    q_dim + kv_dim,
+                    dims.rms_eps,
+                    "v_norm_unit",
+                )?;
+            }
         }
         if let Some(trace) = trace {
             encode_trace_copy(
@@ -768,35 +784,37 @@ pub unsafe fn metal_encode_forward_layer(
                 "q_norm",
             )?;
         }
-        if let Some(k_norm_offset) = weights.k_norm_offset {
-            encode_headwise_rmsnorm(
-                &cmd_buf,
-                pipelines,
-                buf,
-                scratch.k_offset,
-                scratch.k_offset,
-                k_norm_offset,
-                dims.head_dim,
-                dims.num_kv_heads,
-                dims.rms_eps,
-                num_tokens,
-                "k_norm",
-            )?;
-        }
-        if let Some(v_norm_offset) = weights.v_norm_offset {
-            encode_headwise_rmsnorm(
-                &cmd_buf,
-                pipelines,
-                buf,
-                scratch.v_offset,
-                scratch.v_offset,
-                v_norm_offset,
-                dims.head_dim,
-                dims.num_kv_heads,
-                dims.rms_eps,
-                num_tokens,
-                "v_norm",
-            )?;
+        if !debug_skip.skip_kv_projection {
+            if let Some(k_norm_offset) = weights.k_norm_offset {
+                encode_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.k_offset,
+                    scratch.k_offset,
+                    k_norm_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "k_norm",
+                )?;
+            }
+            if let Some(v_norm_offset) = weights.v_norm_offset {
+                encode_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.v_offset,
+                    scratch.v_offset,
+                    v_norm_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "v_norm",
+                )?;
+            }
         }
         if let Some(trace) = trace {
             encode_trace_copy(
@@ -909,7 +927,7 @@ pub unsafe fn metal_encode_forward_layer(
     }
 
     // 6. KV cache write
-    {
+    if !debug_skip.skip_local_kv_cache_write {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,

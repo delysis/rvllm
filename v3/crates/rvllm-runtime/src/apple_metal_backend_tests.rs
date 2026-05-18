@@ -3653,6 +3653,314 @@ fn compare_trace_summary_stats(hf: &Value, metal: &Value, name: &str) {
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+const E2B_SHARED_KV_DIFF_TRACE_LAYERS: &[usize] = &[13, 14, 15, 16, 17, 18, 19, 20];
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+const E2B_SHARED_KV_DIFF_TRACE_FIELDS: &[&str] = &[
+    "input_to_layer",
+    "q_projection",
+    "after_q_norm",
+    "after_rope_q",
+    "local_kv_cache_k",
+    "local_kv_cache_v",
+    "attention_kv_cache_k",
+    "attention_kv_cache_v",
+    "attention_output",
+    "after_o_proj",
+    "after_post_attention_layernorm",
+    "after_pre_feedforward_layernorm",
+    "gate_up_out",
+    "ffn_activation",
+    "after_ffn_branch",
+    "final_residual_after_layer",
+];
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+const E2B_SHARED_KV_DIFF_DOWNSTREAM_FIELDS: &[&str] = &[
+    "input_to_layer",
+    "q_projection",
+    "after_q_norm",
+    "after_rope_q",
+    "attention_kv_cache_k",
+    "attention_kv_cache_v",
+    "attention_output",
+    "after_o_proj",
+    "after_post_attention_layernorm",
+    "after_pre_feedforward_layernorm",
+    "gate_up_out",
+    "ffn_activation",
+    "after_ffn_branch",
+    "final_residual_after_layer",
+];
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn e2b_shared_kv_trace_path(mode: &str, layer_idx: usize) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!(
+        "/tmp/gemma4-e2b-shared-kv-{mode}-layer{layer_idx}.json"
+    ))
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn read_e2b_shared_kv_trace(mode: &str, layer_idx: usize) -> Value {
+    let path = e2b_shared_kv_trace_path(mode, layer_idx);
+    let raw = fs::read_to_string(&path).unwrap_or_else(|err| {
+        panic!(
+            "read E2B shared-KV {mode} layer {layer_idx} trace at {}: {err}",
+            path.display()
+        )
+    });
+    serde_json::from_str(&raw)
+        .unwrap_or_else(|err| panic!("parse E2B shared-KV {mode} layer {layer_idx} trace: {err}"))
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn trace_number_diff(
+    baseline: &Value,
+    candidate: &Value,
+    key: &str,
+    tolerance: f64,
+) -> Option<String> {
+    let baseline_value = baseline[key].as_f64()?;
+    let candidate_value = candidate[key].as_f64()?;
+    let delta = (baseline_value - candidate_value).abs();
+    (delta > tolerance).then(|| {
+        format!(
+            "{key} baseline={baseline_value:.9e} candidate={candidate_value:.9e} delta={delta:.9e}"
+        )
+    })
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn trace_array_diff(
+    baseline: &Value,
+    candidate: &Value,
+    key: &str,
+    tolerance: f64,
+) -> Option<String> {
+    let baseline_values = baseline[key].as_array()?;
+    let candidate_values = candidate[key].as_array()?;
+    if baseline_values.len() != candidate_values.len() {
+        return Some(format!(
+            "{key} length baseline={} candidate={}",
+            baseline_values.len(),
+            candidate_values.len()
+        ));
+    }
+    for (idx, (baseline_value, candidate_value)) in baseline_values
+        .iter()
+        .zip(candidate_values.iter())
+        .enumerate()
+    {
+        match (baseline_value.as_f64(), candidate_value.as_f64()) {
+            (Some(baseline_value), Some(candidate_value)) => {
+                let delta = (baseline_value - candidate_value).abs();
+                if delta > tolerance {
+                    return Some(format!(
+                        "{key}[{idx}] baseline={baseline_value:.9e} candidate={candidate_value:.9e} delta={delta:.9e}"
+                    ));
+                }
+            }
+            (None, None) => {}
+            _ => {
+                return Some(format!(
+                    "{key}[{idx}] baseline={baseline_value:?} candidate={candidate_value:?}"
+                ));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn trace_selected_diff(baseline: &Value, candidate: &Value, tolerance: f64) -> Option<String> {
+    let baseline_values = baseline["selected"].as_array()?;
+    let candidate_values = candidate["selected"].as_array()?;
+    if baseline_values.len() != candidate_values.len() {
+        return Some(format!(
+            "selected length baseline={} candidate={}",
+            baseline_values.len(),
+            candidate_values.len()
+        ));
+    }
+    for (position, (baseline_value, candidate_value)) in baseline_values
+        .iter()
+        .zip(candidate_values.iter())
+        .enumerate()
+    {
+        let baseline_index = baseline_value["index"].as_u64();
+        let candidate_index = candidate_value["index"].as_u64();
+        if baseline_index != candidate_index {
+            return Some(format!(
+                "selected[{position}] index baseline={baseline_index:?} candidate={candidate_index:?}"
+            ));
+        }
+        match (
+            baseline_value["value"].as_f64(),
+            candidate_value["value"].as_f64(),
+        ) {
+            (Some(baseline_number), Some(candidate_number)) => {
+                let delta = (baseline_number - candidate_number).abs();
+                if delta > tolerance {
+                    return Some(format!(
+                        "selected[{position}] index={baseline_index:?} baseline={baseline_number:.9e} candidate={candidate_number:.9e} delta={delta:.9e}"
+                    ));
+                }
+            }
+            (None, None) => {}
+            _ => {
+                return Some(format!(
+                    "selected[{position}] index={baseline_index:?} baseline={baseline_value:?} candidate={candidate_value:?}"
+                ));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn first_trace_summary_diff(
+    baseline: &Value,
+    candidate: &Value,
+    layer_idx: usize,
+    mode: &str,
+    fields: &[&str],
+) -> Option<String> {
+    const COUNT_TOLERANCE: f64 = 0.0;
+    const VALUE_TOLERANCE: f64 = 1.0e-3;
+    for name in fields {
+        let baseline_summary = &baseline["summaries"][name];
+        let candidate_summary = &candidate["summaries"][name];
+        if !baseline_summary.is_object() || !candidate_summary.is_object() {
+            return Some(format!(
+                "mode={mode} layer={layer_idx} field={name} missing summary baseline={} candidate={}",
+                baseline_summary.is_object(),
+                candidate_summary.is_object()
+            ));
+        }
+        for key in ["total_count", "finite_count"] {
+            if let Some(diff) =
+                trace_number_diff(baseline_summary, candidate_summary, key, COUNT_TOLERANCE)
+            {
+                return Some(format!("mode={mode} layer={layer_idx} field={name} {diff}"));
+            }
+        }
+        for key in ["max_abs", "mean_abs"] {
+            if let Some(diff) =
+                trace_number_diff(baseline_summary, candidate_summary, key, VALUE_TOLERANCE)
+            {
+                return Some(format!("mode={mode} layer={layer_idx} field={name} {diff}"));
+            }
+        }
+        if let Some(diff) = trace_array_diff(
+            baseline_summary,
+            candidate_summary,
+            "first_values",
+            VALUE_TOLERANCE,
+        ) {
+            return Some(format!("mode={mode} layer={layer_idx} field={name} {diff}"));
+        }
+        if let Some(diff) =
+            trace_selected_diff(baseline_summary, candidate_summary, VALUE_TOLERANCE)
+        {
+            return Some(format!("mode={mode} layer={layer_idx} field={name} {diff}"));
+        }
+    }
+    None
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn assert_trace_summaries_finite(trace: &Value, mode: &str, layer_idx: usize, fields: &[&str]) {
+    for name in fields {
+        let summary = &trace["summaries"][name];
+        assert!(
+            summary.is_object(),
+            "E2B shared-KV paired trace mode={mode} layer={layer_idx} missing summary {name}"
+        );
+        let total = summary["total_count"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("mode={mode} layer={layer_idx} {name} total_count"));
+        let finite = summary["finite_count"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("mode={mode} layer={layer_idx} {name} finite_count"));
+        assert_eq!(
+            finite, total,
+            "E2B shared-KV paired trace mode={mode} layer={layer_idx} {name} has non-finite values"
+        );
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn run_e2b_shared_kv_trace_mode(
+    model_dir: &std::path::Path,
+    arch: &rvllm_loader::gemma4_arch::Gemma4Arch,
+    mode: &'static str,
+) {
+    for layer_idx in E2B_SHARED_KV_DIFF_TRACE_LAYERS {
+        let _ = fs::remove_file(e2b_shared_kv_trace_path(mode, *layer_idx));
+    }
+
+    let trace_path_template = std::path::PathBuf::from(format!(
+        "/tmp/gemma4-e2b-shared-kv-{mode}-layer{{layer}}.json"
+    ));
+    let env_guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_JSON_ENV,
+        RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV,
+        RVLLM_METAL_DEBUG_SHARED_KV_SKIP_MODE_ENV,
+    ]);
+    env_guard.set(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV, "13,14,15,16,17,18,19,20");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_JSON_ENV, &trace_path_template);
+    env_guard.set(RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_SHARED_KV_SKIP_MODE_ENV, mode);
+
+    let mut plan = n_layer_plan(model_dir.to_path_buf(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir.to_path_buf());
+    backend.prepare(&plan).unwrap_or_else(|err| {
+        panic!("real Gemma4 E2B prepare should complete for mode={mode}: {err}")
+    });
+
+    let prefill = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+        vec![0, 2],
+        vec![1],
+        vec![2],
+    );
+    let prefill_ticket = backend
+        .launch_prefill(&prefill)
+        .unwrap_or_else(|err| panic!("real E2B shared-KV paired trace prefill mode={mode}: {err}"));
+    let prefill_out = backend.collect(prefill_ticket).unwrap_or_else(|err| {
+        panic!("real E2B shared-KV paired trace prefill collect mode={mode}: {err}")
+    });
+    assert!(prefill_out.is_empty());
+
+    let decode = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(4)],
+        vec![0, 1],
+        vec![1],
+        vec![2],
+    );
+    let decode_ticket = backend
+        .launch_rollout(&decode, None)
+        .unwrap_or_else(|err| panic!("real E2B shared-KV paired trace decode mode={mode}: {err}"));
+    let decode_out = backend.collect(decode_ticket).unwrap_or_else(|err| {
+        panic!("real E2B shared-KV paired trace decode collect mode={mode}: {err}")
+    });
+    assert_eq!(
+        decode_out.len(),
+        1,
+        "skip-final-logits debug path must return one placeholder token for mode={mode}"
+    );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Debug)]
 struct E2bHfReferenceStep {
     selected_token_ids: Vec<u32>,
@@ -8638,6 +8946,92 @@ fn real_gemma4_e2b_shared_kv_layers_13_to_16_decode_trace_explains_tail_cache_us
             eprintln!(
                 "E2B shared-KV trace layer {layer_idx} {name}: finite={finite}/{total} max_abs={max_abs:.6e} mean_abs={mean_abs:.6e}"
             );
+        }
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory and large Metal arena opt-in"]
+fn real_gemma4_e2b_shared_kv_baseline_vs_skip_trace_identifies_first_divergence() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before shared-KV paired trace");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+
+    let modes = [
+        "none",
+        "skip_local_kv_cache_write_only",
+        "skip_tail_kv_projection_and_cache",
+    ];
+    for mode in modes {
+        eprintln!("E2B shared-KV paired trace: running mode={mode}");
+        run_e2b_shared_kv_trace_mode(&model_dir, &arch, mode);
+        for layer_idx in E2B_SHARED_KV_DIFF_TRACE_LAYERS {
+            let trace = read_e2b_shared_kv_trace(mode, *layer_idx);
+            assert_eq!(
+                trace["schema"].as_str(),
+                Some("rvllm.gemma4_metal_layer_trace.v1")
+            );
+            assert_eq!(trace["phase"].as_str(), Some("decode"));
+            assert_eq!(trace["layer"].as_u64(), Some(*layer_idx as u64));
+            assert_trace_summaries_finite(
+                &trace,
+                mode,
+                *layer_idx,
+                E2B_SHARED_KV_DIFF_TRACE_FIELDS,
+            );
+        }
+    }
+
+    for mode in [
+        "skip_local_kv_cache_write_only",
+        "skip_tail_kv_projection_and_cache",
+    ] {
+        let mut first_any = None;
+        let mut first_downstream = None;
+        for layer_idx in E2B_SHARED_KV_DIFF_TRACE_LAYERS {
+            let baseline = read_e2b_shared_kv_trace("none", *layer_idx);
+            let candidate = read_e2b_shared_kv_trace(mode, *layer_idx);
+            if first_any.is_none() {
+                first_any = first_trace_summary_diff(
+                    &baseline,
+                    &candidate,
+                    *layer_idx,
+                    mode,
+                    E2B_SHARED_KV_DIFF_TRACE_FIELDS,
+                );
+            }
+            if first_downstream.is_none() {
+                first_downstream = first_trace_summary_diff(
+                    &baseline,
+                    &candidate,
+                    *layer_idx,
+                    mode,
+                    E2B_SHARED_KV_DIFF_DOWNSTREAM_FIELDS,
+                );
+            }
+        }
+        match &first_any {
+            Some(diff) => {
+                eprintln!("E2B shared-KV paired trace mode={mode} first_any_diff: {diff}")
+            }
+            None => eprintln!(
+                "E2B shared-KV paired trace mode={mode} first_any_diff: none through layers 13-20"
+            ),
+        }
+        match &first_downstream {
+            Some(diff) => {
+                eprintln!("E2B shared-KV paired trace mode={mode} first_downstream_diff: {diff}")
+            }
+            None => eprintln!(
+                "E2B shared-KV paired trace mode={mode} first_downstream_diff: none through layers 13-20; if selected logits previously failed, trace later layers before retrying the gate"
+            ),
         }
     }
 }
