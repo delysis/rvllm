@@ -9803,6 +9803,135 @@ fn real_gemma4_e2b_batch_two_prefill_decode_two_steps_forced_hf_tokens_full_voca
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+const RVLLM_E2B_PROFILE_JSON_ENV: &str = "RVLLM_E2B_PROFILE_JSON";
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn real_e2b_probe_profile_artifact_json(
+    stats: MetalProbePerfStats,
+    prepare_ms: u128,
+    prefill_ms: u128,
+    decode_ms: u128,
+    debug_sync: bool,
+) -> Value {
+    let decode_seconds = (decode_ms as f64 / 1000.0).max(f64::EPSILON);
+    let prefill_seconds = (prefill_ms as f64 / 1000.0).max(f64::EPSILON);
+    let decode_tok_s = stats.decode_steps as f64 / decode_seconds;
+    let prefill_tok_s = 2.0 / prefill_seconds;
+    let command_buffers_per_token = stats.command_buffers as f64 / stats.tokens as f64;
+
+    let mut sample = rvllm_apple::BackendProfileSample::new(
+        "real-e2b-metal-probe-json-artifact",
+        rvllm_apple::BenchmarkCategory::MetalOnly,
+        "rvllm-runtime-model-metal-backend-probe",
+        "google/gemma-4-E2B",
+        rvllm_apple::BackendProfileMetrics {
+            first_token_latency_ms: rvllm_apple::OptionalMetric::unmeasured(
+                "probe artifact records aggregate prefill wall time, not isolated first-token latency",
+            ),
+            steady_decode_tokens_per_second: rvllm_apple::OptionalMetric::measured(decode_tok_s),
+            prefill_tokens_per_second: rvllm_apple::OptionalMetric::measured(prefill_tok_s),
+            memory_peak_bytes: rvllm_apple::OptionalMetric::unmeasured(
+                "probe artifact has no external peak RSS/GPU memory profiler capture",
+            ),
+            command_buffers_per_token: rvllm_apple::OptionalMetric::measured(
+                command_buffers_per_token,
+            ),
+            cpu_utilization_percent: rvllm_apple::OptionalMetric::unmeasured(
+                "probe artifact has no Instruments or powermetrics CPU utilization capture",
+            ),
+            gpu_utilization_percent: rvllm_apple::OptionalMetric::unmeasured(
+                "probe artifact has no Metal System Trace GPU utilization capture",
+            ),
+            ane_utilization_percent: rvllm_apple::OptionalMetric::unsupported(
+                "real E2B probe currently uses Metal only; private ANE execution is not established",
+            ),
+            energy_joules: rvllm_apple::OptionalMetric::unmeasured(
+                "probe artifact has no powermetrics energy capture",
+            ),
+        },
+    );
+    sample.prompt_tokens = 2;
+    sample.generated_tokens = stats.decode_steps;
+
+    serde_json::json!({
+        "schema_version": 1,
+        "artifact_kind": "rvllm-real-e2b-metal-probe-profile",
+        "generated_by": "real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters",
+        "sample": sample,
+        "timings_ms": {
+            "prepare": prepare_ms,
+            "prefill": prefill_ms,
+            "decode": decode_ms,
+        },
+        "metal_probe_counters": {
+            "prefill_steps": stats.prefill_steps,
+            "decode_steps": stats.decode_steps,
+            "tokens": stats.tokens,
+            "library_compiles": stats.library_compiles,
+            "pipeline_state_compiles": stats.pipeline_state_compiles,
+            "command_buffers": stats.command_buffers,
+            "encoders": stats.encoders,
+            "forced_waits": stats.forced_waits,
+            "cpu_wall_ns": stats.cpu_wall_ns,
+            "last_step_tokens": stats.last_step_tokens,
+            "last_step_command_buffers": stats.last_step_command_buffers,
+            "last_step_encoders": stats.last_step_encoders,
+            "last_step_forced_waits": stats.last_step_forced_waits,
+            "last_step_cpu_wall_ns": stats.last_step_cpu_wall_ns,
+        },
+        "debug_sync": debug_sync,
+        "claim_boundary": "single-host probe artifact; not production performance, ANE, or regression evidence",
+    })
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn real_e2b_probe_profile_artifact_schema_records_unmeasured_slots() {
+    let stats = MetalProbePerfStats {
+        prefill_steps: 1,
+        decode_steps: 4,
+        tokens: 6,
+        library_compiles: 1,
+        pipeline_state_compiles: kernels::KERNEL_COUNT as u64,
+        command_buffers: 5,
+        encoders: 3187,
+        forced_waits: 5,
+        cpu_wall_ns: 123,
+        last_step_tokens: 1,
+        last_step_command_buffers: 1,
+        last_step_encoders: 700,
+        last_step_forced_waits: 1,
+        last_step_cpu_wall_ns: 456,
+    };
+
+    let artifact = real_e2b_probe_profile_artifact_json(stats, 478_027, 586, 1_767, false);
+    assert_eq!(artifact["schema_version"], 1);
+    assert_eq!(
+        artifact["artifact_kind"],
+        "rvllm-real-e2b-metal-probe-profile"
+    );
+    assert_eq!(
+        artifact["claim_boundary"],
+        "single-host probe artifact; not production performance, ANE, or regression evidence"
+    );
+    assert_eq!(artifact["metal_probe_counters"]["command_buffers"], 5);
+    assert_eq!(artifact["sample"]["prompt_tokens"], 2);
+    assert_eq!(artifact["sample"]["generated_tokens"], 4);
+    assert!(
+        artifact["sample"]["metrics"]["memory_peak_bytes"]
+            .get("Unmeasured")
+            .is_some(),
+        "profile artifact must keep missing external memory profiling explicit"
+    );
+    assert!(
+        artifact["sample"]["metrics"]["gpu_utilization_percent"]
+            .get("Unmeasured")
+            .is_some(),
+        "profile artifact must keep missing external GPU profiling explicit"
+    );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
 #[ignore = "requires cached Gemma4 E2B model directory and large Metal arena opt-in"]
 fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
@@ -9919,6 +10048,26 @@ fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
         stats.last_step_cpu_wall_ns,
         metal_debug_sync_enabled()
     );
+
+    if let Some(path) = std::env::var_os(RVLLM_E2B_PROFILE_JSON_ENV) {
+        let artifact = real_e2b_probe_profile_artifact_json(
+            stats,
+            prepare_ms,
+            prefill_ms,
+            decode_ms,
+            metal_debug_sync_enabled(),
+        );
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create E2B profile artifact parent dir");
+        }
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&artifact).expect("serialize E2B profile artifact"),
+        )
+        .expect("write E2B profile artifact");
+        eprintln!("wrote real E2B profile artifact to {}", path.display());
+    }
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
