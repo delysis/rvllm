@@ -1316,6 +1316,56 @@ fn engine_one_layer_noop_model_backend_prefill_then_decode_token_2_to_3() {
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
 #[ignore = "requires Apple Silicon Metal device"]
+fn tiny_one_layer_noop_prefill_batch_two_then_decode_batch_two_returns_token_3() {
+    let dir = write_tiny_one_layer_noop_fixture();
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = one_layer_plan(dir.clone());
+    backend
+        .prepare(&plan)
+        .expect("prepare one-layer tiny model");
+
+    let prefill = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1), rvllm_core::ReqId(2)],
+        vec![rvllm_core::TokenId(2), rvllm_core::TokenId(2)],
+        vec![0, 1, 2],
+        vec![0, 0],
+        vec![1, 1],
+    );
+    let prefill_ticket = backend.launch_prefill(&prefill).expect("run batch prefill");
+    let prefill_out = backend.collect(prefill_ticket).expect("collect prefill");
+    assert!(prefill_out.is_empty());
+
+    let decode = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1), rvllm_core::ReqId(2)],
+        vec![rvllm_core::TokenId(2), rvllm_core::TokenId(2)],
+        vec![0, 1, 2],
+        vec![0, 0],
+        vec![1, 1],
+    );
+    let decode_ticket = backend
+        .launch_rollout(&decode, None)
+        .expect("run batch decode");
+    let logits = backend
+        .debug_read_decode_logits_f32(2)
+        .expect("read batched decode logits");
+    assert_eq!(logits.len(), 16);
+    assert_eq!(cpu_full_nonzero_argmax(&logits[0..8]), 3);
+    assert_eq!(cpu_full_nonzero_argmax(&logits[8..16]), 3);
+    let out = backend.collect(decode_ticket).expect("collect decode");
+    assert_eq!(out.len(), 2);
+    assert_eq!(out[0].req_id, rvllm_core::ReqId(1));
+    assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
+    assert_eq!(out[1].req_id, rvllm_core::ReqId(2));
+    assert_eq!(out[1].token_id, rvllm_core::TokenId(3));
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
 fn tiny_two_layer_noop_model_backend_decodes_token_2_to_3() {
     let dir = write_tiny_two_layer_noop_fixture();
     let mut backend = ModelMetalBackend::new(dir.clone());

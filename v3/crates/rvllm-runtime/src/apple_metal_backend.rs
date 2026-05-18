@@ -1180,11 +1180,95 @@ impl ModelMetalBackend {
             )
         })?;
 
-        let positions = (0..num_tokens).map(|idx| idx as i32).collect::<Vec<_>>();
-        let slot_mapping = positions.clone();
-        let context_lens = [num_tokens as i32];
-        let block_tables = [0_i32];
-        let cu_seqlens = [0_i32, num_tokens as i32];
+        let num_seqs = handoff.num_sequences();
+        if num_seqs == 0 || num_seqs > state.max_probe_tokens {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "unsupported_prefill_batch_size",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+        if handoff.cu_seqlens.len() != num_seqs + 1 {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "prefill cu_seqlens length must equal req_ids + 1",
+                },
+                model_ctx("launch_prefill"),
+            ));
+        }
+
+        let mut positions = Vec::with_capacity(num_tokens);
+        let mut slot_mapping = Vec::with_capacity(num_tokens);
+        let mut max_seqlen_q = 0usize;
+        for seq in 0..num_seqs {
+            let seq_start = handoff.cu_seqlens[seq] as usize;
+            let seq_end = handoff.cu_seqlens[seq + 1] as usize;
+            if seq_end < seq_start || seq_end > num_tokens {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "prefill cu_seqlens must be monotonic and within token count",
+                    },
+                    model_ctx("launch_prefill"),
+                ));
+            }
+            let seq_len = seq_end - seq_start;
+            if seq_len == 0 {
+                return Err(RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "unsupported_empty_prefill_sequence",
+                    },
+                    model_ctx("launch_prefill"),
+                ));
+            }
+            max_seqlen_q = max_seqlen_q.max(seq_len);
+            let last_position = handoff.positions[seq] as usize;
+            let Some(first_position) = (last_position + 1).checked_sub(seq_len) else {
+                return Err(RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "unsupported_prefill_position_span",
+                    },
+                    model_ctx("launch_prefill"),
+                ));
+            };
+            if last_position >= state.max_probe_tokens {
+                return Err(RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "unsupported_context_length",
+                    },
+                    model_ctx("launch_prefill"),
+                ));
+            }
+            for token_offset in 0..seq_len {
+                let position = first_position + token_offset;
+                if position >= state.max_probe_tokens {
+                    return Err(RvllmError::apple(
+                        AppleError::FeatureNotAvailable {
+                            backend: "model-metal-backend",
+                            op: "unsupported_context_length",
+                        },
+                        model_ctx("launch_prefill"),
+                    ));
+                }
+                positions.push(position as i32);
+                slot_mapping.push((seq * state.max_probe_tokens + position) as i32);
+            }
+        }
+        let context_lens = handoff
+            .context_lens
+            .iter()
+            .map(|&context_len| context_len as i32)
+            .collect::<Vec<_>>();
+        let block_tables = (0..num_seqs).map(|seq| seq as i32).collect::<Vec<_>>();
+        let cu_seqlens = handoff
+            .cu_seqlens
+            .iter()
+            .map(|&cu| cu as i32)
+            .collect::<Vec<_>>();
 
         for layer in &state.layers {
             Self::write_i32_metadata_region(arena, &layer.positions, &positions, "launch_prefill")?;
@@ -1212,6 +1296,14 @@ impl ModelMetalBackend {
                 &cu_seqlens,
                 "launch_prefill",
             )?;
+        }
+        if max_seqlen_q == 0 {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "prefill max sequence length must be positive",
+                },
+                model_ctx("launch_prefill"),
+            ));
         }
         Ok(())
     }
@@ -1698,15 +1790,6 @@ impl ModelMetalBackend {
                 model_ctx("launch_prefill"),
             )
         })?;
-        if handoff.num_sequences() != 1 && state.num_layers > 0 {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "unsupported_prefill_batch_size_for_layers",
-                },
-                model_ctx("launch_prefill"),
-            ));
-        }
         const MAX_DEFAULT_PROBE_LAYERS: usize = 8;
         if state.num_layers > MAX_DEFAULT_PROBE_LAYERS && !large_gemma4_probe_opted_in() {
             return Err(RvllmError::apple(
@@ -1753,6 +1836,12 @@ impl ModelMetalBackend {
             ptr::copy_nonoverlapping(token_ids.as_ptr(), dst, token_ids.len());
         }
 
+        let max_seqlen_q = handoff
+            .cu_seqlens
+            .windows(2)
+            .map(|window| window[1].saturating_sub(window[0]))
+            .max()
+            .unwrap_or(0);
         self.write_prefill_layer_metadata(state, handoff)?;
         self.enqueue_embedding_gather(state, num_tokens)?;
         self.enqueue_ple_inputs(state, num_tokens)?;
@@ -1760,8 +1849,8 @@ impl ModelMetalBackend {
             state,
             num_tokens,
             MetalPhase::Prefill {
-                max_seqlen_q: num_tokens as u32,
-                batch_size: 1,
+                max_seqlen_q,
+                batch_size: handoff.num_sequences() as u32,
             },
             "launch_prefill",
         )?;
