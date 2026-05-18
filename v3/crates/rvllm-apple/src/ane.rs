@@ -479,4 +479,103 @@ mod tests {
             result.err()
         );
     }
+
+    #[test]
+    #[ignore = "requires private ANE compile/load/evaluate opt-in"]
+    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    fn private_ane_tiny_projection_evaluate_smoke() {
+        let config = AneRolloutConfig {
+            bucket: RolloutBucket {
+                seqs: 1,
+                tokens: 16,
+            },
+            hidden_size: 16,
+            intermediate_size: 16,
+            num_layers: 1,
+        };
+        let plan = AneProgramPlan::proj_only(config.clone());
+
+        let temp_dir = std::env::temp_dir().join("rvllm_test_eval_ane");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let weights_path = temp_dir.join("weights.bin");
+        std::fs::write(&weights_path, vec![0u8; 1024 * 1024]).unwrap();
+
+        let compiled = match compile_private_ane_program(&plan, &weights_path) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("[ANE ERROR] {}", e);
+                for diag in last_ane_diagnostics() {
+                    eprintln!("[ANE DIAG] {}", diag);
+                }
+                panic!("private ANE compile failed: {e}");
+            }
+        };
+
+        let compiled_str = compiled
+            .to_str()
+            .expect("compiled model path should be UTF-8");
+        let handle = match rvllm_apple_ane_sys::AneModelHandle::load_with_error(compiled_str) {
+            Ok(handle) => handle,
+            Err(err) => {
+                eprintln!("[ANE DIAG] compiled model could not be loaded by _ANEClient: {err}");
+                eprintln!(
+                    "[ANE DIAG] evaluate smoke skipped after compile; no ANE execution claim made"
+                );
+                return;
+            }
+        };
+
+        let desc = crate::iosurface::IoSurfaceTensorDesc {
+            dtype: DType::F32,
+            channels: config.hidden_size,
+            spatial: (config.bucket.seqs * config.bucket.tokens) as usize,
+        };
+        let shape = desc.byte_surface_shape();
+        let input = rvllm_apple_ane_sys::AneSurface::new(
+            shape.width,
+            shape.height,
+            shape.bytes_per_element,
+        )
+        .expect("input IOSurface should allocate");
+        let output = rvllm_apple_ane_sys::AneSurface::new(
+            shape.width,
+            shape.height,
+            shape.bytes_per_element,
+        )
+        .expect("output IOSurface should allocate");
+
+        for i in 0..desc.element_count() {
+            input
+                .write_f32(i, (i + 1) as f32)
+                .expect("input IOSurface write should succeed");
+            output
+                .write_f32(i, f32::NAN)
+                .expect("output IOSurface write should succeed");
+        }
+
+        let request =
+            rvllm_apple_ane_sys::AneRequest::new(&[input], &[0], &[output.clone()], &[0], 0)
+                .expect("private ANE request should be created");
+        handle
+            .evaluate(&request)
+            .expect("private ANE request should evaluate");
+
+        let mut values = Vec::with_capacity(desc.element_count());
+        for i in 0..desc.element_count() {
+            values.push(
+                output
+                    .try_read_f32(i)
+                    .expect("output IOSurface read should succeed"),
+            );
+        }
+        assert!(
+            values.iter().all(|v| v.is_finite()),
+            "ANE output should be finite after evaluate: {values:?}"
+        );
+        assert!(
+            values.iter().all(|v| v.abs() <= 1.0e-3),
+            "zero-weight projection should write near-zero output: {values:?}"
+        );
+    }
 }

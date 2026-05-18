@@ -69,10 +69,19 @@ mod platform {
         }
 
         pub fn read_u32(&self, offset_bytes: usize) -> u32 {
-            unsafe {
-                let ptr = self.as_ptr() as *const u8;
-                std::ptr::read_unaligned(ptr.add(offset_bytes) as *const u32)
-            }
+            self.try_read_u32(offset_bytes).unwrap_or_default()
+        }
+
+        pub fn try_read_u32(&self, offset_bytes: usize) -> Result<u32, String> {
+            read_iosurface_u32(self.as_ptr(), offset_bytes)
+        }
+
+        pub fn try_read_f32(&self, offset_elements: usize) -> Result<f32, String> {
+            read_iosurface_f32(self.as_ptr(), offset_elements)
+        }
+
+        pub fn write_f32(&self, offset_elements: usize, value: f32) -> Result<(), String> {
+            write_iosurface_f32(self.as_ptr(), offset_elements, value)
         }
     }
 
@@ -84,9 +93,13 @@ mod platform {
 
     impl AneModelHandle {
         pub fn load(path: &str) -> Option<Self> {
-            let client = get_ane_client()?;
+            Self::load_with_error(path).ok()
+        }
+
+        pub fn load_with_error(path: &str) -> Result<Self, String> {
+            let client = get_ane_client().ok_or_else(|| "_ANEClient unavailable".to_string())?;
             let model = compile_and_load_ane_model(path, &client)?;
-            Some(Self { client, model })
+            Ok(Self { client, model })
         }
 
         pub fn evaluate(&self, request: &AneRequest) -> Result<(), String> {

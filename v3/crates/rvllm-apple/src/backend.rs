@@ -287,7 +287,14 @@ impl AppleBackend for ProductionAppleBackend {
             for (idx, req_id) in handoff.req_ids.iter().enumerate() {
                 // Read the predicted token from the output surface.
                 // Assuming tokens are packed as u32s at the start of the surface.
-                let token_id = out_surface.read_u32(idx * 4);
+                let token_id = out_surface.try_read_u32(idx * 4).map_err(|_| {
+                    RvllmError::apple(
+                        AppleError::RuntimeAneModel {
+                            err: AneRuntimeError::SurfaceUnavailable { id: out_id },
+                        },
+                        Self::ctx("read_ane_output_surface"),
+                    )
+                })?;
                 outputs.push(StepToken {
                     req_id: *req_id,
                     token_id: TokenId(token_id),
@@ -489,7 +496,7 @@ mod tests {
     #[test]
     fn production_backend_non_ane_rollout_returns_not_implemented() {
         let mut backend = ProductionAppleBackend::new();
-        let mut plan = AppleRuntimePlan {
+        let plan = AppleRuntimePlan {
             target: AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
             mode: AppleBackendMode::MetalPrefillMetalDecode,
             rollout_bucket: None,

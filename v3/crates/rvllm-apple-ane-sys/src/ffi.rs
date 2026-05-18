@@ -1,6 +1,7 @@
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{class, msg_send, msg_send_id};
+use objc2::{class, msg_send};
+use std::ffi::c_void;
 use std::ffi::CString;
 
 // Load the frameworks into the process.
@@ -66,7 +67,7 @@ pub fn coreml_compile_model(model_url_path: &str) -> Result<String, String> {
 pub fn compile_model_with_ane_client(
     model_url_path: &str,
     client: &Retained<AnyObject>,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let cls_url = class!(NSURL);
     let cls_nsstring = class!(NSString);
 
@@ -76,11 +77,11 @@ pub fn compile_model_with_ane_client(
     let url: *mut AnyObject = unsafe { msg_send![cls_url, fileURLWithPath: ns_path] };
 
     let mut error: *mut AnyObject = std::ptr::null_mut();
-    let compiled_url: Option<Retained<AnyObject>> = unsafe {
-        msg_send_id![client, compileModel: url, options: std::ptr::null_mut::<AnyObject>(), qos: 0_u32, error: &mut error]
+    let compiled: bool = unsafe {
+        msg_send![client, compileModel: url, options: std::ptr::null_mut::<AnyObject>(), qos: 0_u32, error: &mut error]
     };
 
-    if compiled_url.is_none() {
+    if !compiled {
         if !error.is_null() {
             let desc: *mut AnyObject = unsafe { msg_send![error, localizedDescription] };
             if !desc.is_null() {
@@ -94,14 +95,7 @@ pub fn compile_model_with_ane_client(
         return Err("_ANEClient compileModel failed with unknown error".to_string());
     }
 
-    let compiled_url = compiled_url.unwrap();
-    let path_ns: *mut AnyObject = unsafe { msg_send![&compiled_url, path] };
-    let path_utf8: *const std::ffi::c_char = unsafe { msg_send![path_ns, UTF8String] };
-    let path = unsafe { std::ffi::CStr::from_ptr(path_utf8) }
-        .to_string_lossy()
-        .into_owned();
-
-    Ok(path)
+    Ok(())
 }
 
 pub fn create_ane_options() -> Retained<AnyObject> {
@@ -114,14 +108,14 @@ pub fn create_ane_options() -> Retained<AnyObject> {
     let val: *mut AnyObject = unsafe { msg_send![class!(NSNumber), numberWithBool: true] };
 
     let dict: Retained<AnyObject> =
-        unsafe { msg_send_id![cls_dict, dictionaryWithObject: val, forKey: key] };
+        unsafe { msg_send![cls_dict, dictionaryWithObject: val, forKey: key] };
     dict
 }
 
 pub fn compile_and_load_ane_model(
     compiled_url_path: &str,
     client: &Retained<AnyObject>,
-) -> Option<Retained<AnyObject>> {
+) -> Result<Retained<AnyObject>, String> {
     let cls_model = class!(_ANEModel);
     let cls_url = class!(NSURL);
     let cls_nsstring = class!(NSString);
@@ -140,13 +134,12 @@ pub fn compile_and_load_ane_model(
     };
 
     if model.is_null() {
-        return None;
+        return Err("_ANEModel initWithModelAtURL returned null".to_string());
     }
 
     let mut error: *mut AnyObject = std::ptr::null_mut();
-    let options = create_ane_options();
     let load_res: bool = unsafe {
-        msg_send![client, loadModel: model, options: &*options, qos: 0_u32, error: &mut error]
+        msg_send![client, loadModel: model, options: std::ptr::null_mut::<AnyObject>(), qos: 0_u32, error: &mut error]
     };
 
     if !load_res {
@@ -156,14 +149,14 @@ pub fn compile_and_load_ane_model(
                 let utf8: *const std::ffi::c_char = unsafe { msg_send![desc, UTF8String] };
                 if !utf8.is_null() {
                     let s = unsafe { std::ffi::CStr::from_ptr(utf8) }.to_string_lossy();
-                    eprintln!("[ANE] loadModel failed: {}", s);
+                    return Err(format!("_ANEClient loadModel failed: {s}"));
                 }
             }
         }
-        return None;
+        return Err("_ANEClient loadModel failed with unknown error".to_string());
     }
 
-    Some(unsafe { Retained::retain(model).unwrap() })
+    Ok(unsafe { Retained::retain(model).unwrap() })
 }
 
 pub fn create_ane_iosurface(
@@ -240,6 +233,9 @@ pub fn create_ns_array(objects: &[Retained<AnyObject>]) -> Retained<AnyObject> {
 
 extern "C" {
     fn IOSurfaceLookup(id: u32) -> *mut std::ffi::c_void;
+    fn IOSurfaceLock(buffer: *mut c_void, options: u32, seed: *mut u32) -> i32;
+    fn IOSurfaceUnlock(buffer: *mut c_void, options: u32, seed: *mut u32) -> i32;
+    fn IOSurfaceGetBaseAddress(buffer: *mut c_void) -> *mut c_void;
 }
 
 pub fn get_ane_surface_from_id(id: u32) -> Option<Retained<AnyObject>> {
@@ -256,6 +252,54 @@ pub fn get_ane_surface_from_id(id: u32) -> Option<Retained<AnyObject>> {
     }
 }
 
+fn with_iosurface_base<R>(surface: *mut c_void, f: impl FnOnce(*mut u8) -> R) -> Result<R, String> {
+    if surface.is_null() {
+        return Err("IOSurface pointer is null".to_string());
+    }
+
+    let mut seed = 0u32;
+    let lock = unsafe { IOSurfaceLock(surface, 0, &mut seed) };
+    if lock != 0 {
+        return Err(format!("IOSurfaceLock failed: {lock}"));
+    }
+
+    let base = unsafe { IOSurfaceGetBaseAddress(surface) };
+    let result = if base.is_null() {
+        Err("IOSurfaceGetBaseAddress returned null".to_string())
+    } else {
+        Ok(f(base.cast::<u8>()))
+    };
+
+    let unlock = unsafe { IOSurfaceUnlock(surface, 0, &mut seed) };
+    if unlock != 0 {
+        return Err(format!("IOSurfaceUnlock failed: {unlock}"));
+    }
+
+    result
+}
+
+pub fn read_iosurface_u32(surface: *mut c_void, offset_bytes: usize) -> Result<u32, String> {
+    with_iosurface_base(surface, |base| unsafe {
+        std::ptr::read_unaligned(base.add(offset_bytes).cast::<u32>())
+    })
+}
+
+pub fn read_iosurface_f32(surface: *mut c_void, offset_elements: usize) -> Result<f32, String> {
+    with_iosurface_base(surface, |base| unsafe {
+        std::ptr::read_unaligned(base.add(offset_elements * 4).cast::<f32>())
+    })
+}
+
+pub fn write_iosurface_f32(
+    surface: *mut c_void,
+    offset_elements: usize,
+    value: f32,
+) -> Result<(), String> {
+    with_iosurface_base(surface, |base| unsafe {
+        std::ptr::write_unaligned(base.add(offset_elements * 4).cast::<f32>(), value);
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,7 +313,7 @@ mod tests {
 
         let dump_class = |cls_name: &str| {
             let cstr = std::ffi::CString::new(cls_name).unwrap();
-            let cls = unsafe { objc2::runtime::AnyClass::get(&cstr) };
+            let cls = objc2::runtime::AnyClass::get(&cstr);
             if let Some(cls) = cls {
                 println!("\n--- Instance Methods for {} ---", cls_name);
                 let mut count = 0;
