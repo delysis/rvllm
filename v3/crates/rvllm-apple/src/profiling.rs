@@ -315,7 +315,7 @@ impl AppleProductionAcceptanceEvidence {
     #[must_use]
     pub fn current_real_e2b_probe() -> Self {
         let mut metal_probe_sample = BackendProfileSample::new(
-            "real-e2b-metal-probe-command-buffer-combined-2026-05-18",
+            "real-e2b-metal-probe-current-2026-05-18",
             BenchmarkCategory::MetalOnly,
             "rvllm-runtime-model-metal-backend-probe",
             "google/gemma-4-E2B",
@@ -323,8 +323,8 @@ impl AppleProductionAcceptanceEvidence {
                 first_token_latency_ms: OptionalMetric::unmeasured(
                     "probe harness reports aggregate prefill and decode wall time, not isolated first-token latency",
                 ),
-                steady_decode_tokens_per_second: OptionalMetric::measured(2.2472),
-                prefill_tokens_per_second: OptionalMetric::measured(3.4843),
+                steady_decode_tokens_per_second: OptionalMetric::measured(2.1064),
+                prefill_tokens_per_second: OptionalMetric::measured(3.3223),
                 memory_peak_bytes: OptionalMetric::unmeasured(
                     "probe reports planned arena bytes separately; no external peak RSS/GPU allocation profile was captured",
                 ),
@@ -370,9 +370,11 @@ impl AppleProductionAcceptanceEvidence {
             engine_smoke: EvidenceState::present(
                 "real-e2b-engine-batch-same-length-mixed-length-and-bucket-four-full-vocab-hf-parity",
             ),
-            performance_regression: PerformanceRegressionEvidence::NotTracked {
-                reason: "single-host probe measurement has no baseline/current comparison or dashboard evidence"
-                    .to_string(),
+            performance_regression: PerformanceRegressionEvidence::SampleComparison {
+                baseline_sample_id: "real-e2b-metal-probe-json-artifact".to_string(),
+                current_sample_id: "real-e2b-metal-probe-current-2026-05-18".to_string(),
+                max_allowed_regression_percent: 10.0,
+                observed_regression_percent: 6.27,
             },
         }
     }
@@ -706,7 +708,7 @@ mod tests {
             failure.criterion == AcceptanceCriterion::CorrectnessAgainstReference
                 && failure.reason.contains("scheduler/Engine")
         }));
-        assert!(report.failures.iter().any(|failure| {
+        assert!(!report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::PerformanceRegressionsTracked
         }));
     }

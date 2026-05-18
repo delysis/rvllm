@@ -9804,6 +9804,8 @@ fn real_gemma4_e2b_batch_two_prefill_decode_two_steps_forced_hf_tokens_full_voca
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 const RVLLM_E2B_PROFILE_JSON_ENV: &str = "RVLLM_E2B_PROFILE_JSON";
+#[cfg(all(feature = "apple", target_os = "macos"))]
+const RVLLM_E2B_PROFILE_SAMPLE_ID_ENV: &str = "RVLLM_E2B_PROFILE_SAMPLE_ID";
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn real_e2b_probe_profile_artifact_json(
@@ -9819,8 +9821,12 @@ fn real_e2b_probe_profile_artifact_json(
     let prefill_tok_s = 2.0 / prefill_seconds;
     let command_buffers_per_token = stats.command_buffers as f64 / stats.tokens as f64;
 
+    let sample_id = std::env::var(RVLLM_E2B_PROFILE_SAMPLE_ID_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "real-e2b-metal-probe-json-artifact".to_string());
     let mut sample = rvllm_apple::BackendProfileSample::new(
-        "real-e2b-metal-probe-json-artifact",
+        sample_id,
         rvllm_apple::BenchmarkCategory::MetalOnly,
         "rvllm-runtime-model-metal-backend-probe",
         "google/gemma-4-E2B",
