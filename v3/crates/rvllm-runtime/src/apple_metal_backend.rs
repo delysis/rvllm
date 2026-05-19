@@ -925,8 +925,7 @@ impl ModelMetalBackend {
         self.experimental_kv_int8
     }
 
-    #[cfg(test)]
-    fn debug_read_decode_logits_f32(&self, num_tokens: usize) -> Result<Vec<f32>> {
+    pub fn probe_read_decode_logits_f32(&self, num_tokens: usize) -> Result<Vec<f32>> {
         let state = self.state.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::NotPrepared {
@@ -976,6 +975,11 @@ impl ModelMetalBackend {
             .iter()
             .map(|bits| f16::from_bits(*bits).to_f32())
             .collect())
+    }
+
+    #[cfg(test)]
+    fn debug_read_decode_logits_f32(&self, num_tokens: usize) -> Result<Vec<f32>> {
+        self.probe_read_decode_logits_f32(num_tokens)
     }
 
     #[cfg(test)]

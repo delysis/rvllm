@@ -35,6 +35,10 @@ apple = ["dep:rvllm-apple", "dep:rvllm-apple-metal"]
 name = "probe_gemma4_load"
 path = "src/bin/probe_gemma4_load.rs"
 
+[[bin]]
+name = "probe_apple_metal_decode"
+path = "src/bin/probe_apple_metal_decode.rs"
+
 [dependencies]
 rvllm-core = { workspace = true }
 rvllm-mem = { workspace = true }
