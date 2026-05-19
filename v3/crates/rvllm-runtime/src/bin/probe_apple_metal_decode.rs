@@ -20,6 +20,7 @@ struct CliArgs {
     decode_steps: usize,
     top_k: usize,
     large_model_opt_in: bool,
+    hf_reference: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -35,12 +36,19 @@ struct StepTopK {
 }
 
 #[derive(Debug)]
+struct StepSelectedLogits {
+    step: usize,
+    selected_logits: Vec<TopLogit>,
+}
+
+#[derive(Debug)]
 struct ProbeReport {
     model_dir: PathBuf,
     prompt_token_ids: Vec<u32>,
     decode_steps: usize,
     sampled_token_ids: Vec<u32>,
     per_step_top_k: Vec<StepTopK>,
+    per_step_selected_logits: Vec<StepSelectedLogits>,
     prepare_ms: f64,
     prefill_ms: f64,
     decode_ms: f64,
@@ -51,6 +59,30 @@ struct ProbeReport {
     forced_waits: u64,
     debug_sync: bool,
     large_model_opt_in: bool,
+}
+
+#[derive(Debug)]
+struct HfReferenceStep {
+    step: usize,
+    next_token: u32,
+    selected_logits: Vec<TopLogit>,
+    top_logits: Vec<TopLogit>,
+}
+
+#[derive(Debug)]
+struct HfReference {
+    path: PathBuf,
+    prompt_token_ids: Vec<u32>,
+    decode_steps: usize,
+    generated_tokens: Vec<u32>,
+    steps: Vec<HfReferenceStep>,
+}
+
+#[derive(Debug)]
+struct HfComparison {
+    reference_path: PathBuf,
+    matched: bool,
+    mismatches: Vec<String>,
 }
 
 fn parse_token_ids(raw: &str) -> Result<Vec<u32>, String> {
@@ -91,6 +123,7 @@ where
     let mut decode_steps = 1usize;
     let mut top_k = 16usize;
     let mut large_model_opt_in = false;
+    let mut hf_reference = None;
 
     let mut iter = args.into_iter().map(Into::into).peekable();
     while let Some(arg) = iter.next() {
@@ -122,6 +155,12 @@ where
             "--large-model-opt-in" => {
                 large_model_opt_in = true;
             }
+            "--hf-reference" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "--hf-reference requires a value".to_owned())?;
+                hf_reference = Some(PathBuf::from(value));
+            }
             "-h" | "--help" => return Err(usage()),
             other if other.starts_with('-') => return Err(format!("unknown argument: {other}")),
             other => return Err(format!("unexpected positional argument: {other}")),
@@ -135,12 +174,13 @@ where
         decode_steps,
         top_k,
         large_model_opt_in,
+        hf_reference,
     })
 }
 
 fn usage() -> String {
     "usage: probe_apple_metal_decode --model-dir <DIR> --prompt-token-ids <IDS> \
-     [--decode-steps N] [--top-k K] [--large-model-opt-in]"
+     [--decode-steps N] [--top-k K] [--large-model-opt-in] [--hf-reference <JSON>]"
         .to_owned()
 }
 
@@ -200,6 +240,235 @@ fn top_k_logits(logits: &[f32], k: usize) -> Vec<TopLogit> {
     indexed
 }
 
+fn selected_logits(logits: &[f32], token_ids: &[u32]) -> Result<Vec<TopLogit>, String> {
+    token_ids
+        .iter()
+        .copied()
+        .map(|token_id| {
+            let idx = token_id as usize;
+            let logit = *logits
+                .get(idx)
+                .ok_or_else(|| format!("selected token id {token_id} exceeds vocab size"))?;
+            Ok(TopLogit { token_id, logit })
+        })
+        .collect()
+}
+
+fn parse_logit_entries(value: &serde_json::Value, field: &str) -> Result<Vec<TopLogit>, String> {
+    let entries = value[field]
+        .as_array()
+        .ok_or_else(|| format!("HF reference step missing {field} array"))?;
+    entries
+        .iter()
+        .map(|entry| {
+            let token_id = entry["token_id"]
+                .as_u64()
+                .ok_or_else(|| format!("HF reference {field} entry missing token_id"))?;
+            let token_id = u32::try_from(token_id)
+                .map_err(|_| format!("HF reference {field} token_id exceeds u32"))?;
+            let logit = entry["logit"]
+                .as_f64()
+                .ok_or_else(|| format!("HF reference {field} entry missing logit"))?
+                as f32;
+            if !logit.is_finite() {
+                return Err(format!(
+                    "HF reference {field} token {token_id} is non-finite"
+                ));
+            }
+            Ok(TopLogit { token_id, logit })
+        })
+        .collect()
+}
+
+fn parse_hf_reference(
+    path: PathBuf,
+    expected_prompt_token_ids: &[u32],
+    expected_decode_steps: usize,
+) -> Result<HfReference, String> {
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|err| format!("read HF reference {}: {err}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|err| format!("parse HF reference JSON: {err}"))?;
+    if value["schema"].as_str() != Some("rvllm.gemma4_hf_reference_logits.v1") {
+        return Err("HF reference schema must be rvllm.gemma4_hf_reference_logits.v1".to_owned());
+    }
+    let prompt_token_ids = value["prompt_token_ids"]
+        .as_array()
+        .ok_or_else(|| "HF reference missing prompt_token_ids array".to_owned())?
+        .iter()
+        .map(|item| {
+            let token_id = item
+                .as_u64()
+                .ok_or_else(|| "HF reference prompt token id must be an integer".to_owned())?;
+            u32::try_from(token_id)
+                .map_err(|_| "HF reference prompt token id exceeds u32".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if prompt_token_ids.as_slice() != expected_prompt_token_ids {
+        return Err(format!(
+            "HF reference prompt_token_ids {:?} do not match CLI prompt {:?}",
+            prompt_token_ids, expected_prompt_token_ids
+        ));
+    }
+    let decode_steps = value["decode_steps"]
+        .as_u64()
+        .ok_or_else(|| "HF reference missing decode_steps".to_owned())?
+        as usize;
+    if decode_steps != expected_decode_steps {
+        return Err(format!(
+            "HF reference decode_steps {decode_steps} does not match CLI decode_steps {expected_decode_steps}"
+        ));
+    }
+    let generated_tokens = value["generated_tokens"]
+        .as_array()
+        .ok_or_else(|| "HF reference missing generated_tokens array".to_owned())?
+        .iter()
+        .map(|item| {
+            let token_id = item
+                .as_u64()
+                .ok_or_else(|| "HF reference generated token id must be an integer".to_owned())?;
+            u32::try_from(token_id)
+                .map_err(|_| "HF reference generated token id exceeds u32".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let steps = value["steps"]
+        .as_array()
+        .ok_or_else(|| "HF reference missing steps array".to_owned())?
+        .iter()
+        .enumerate()
+        .map(|(idx, step)| {
+            let step_idx = step["step"].as_u64().unwrap_or(idx as u64) as usize;
+            if step_idx != idx {
+                return Err(format!(
+                    "HF reference step index {step_idx} does not match position {idx}"
+                ));
+            }
+            let next_token = step["next_token"]
+                .as_u64()
+                .ok_or_else(|| format!("HF reference step {idx} missing next_token"))?;
+            let next_token = u32::try_from(next_token)
+                .map_err(|_| format!("HF reference step {idx} next_token exceeds u32"))?;
+            Ok(HfReferenceStep {
+                step: idx,
+                next_token,
+                selected_logits: parse_logit_entries(step, "selected_logits")?,
+                top_logits: parse_logit_entries(step, "top_logits")?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if steps.len() != expected_decode_steps {
+        return Err(format!(
+            "HF reference has {} steps, expected {expected_decode_steps}",
+            steps.len()
+        ));
+    }
+    if generated_tokens.len() != expected_decode_steps {
+        return Err(format!(
+            "HF reference has {} generated tokens, expected {expected_decode_steps}",
+            generated_tokens.len()
+        ));
+    }
+    Ok(HfReference {
+        path,
+        prompt_token_ids,
+        decode_steps,
+        generated_tokens,
+        steps,
+    })
+}
+
+fn compare_hf_reference(report: &ProbeReport, reference: &HfReference) -> HfComparison {
+    const LOGIT_TOLERANCE: f32 = 1.0;
+    let mut mismatches = Vec::new();
+    if reference.prompt_token_ids != report.prompt_token_ids {
+        mismatches.push(format!(
+            "prompt_token_ids differ: metal={:?} hf={:?}",
+            report.prompt_token_ids, reference.prompt_token_ids
+        ));
+    }
+    if reference.decode_steps != report.decode_steps {
+        mismatches.push(format!(
+            "decode_steps differ: metal={} hf={}",
+            report.decode_steps, reference.decode_steps
+        ));
+    }
+    if reference.generated_tokens != report.sampled_token_ids {
+        mismatches.push(format!(
+            "sampled_token_ids differ: metal={:?} hf={:?}",
+            report.sampled_token_ids, reference.generated_tokens
+        ));
+    }
+
+    for (step_idx, reference_step) in reference.steps.iter().enumerate() {
+        let Some(metal_top) = report.per_step_top_k.get(step_idx) else {
+            mismatches.push(format!("missing Metal top-k for step {step_idx}"));
+            continue;
+        };
+        let Some(metal_selected) = report.per_step_selected_logits.get(step_idx) else {
+            mismatches.push(format!("missing Metal selected logits for step {step_idx}"));
+            continue;
+        };
+        if reference_step.step != metal_top.step || reference_step.step != metal_selected.step {
+            mismatches.push(format!("step index mismatch at step {step_idx}"));
+        }
+        if report.sampled_token_ids.get(step_idx).copied() != Some(reference_step.next_token) {
+            mismatches.push(format!(
+                "step {step_idx} sampled token differs: metal={:?} hf={}",
+                report.sampled_token_ids.get(step_idx),
+                reference_step.next_token
+            ));
+        }
+
+        for expected in &reference_step.selected_logits {
+            match metal_selected
+                .selected_logits
+                .iter()
+                .find(|item| item.token_id == expected.token_id)
+            {
+                Some(actual) => {
+                    let delta = (actual.logit - expected.logit).abs();
+                    if delta > LOGIT_TOLERANCE {
+                        mismatches.push(format!(
+                            "step {step_idx} selected logit[{}] delta {delta:.6} exceeds {LOGIT_TOLERANCE}: metal={:.6} hf={:.6}",
+                            expected.token_id, actual.logit, expected.logit
+                        ));
+                    }
+                }
+                None => mismatches.push(format!(
+                    "step {step_idx} missing selected logit[{}]",
+                    expected.token_id
+                )),
+            }
+        }
+
+        if metal_top.top_k.len() < reference_step.top_logits.len() {
+            mismatches.push(format!(
+                "step {step_idx} Metal top-k has {} entries, HF has {}",
+                metal_top.top_k.len(),
+                reference_step.top_logits.len()
+            ));
+        }
+        for (rank, expected) in reference_step.top_logits.iter().enumerate() {
+            let Some(actual) = metal_top.top_k.get(rank) else {
+                continue;
+            };
+            let delta = (actual.logit - expected.logit).abs();
+            if actual.token_id != expected.token_id || delta > LOGIT_TOLERANCE {
+                mismatches.push(format!(
+                    "step {step_idx} top-k rank {rank} differs: metal=({}, {:.6}) hf=({}, {:.6}) delta={delta:.6}",
+                    actual.token_id, actual.logit, expected.token_id, expected.logit
+                ));
+            }
+        }
+    }
+
+    HfComparison {
+        reference_path: reference.path.clone(),
+        matched: mismatches.is_empty(),
+        mismatches,
+    }
+}
+
 fn json_u32_array(values: &[u32]) -> String {
     serde_json::to_string(values).expect("serialize u32 array")
 }
@@ -224,7 +493,16 @@ fn per_step_top_k_json(steps: &[StepTopK]) -> String {
     serde_json::to_string(&value).expect("serialize top-k")
 }
 
-fn print_report(report: &ProbeReport) {
+fn hf_comparison_json(comparison: &HfComparison) -> String {
+    serde_json::to_string(&serde_json::json!({
+        "reference_path": comparison.reference_path,
+        "matched": comparison.matched,
+        "mismatches": comparison.mismatches,
+    }))
+    .expect("serialize HF comparison")
+}
+
+fn print_report(report: &ProbeReport, comparison: Option<&HfComparison>) {
     println!("claim: {CLAIM}");
     println!("model_dir: {}", report.model_dir.display());
     println!(
@@ -250,10 +528,18 @@ fn print_report(report: &ProbeReport) {
     println!("forced_waits: {}", report.forced_waits);
     println!("debug_sync: {}", report.debug_sync);
     println!("large_model_opt_in: {}", report.large_model_opt_in);
+    if let Some(comparison) = comparison {
+        println!("hf_reference: {}", comparison.reference_path.display());
+        println!("hf_reference_match: {}", comparison.matched);
+        println!(
+            "hf_reference_comparison: {}",
+            hf_comparison_json(comparison)
+        );
+    }
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
-fn run_probe(args: &CliArgs) -> Result<ProbeReport, String> {
+fn run_probe(args: &CliArgs, reference: Option<&HfReference>) -> Result<ProbeReport, String> {
     use rvllm_apple::{AppleBackend, HandoffCapsule, HandoffKind};
     use rvllm_core::{ReqId, TokenId};
     use rvllm_runtime::apple_metal_backend::ModelMetalBackend;
@@ -344,6 +630,7 @@ fn run_probe(args: &CliArgs) -> Result<ProbeReport, String> {
     let mut current = *prompt_tokens.last().expect("prompt token");
     let mut sampled_token_ids = Vec::with_capacity(args.decode_steps);
     let mut per_step_top_k = Vec::with_capacity(args.decode_steps);
+    let mut per_step_selected_logits = Vec::with_capacity(args.decode_steps);
     let decode_start = std::time::Instant::now();
     for step_idx in 0..args.decode_steps {
         let decode = HandoffCapsule::new(
@@ -364,6 +651,18 @@ fn run_probe(args: &CliArgs) -> Result<ProbeReport, String> {
             return Err(format!(
                 "decode logits contain non-finite values at step {step_idx}"
             ));
+        }
+        if let Some(reference_step) = reference.and_then(|reference| reference.steps.get(step_idx))
+        {
+            let token_ids = reference_step
+                .selected_logits
+                .iter()
+                .map(|entry| entry.token_id)
+                .collect::<Vec<_>>();
+            per_step_selected_logits.push(StepSelectedLogits {
+                step: step_idx,
+                selected_logits: selected_logits(&logits, &token_ids)?,
+            });
         }
         per_step_top_k.push(StepTopK {
             step: step_idx,
@@ -400,6 +699,7 @@ fn run_probe(args: &CliArgs) -> Result<ProbeReport, String> {
         decode_steps: args.decode_steps,
         sampled_token_ids,
         per_step_top_k,
+        per_step_selected_logits,
         prepare_ms,
         prefill_ms,
         decode_ms,
@@ -414,14 +714,22 @@ fn run_probe(args: &CliArgs) -> Result<ProbeReport, String> {
 }
 
 #[cfg(not(all(feature = "apple", target_os = "macos")))]
-fn run_probe(_args: &CliArgs) -> Result<ProbeReport, String> {
+fn run_probe(_args: &CliArgs, _reference: Option<&HfReference>) -> Result<ProbeReport, String> {
     Err("probe_apple_metal_decode requires --features apple on macOS".to_owned())
 }
 
 fn run_main() -> Result<(), String> {
     let args = parse_args_from(std::env::args().skip(1))?;
-    let report = run_probe(&args)?;
-    print_report(&report);
+    let reference = args
+        .hf_reference
+        .clone()
+        .map(|path| parse_hf_reference(path, &args.prompt_token_ids, args.decode_steps))
+        .transpose()?;
+    let report = run_probe(&args, reference.as_ref())?;
+    let comparison = reference
+        .as_ref()
+        .map(|reference| compare_hf_reference(&report, reference));
+    print_report(&report, comparison.as_ref());
     Ok(())
 }
 
@@ -459,10 +767,80 @@ mod tests {
         assert_eq!(args.decode_steps, 1);
         assert_eq!(args.top_k, 16);
         assert!(args.large_model_opt_in);
+        assert_eq!(args.hf_reference, None);
 
         let err = parse_args_from(["--model-dir", "/tmp/gemma4-e2b", "--prompt-token-ids", ""])
             .expect_err("empty token list should fail");
         assert!(err.contains("at least one token id"));
+
+        let args = parse_args_from([
+            "--model-dir",
+            "/tmp/gemma4-e2b",
+            "--prompt-token-ids",
+            "2,4",
+            "--hf-reference",
+            "/tmp/ref.json",
+        ])
+        .expect("parse HF reference arg");
+        assert_eq!(args.hf_reference, Some(PathBuf::from("/tmp/ref.json")));
+    }
+
+    #[test]
+    fn probe_apple_metal_decode_hf_reference_compare_reports_mismatch() {
+        let report = ProbeReport {
+            model_dir: PathBuf::from("/tmp/gemma4-e2b"),
+            prompt_token_ids: vec![2, 4],
+            decode_steps: 1,
+            sampled_token_ids: vec![145832],
+            per_step_top_k: vec![StepTopK {
+                step: 0,
+                top_k: vec![TopLogit {
+                    token_id: 145832,
+                    logit: 29.734375,
+                }],
+            }],
+            per_step_selected_logits: vec![StepSelectedLogits {
+                step: 0,
+                selected_logits: vec![TopLogit {
+                    token_id: 4,
+                    logit: 20.875,
+                }],
+            }],
+            prepare_ms: 1.0,
+            prefill_ms: 1.0,
+            decode_ms: 1.0,
+            tok_per_s: 1.0,
+            arena_bytes: 1,
+            command_buffers: 1,
+            encoders: 1,
+            forced_waits: 1,
+            debug_sync: false,
+            large_model_opt_in: true,
+        };
+        let reference = HfReference {
+            path: PathBuf::from("/tmp/ref.json"),
+            prompt_token_ids: vec![2, 4],
+            decode_steps: 1,
+            generated_tokens: vec![954],
+            steps: vec![HfReferenceStep {
+                step: 0,
+                next_token: 954,
+                selected_logits: vec![TopLogit {
+                    token_id: 4,
+                    logit: 20.875,
+                }],
+                top_logits: vec![TopLogit {
+                    token_id: 954,
+                    logit: 22.875,
+                }],
+            }],
+        };
+        let comparison = compare_hf_reference(&report, &reference);
+        assert!(!comparison.matched);
+        assert!(comparison
+            .mismatches
+            .iter()
+            .any(|item| item.contains("sampled_token_ids differ")));
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -479,8 +857,9 @@ mod tests {
             decode_steps: 1,
             top_k: 16,
             large_model_opt_in: true,
+            hf_reference: None,
         };
-        let report = run_probe(&args).expect("run E2B raw-token Metal probe");
+        let report = run_probe(&args, None).expect("run E2B raw-token Metal probe");
         eprintln!("{report:#?}");
         assert_eq!(report.prompt_token_ids, vec![2, 4]);
         assert_eq!(report.decode_steps, 1);
