@@ -89,6 +89,50 @@ REFERENCE_SUITE: tuple[SuiteCase, ...] = (
 )
 
 
+def parse_token_ids(raw: str) -> str:
+    parts = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            token_id = int(part)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"invalid token id {part!r}") from exc
+        if token_id < 0:
+            raise argparse.ArgumentTypeError(f"token id must be non-negative: {token_id}")
+        parts.append(str(token_id))
+    if not parts:
+        raise argparse.ArgumentTypeError("at least one token id is required")
+    return ",".join(parts)
+
+
+def case_slug(prompt_token_ids: str, decode_steps: int) -> str:
+    prompt = prompt_token_ids.replace(",", "-")
+    step = "step1" if decode_steps == 1 else f"steps{decode_steps}"
+    return f"prompt-{prompt}-{step}"
+
+
+def custom_suite_cases(args: argparse.Namespace) -> tuple[SuiteCase, ...]:
+    if not args.case:
+        return REFERENCE_SUITE
+    decode_steps = args.decode_steps or 1
+    cases = []
+    for prompt_token_ids in args.case:
+        slug = case_slug(prompt_token_ids, decode_steps)
+        prefix = "full-logits" if args.full_logits else "reference"
+        cases.append(
+            SuiteCase(
+                name=f"{prefix}_{slug}",
+                prompt_token_ids=prompt_token_ids,
+                decode_steps=decode_steps,
+                output_name=f"gemma4-e2b-hf-{prefix}-{slug}.json",
+                full_logits=args.full_logits,
+            )
+        )
+    return tuple(cases)
+
+
 def case_command(args: argparse.Namespace, case: SuiteCase, output_path: Path) -> list[str]:
     script = Path(__file__).with_name("dump_gemma4_hf_reference_logits.py")
     cmd = [
@@ -137,8 +181,24 @@ def run(argv: Sequence[str]) -> int:
     parser.add_argument("model_dir", type=Path, help="local Hugging Face Gemma 4 E2B model directory")
     parser.add_argument("--output-dir", type=Path, default=Path("/tmp"), help="artifact output directory")
     parser.add_argument("--python", default=sys.executable, help="Python executable for the per-case dumper")
+    parser.add_argument(
+        "--case",
+        action="append",
+        type=parse_token_ids,
+        help="comma-separated prompt token IDs; repeat to build a custom suite",
+    )
+    parser.add_argument(
+        "--decode-steps",
+        type=int,
+        help="decode steps for every custom --case (defaults to 1 when --case is used)",
+    )
     parser.add_argument("--selected-token-ids", default=DEFAULT_SELECTED_TOKEN_IDS)
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
+    parser.add_argument(
+        "--full-logits",
+        action="store_true",
+        help="include full logits for custom --case outputs",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--device-map")
     parser.add_argument("--trust-remote-code", action="store_true")
@@ -148,12 +208,19 @@ def run(argv: Sequence[str]) -> int:
 
     if args.top_k < 0:
         parser.error("--top-k must be non-negative")
+    if args.decode_steps is not None and args.decode_steps <= 0:
+        parser.error("--decode-steps must be positive")
+    if args.full_logits and not args.case:
+        parser.error("--full-logits is only meaningful with one or more --case values")
+    if args.decode_steps is not None and not args.case:
+        parser.error("--decode-steps is only meaningful with one or more --case values")
     if not args.model_dir.is_dir():
         parser.error(f"model directory does not exist: {args.model_dir}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    suite_cases = custom_suite_cases(args)
     planned = []
-    for case in REFERENCE_SUITE:
+    for case in suite_cases:
         output_path = args.output_dir / case.output_name
         cmd = case_command(args, case, output_path)
         planned.append(
