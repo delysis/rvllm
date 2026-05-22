@@ -1,9 +1,9 @@
-//! Diagnostic Apple Metal decode probe for raw Gemma token IDs.
+//! Diagnostic Apple Metal decode probe for Gemma token IDs.
 //!
-//! This binary intentionally does not tokenize text and does not claim
-//! production inference. It runs the existing `ModelMetalBackend` path for a
-//! single raw-token prompt and prints sampled token IDs, top-k logits, and
-//! probe counters.
+//! This binary intentionally defaults to raw token IDs and does not claim
+//! production inference. The optional text prompt/text decode path is a
+//! tokenizer-backed diagnostic convenience around the same `ModelMetalBackend`
+//! path, not a serving API.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -18,11 +18,14 @@ const MAX_PROBE_TOKENS: usize = 16;
 struct CliArgs {
     model_dir: PathBuf,
     prompt_token_ids: Vec<u32>,
+    prompt_text: Option<String>,
+    no_bos: bool,
     decode_steps: usize,
     top_k: usize,
     large_model_opt_in: bool,
     hf_reference: Option<PathBuf>,
     json_output: bool,
+    decode_text: bool,
 }
 
 #[derive(Debug)]
@@ -87,6 +90,14 @@ struct HfComparison {
     mismatches: Vec<String>,
 }
 
+#[derive(Debug)]
+struct TextDecodeReport {
+    tokenizer_json: PathBuf,
+    prompt_text: Option<String>,
+    sampled_text: String,
+    output_text: String,
+}
+
 fn parse_token_ids(raw: &str) -> Result<Vec<u32>, String> {
     let mut out = Vec::new();
     for part in raw.split(',') {
@@ -122,11 +133,14 @@ where
 {
     let mut model_dir = None;
     let mut prompt_token_ids = None;
+    let mut prompt_text = None;
+    let mut no_bos = false;
     let mut decode_steps = 1usize;
     let mut top_k = 16usize;
     let mut large_model_opt_in = false;
     let mut hf_reference = None;
     let mut json_output = false;
+    let mut decode_text = false;
 
     let mut iter = args.into_iter().map(Into::into).peekable();
     while let Some(arg) = iter.next() {
@@ -142,6 +156,18 @@ where
                     .next()
                     .ok_or_else(|| "--prompt-token-ids requires a value".to_owned())?;
                 prompt_token_ids = Some(parse_token_ids(&value)?);
+            }
+            "--prompt-text" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "--prompt-text requires a value".to_owned())?;
+                if value.is_empty() {
+                    return Err("--prompt-text must not be empty".to_owned());
+                }
+                prompt_text = Some(value);
+            }
+            "--no-bos" => {
+                no_bos = true;
             }
             "--decode-steps" => {
                 let value = iter
@@ -167,27 +193,41 @@ where
             "--json" => {
                 json_output = true;
             }
+            "--decode-text" => {
+                decode_text = true;
+            }
             "-h" | "--help" => return Err(usage()),
             other if other.starts_with('-') => return Err(format!("unknown argument: {other}")),
             other => return Err(format!("unexpected positional argument: {other}")),
         }
     }
 
+    if prompt_token_ids.is_some() && prompt_text.is_some() {
+        return Err("--prompt-token-ids and --prompt-text are mutually exclusive".to_owned());
+    }
+    if prompt_token_ids.is_none() && prompt_text.is_none() {
+        return Err("--prompt-token-ids or --prompt-text is required".to_owned());
+    }
+
     Ok(CliArgs {
         model_dir: model_dir.ok_or_else(|| "--model-dir is required".to_owned())?,
-        prompt_token_ids: prompt_token_ids
-            .ok_or_else(|| "--prompt-token-ids is required".to_owned())?,
+        prompt_token_ids: prompt_token_ids.unwrap_or_default(),
+        prompt_text,
+        no_bos,
         decode_steps,
         top_k,
         large_model_opt_in,
         hf_reference,
         json_output,
+        decode_text,
     })
 }
 
 fn usage() -> String {
-    "usage: probe_apple_metal_decode --model-dir <DIR> --prompt-token-ids <IDS> \
-     [--decode-steps N] [--top-k K] [--large-model-opt-in] [--hf-reference <JSON>] [--json]"
+    "usage: probe_apple_metal_decode --model-dir <DIR> \
+     (--prompt-token-ids <IDS> | --prompt-text <TEXT>) [--no-bos] \
+     [--decode-steps N] [--top-k K] [--large-model-opt-in] \
+     [--hf-reference <JSON>] [--json] [--decode-text]"
         .to_owned()
 }
 
@@ -197,6 +237,42 @@ fn ms(duration: std::time::Duration) -> f64 {
 
 fn env_large_model_opted_in() -> bool {
     std::env::var(LARGE_MODEL_ENV).ok().as_deref() == Some("1")
+}
+
+fn tokenizer_path(model_dir: &std::path::Path) -> PathBuf {
+    model_dir.join("tokenizer.json")
+}
+
+fn load_tokenizer(model_dir: &std::path::Path) -> Result<tokenizers::Tokenizer, String> {
+    let path = tokenizer_path(model_dir);
+    tokenizers::Tokenizer::from_file(&path)
+        .map_err(|err| format!("load tokenizer {}: {err}", path.display()))
+}
+
+fn resolve_prompt_text(args: &mut CliArgs) -> Result<(), String> {
+    let Some(prompt_text) = args.prompt_text.as_deref() else {
+        return Ok(());
+    };
+    if !args.model_dir.is_dir() {
+        return Err(format!(
+            "model path does not exist or is not a directory: {}",
+            args.model_dir.display()
+        ));
+    }
+    let tokenizer = load_tokenizer(&args.model_dir)?;
+    let encoding = tokenizer
+        .encode(prompt_text, false)
+        .map_err(|err| format!("tokenize --prompt-text: {err}"))?;
+    let mut token_ids = encoding.get_ids().to_vec();
+    if !args.no_bos {
+        token_ids.insert(0, 2);
+    }
+    if token_ids.is_empty() {
+        return Err("--prompt-text produced zero token IDs".to_owned());
+    }
+    args.prompt_token_ids = token_ids;
+    args.decode_text = true;
+    Ok(())
 }
 
 struct EnvGuard {
@@ -540,9 +616,21 @@ fn hf_reference_value(comparison: Option<&HfComparison>) -> serde_json::Value {
     })
 }
 
+fn text_decode_value(text: Option<&TextDecodeReport>) -> serde_json::Value {
+    text.map_or(serde_json::Value::Null, |text| {
+        serde_json::json!({
+            "tokenizer_json": text.tokenizer_json,
+            "prompt_text": text.prompt_text,
+            "sampled_text": text.sampled_text,
+            "output_text": text.output_text,
+        })
+    })
+}
+
 fn probe_report_value(
     report: &ProbeReport,
     comparison: Option<&HfComparison>,
+    text: Option<&TextDecodeReport>,
 ) -> serde_json::Value {
     serde_json::json!({
         "schema": JSON_SCHEMA,
@@ -563,10 +651,15 @@ fn probe_report_value(
         "debug_sync": report.debug_sync,
         "large_model_opt_in": report.large_model_opt_in,
         "hf_reference": hf_reference_value(comparison),
+        "text": text_decode_value(text),
     })
 }
 
-fn print_report(report: &ProbeReport, comparison: Option<&HfComparison>) {
+fn print_report(
+    report: &ProbeReport,
+    comparison: Option<&HfComparison>,
+    text: Option<&TextDecodeReport>,
+) {
     println!("claim: {CLAIM}");
     println!("model_dir: {}", report.model_dir.display());
     println!(
@@ -600,14 +693,50 @@ fn print_report(report: &ProbeReport, comparison: Option<&HfComparison>) {
             hf_comparison_json(comparison)
         );
     }
+    if let Some(text) = text {
+        println!("tokenizer_json: {}", text.tokenizer_json.display());
+        if let Some(prompt_text) = &text.prompt_text {
+            println!("prompt_text: {prompt_text}");
+        }
+        println!("sampled_text: {}", text.sampled_text);
+        println!("output_text: {}", text.output_text);
+    }
 }
 
-fn print_json_report(report: &ProbeReport, comparison: Option<&HfComparison>) {
+fn print_json_report(
+    report: &ProbeReport,
+    comparison: Option<&HfComparison>,
+    text: Option<&TextDecodeReport>,
+) {
     println!(
         "{}",
-        serde_json::to_string_pretty(&probe_report_value(report, comparison))
+        serde_json::to_string_pretty(&probe_report_value(report, comparison, text))
             .expect("serialize JSON probe report")
     );
+}
+
+fn decode_text_report(
+    args: &CliArgs,
+    report: &ProbeReport,
+) -> Result<Option<TextDecodeReport>, String> {
+    if !args.decode_text && args.prompt_text.is_none() {
+        return Ok(None);
+    }
+    let tokenizer = load_tokenizer(&args.model_dir)?;
+    let sampled_text = tokenizer
+        .decode(&report.sampled_token_ids, true)
+        .map_err(|err| format!("decode sampled token IDs: {err}"))?;
+    let mut output_ids = report.prompt_token_ids.clone();
+    output_ids.extend(report.sampled_token_ids.iter().copied());
+    let output_text = tokenizer
+        .decode(&output_ids, true)
+        .map_err(|err| format!("decode output token IDs: {err}"))?;
+    Ok(Some(TextDecodeReport {
+        tokenizer_json: tokenizer_path(&args.model_dir),
+        prompt_text: args.prompt_text.clone(),
+        sampled_text,
+        output_text,
+    }))
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -791,7 +920,8 @@ fn run_probe(_args: &CliArgs, _reference: Option<&HfReference>) -> Result<ProbeR
 }
 
 fn run_main() -> Result<(), String> {
-    let args = parse_args_from(std::env::args().skip(1))?;
+    let mut args = parse_args_from(std::env::args().skip(1))?;
+    resolve_prompt_text(&mut args)?;
     let reference = args
         .hf_reference
         .clone()
@@ -801,10 +931,11 @@ fn run_main() -> Result<(), String> {
     let comparison = reference
         .as_ref()
         .map(|reference| compare_hf_reference(&report, reference));
+    let text = decode_text_report(&args, &report)?;
     if args.json_output {
-        print_json_report(&report, comparison.as_ref());
+        print_json_report(&report, comparison.as_ref(), text.as_ref());
     } else {
-        print_report(&report, comparison.as_ref());
+        print_report(&report, comparison.as_ref(), text.as_ref());
     }
     Ok(())
 }
@@ -845,23 +976,42 @@ mod tests {
         assert!(args.large_model_opt_in);
         assert_eq!(args.hf_reference, None);
         assert!(!args.json_output);
+        assert!(!args.decode_text);
+        assert_eq!(args.prompt_text, None);
 
         let err = parse_args_from(["--model-dir", "/tmp/gemma4-e2b", "--prompt-token-ids", ""])
             .expect_err("empty token list should fail");
         assert!(err.contains("at least one token id"));
 
-        let args = parse_args_from([
+        let err = parse_args_from([
             "--model-dir",
             "/tmp/gemma4-e2b",
             "--prompt-token-ids",
             "2,4",
+            "--prompt-text",
+            "hello",
+        ])
+        .expect_err("mixed prompt inputs should fail");
+        assert!(err.contains("mutually exclusive"));
+
+        let args = parse_args_from([
+            "--model-dir",
+            "/tmp/gemma4-e2b",
+            "--prompt-text",
+            "hello",
             "--hf-reference",
             "/tmp/ref.json",
             "--json",
+            "--decode-text",
+            "--no-bos",
         ])
-        .expect("parse HF reference arg");
+        .expect("parse text/HF reference args");
+        assert_eq!(args.prompt_token_ids, Vec::<u32>::new());
+        assert_eq!(args.prompt_text, Some("hello".to_owned()));
         assert_eq!(args.hf_reference, Some(PathBuf::from("/tmp/ref.json")));
         assert!(args.json_output);
+        assert!(args.decode_text);
+        assert!(args.no_bos);
     }
 
     #[test]
@@ -959,7 +1109,13 @@ mod tests {
             matched: true,
             mismatches: Vec::new(),
         };
-        let value = probe_report_value(&report, Some(&comparison));
+        let text = TextDecodeReport {
+            tokenizer_json: PathBuf::from("/tmp/gemma4-e2b/tokenizer.json"),
+            prompt_text: Some("hello".to_owned()),
+            sampled_text: " world".to_owned(),
+            output_text: "hello world".to_owned(),
+        };
+        let value = probe_report_value(&report, Some(&comparison), Some(&text));
 
         assert_eq!(value["schema"], JSON_SCHEMA);
         assert_eq!(value["claim"], CLAIM);
@@ -975,6 +1131,8 @@ mod tests {
         assert_eq!(value["debug_sync"].as_bool(), Some(false));
         assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
         assert_eq!(value["hf_reference"]["path"], "/tmp/ref.json");
+        assert_eq!(value["text"]["prompt_text"], "hello");
+        assert_eq!(value["text"]["sampled_text"], " world");
     }
 
     #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -988,11 +1146,14 @@ mod tests {
         let args = CliArgs {
             model_dir: PathBuf::from(model_dir),
             prompt_token_ids: vec![2, 4],
+            prompt_text: None,
+            no_bos: false,
             decode_steps: 1,
             top_k: 16,
             large_model_opt_in: true,
             hf_reference: None,
             json_output: false,
+            decode_text: false,
         };
         let report = run_probe(&args, None).expect("run E2B raw-token Metal probe");
         eprintln!("{report:#?}");
@@ -1023,11 +1184,14 @@ mod tests {
         let args = CliArgs {
             model_dir: PathBuf::from(model_dir),
             prompt_token_ids: vec![2, 4],
+            prompt_text: None,
+            no_bos: false,
             decode_steps: 1,
             top_k: 16,
             large_model_opt_in: true,
             hf_reference: Some(reference_path.clone()),
             json_output: false,
+            decode_text: false,
         };
         let reference =
             parse_hf_reference(reference_path, &args.prompt_token_ids, args.decode_steps)
@@ -1043,5 +1207,50 @@ mod tests {
         assert_eq!(report.sampled_token_ids.len(), 1);
         assert_eq!(report.per_step_top_k.len(), 1);
         assert_eq!(report.per_step_top_k[0].top_k.len(), 16);
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires cached Gemma4 E2B model directory and Apple Silicon Metal device"]
+    fn probe_apple_metal_decode_e2b_prompt_text_smoke() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let model_dir = PathBuf::from(model_dir);
+        if !tokenizer_path(&model_dir).is_file() {
+            eprintln!(
+                "skipping: tokenizer is missing: {}",
+                tokenizer_path(&model_dir).display()
+            );
+            return;
+        }
+        let mut args = CliArgs {
+            model_dir,
+            prompt_token_ids: Vec::new(),
+            prompt_text: Some("Hello".to_owned()),
+            no_bos: false,
+            decode_steps: 1,
+            top_k: 16,
+            large_model_opt_in: true,
+            hf_reference: None,
+            json_output: false,
+            decode_text: true,
+        };
+        resolve_prompt_text(&mut args).expect("tokenize prompt text");
+        assert!(!args.prompt_token_ids.is_empty());
+
+        let report = run_probe(&args, None).expect("run E2B text-prompt Metal probe");
+        let text = decode_text_report(&args, &report)
+            .expect("decode text report")
+            .expect("text report");
+        assert_eq!(report.sampled_token_ids.len(), 1);
+        assert_eq!(report.per_step_top_k.len(), 1);
+        assert_eq!(report.per_step_top_k[0].top_k.len(), 16);
+        assert!(!text.sampled_text.is_empty() || !text.output_text.is_empty());
+        assert_eq!(
+            CLAIM,
+            "diagnostic Apple Metal probe only; not production inference"
+        );
     }
 }

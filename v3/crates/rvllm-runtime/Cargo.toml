@@ -55,6 +55,7 @@ rvllm-apple-metal = { workspace = true, optional = true }
 half = { workspace = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }
+tokenizers = "0.20"
 cudarc = { version = "0.19", features = ["driver", "cuda-version-from-build-system"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

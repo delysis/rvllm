@@ -1,8 +1,9 @@
 # Apple Metal E2B Diagnostic CLI
 
-This workflow is for diagnostic raw-token Apple Metal E2B probes only. It is
-not production inference, ANE execution, tokenizer coverage, or an optimization
-claim.
+This workflow is for diagnostic Apple Metal E2B probes only. It defaults to
+raw token IDs, and has an optional tokenizer-backed text prompt/text decode
+mode for diagnostics. It is not production inference, ANE execution, broad
+tokenizer coverage, or an optimization claim.
 
 ## Setup
 
@@ -57,6 +58,27 @@ cargo run -p rvllm-runtime --features apple --bin probe_apple_metal_decode -- \
 The output includes sampled token IDs, per-step top-k logits, timing, arena
 bytes, command-buffer and encoder counters, forced waits, debug sync state, and
 the diagnostic-only claim.
+
+## Run Text Diagnostic CLI
+
+Text prompts are a diagnostic convenience around the same probe path. By
+default the CLI tokenizes text with `tokenizer.json` from the model directory
+and prepends BOS token ID `2`. Use `--no-bos` only when the prompt text already
+accounts for the desired BOS handling.
+
+```bash
+cargo run -p rvllm-runtime --features apple --bin probe_apple_metal_decode -- \
+  --model-dir "$RVLLM_GEMMA4_MODEL_DIR" \
+  --prompt-text "Hello" \
+  --decode-steps 1 \
+  --top-k 16 \
+  --large-model-opt-in \
+  --decode-text
+```
+
+The report still includes `prompt_token_ids`. With `--decode-text`, text mode
+also reports `tokenizer_json`, `prompt_text`, `sampled_text`, and `output_text`.
+This is not a tokenizer/text production workflow or a quality claim.
 
 ## Run Reference-Backed CLI
 
@@ -128,9 +150,11 @@ The runner writes `/tmp/rvllm-e2b-cli-suite-report.json` by default.
 
 The CLI and suite runner are diagnostic evidence. A passing comparison means
 the bounded raw-token prompt and decode steps matched the supplied HF artifact
-for the reported fields. It does not imply text decoding, broad prompt
-coverage, long-context decode, batching coverage, ANE execution, throughput
-readiness, or production acceptance.
+for the reported fields. Text diagnostic output means the CLI loaded
+`tokenizer.json`, encoded the supplied text, and decoded the sampled/output
+token IDs for inspection. It does not imply a production text workflow, broad
+prompt coverage, long-context decode, batching coverage, ANE execution,
+throughput readiness, or production acceptance.
 
 ## Slow-Test Budget
 

@@ -371,7 +371,7 @@ impl AppleProductionAcceptanceEvidence {
                 "current evidence is diagnostic raw-token probes and tests, not a production inference workflow",
             ),
             tokenizer_text_decoding: EvidenceState::missing(
-                "diagnostic CLI accepts raw token IDs only; tokenizer and text decoding are not wired into rvLLM",
+                "diagnostic CLI can tokenize a prompt and decode sampled/output token IDs, but there is no production text inference workflow or reference-backed text coverage",
             ),
             correctness_against_reference: EvidenceState::present(
                 "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
@@ -775,7 +775,9 @@ mod tests {
         }));
         assert!(report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::TokenizerTextDecoding
-                && failure.reason.contains("raw token IDs only")
+                && failure
+                    .reason
+                    .contains("no production text inference workflow")
         }));
         assert!(report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::AneExecution
