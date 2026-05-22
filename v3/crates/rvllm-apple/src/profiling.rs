@@ -368,7 +368,7 @@ impl AppleProductionAcceptanceEvidence {
             evidence_id: "current-real-e2b-probe-and-diagnostic-cli-partial".to_string(),
             samples: vec![metal_probe_sample],
             production_inference_workflow: EvidenceState::missing(
-                "bounded Metal text inference CLI exists, but current E2B workflow is still capped by the probe arena and lacks production serving evidence",
+                "bounded Metal text inference CLI exists, but current E2B workflow is still capped by the configurable probe arena and lacks production serving evidence",
             ),
             tokenizer_text_decoding: EvidenceState::missing(
                 "diagnostic and bounded Metal CLIs can tokenize prompts and decode sampled/output token IDs, but reference-backed text coverage is still missing",

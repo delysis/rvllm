@@ -12,13 +12,16 @@ const CLAIM: &str =
     "bounded Apple Metal text inference workflow; not production-ready until acceptance gates pass";
 const JSON_SCHEMA: &str = "rvllm.apple_metal_text_infer.v1";
 const LARGE_MODEL_ENV: &str = "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE";
-const MAX_METAL_E2B_TOKENS: usize = 16;
+const MAX_TOKENS_ENV: &str = "RVLLM_METAL_MAX_PROBE_TOKENS";
+const DEFAULT_MAX_METAL_E2B_TOKENS: usize = 16;
+const MAX_CONFIGURABLE_METAL_E2B_TOKENS: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CliArgs {
     model_dir: PathBuf,
     prompt: String,
     max_new_tokens: usize,
+    max_total_tokens: Option<usize>,
     eos_token_ids: Vec<u32>,
     no_bos: bool,
     large_model_opt_in: bool,
@@ -116,6 +119,7 @@ where
     let mut model_dir = None;
     let mut prompt = None;
     let mut max_new_tokens = 1usize;
+    let mut max_total_tokens = None;
     let mut eos_token_ids = vec![1, 2, 107];
     let mut no_bos = false;
     let mut large_model_opt_in = false;
@@ -145,6 +149,12 @@ where
                     .next()
                     .ok_or_else(|| "--max-new-tokens requires a value".to_owned())?;
                 max_new_tokens = parse_positive_usize("--max-new-tokens", &value)?;
+            }
+            "--max-total-tokens" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "--max-total-tokens requires a value".to_owned())?;
+                max_total_tokens = Some(parse_max_total_tokens("--max-total-tokens", &value)?);
             }
             "--eos-token-ids" => {
                 let value = iter
@@ -177,6 +187,7 @@ where
         model_dir: model_dir.ok_or_else(|| "--model-dir is required".to_owned())?,
         prompt: prompt.ok_or_else(|| "--prompt is required".to_owned())?,
         max_new_tokens,
+        max_total_tokens,
         eos_token_ids,
         no_bos,
         large_model_opt_in,
@@ -187,7 +198,7 @@ where
 
 fn usage() -> String {
     "usage: rvllm_metal_infer --model-dir <DIR> --prompt <TEXT> \
-     [--max-new-tokens N] [--eos-token-ids IDS] [--no-bos] \
+     [--max-new-tokens N] [--max-total-tokens N] [--eos-token-ids IDS] [--no-bos] \
      [--large-model-opt-in] [--hf-reference <JSON>] [--json]"
         .to_owned()
 }
@@ -216,10 +227,40 @@ fn prompt_token_ids(args: &CliArgs, tokenizer: &tokenizers::Tokenizer) -> Result
     Ok(token_ids)
 }
 
-fn validate_token_budget(prompt_len: usize, max_new_tokens: usize) -> Result<(), String> {
-    if prompt_len + max_new_tokens > MAX_METAL_E2B_TOKENS {
+fn parse_max_total_tokens(flag: &str, raw: &str) -> Result<usize, String> {
+    let value = parse_positive_usize(flag, raw)?;
+    if value > MAX_CONFIGURABLE_METAL_E2B_TOKENS {
         return Err(format!(
-            "current Metal E2B workflow supports prompt token count + max_new_tokens <= {MAX_METAL_E2B_TOKENS}; got {} + {}",
+            "{flag} must be <= {MAX_CONFIGURABLE_METAL_E2B_TOKENS}; got {value}"
+        ));
+    }
+    Ok(value)
+}
+
+fn env_max_total_tokens() -> Result<usize, String> {
+    match std::env::var(MAX_TOKENS_ENV) {
+        Ok(raw) => parse_max_total_tokens(MAX_TOKENS_ENV, raw.trim()),
+        Err(std::env::VarError::NotPresent) => Ok(DEFAULT_MAX_METAL_E2B_TOKENS),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(format!("{MAX_TOKENS_ENV} must be valid UTF-8"))
+        }
+    }
+}
+
+fn effective_max_total_tokens(args: &CliArgs) -> Result<usize, String> {
+    args.max_total_tokens
+        .map(Ok)
+        .unwrap_or_else(env_max_total_tokens)
+}
+
+fn validate_token_budget(
+    prompt_len: usize,
+    max_new_tokens: usize,
+    max_total_tokens: usize,
+) -> Result<(), String> {
+    if prompt_len + max_new_tokens > max_total_tokens {
+        return Err(format!(
+            "current Metal E2B workflow supports prompt token count + max_new_tokens <= {max_total_tokens}; got {} + {}",
             prompt_len, max_new_tokens
         ));
     }
@@ -239,8 +280,20 @@ struct EnvGuard {
 impl EnvGuard {
     fn set_if(name: &'static str, value: bool) -> Self {
         if value {
+            Self::set_value_if(name, Some("1".to_owned()))
+        } else {
+            Self {
+                name,
+                previous: None,
+                changed: false,
+            }
+        }
+    }
+
+    fn set_value_if(name: &'static str, value: Option<String>) -> Self {
+        if let Some(value) = value {
             let previous = std::env::var_os(name);
-            std::env::set_var(name, "1");
+            std::env::set_var(name, value);
             Self {
                 name,
                 previous,
@@ -447,7 +500,12 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     }
     let tokenizer = load_tokenizer(&args.model_dir)?;
     let prompt_token_ids = prompt_token_ids(args, &tokenizer)?;
-    validate_token_budget(prompt_token_ids.len(), args.max_new_tokens)?;
+    let max_supported_total_tokens = effective_max_total_tokens(args)?;
+    validate_token_budget(
+        prompt_token_ids.len(),
+        args.max_new_tokens,
+        max_supported_total_tokens,
+    )?;
 
     let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&args.model_dir)
         .map_err(|err| format!("parse Gemma4 architecture: {err}"))?;
@@ -461,6 +519,10 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     }
     let _large_model_env =
         EnvGuard::set_if(LARGE_MODEL_ENV, args.large_model_opt_in && !env_opt_in);
+    let _max_tokens_env = EnvGuard::set_value_if(
+        MAX_TOKENS_ENV,
+        args.max_total_tokens.map(|value| value.to_string()),
+    );
 
     let mut backend = ModelMetalBackend::new(args.model_dir.clone());
     let plan = rvllm_apple::AppleRuntimePlan {
@@ -589,7 +651,7 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         forced_waits: stats.forced_waits,
         debug_sync: backend.metal_debug_sync_enabled(),
         large_model_opt_in: effective_large_opt_in,
-        max_supported_total_tokens: MAX_METAL_E2B_TOKENS,
+        max_supported_total_tokens,
     })
 }
 
@@ -641,6 +703,8 @@ mod tests {
             "Hello",
             "--max-new-tokens",
             "4",
+            "--max-total-tokens",
+            "32",
             "--eos-token-ids",
             "1,2,107",
             "--no-bos",
@@ -653,6 +717,7 @@ mod tests {
         assert_eq!(args.model_dir, PathBuf::from("/tmp/gemma4-e2b"));
         assert_eq!(args.prompt, "Hello");
         assert_eq!(args.max_new_tokens, 4);
+        assert_eq!(args.max_total_tokens, Some(32));
         assert_eq!(args.eos_token_ids, vec![1, 2, 107]);
         assert!(args.no_bos);
         assert!(args.large_model_opt_in);
@@ -673,12 +738,42 @@ mod tests {
         ])
         .expect_err("zero max tokens should fail");
         assert!(err.contains("--max-new-tokens must be positive"));
+
+        let err = parse_args_from([
+            "--model-dir",
+            "/tmp/gemma4-e2b",
+            "--prompt",
+            "Hello",
+            "--max-total-tokens",
+            "65",
+        ])
+        .expect_err("oversized total token cap should fail");
+        assert!(err.contains("--max-total-tokens must be <= 64"));
     }
 
     #[test]
     fn rvllm_metal_infer_token_budget_reports_current_limit() {
-        validate_token_budget(15, 1).expect("budget edge should pass");
-        let err = validate_token_budget(15, 2).expect_err("budget overflow should fail");
+        validate_token_budget(31, 1, 32).expect("configured budget edge should pass");
+        let err = validate_token_budget(31, 2, 32).expect_err("budget overflow should fail");
+        assert!(err.contains("prompt token count + max_new_tokens <= 32"));
+    }
+
+    #[test]
+    fn rvllm_metal_infer_env_token_limit_parser_is_bounded() {
+        assert_eq!(
+            parse_max_total_tokens(MAX_TOKENS_ENV, "16").expect("default cap parses"),
+            16
+        );
+        assert_eq!(
+            parse_max_total_tokens(MAX_TOKENS_ENV, "64").expect("upper cap parses"),
+            64
+        );
+        let err = parse_max_total_tokens(MAX_TOKENS_ENV, "0").expect_err("zero cap should fail");
+        assert!(err.contains("must be positive"));
+        let err = parse_max_total_tokens(MAX_TOKENS_ENV, "65").expect_err("large cap should fail");
+        assert!(err.contains("must be <= 64"));
+        let err = validate_token_budget(15, 2, DEFAULT_MAX_METAL_E2B_TOKENS)
+            .expect_err("default budget overflow should fail");
         assert!(err.contains("prompt token count + max_new_tokens <= 16"));
     }
 
@@ -704,7 +799,7 @@ mod tests {
             forced_waits: 8,
             debug_sync: false,
             large_model_opt_in: true,
-            max_supported_total_tokens: MAX_METAL_E2B_TOKENS,
+            max_supported_total_tokens: DEFAULT_MAX_METAL_E2B_TOKENS,
         };
         let comparison = ReferenceComparison {
             path: PathBuf::from("/tmp/ref.json"),
@@ -719,7 +814,7 @@ mod tests {
         assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
         assert_eq!(
             value["max_supported_total_tokens"].as_u64(),
-            Some(MAX_METAL_E2B_TOKENS as u64)
+            Some(DEFAULT_MAX_METAL_E2B_TOKENS as u64)
         );
     }
 
@@ -745,7 +840,7 @@ mod tests {
             forced_waits: 8,
             debug_sync: false,
             large_model_opt_in: true,
-            max_supported_total_tokens: MAX_METAL_E2B_TOKENS,
+            max_supported_total_tokens: DEFAULT_MAX_METAL_E2B_TOKENS,
         };
         let reference = HfReference {
             path: PathBuf::from("/tmp/ref.json"),
@@ -781,6 +876,7 @@ mod tests {
             model_dir,
             prompt: "Hello".to_owned(),
             max_new_tokens: 1,
+            max_total_tokens: None,
             eos_token_ids: vec![1, 2, 107],
             no_bos: false,
             large_model_opt_in: true,
@@ -794,6 +890,42 @@ mod tests {
         assert_eq!(
             CLAIM,
             "bounded Apple Metal text inference workflow; not production-ready until acceptance gates pass"
+        );
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires cached Gemma4 E2B model directory and Apple Silicon Metal device"]
+    fn rvllm_metal_infer_e2b_raised_token_cap_smoke() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let model_dir = PathBuf::from(model_dir);
+        if !tokenizer_path(&model_dir).is_file() {
+            eprintln!(
+                "skipping: tokenizer is missing: {}",
+                tokenizer_path(&model_dir).display()
+            );
+            return;
+        }
+        let args = CliArgs {
+            model_dir,
+            prompt: "Hello hello hello hello hello hello hello hello hello hello hello hello hello hello hello hello".to_owned(),
+            max_new_tokens: 1,
+            max_total_tokens: Some(32),
+            eos_token_ids: vec![1, 2, 107],
+            no_bos: false,
+            large_model_opt_in: true,
+            hf_reference: None,
+            json_output: true,
+        };
+        let report = run_infer(&args).expect("run raised-cap E2B Metal text inference");
+        assert_eq!(report.max_supported_total_tokens, 32);
+        assert_eq!(report.generated_token_ids.len(), 1);
+        assert!(
+            report.prompt_token_ids.len() + report.generated_token_ids.len()
+                > DEFAULT_MAX_METAL_E2B_TOKENS
         );
     }
 }

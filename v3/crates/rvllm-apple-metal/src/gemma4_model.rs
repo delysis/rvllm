@@ -33,9 +33,13 @@ const PROBE_METAL_SOFTCAP: f32 = 0.0;
 #[cfg(target_os = "macos")]
 const PROBE_METAL_MAX_DEFAULT_LAYERS: usize = 8;
 #[cfg(target_os = "macos")]
-const PROBE_METAL_MAX_PROMPT_TOKENS: usize = 16;
+const PROBE_METAL_DEFAULT_MAX_PROBE_TOKENS: usize = 16;
+#[cfg(target_os = "macos")]
+const PROBE_METAL_MAX_CONFIGURABLE_PROBE_TOKENS: usize = 64;
 #[cfg(target_os = "macos")]
 const RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV: &str = "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE";
+#[cfg(target_os = "macos")]
+const RVLLM_METAL_MAX_PROBE_TOKENS_ENV: &str = "RVLLM_METAL_MAX_PROBE_TOKENS";
 #[cfg(target_os = "macos")]
 const RVLLM_METAL_DEBUG_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_LAYER";
 
@@ -391,6 +395,7 @@ struct ProbeModelPlan {
     layer_names: Vec<ProbeLayerNames>,
     names: Vec<String>,
     arena_bytes: usize,
+    max_probe_tokens: usize,
 }
 
 #[cfg(target_os = "macos")]
@@ -435,6 +440,7 @@ struct ProbeLayerNames {
 impl ProbeModelPlan {
     fn new(model_dir: &Path) -> Result<Self> {
         let arch = ModelArch::from_dir(model_dir)?;
+        let max_probe_tokens = configured_probe_max_tokens()?;
         if arch.num_hidden_layers > PROBE_METAL_MAX_DEFAULT_LAYERS && !large_gemma4_probe_opted_in()
         {
             return Err(RvllmError::apple(
@@ -947,7 +953,6 @@ impl ProbeModelPlan {
         let half_bytes = std::mem::size_of::<f16>();
         let i32_bytes = std::mem::size_of::<i32>();
         let f32_bytes = std::mem::size_of::<f32>();
-        let max_probe_tokens = PROBE_METAL_MAX_PROMPT_TOKENS;
         let debug_trace_layers = debug_trace_layers_from_env();
         let embed_bytes = embed_info.nbytes;
         let final_norm_bytes = final_norm_info.nbytes;
@@ -1031,7 +1036,7 @@ impl ProbeModelPlan {
                 let metadata_bytes = (5 * max_probe_tokens + 1) * i32_bytes;
 
                 let half_rope = dims.rope_dim / 2;
-                let max_pos = 16usize;
+                let max_pos = max_probe_tokens;
                 let rope_table_bytes = max_pos * half_rope * f32_bytes;
 
                 scratch_bytes += qkv_out_bytes
@@ -1094,6 +1099,7 @@ impl ProbeModelPlan {
             layer_names,
             names,
             arena_bytes,
+            max_probe_tokens,
         })
     }
 }
@@ -1103,6 +1109,41 @@ fn large_gemma4_probe_opted_in() -> bool {
     std::env::var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn configured_probe_max_tokens() -> Result<usize> {
+    match std::env::var(RVLLM_METAL_MAX_PROBE_TOKENS_ENV) {
+        Ok(raw) => {
+            let value = raw.trim().parse::<usize>().map_err(|_| {
+                RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "invalid_RVLLM_METAL_MAX_PROBE_TOKENS",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
+            if !(1..=PROBE_METAL_MAX_CONFIGURABLE_PROBE_TOKENS).contains(&value) {
+                return Err(RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "unsupported_RVLLM_METAL_MAX_PROBE_TOKENS",
+                    },
+                    probe_ctx("prepare"),
+                ));
+            }
+            Ok(value)
+        }
+        Err(std::env::VarError::NotPresent) => Ok(PROBE_METAL_DEFAULT_MAX_PROBE_TOKENS),
+        Err(std::env::VarError::NotUnicode(_)) => Err(RvllmError::apple(
+            AppleError::FeatureNotAvailable {
+                backend: "model-metal-backend",
+                op: "invalid_RVLLM_METAL_MAX_PROBE_TOKENS",
+            },
+            probe_ctx("prepare"),
+        )),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1147,7 +1188,7 @@ impl Gemma4MetalState {
 
         let half_bytes = std::mem::size_of::<f16>();
         let f32_bytes = std::mem::size_of::<f32>();
-        let max_probe_tokens = PROBE_METAL_MAX_PROMPT_TOKENS;
+        let max_probe_tokens = plan.max_probe_tokens;
         let residual_bytes = max_probe_tokens * plan.arch.hidden_size * half_bytes;
         let logits_bytes = max_probe_tokens * plan.arch.vocab_size * half_bytes;
         let normed_hidden_bytes = residual_bytes;
@@ -1431,7 +1472,7 @@ impl Gemma4MetalState {
             )?;
 
             let half_rope = dims.rope_dim / 2;
-            let max_pos = 16usize;
+            let max_pos = max_probe_tokens;
             let cos = arena.region(
                 &format!("metal_layer_{layer_idx}_rope_cos"),
                 max_pos * half_rope * f32_bytes,

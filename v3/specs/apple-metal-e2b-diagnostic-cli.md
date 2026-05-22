@@ -85,14 +85,17 @@ This is not a tokenizer/text production workflow or a quality claim.
 For a production-facing text-in/text-out command shape, use
 `rvllm_metal_infer`. This path does not read debug logits by default; it runs
 prefill plus greedy decode, stops on EOS or `--max-new-tokens`, and reports the
-current Metal counters. It is still bounded by the current E2B Metal arena, so
-prompt tokens plus generated tokens must be no more than `16`.
+current Metal counters. It is still bounded by the current E2B Metal probe arena:
+the default prompt-plus-generated cap is `16`, and `--max-total-tokens N` or
+`RVLLM_METAL_MAX_PROBE_TOKENS=N` can explicitly raise the cap up to `64` for
+bounded diagnostics.
 
 ```bash
 cargo run -p rvllm-runtime --features apple --bin rvllm_metal_infer -- \
   --model-dir "$RVLLM_GEMMA4_MODEL_DIR" \
   --prompt "Hello" \
   --max-new-tokens 1 \
+  --max-total-tokens 16 \
   --large-model-opt-in \
   --json
 ```
@@ -102,8 +105,8 @@ explicit acceptance boundary in `claim`. If `--hf-reference <JSON>` is supplied,
 it compares the tokenizer-derived prompt IDs, requested decode step count, and
 generated token IDs with the existing HF artifact and reports
 `hf_reference.matched`. Passing this command is workflow evidence, not complete
-production readiness, long-context support, broad correctness, or a performance
-claim.
+production readiness, broad correctness, long-context support beyond the
+explicit cap, or a performance claim.
 
 ## Run Reference-Backed CLI
 
@@ -178,10 +181,11 @@ the bounded raw-token prompt and decode steps matched the supplied HF artifact
 for the reported fields. Text diagnostic output means the CLI loaded
 `tokenizer.json`, encoded the supplied text, and decoded the sampled/output
 token IDs for inspection. The bounded text inference CLI proves a text-in/text-
-out command shape without debug-logit reads, but still has the current `16`
-token total cap. Neither path implies complete production serving, broad prompt
-coverage, long-context decode, batching coverage, ANE execution, throughput
-readiness, or production acceptance.
+out command shape without debug-logit reads, but still has a configurable probe
+arena cap (`16` by default, `64` maximum in this diagnostic build). Neither path
+implies complete production serving, broad prompt coverage, long-context decode,
+batching coverage, ANE execution, throughput readiness, or production
+acceptance.
 
 ## Slow-Test Budget
 
