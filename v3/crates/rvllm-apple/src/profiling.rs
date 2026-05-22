@@ -368,10 +368,10 @@ impl AppleProductionAcceptanceEvidence {
             evidence_id: "current-real-e2b-probe-and-diagnostic-cli-partial".to_string(),
             samples: vec![metal_probe_sample],
             production_inference_workflow: EvidenceState::missing(
-                "current evidence is diagnostic raw-token probes and tests, not a production inference workflow",
+                "bounded Metal text inference CLI exists, but current E2B workflow is still capped by the probe arena and lacks production serving evidence",
             ),
             tokenizer_text_decoding: EvidenceState::missing(
-                "diagnostic CLI can tokenize a prompt and decode sampled/output token IDs, but there is no production text inference workflow or reference-backed text coverage",
+                "diagnostic and bounded Metal CLIs can tokenize prompts and decode sampled/output token IDs, but reference-backed text coverage is still missing",
             ),
             correctness_against_reference: EvidenceState::present(
                 "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
@@ -769,15 +769,13 @@ mod tests {
             .contains("correctness against reference is missing")));
         assert!(report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::ProductionInferenceWorkflow
-                && failure
-                    .reason
-                    .contains("not a production inference workflow")
+                && failure.reason.contains("lacks production serving evidence")
         }));
         assert!(report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::TokenizerTextDecoding
                 && failure
                     .reason
-                    .contains("no production text inference workflow")
+                    .contains("reference-backed text coverage is still missing")
         }));
         assert!(report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::AneExecution

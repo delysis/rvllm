@@ -80,6 +80,31 @@ The report still includes `prompt_token_ids`. With `--decode-text`, text mode
 also reports `tokenizer_json`, `prompt_text`, `sampled_text`, and `output_text`.
 This is not a tokenizer/text production workflow or a quality claim.
 
+## Run Bounded Text Inference CLI
+
+For a production-facing text-in/text-out command shape, use
+`rvllm_metal_infer`. This path does not read debug logits by default; it runs
+prefill plus greedy decode, stops on EOS or `--max-new-tokens`, and reports the
+current Metal counters. It is still bounded by the current E2B Metal arena, so
+prompt tokens plus generated tokens must be no more than `16`.
+
+```bash
+cargo run -p rvllm-runtime --features apple --bin rvllm_metal_infer -- \
+  --model-dir "$RVLLM_GEMMA4_MODEL_DIR" \
+  --prompt "Hello" \
+  --max-new-tokens 1 \
+  --large-model-opt-in \
+  --json
+```
+
+The command reports schema `rvllm.apple_metal_text_infer.v1` and keeps an
+explicit acceptance boundary in `claim`. If `--hf-reference <JSON>` is supplied,
+it compares the tokenizer-derived prompt IDs, requested decode step count, and
+generated token IDs with the existing HF artifact and reports
+`hf_reference.matched`. Passing this command is workflow evidence, not complete
+production readiness, long-context support, broad correctness, or a performance
+claim.
+
 ## Run Reference-Backed CLI
 
 ```bash
@@ -152,9 +177,11 @@ The CLI and suite runner are diagnostic evidence. A passing comparison means
 the bounded raw-token prompt and decode steps matched the supplied HF artifact
 for the reported fields. Text diagnostic output means the CLI loaded
 `tokenizer.json`, encoded the supplied text, and decoded the sampled/output
-token IDs for inspection. It does not imply a production text workflow, broad
-prompt coverage, long-context decode, batching coverage, ANE execution,
-throughput readiness, or production acceptance.
+token IDs for inspection. The bounded text inference CLI proves a text-in/text-
+out command shape without debug-logit reads, but still has the current `16`
+token total cap. Neither path implies complete production serving, broad prompt
+coverage, long-context decode, batching coverage, ANE execution, throughput
+readiness, or production acceptance.
 
 ## Slow-Test Budget
 
