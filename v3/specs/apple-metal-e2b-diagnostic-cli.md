@@ -108,6 +108,30 @@ generated token IDs with the existing HF artifact and reports
 production readiness, broad correctness, long-context support beyond the
 explicit cap, or a performance claim.
 
+Generate a text reference artifact outside the repo before running the
+reference-backed text command:
+
+```bash
+"$RVLLM_HF_REF_PYTHON" scripts/dump_gemma4_hf_reference_logits.py \
+  "$RVLLM_GEMMA4_MODEL_DIR" \
+  --prompt-text "Hello" \
+  --decode-steps 1 \
+  --top-k 16 \
+  --output /tmp/gemma4-e2b-hf-text-infer-hello-step1.json
+```
+
+Then run the bounded text inference CLI against it:
+
+```bash
+cargo run -p rvllm-runtime --features apple --bin rvllm_metal_infer -- \
+  --model-dir "$RVLLM_GEMMA4_MODEL_DIR" \
+  --prompt "Hello" \
+  --max-new-tokens 1 \
+  --large-model-opt-in \
+  --hf-reference /tmp/gemma4-e2b-hf-text-infer-hello-step1.json \
+  --json
+```
+
 ## Run Reference-Backed CLI
 
 ```bash
