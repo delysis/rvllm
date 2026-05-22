@@ -132,6 +132,10 @@ cargo run -p rvllm-runtime --features apple --bin rvllm_metal_infer -- \
   --json
 ```
 
+Do not promote tokenizer/text decoding evidence unless `hf_reference.matched`
+is true. A generated-token mismatch is a production-readiness blocker even when
+the prompt IDs and text decoding path are wired correctly.
+
 ## Run Reference-Backed CLI
 
 ```bash

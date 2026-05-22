@@ -932,7 +932,7 @@ mod tests {
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires cached Gemma4 E2B model directory, HF text reference artifact, and Apple Silicon Metal device"]
-    fn rvllm_metal_infer_e2b_reference_backed_text_smoke() {
+    fn rvllm_metal_infer_e2b_reference_backed_text_reports_current_mismatch() {
         let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
             eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
             return;
@@ -968,8 +968,15 @@ mod tests {
         let report = run_infer(&args).expect("run reference-backed E2B Metal text inference");
         let comparison = compare_hf_reference(&report, &reference);
         assert!(
-            comparison.matched,
-            "HF text reference mismatches: {:?}",
+            !comparison.matched,
+            "reference-backed text inference unexpectedly matched; promote this negative evidence test to a positive smoke"
+        );
+        assert!(
+            comparison
+                .mismatches
+                .iter()
+                .any(|item| item.contains("generated_token_ids differ")),
+            "expected generated-token mismatch, got {:?}",
             comparison.mismatches
         );
         assert_eq!(report.generated_token_ids.len(), 1);

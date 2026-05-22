@@ -371,7 +371,7 @@ impl AppleProductionAcceptanceEvidence {
                 "bounded Metal text inference CLI exists, but current E2B workflow is still capped by the configurable probe arena and lacks production serving evidence",
             ),
             tokenizer_text_decoding: EvidenceState::missing(
-                "diagnostic and bounded Metal CLIs can tokenize prompts and decode sampled/output token IDs, but reference-backed text coverage is still missing",
+                "diagnostic and bounded Metal CLIs can tokenize prompts and decode sampled/output token IDs, but reference-backed text inference currently reports a generated-token mismatch",
             ),
             correctness_against_reference: EvidenceState::present(
                 "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
@@ -773,9 +773,7 @@ mod tests {
         }));
         assert!(report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::TokenizerTextDecoding
-                && failure
-                    .reason
-                    .contains("reference-backed text coverage is still missing")
+                && failure.reason.contains("generated-token mismatch")
         }));
         assert!(report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::AneExecution
