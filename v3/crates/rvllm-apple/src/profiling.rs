@@ -272,11 +272,16 @@ impl PerformanceRegressionEvidence {
 pub struct AppleProductionAcceptanceEvidence {
     pub evidence_id: String,
     pub samples: Vec<BackendProfileSample>,
+    pub production_inference_workflow: EvidenceState,
+    pub tokenizer_text_decoding: EvidenceState,
     pub correctness_against_reference: EvidenceState,
+    pub ane_execution: EvidenceState,
     pub default_toy_path_disabled: EvidenceState,
     pub unsupported_models_fail_clearly: EvidenceState,
     pub no_hot_path_allocation: EvidenceState,
     pub no_hot_path_pipeline_compilation: EvidenceState,
+    pub shared_kv_optimization_safety: EvidenceState,
+    pub external_performance_profile: EvidenceState,
     pub direct_backend_smoke: EvidenceState,
     pub engine_smoke: EvidenceState,
     pub performance_regression: PerformanceRegressionEvidence,
@@ -288,9 +293,16 @@ impl AppleProductionAcceptanceEvidence {
         Self {
             evidence_id: "current-apple-backend-incomplete".to_string(),
             samples: Vec::new(),
+            production_inference_workflow: EvidenceState::missing(
+                "no production inference workflow evidence was supplied",
+            ),
+            tokenizer_text_decoding: EvidenceState::missing(
+                "no tokenizer or text decoding evidence was supplied",
+            ),
             correctness_against_reference: EvidenceState::missing(
                 "no reference-model correctness evidence supplied for production profiling",
             ),
+            ane_execution: EvidenceState::missing("no ANE execution evidence was supplied"),
             default_toy_path_disabled: EvidenceState::missing(
                 "default production path has not supplied toy-disabled evidence",
             ),
@@ -302,6 +314,12 @@ impl AppleProductionAcceptanceEvidence {
             ),
             no_hot_path_pipeline_compilation: EvidenceState::missing(
                 "hot-path pipeline-compilation audit evidence was not supplied",
+            ),
+            shared_kv_optimization_safety: EvidenceState::missing(
+                "shared-KV optimization safety evidence was not supplied",
+            ),
+            external_performance_profile: EvidenceState::missing(
+                "external performance profiler evidence was not supplied",
             ),
             direct_backend_smoke: EvidenceState::missing("direct backend smoke was not supplied"),
             engine_smoke: EvidenceState::missing("engine smoke was not supplied"),
@@ -349,8 +367,17 @@ impl AppleProductionAcceptanceEvidence {
         Self {
             evidence_id: "current-real-e2b-probe-and-diagnostic-cli-partial".to_string(),
             samples: vec![metal_probe_sample],
+            production_inference_workflow: EvidenceState::missing(
+                "current evidence is diagnostic raw-token probes and tests, not a production inference workflow",
+            ),
+            tokenizer_text_decoding: EvidenceState::missing(
+                "diagnostic CLI accepts raw token IDs only; tokenizer and text decoding are not wired into rvLLM",
+            ),
             correctness_against_reference: EvidenceState::present(
                 "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
+            ),
+            ane_execution: EvidenceState::missing(
+                "private ANE diagnostics stop at boundary/load/evaluate-smoke reporting; E2B ANE execution is not established",
             ),
             default_toy_path_disabled: EvidenceState::present(
                 "apple-default-metal-route-requires-model-dir-unless-toy-env-opt-in",
@@ -363,6 +390,12 @@ impl AppleProductionAcceptanceEvidence {
             ),
             no_hot_path_pipeline_compilation: EvidenceState::present(
                 "real-e2b-metal-pipeline-compile-counters-stable-after-prefill-and-decode",
+            ),
+            shared_kv_optimization_safety: EvidenceState::failed(
+                "shared-KV skip optimization remains rejected/diagnostic-only after selected-logit failure; do not claim optimized",
+            ),
+            external_performance_profile: EvidenceState::missing(
+                "current performance evidence is a local Metal-only probe gate without external profiler counters",
             ),
             direct_backend_smoke: EvidenceState::present(
                 "real-e2b-direct-model-metal-backend-full-vocab-parity-and-diagnostic-raw-token-cli",
@@ -385,11 +418,16 @@ impl AppleProductionAcceptanceEvidence {
 pub enum AcceptanceCriterion {
     BenchmarkCoverage,
     ProfileMetrics,
+    ProductionInferenceWorkflow,
+    TokenizerTextDecoding,
     CorrectnessAgainstReference,
+    AneExecution,
     DefaultToyPathDisabled,
     UnsupportedModelsFailClearly,
     NoHotPathAllocation,
     NoHotPathPipelineCompilation,
+    SharedKvOptimizationSafety,
+    ExternalPerformanceProfile,
     PerformanceRegressionsTracked,
 }
 
@@ -399,11 +437,16 @@ impl AcceptanceCriterion {
         match self {
             Self::BenchmarkCoverage => "benchmark_coverage",
             Self::ProfileMetrics => "profile_metrics",
+            Self::ProductionInferenceWorkflow => "production_inference_workflow",
+            Self::TokenizerTextDecoding => "tokenizer_text_decoding",
             Self::CorrectnessAgainstReference => "correctness_against_reference",
+            Self::AneExecution => "ane_execution",
             Self::DefaultToyPathDisabled => "default_toy_path_disabled",
             Self::UnsupportedModelsFailClearly => "unsupported_models_fail_clearly",
             Self::NoHotPathAllocation => "no_hot_path_allocation",
             Self::NoHotPathPipelineCompilation => "no_hot_path_pipeline_compilation",
+            Self::SharedKvOptimizationSafety => "shared_kv_optimization_safety",
+            Self::ExternalPerformanceProfile => "external_performance_profile",
             Self::PerformanceRegressionsTracked => "performance_regressions_tracked",
         }
     }
@@ -490,10 +533,31 @@ pub fn evaluate_apple_production_acceptance(
 
     push_evidence_failure(
         &mut failures,
+        AcceptanceCriterion::ProductionInferenceWorkflow,
+        evidence
+            .production_inference_workflow
+            .failure_reason("production inference workflow evidence is missing"),
+    );
+    push_evidence_failure(
+        &mut failures,
+        AcceptanceCriterion::TokenizerTextDecoding,
+        evidence
+            .tokenizer_text_decoding
+            .failure_reason("tokenizer/text decoding evidence is missing"),
+    );
+    push_evidence_failure(
+        &mut failures,
         AcceptanceCriterion::CorrectnessAgainstReference,
         evidence
             .correctness_against_reference
             .failure_reason("correctness against reference is missing"),
+    );
+    push_evidence_failure(
+        &mut failures,
+        AcceptanceCriterion::AneExecution,
+        evidence
+            .ane_execution
+            .failure_reason("ANE execution evidence is missing"),
     );
     push_evidence_failure(
         &mut failures,
@@ -522,6 +586,20 @@ pub fn evaluate_apple_production_acceptance(
         evidence
             .no_hot_path_pipeline_compilation
             .failure_reason("hot-path pipeline-compilation evidence is missing"),
+    );
+    push_evidence_failure(
+        &mut failures,
+        AcceptanceCriterion::SharedKvOptimizationSafety,
+        evidence
+            .shared_kv_optimization_safety
+            .failure_reason("shared-KV optimization safety evidence is missing"),
+    );
+    push_evidence_failure(
+        &mut failures,
+        AcceptanceCriterion::ExternalPerformanceProfile,
+        evidence
+            .external_performance_profile
+            .failure_reason("external performance profiler evidence is missing"),
     );
     push_evidence_failure(
         &mut failures,
@@ -622,11 +700,20 @@ mod tests {
                 .iter()
                 .map(|category| sample(*category, category.as_str()))
                 .collect(),
+            production_inference_workflow: EvidenceState::present("production-workflow-report"),
+            tokenizer_text_decoding: EvidenceState::present("tokenizer-text-decoding-report"),
             correctness_against_reference: EvidenceState::present("correctness-report"),
+            ane_execution: EvidenceState::present("ane-execution-report"),
             default_toy_path_disabled: EvidenceState::present("toy-disabled-report"),
             unsupported_models_fail_clearly: EvidenceState::present("unsupported-model-report"),
             no_hot_path_allocation: EvidenceState::present("allocation-audit"),
             no_hot_path_pipeline_compilation: EvidenceState::present("pipeline-audit"),
+            shared_kv_optimization_safety: EvidenceState::present(
+                "shared-kv-optimization-safety-report",
+            ),
+            external_performance_profile: EvidenceState::present(
+                "external-performance-profiler-report",
+            ),
             direct_backend_smoke: EvidenceState::present("direct-smoke"),
             engine_smoke: EvidenceState::present("engine-smoke"),
             performance_regression: PerformanceRegressionEvidence::SampleComparison {
@@ -680,6 +767,20 @@ mod tests {
         assert!(!report.failures.iter().any(|failure| failure
             .reason
             .contains("correctness against reference is missing")));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::ProductionInferenceWorkflow
+                && failure
+                    .reason
+                    .contains("not a production inference workflow")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::TokenizerTextDecoding
+                && failure.reason.contains("raw token IDs only")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::AneExecution
+                && failure.reason.contains("ANE execution is not established")
+        }));
         assert!(report.failures.iter().any(|failure| failure
             .reason
             .contains("missing ane_partitioned benchmark sample")));
@@ -710,6 +811,16 @@ mod tests {
         }));
         assert!(!report.failures.iter().any(|failure| {
             failure.criterion == AcceptanceCriterion::PerformanceRegressionsTracked
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::SharedKvOptimizationSafety
+                && failure.reason.contains("do not claim optimized")
+        }));
+        assert!(report.failures.iter().any(|failure| {
+            failure.criterion == AcceptanceCriterion::ExternalPerformanceProfile
+                && failure
+                    .reason
+                    .contains("without external profiler counters")
         }));
     }
 
