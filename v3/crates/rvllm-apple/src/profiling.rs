@@ -347,7 +347,7 @@ impl AppleProductionAcceptanceEvidence {
         metal_probe_sample.generated_tokens = 4;
 
         Self {
-            evidence_id: "current-real-e2b-probe-partial".to_string(),
+            evidence_id: "current-real-e2b-probe-and-diagnostic-cli-partial".to_string(),
             samples: vec![metal_probe_sample],
             correctness_against_reference: EvidenceState::present(
                 "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
@@ -365,7 +365,7 @@ impl AppleProductionAcceptanceEvidence {
                 "real-e2b-metal-pipeline-compile-counters-stable-after-prefill-and-decode",
             ),
             direct_backend_smoke: EvidenceState::present(
-                "real-e2b-direct-model-metal-backend-full-vocab-parity",
+                "real-e2b-direct-model-metal-backend-full-vocab-parity-and-diagnostic-raw-token-cli",
             ),
             engine_smoke: EvidenceState::present(
                 "real-e2b-engine-batch-same-length-mixed-length-and-bucket-four-full-vocab-hf-parity",
