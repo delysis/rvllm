@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 const CLAIM: &str = "diagnostic Apple Metal probe only; not production inference";
+const JSON_SCHEMA: &str = "rvllm.apple_metal_decode_probe.v1";
 const LARGE_MODEL_ENV: &str = "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE";
 const MAX_PROBE_TOKENS: usize = 16;
 
@@ -21,6 +22,7 @@ struct CliArgs {
     top_k: usize,
     large_model_opt_in: bool,
     hf_reference: Option<PathBuf>,
+    json_output: bool,
 }
 
 #[derive(Debug)]
@@ -124,6 +126,7 @@ where
     let mut top_k = 16usize;
     let mut large_model_opt_in = false;
     let mut hf_reference = None;
+    let mut json_output = false;
 
     let mut iter = args.into_iter().map(Into::into).peekable();
     while let Some(arg) = iter.next() {
@@ -161,6 +164,9 @@ where
                     .ok_or_else(|| "--hf-reference requires a value".to_owned())?;
                 hf_reference = Some(PathBuf::from(value));
             }
+            "--json" => {
+                json_output = true;
+            }
             "-h" | "--help" => return Err(usage()),
             other if other.starts_with('-') => return Err(format!("unknown argument: {other}")),
             other => return Err(format!("unexpected positional argument: {other}")),
@@ -175,12 +181,13 @@ where
         top_k,
         large_model_opt_in,
         hf_reference,
+        json_output,
     })
 }
 
 fn usage() -> String {
     "usage: probe_apple_metal_decode --model-dir <DIR> --prompt-token-ids <IDS> \
-     [--decode-steps N] [--top-k K] [--large-model-opt-in] [--hf-reference <JSON>]"
+     [--decode-steps N] [--top-k K] [--large-model-opt-in] [--hf-reference <JSON>] [--json]"
         .to_owned()
 }
 
@@ -502,6 +509,63 @@ fn hf_comparison_json(comparison: &HfComparison) -> String {
     .expect("serialize HF comparison")
 }
 
+fn top_logit_json(item: &TopLogit) -> serde_json::Value {
+    serde_json::json!({
+        "token_id": item.token_id,
+        "logit": item.logit,
+    })
+}
+
+fn per_step_top_k_value(steps: &[StepTopK]) -> serde_json::Value {
+    serde_json::Value::Array(
+        steps
+            .iter()
+            .map(|step| {
+                serde_json::json!({
+                    "step": step.step,
+                    "top_k": step.top_k.iter().map(top_logit_json).collect::<Vec<_>>(),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn hf_reference_value(comparison: Option<&HfComparison>) -> serde_json::Value {
+    comparison.map_or(serde_json::Value::Null, |comparison| {
+        serde_json::json!({
+            "path": comparison.reference_path,
+            "matched": comparison.matched,
+            "mismatches": comparison.mismatches,
+        })
+    })
+}
+
+fn probe_report_value(
+    report: &ProbeReport,
+    comparison: Option<&HfComparison>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schema": JSON_SCHEMA,
+        "claim": CLAIM,
+        "model_dir": report.model_dir,
+        "prompt_token_ids": report.prompt_token_ids,
+        "decode_steps": report.decode_steps,
+        "sampled_token_ids": report.sampled_token_ids,
+        "per_step_top_k": per_step_top_k_value(&report.per_step_top_k),
+        "prepare_ms": report.prepare_ms,
+        "prefill_ms": report.prefill_ms,
+        "decode_ms": report.decode_ms,
+        "tok_per_s": report.tok_per_s,
+        "arena_bytes": report.arena_bytes,
+        "command_buffers": report.command_buffers,
+        "encoders": report.encoders,
+        "forced_waits": report.forced_waits,
+        "debug_sync": report.debug_sync,
+        "large_model_opt_in": report.large_model_opt_in,
+        "hf_reference": hf_reference_value(comparison),
+    })
+}
+
 fn print_report(report: &ProbeReport, comparison: Option<&HfComparison>) {
     println!("claim: {CLAIM}");
     println!("model_dir: {}", report.model_dir.display());
@@ -536,6 +600,14 @@ fn print_report(report: &ProbeReport, comparison: Option<&HfComparison>) {
             hf_comparison_json(comparison)
         );
     }
+}
+
+fn print_json_report(report: &ProbeReport, comparison: Option<&HfComparison>) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&probe_report_value(report, comparison))
+            .expect("serialize JSON probe report")
+    );
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -729,7 +801,11 @@ fn run_main() -> Result<(), String> {
     let comparison = reference
         .as_ref()
         .map(|reference| compare_hf_reference(&report, reference));
-    print_report(&report, comparison.as_ref());
+    if args.json_output {
+        print_json_report(&report, comparison.as_ref());
+    } else {
+        print_report(&report, comparison.as_ref());
+    }
     Ok(())
 }
 
@@ -768,6 +844,7 @@ mod tests {
         assert_eq!(args.top_k, 16);
         assert!(args.large_model_opt_in);
         assert_eq!(args.hf_reference, None);
+        assert!(!args.json_output);
 
         let err = parse_args_from(["--model-dir", "/tmp/gemma4-e2b", "--prompt-token-ids", ""])
             .expect_err("empty token list should fail");
@@ -780,9 +857,11 @@ mod tests {
             "2,4",
             "--hf-reference",
             "/tmp/ref.json",
+            "--json",
         ])
         .expect("parse HF reference arg");
         assert_eq!(args.hf_reference, Some(PathBuf::from("/tmp/ref.json")));
+        assert!(args.json_output);
     }
 
     #[test]
@@ -843,6 +922,61 @@ mod tests {
             .any(|item| item.contains("sampled_token_ids differ")));
     }
 
+    #[test]
+    fn probe_apple_metal_decode_json_report_includes_schema_and_claim() {
+        let report = ProbeReport {
+            model_dir: PathBuf::from("/tmp/gemma4-e2b"),
+            prompt_token_ids: vec![2, 4],
+            decode_steps: 1,
+            sampled_token_ids: vec![954],
+            per_step_top_k: vec![StepTopK {
+                step: 0,
+                top_k: vec![TopLogit {
+                    token_id: 954,
+                    logit: 22.875,
+                }],
+            }],
+            per_step_selected_logits: vec![StepSelectedLogits {
+                step: 0,
+                selected_logits: vec![TopLogit {
+                    token_id: 4,
+                    logit: 20.875,
+                }],
+            }],
+            prepare_ms: 1.0,
+            prefill_ms: 2.0,
+            decode_ms: 3.0,
+            tok_per_s: 4.0,
+            arena_bytes: 5,
+            command_buffers: 6,
+            encoders: 7,
+            forced_waits: 8,
+            debug_sync: false,
+            large_model_opt_in: true,
+        };
+        let comparison = HfComparison {
+            reference_path: PathBuf::from("/tmp/ref.json"),
+            matched: true,
+            mismatches: Vec::new(),
+        };
+        let value = probe_report_value(&report, Some(&comparison));
+
+        assert_eq!(value["schema"], JSON_SCHEMA);
+        assert_eq!(value["claim"], CLAIM);
+        assert_eq!(value["sampled_token_ids"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            value["per_step_top_k"][0]["top_k"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(value["prepare_ms"].as_f64(), Some(1.0));
+        assert_eq!(value["debug_sync"].as_bool(), Some(false));
+        assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
+        assert_eq!(value["hf_reference"]["path"], "/tmp/ref.json");
+    }
+
     #[cfg(all(feature = "apple", target_os = "macos"))]
     #[test]
     #[ignore = "requires cached Gemma4 E2B model directory and Apple Silicon Metal device"]
@@ -858,6 +992,7 @@ mod tests {
             top_k: 16,
             large_model_opt_in: true,
             hf_reference: None,
+            json_output: false,
         };
         let report = run_probe(&args, None).expect("run E2B raw-token Metal probe");
         eprintln!("{report:#?}");
