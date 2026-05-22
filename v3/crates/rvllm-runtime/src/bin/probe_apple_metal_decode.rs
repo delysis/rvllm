@@ -1003,4 +1003,45 @@ mod tests {
         assert_eq!(report.per_step_top_k[0].top_k.len(), 16);
         assert!(report.arena_bytes > 0);
     }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires cached Gemma4 E2B model directory, HF reference artifact, and Apple Silicon Metal device"]
+    fn probe_apple_metal_decode_e2b_reference_backed_smoke() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let reference_path = PathBuf::from("/tmp/gemma4-e2b-hf-reference-logits.json");
+        if !reference_path.is_file() {
+            eprintln!(
+                "skipping: HF reference artifact is missing: {}",
+                reference_path.display()
+            );
+            return;
+        }
+        let args = CliArgs {
+            model_dir: PathBuf::from(model_dir),
+            prompt_token_ids: vec![2, 4],
+            decode_steps: 1,
+            top_k: 16,
+            large_model_opt_in: true,
+            hf_reference: Some(reference_path.clone()),
+            json_output: false,
+        };
+        let reference =
+            parse_hf_reference(reference_path, &args.prompt_token_ids, args.decode_steps)
+                .expect("parse HF reference");
+        let report = run_probe(&args, Some(&reference)).expect("run E2B HF-reference Metal probe");
+        let comparison = compare_hf_reference(&report, &reference);
+
+        assert_eq!(
+            CLAIM,
+            "diagnostic Apple Metal probe only; not production inference"
+        );
+        assert!(comparison.matched, "{:#?}", comparison.mismatches);
+        assert_eq!(report.sampled_token_ids.len(), 1);
+        assert_eq!(report.per_step_top_k.len(), 1);
+        assert_eq!(report.per_step_top_k[0].top_k.len(), 16);
+    }
 }
