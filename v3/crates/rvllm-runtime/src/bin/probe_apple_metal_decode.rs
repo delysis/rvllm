@@ -531,16 +531,25 @@ fn compare_hf_reference(report: &ProbeReport, reference: &HfReference) -> HfComp
                 reference_step.top_logits.len()
             ));
         }
-        for (rank, expected) in reference_step.top_logits.iter().enumerate() {
-            let Some(actual) = metal_top.top_k.get(rank) else {
-                continue;
-            };
-            let delta = (actual.logit - expected.logit).abs();
-            if actual.token_id != expected.token_id || delta > LOGIT_TOLERANCE {
-                mismatches.push(format!(
-                    "step {step_idx} top-k rank {rank} differs: metal=({}, {:.6}) hf=({}, {:.6}) delta={delta:.6}",
-                    actual.token_id, actual.logit, expected.token_id, expected.logit
-                ));
+        for expected in &reference_step.top_logits {
+            match metal_top
+                .top_k
+                .iter()
+                .find(|actual| actual.token_id == expected.token_id)
+            {
+                Some(actual) => {
+                    let delta = (actual.logit - expected.logit).abs();
+                    if delta > LOGIT_TOLERANCE {
+                        mismatches.push(format!(
+                            "step {step_idx} top-k token {} delta {delta:.6} exceeds {LOGIT_TOLERANCE}: metal={:.6} hf={:.6}",
+                            expected.token_id, actual.logit, expected.logit
+                        ));
+                    }
+                }
+                None => mismatches.push(format!(
+                    "step {step_idx} missing top-k token {}",
+                    expected.token_id
+                )),
             }
         }
     }
@@ -1070,6 +1079,82 @@ mod tests {
             .mismatches
             .iter()
             .any(|item| item.contains("sampled_token_ids differ")));
+    }
+
+    #[test]
+    fn probe_apple_metal_decode_hf_reference_compare_allows_near_tie_top_k_reorder() {
+        let report = ProbeReport {
+            model_dir: PathBuf::from("/tmp/gemma4-e2b"),
+            prompt_token_ids: vec![2, 9259],
+            decode_steps: 1,
+            sampled_token_ids: vec![236764],
+            per_step_top_k: vec![StepTopK {
+                step: 0,
+                top_k: vec![
+                    TopLogit {
+                        token_id: 236764,
+                        logit: 15.140625,
+                    },
+                    TopLogit {
+                        token_id: 4677,
+                        logit: 13.867188,
+                    },
+                    TopLogit {
+                        token_id: 236888,
+                        logit: 13.78125,
+                    },
+                ],
+            }],
+            per_step_selected_logits: vec![StepSelectedLogits {
+                step: 0,
+                selected_logits: vec![TopLogit {
+                    token_id: 236764,
+                    logit: 15.140625,
+                }],
+            }],
+            prepare_ms: 1.0,
+            prefill_ms: 1.0,
+            decode_ms: 1.0,
+            tok_per_s: 1.0,
+            arena_bytes: 1,
+            command_buffers: 1,
+            encoders: 1,
+            forced_waits: 1,
+            debug_sync: false,
+            large_model_opt_in: true,
+        };
+        let reference = HfReference {
+            path: PathBuf::from("/tmp/ref.json"),
+            prompt_token_ids: vec![2, 9259],
+            decode_steps: 1,
+            generated_tokens: vec![236764],
+            steps: vec![HfReferenceStep {
+                step: 0,
+                next_token: 236764,
+                selected_logits: vec![TopLogit {
+                    token_id: 236764,
+                    logit: 14.9375,
+                }],
+                top_logits: vec![
+                    TopLogit {
+                        token_id: 236764,
+                        logit: 14.9375,
+                    },
+                    TopLogit {
+                        token_id: 236888,
+                        logit: 13.625,
+                    },
+                    TopLogit {
+                        token_id: 4677,
+                        logit: 13.625,
+                    },
+                ],
+            }],
+        };
+
+        let comparison = compare_hf_reference(&report, &reference);
+
+        assert!(comparison.matched, "{:#?}", comparison.mismatches);
     }
 
     #[test]

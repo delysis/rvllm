@@ -2101,6 +2101,7 @@ impl ModelMetalBackend {
         {
             count += 4;
         }
+        count += weights.layer_scalar_offset.is_some() as u64;
         count
     }
 

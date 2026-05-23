@@ -1231,8 +1231,8 @@ pub unsafe fn metal_encode_forward_layer(
         hidden,
         dims.rms_eps,
         num_tokens,
-        weights.layer_scalar_offset,
-        weights.layer_scalar_dim,
+        None,
+        0,
     )?;
     if let Some(trace) = trace {
         encode_trace_copy(
@@ -1411,8 +1411,8 @@ pub unsafe fn metal_encode_forward_layer(
         ffn_addition_offset,
         num_tokens * hidden,
         hidden,
-        weights.layer_scalar_offset,
-        weights.layer_scalar_dim,
+        None,
+        0,
     )?;
 
     if let (
@@ -1536,6 +1536,17 @@ pub unsafe fn metal_encode_forward_layer(
             )?;
         }
     }
+
+    encode_layer_scale(
+        &cmd_buf,
+        pipelines,
+        buf,
+        residual_offset,
+        num_tokens * hidden,
+        hidden,
+        weights.layer_scalar_offset,
+        weights.layer_scalar_dim,
+    )?;
 
     Ok(())
 }
@@ -2201,6 +2212,63 @@ unsafe fn encode_residual_add_rmsnorm(
         depth: 1,
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_layer_scale(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    x_offset: usize,
+    count: u32,
+    hidden: u32,
+    layer_scalar_offset: Option<usize>,
+    layer_scalar_dim: u32,
+) -> Result<()> {
+    let Some(layer_scalar_offset) = layer_scalar_offset else {
+        return Ok(());
+    };
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "layer_scale",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("layer_scale_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), x_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), layer_scalar_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&layer_scalar_dim as *const _ as *mut _),
+        4,
+        4,
+    );
+    let groups = MTLSize {
+        width: count as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 1,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
     Ok(())
 }

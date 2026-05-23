@@ -133,8 +133,9 @@ cargo run -p rvllm-runtime --features apple --bin rvllm_metal_infer -- \
 ```
 
 Do not promote tokenizer/text decoding evidence unless `hf_reference.matched`
-is true. A generated-token mismatch is a production-readiness blocker even when
-the prompt IDs and text decoding path are wired correctly.
+is true. The current `"Hello"` reference-backed smoke is a bounded positive
+check after correcting Metal layer-scalar ordering, but it is still one prompt
+inside the probe arena, not production serving or broad tokenizer/text coverage.
 
 ## Run Reference-Backed CLI
 

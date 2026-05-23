@@ -2929,7 +2929,10 @@ fn cpu_reference_one_layer_layer_scalar_argmax(apply_layer_scalar: bool) -> usiz
     let intermediate = 256usize;
     let vocab = 8usize;
     let eps = 1e-6f32;
-    let update_scale = if apply_layer_scalar { 6.0f32 } else { 1.0f32 };
+    let mut layer_scalar = vec![1.0f32; hidden];
+    if apply_layer_scalar {
+        layer_scalar[9] = 6.0;
+    }
 
     let mut residual = vec![0.0f32; hidden];
     residual[7] = 10.0 * (hidden as f32).sqrt();
@@ -2958,7 +2961,7 @@ fn cpu_reference_one_layer_layer_scalar_argmax(apply_layer_scalar: bool) -> usiz
         q.iter().zip(k.iter()).map(|(a, b)| a * b).sum::<f32>() / (hidden as f32).sqrt();
     let projected_attn = cpu_full_nonzero_matvec(&o_proj, hidden, hidden, &v);
     for d in 0..hidden {
-        residual[d] += projected_attn[d] * update_scale;
+        residual[d] += projected_attn[d];
     }
 
     let mlp_normed = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
@@ -2971,7 +2974,10 @@ fn cpu_reference_one_layer_layer_scalar_argmax(apply_layer_scalar: bool) -> usiz
         .collect::<Vec<_>>();
     let mlp_out = cpu_full_nonzero_matvec(&down_proj, hidden, intermediate, &activated);
     for d in 0..hidden {
-        residual[d] += mlp_out[d] * update_scale;
+        residual[d] += mlp_out[d];
+    }
+    for d in 0..hidden {
+        residual[d] *= layer_scalar[d];
     }
 
     let final_hidden = cpu_full_nonzero_rms_norm(&residual, &norm, eps);
@@ -2984,7 +2990,8 @@ fn cpu_reference_one_layer_integrated_gemma_probe_argmax() -> usize {
     let intermediate = 256usize;
     let vocab = 8usize;
     let eps = 0.000001f32;
-    let layer_scalar = 3.0f32;
+    let mut layer_scalar = vec![1.0f32; hidden];
+    layer_scalar[9] = 3.0;
     let softcap = 6.0f32;
 
     let mut embedding = vec![0.0f32; vocab * hidden];
@@ -3040,10 +3047,10 @@ fn cpu_reference_one_layer_integrated_gemma_probe_argmax() -> usize {
     assert!(score.is_finite());
 
     let attn_residual = cpu_full_nonzero_matvec(&o_proj, hidden, hidden, &v);
+    let attn_residual = cpu_full_nonzero_rms_norm(&attn_residual, &post_attn_norm, eps);
     for dim in 0..hidden {
-        residual[dim] += attn_residual[dim] * layer_scalar;
+        residual[dim] += attn_residual[dim];
     }
-    residual = cpu_full_nonzero_rms_norm(&residual, &post_attn_norm, eps);
 
     let mlp_normed = cpu_full_nonzero_rms_norm(&residual, &pre_ff_norm, eps);
     let mut gate_proj = vec![0.0f32; intermediate * hidden];
@@ -3061,10 +3068,13 @@ fn cpu_reference_one_layer_integrated_gemma_probe_argmax() -> usize {
         .map(|(g, u)| cpu_full_nonzero_gelu_tanh(*g) * u)
         .collect::<Vec<_>>();
     let mlp_out = cpu_full_nonzero_matvec(&down_proj, hidden, intermediate, &activated);
+    let mlp_out = cpu_full_nonzero_rms_norm(&mlp_out, &post_ff_norm, eps);
     for dim in 0..hidden {
-        residual[dim] += mlp_out[dim] * layer_scalar;
+        residual[dim] += mlp_out[dim];
     }
-    residual = cpu_full_nonzero_rms_norm(&residual, &post_ff_norm, eps);
+    for dim in 0..hidden {
+        residual[dim] *= layer_scalar[dim];
+    }
 
     let final_hidden = cpu_full_nonzero_rms_norm(&residual, &final_norm, eps);
     let mut lm_head = vec![0.0f32; vocab * hidden];
@@ -3650,6 +3660,38 @@ fn compare_trace_summary_stats(hf: &Value, metal: &Value, name: &str) {
         (hf_max - metal_max).abs(),
         (hf_mean - metal_mean).abs()
     );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn parse_e2b_trace_prompt_token_ids() -> Vec<u32> {
+    let Some(raw) = std::env::var_os("RVLLM_E2B_TRACE_COMPARE_PROMPT_TOKEN_IDS") else {
+        return vec![2, 4];
+    };
+    let raw = raw.to_string_lossy();
+    let tokens = raw
+        .split(',')
+        .filter_map(|part| {
+            let part = part.trim();
+            (!part.is_empty()).then(|| {
+                part.parse::<u32>()
+                    .unwrap_or_else(|err| panic!("invalid trace prompt token id {part:?}: {err}"))
+            })
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !tokens.is_empty(),
+        "RVLLM_E2B_TRACE_COMPARE_PROMPT_TOKEN_IDS must contain at least one token"
+    );
+    tokens
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn e2b_trace_prompt_slug(prompt_token_ids: &[u32]) -> String {
+    prompt_token_ids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -5103,7 +5145,8 @@ fn write_tiny_one_layer_layer_scalar_fixture() -> std::path::PathBuf {
     embedding[2 * hidden + 7] = 10.0;
 
     let norm = vec![1.0f32; hidden];
-    let layer_scalar = vec![6.0f32];
+    let mut layer_scalar = vec![1.0f32; hidden];
+    layer_scalar[9] = 6.0;
     let mut lm_head = vec![0.0f32; vocab * hidden];
     lm_head[2 * hidden + 7] = 1.0;
     lm_head[3 * hidden + 9] = 1.0;
@@ -5218,7 +5261,7 @@ fn write_tiny_one_layer_layer_scalar_fixture() -> std::path::PathBuf {
     add_tensor(
         "model.layers.0.layer_scalar",
         &layer_scalar,
-        &[1],
+        &[hidden],
         &mut payload,
         &mut header,
     );
@@ -5317,7 +5360,8 @@ fn write_tiny_one_layer_integrated_gemma_probe_fixture() -> std::path::PathBuf {
     up_proj[9] = 0.75;
     down_proj[9 * intermediate] = 1.0;
 
-    let layer_scalar = vec![3.0f32];
+    let mut layer_scalar = vec![1.0f32; hidden];
+    layer_scalar[9] = 3.0;
     let mut lm_head = vec![0.0f32; vocab * hidden];
     lm_head[2 * hidden + 7] = 1.0;
     lm_head[3 * hidden + 9] = 1.0;
@@ -5463,7 +5507,7 @@ fn write_tiny_one_layer_integrated_gemma_probe_fixture() -> std::path::PathBuf {
     add_tensor(
         "model.layers.0.layer_scalar",
         &layer_scalar,
-        &[1],
+        &[hidden],
         &mut payload,
         &mut header,
     );
@@ -8689,8 +8733,21 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
         .ok()
         .and_then(|raw| raw.parse::<usize>().ok())
         .unwrap_or(4);
-    let hf_trace_path =
-        std::path::PathBuf::from(format!("/tmp/gemma4-e2b-hf-layer{trace_layer}-trace.json"));
+    let prompt_token_ids = parse_e2b_trace_prompt_token_ids();
+    let prompt_slug = e2b_trace_prompt_slug(&prompt_token_ids);
+    let hf_trace_path = std::env::var_os("RVLLM_E2B_TRACE_COMPARE_HF_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            if prompt_token_ids.as_slice() == [2, 4] {
+                std::path::PathBuf::from(format!(
+                    "/tmp/gemma4-e2b-hf-layer{trace_layer}-trace.json"
+                ))
+            } else {
+                std::path::PathBuf::from(format!(
+                    "/tmp/gemma4-e2b-hf-prompt-{prompt_slug}-layer{trace_layer}-trace.json"
+                ))
+            }
+        });
     if !hf_trace_path.exists() {
         eprintln!(
             "skipping: HF layer trace artifact is missing at {}",
@@ -8698,9 +8755,19 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
         );
         return;
     }
-    let metal_trace_path = std::path::PathBuf::from(format!(
-        "/tmp/gemma4-e2b-metal-layer{trace_layer}-trace.json"
-    ));
+    let metal_trace_path = std::env::var_os("RVLLM_E2B_TRACE_COMPARE_METAL_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            if prompt_token_ids.as_slice() == [2, 4] {
+                std::path::PathBuf::from(format!(
+                    "/tmp/gemma4-e2b-metal-layer{trace_layer}-trace.json"
+                ))
+            } else {
+                std::path::PathBuf::from(format!(
+                    "/tmp/gemma4-e2b-metal-prompt-{prompt_slug}-layer{trace_layer}-trace.json"
+                ))
+            }
+        });
     let _ = fs::remove_file(&metal_trace_path);
 
     let model_dir = std::path::PathBuf::from(model_dir);
@@ -8736,10 +8803,14 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
     let prefill = rvllm_apple::HandoffCapsule::new(
         rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
         vec![rvllm_core::ReqId(1)],
-        vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
-        vec![0, 2],
-        vec![1],
-        vec![2],
+        prompt_token_ids
+            .iter()
+            .copied()
+            .map(rvllm_core::TokenId)
+            .collect(),
+        vec![0, prompt_token_ids.len() as u32],
+        vec![(prompt_token_ids.len() - 1) as u32],
+        vec![prompt_token_ids.len() as u32],
     );
     let ticket = backend
         .launch_prefill(&prefill)
@@ -8761,12 +8832,16 @@ fn real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary() {
         metal["schema"].as_str(),
         Some("rvllm.gemma4_metal_layer_trace.v1")
     );
+    let expected_prompt_values = prompt_token_ids
+        .iter()
+        .map(|&token| Value::from(token))
+        .collect::<Vec<_>>();
     assert_eq!(
         hf["prompt_token_ids"]
             .as_array()
             .expect("prompt ids")
             .as_slice(),
-        &[Value::from(2), Value::from(4)]
+        expected_prompt_values.as_slice()
     );
     assert_eq!(hf["layer"].as_u64(), Some(trace_layer as u64));
     assert_eq!(metal["layer"].as_u64(), Some(trace_layer as u64));
