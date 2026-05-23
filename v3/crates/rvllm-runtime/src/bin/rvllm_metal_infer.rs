@@ -975,4 +975,54 @@ mod tests {
             "bounded Apple Metal text inference workflow; not production-ready until acceptance gates pass"
         );
     }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires cached Gemma4 E2B model directory, two-step HF text reference artifact, and Apple Silicon Metal device"]
+    fn rvllm_metal_infer_e2b_reference_backed_text_two_step_smoke() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let model_dir = PathBuf::from(model_dir);
+        if !tokenizer_path(&model_dir).is_file() {
+            eprintln!(
+                "skipping: tokenizer is missing: {}",
+                tokenizer_path(&model_dir).display()
+            );
+            return;
+        }
+        let reference_path = PathBuf::from("/tmp/gemma4-e2b-hf-text-infer-hello-steps2.json");
+        if !reference_path.is_file() {
+            eprintln!(
+                "skipping: two-step HF text reference artifact is missing: {}",
+                reference_path.display()
+            );
+            return;
+        }
+        let args = CliArgs {
+            model_dir,
+            prompt: "Hello".to_owned(),
+            max_new_tokens: 2,
+            max_total_tokens: None,
+            eos_token_ids: vec![1, 2, 107],
+            no_bos: false,
+            large_model_opt_in: true,
+            hf_reference: Some(reference_path.clone()),
+            json_output: true,
+        };
+        let reference =
+            parse_hf_reference(reference_path).expect("parse two-step HF text reference");
+        let report =
+            run_infer(&args).expect("run two-step reference-backed E2B Metal text inference");
+        let comparison = compare_hf_reference(&report, &reference);
+        assert!(comparison.matched, "{:?}", comparison.mismatches);
+        assert_eq!(report.generated_token_ids, reference.generated_tokens);
+        assert_eq!(report.generated_token_ids.len(), 2);
+        assert_eq!(report.max_new_tokens, 2);
+        assert_eq!(
+            CLAIM,
+            "bounded Apple Metal text inference workflow; not production-ready until acceptance gates pass"
+        );
+    }
 }
