@@ -137,6 +137,34 @@ is true. The current `"Hello"` reference-backed smoke is a bounded positive
 check after correcting Metal layer-scalar ordering, but it is still one prompt
 inside the probe arena, not production serving or broad tokenizer/text coverage.
 
+## Generate Text Reference Suite Manifest
+
+```bash
+python3 scripts/dump_gemma4_e2b_hf_text_reference_suite.py \
+  "$RVLLM_GEMMA4_MODEL_DIR" \
+  --prompt "Hello" \
+  --prompt "Once upon a time" \
+  --prompt "The capital of France is" \
+  --decode-steps 1 \
+  --top-k 16 \
+  --output-dir /tmp/rvllm-e2b-text-reference-suite
+```
+
+Use `--dry-run` first to write the manifest and print the HF commands without
+loading Transformers. The generated artifacts stay outside the repo.
+
+## Run Text Inference Suite Runner
+
+```bash
+python3 tools/run_apple_metal_text_infer_suite.py \
+  --manifest /tmp/rvllm-e2b-text-reference-suite/gemma4-e2b-hf-text-reference-suite-manifest.json \
+  --model-dir "$RVLLM_GEMMA4_MODEL_DIR"
+```
+
+Use `--dry-run` first to print the `rvllm_metal_infer` commands without running
+Metal. The runner writes `/tmp/rvllm-e2b-text-infer-suite-report.json` by
+default and fails if any case does not report `hf_reference.matched: true`.
+
 ## Run Reference-Backed CLI
 
 ```bash
