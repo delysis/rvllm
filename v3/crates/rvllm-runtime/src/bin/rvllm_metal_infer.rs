@@ -694,6 +694,53 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[derive(Clone)]
+    struct SharedModelMetalBackend {
+        inner:
+            std::rc::Rc<std::cell::RefCell<rvllm_runtime::apple_metal_backend::ModelMetalBackend>>,
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl SharedModelMetalBackend {
+        fn new(model_dir: PathBuf) -> Self {
+            Self {
+                inner: std::rc::Rc::new(std::cell::RefCell::new(
+                    rvllm_runtime::apple_metal_backend::ModelMetalBackend::new(model_dir),
+                )),
+            }
+        }
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    impl rvllm_apple::AppleBackend for SharedModelMetalBackend {
+        fn prepare(&mut self, plan: &rvllm_apple::AppleRuntimePlan) -> rvllm_core::Result<()> {
+            self.inner.borrow_mut().prepare(plan)
+        }
+
+        fn launch_prefill(
+            &mut self,
+            handoff: &rvllm_apple::HandoffCapsule,
+        ) -> rvllm_core::Result<rvllm_apple::AppleLaunchTicket> {
+            self.inner.borrow_mut().launch_prefill(handoff)
+        }
+
+        fn launch_rollout(
+            &mut self,
+            handoff: &rvllm_apple::HandoffCapsule,
+            bucket: Option<rvllm_apple::RolloutBucket>,
+        ) -> rvllm_core::Result<rvllm_apple::AppleLaunchTicket> {
+            self.inner.borrow_mut().launch_rollout(handoff, bucket)
+        }
+
+        fn collect(
+            &mut self,
+            ticket: rvllm_apple::AppleLaunchTicket,
+        ) -> rvllm_core::Result<Vec<rvllm_apple::StepToken>> {
+            self.inner.borrow_mut().collect(ticket)
+        }
+    }
+
     #[test]
     fn rvllm_metal_infer_cli_args() {
         let args = parse_args_from([
@@ -1009,6 +1056,129 @@ mod tests {
             "/tmp/gemma4-e2b-hf-text-infer-hello-steps4.json",
             4,
             "four-step",
+        );
+    }
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires cached Gemma4 E2B model directory, one-step HF text reference artifact, and Apple Silicon Metal device"]
+    fn rvllm_metal_infer_e2b_engine_reference_backed_text_smoke() {
+        let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+            eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+            return;
+        };
+        let model_dir = PathBuf::from(model_dir);
+        if !tokenizer_path(&model_dir).is_file() {
+            eprintln!(
+                "skipping: tokenizer is missing: {}",
+                tokenizer_path(&model_dir).display()
+            );
+            return;
+        }
+        let reference_path = PathBuf::from("/tmp/gemma4-e2b-hf-text-infer-hello-step1.json");
+        if !reference_path.is_file() {
+            eprintln!(
+                "skipping: one-step HF text reference artifact is missing: {}",
+                reference_path.display()
+            );
+            return;
+        }
+
+        let tokenizer = load_tokenizer(&model_dir).expect("load E2B tokenizer");
+        let args = CliArgs {
+            model_dir: model_dir.clone(),
+            prompt: "Hello".to_owned(),
+            max_new_tokens: 1,
+            max_total_tokens: None,
+            eos_token_ids: vec![1, 2, 107],
+            no_bos: false,
+            large_model_opt_in: true,
+            hf_reference: Some(reference_path.clone()),
+            json_output: true,
+        };
+        let prompt_token_ids =
+            prompt_token_ids(&args, &tokenizer).expect("tokenize Engine smoke prompt");
+        let reference =
+            parse_hf_reference(reference_path).expect("parse one-step HF text reference");
+        assert_eq!(prompt_token_ids, reference.prompt_token_ids);
+
+        let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+            .expect("parse Gemma4 architecture");
+        let _large_model_env = EnvGuard::set_if(LARGE_MODEL_ENV, true);
+        let shared_backend = SharedModelMetalBackend::new(model_dir.clone());
+        let plan = rvllm_apple::AppleRuntimePlan {
+            target: rvllm_apple::AppleAcceleratorTarget::from_device_name("Apple M4 Max", 1),
+            mode: rvllm_apple::AppleBackendMode::MetalPrefillMetalDecode,
+            rollout_bucket: None,
+            rollout_tokens: args.max_new_tokens as u32,
+            private_ane_opt_in: false,
+            strict_ane: false,
+            ane_compute_profile: rvllm_core::config::AneComputeProfile::AnyAvailable,
+            ane_fallback_policy: rvllm_core::config::AneFallbackPolicy::AllowMetal,
+            ane_hidden_size: arch.hidden_size,
+            ane_intermediate_size: arch.intermediate_size,
+            ane_num_layers: arch.num_hidden_layers,
+            model_layout_hash: [0u8; 32],
+            weights_path: Some(model_dir),
+        };
+
+        let mut engine = rvllm_runtime::Engine::new()
+            .with_apple_backend(Box::new(shared_backend))
+            .with_apple_runtime_plan(plan)
+            .expect("Engine should prepare real E2B ModelMetalBackend");
+        engine
+            .scheduler
+            .enqueue(rvllm_runtime::sched_state::Request::new(
+                rvllm_core::ReqId(1),
+                prompt_token_ids
+                    .iter()
+                    .copied()
+                    .map(rvllm_core::TokenId)
+                    .collect(),
+                args.max_new_tokens as u32,
+            ));
+
+        let prefill = engine.step_launch().expect("launch Engine text prefill");
+        match prefill.plan().expect("Engine text prefill plan") {
+            rvllm_runtime::BatchPlan::Prefill { req_ids, .. } => {
+                assert_eq!(req_ids, &vec![rvllm_core::ReqId(1)]);
+            }
+            other => panic!("expected Engine Prefill, got {other:?}"),
+        }
+        assert!(prefill
+            .collect()
+            .expect("collect Engine text prefill")
+            .is_empty());
+
+        let decode = engine.step_launch().expect("launch Engine text decode");
+        match decode.plan().expect("Engine text decode plan") {
+            rvllm_runtime::BatchPlan::Decode {
+                req_ids,
+                positions,
+                context_lens,
+                ..
+            } => {
+                assert_eq!(req_ids, &vec![rvllm_core::ReqId(1)]);
+                assert_eq!(
+                    positions,
+                    &vec![(reference.prompt_token_ids.len() - 1) as u32]
+                );
+                assert_eq!(context_lens, &vec![reference.prompt_token_ids.len() as u32]);
+            }
+            other => panic!("expected Engine Decode, got {other:?}"),
+        }
+        let generated = decode
+            .collect()
+            .expect("collect Engine text decode")
+            .into_iter()
+            .map(|output| output.new_token.raw())
+            .collect::<Vec<_>>();
+
+        assert_eq!(generated, reference.generated_tokens);
+        assert!(!engine.has_pending_work());
+        assert_eq!(
+            CLAIM,
+            "bounded Apple Metal text inference workflow; not production-ready until acceptance gates pass"
         );
     }
 }

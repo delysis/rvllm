@@ -139,6 +139,11 @@ are bounded positive checks after correcting Metal layer-scalar ordering, but
 they are still narrow prompt/decode coverage inside the probe arena, not
 production serving or broad tokenizer/text coverage.
 
+The ignored `rvllm_metal_infer_e2b_engine_reference_backed_text_smoke` test
+uses the same tokenizer prompt and HF artifact, but runs prefill/decode through
+`Engine` and `ModelMetalBackend` scheduler handoff. It is bounded Engine-path
+evidence only, not a serving, batching, throughput, or production claim.
+
 ## Generate Text Reference Suite Manifest
 
 ```bash
