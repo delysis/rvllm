@@ -133,9 +133,10 @@ cargo run -p rvllm-runtime --features apple --bin rvllm_metal_infer -- \
 ```
 
 Do not promote tokenizer/text decoding evidence unless `hf_reference.matched`
-is true. The current `"Hello"` reference-backed smoke is a bounded positive
-check after correcting Metal layer-scalar ordering, but it is still one prompt
-inside the probe arena, not production serving or broad tokenizer/text coverage.
+is true. The current `"Hello"` and `"Once upon a time"` reference-backed smokes
+are bounded positive checks after correcting Metal layer-scalar ordering, but
+they are still narrow prompt coverage inside the probe arena, not production
+serving or broad tokenizer/text coverage.
 
 ## Generate Text Reference Suite Manifest
 
