@@ -26,6 +26,7 @@ DEFAULT_PROMPTS: tuple[str, ...] = (
     "Once upon a time",
     "The capital of France is",
 )
+CASE_SEPARATOR = "|"
 
 
 @dataclass(frozen=True)
@@ -38,16 +39,40 @@ class TextCase:
     no_special_tokens: bool = False
 
 
+def parse_case(raw: str, default_decode_steps: int) -> tuple[str, int]:
+    prompt, sep, maybe_steps = raw.rpartition(CASE_SEPARATOR)
+    if not sep:
+        if raw == "":
+            raise ValueError("--case prompt must not be empty")
+        return raw, default_decode_steps
+    if prompt == "":
+        raise ValueError("--case prompt must not be empty")
+    try:
+        decode_steps = int(maybe_steps)
+    except ValueError as err:
+        raise ValueError(
+            f"--case decode steps must be an integer in {raw!r}; use PROMPT|STEPS"
+        ) from err
+    if decode_steps <= 0:
+        raise ValueError(f"--case decode steps must be positive in {raw!r}")
+    return prompt, decode_steps
+
+
 def prompt_slug(prompt: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "-", prompt.strip().lower()).strip("-")
     return slug or "empty"
 
 
 def custom_suite_cases(args: argparse.Namespace) -> tuple[TextCase, ...]:
-    prompts = args.prompt or list(DEFAULT_PROMPTS)
-    decode_steps = args.decode_steps
+    if args.case:
+        prompt_steps = [
+            parse_case(raw_case, args.decode_steps) for raw_case in args.case
+        ]
+    else:
+        prompts = args.prompt or list(DEFAULT_PROMPTS)
+        prompt_steps = [(prompt, args.decode_steps) for prompt in prompts]
     cases = []
-    for prompt in prompts:
+    for prompt, decode_steps in prompt_steps:
         slug = prompt_slug(prompt)
         step = "step1" if decode_steps == 1 else f"steps{decode_steps}"
         prefix = "full-logits" if args.full_logits else "reference"
@@ -116,6 +141,11 @@ def run(argv: Sequence[str]) -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("/tmp/rvllm-e2b-text-reference-suite"))
     parser.add_argument("--python", default=sys.executable, help="Python executable for the per-case dumper")
     parser.add_argument("--prompt", action="append", help="prompt text; repeat to build a custom suite")
+    parser.add_argument(
+        "--case",
+        action="append",
+        help="prompt text with optional per-case decode steps as PROMPT|STEPS; repeat to build a custom mixed-step suite",
+    )
     parser.add_argument("--decode-steps", type=int, default=1)
     parser.add_argument("--selected-token-ids", default=DEFAULT_SELECTED_TOKEN_IDS)
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
@@ -132,6 +162,8 @@ def run(argv: Sequence[str]) -> int:
         parser.error("--decode-steps must be positive")
     if args.top_k < 0:
         parser.error("--top-k must be non-negative")
+    if args.prompt is not None and args.case is not None:
+        parser.error("--prompt and --case are mutually exclusive")
     if args.prompt is not None and any(prompt == "" for prompt in args.prompt):
         parser.error("--prompt must not be empty")
     if not args.model_dir.is_dir():
@@ -139,7 +171,12 @@ def run(argv: Sequence[str]) -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     planned = []
-    for case in custom_suite_cases(args):
+    try:
+        cases = custom_suite_cases(args)
+    except ValueError as err:
+        parser.error(str(err))
+
+    for case in cases:
         output_path = args.output_dir / case.output_name
         cmd = case_command(args, case, output_path)
         planned.append(

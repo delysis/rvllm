@@ -134,10 +134,10 @@ cargo run -p rvllm-runtime --features apple --bin rvllm_metal_infer -- \
 
 Do not promote tokenizer/text decoding evidence unless `hf_reference.matched`
 is true. The current `"Hello"`, `"Once upon a time"`, and `"The capital of
-France is"` one-step smokes plus the `"Hello"` two-step smoke are bounded
-positive checks after correcting Metal layer-scalar ordering, but they are still
-narrow prompt/decode coverage inside the probe arena, not production serving or
-broad tokenizer/text coverage.
+France is"` one-step smokes plus the `"Hello"` two-step and four-step smokes
+are bounded positive checks after correcting Metal layer-scalar ordering, but
+they are still narrow prompt/decode coverage inside the probe arena, not
+production serving or broad tokenizer/text coverage.
 
 ## Generate Text Reference Suite Manifest
 
@@ -150,6 +150,18 @@ python3 scripts/dump_gemma4_e2b_hf_text_reference_suite.py \
   --decode-steps 1 \
   --top-k 16 \
   --output-dir /tmp/rvllm-e2b-text-reference-suite
+```
+
+For a mixed-step suite, use repeated `--case` values. A case is either a prompt
+or `PROMPT|STEPS`:
+
+```bash
+python3 scripts/dump_gemma4_e2b_hf_text_reference_suite.py \
+  "$RVLLM_GEMMA4_MODEL_DIR" \
+  --case "Hello|4" \
+  --case "The capital of France is|1" \
+  --top-k 16 \
+  --output-dir /tmp/rvllm-e2b-text-reference-suite-mixed
 ```
 
 Use `--dry-run` first to write the manifest and print the HF commands without

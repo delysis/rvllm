@@ -371,7 +371,7 @@ impl AppleProductionAcceptanceEvidence {
                 "bounded Metal text inference CLI exists, but current E2B workflow is still capped by the configurable probe arena and lacks production serving evidence",
             ),
             tokenizer_text_decoding: EvidenceState::missing(
-                "diagnostic and bounded Metal CLIs can tokenize prompts and decode sampled/output token IDs, and three one-step plus one two-step bounded reference-backed text smokes now match after correcting layer-scalar ordering; tokenizer/text decoding remains incomplete because coverage is still narrow and the workflow is capped by the probe arena rather than production serving",
+                "diagnostic and bounded Metal CLIs can tokenize prompts and decode sampled/output token IDs, and three one-step plus two/four-step bounded reference-backed text smokes now match after correcting layer-scalar ordering; tokenizer/text decoding remains incomplete because coverage is still narrow and the workflow is capped by the probe arena rather than production serving",
             ),
             correctness_against_reference: EvidenceState::present(
                 "real-e2b-full-vocab-hf-parity-prompts-and-forced-decode-2026-05-18",
