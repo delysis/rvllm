@@ -147,6 +147,8 @@ typedef struct RvllmAppleGenerateRequest {
 } RvllmAppleGenerateRequest;
 
 typedef struct RvllmAppleBackendReport {
+    /* 1 Metal, 2 public Core ML, 3 private Metal-prefill/ANE-decode research.
+       The public creation API does not enable the private research route. */
     uint32_t selected_backend;
     uint32_t cache_tier;
     uint32_t matched_cache_tokens;

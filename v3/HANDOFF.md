@@ -9,6 +9,11 @@ Initial checkpoint: `74735053d96c9e0c6a0f16c8307db9e4ebab47f4`. Its first CI
 run exposed Linux-only CLI/dependency defects; a narrow portability follow-up
 is documented in [validation](reports/checkpoint-20260916/validation.md).
 Always inspect CI for the latest commit, not just the original checkpoint.
+CI on `12ef5efe82966fe292b1f2b0ba5973f6fe801429` passed Linux compile checks,
+GB10 and the full Apple shipping/packaging checks. A subsequent test-only
+follow-up synchronizes the Swift header and fixes platform-specific FFI test
+fixtures; its local FFI suite passes 17/17. See the same validation report.
+An automatic goal continuation is not an explicit request to resume experiments.
 
 ## Current result
 

@@ -1,0 +1,37 @@
+{
+  "schema": "rvllm.checkpoint_ci_results.v1",
+  "commit": "12ef5efe82966fe292b1f2b0ba5973f6fe801429",
+  "run_id": 35134169932,
+  "url": "https://github.com/delysis/rvllm/actions/runs/35134169932",
+  "jobs": [
+    {
+      "id": 104922247801,
+      "name": "Apple shipping release safety",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 104922248188,
+      "name": "Test",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 104922248202,
+      "name": "GB10 compile-check",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 104922248297,
+      "name": "Check",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "test_failures": [
+    "rvllm-apple-ffi: checked_in_swift_header_matches_canonical_header (Swift copy missing explanatory comment; ABI fields identical)",
+    "rvllm-apple-ffi: missing_worker_factory_fails_closed (Linux test expected the macOS missing-package diagnostic)"
+  ],
+  "scope": "CI packaging/check results are not inference quality or benchmark acceptance. Experiment campaign remains paused."
+}

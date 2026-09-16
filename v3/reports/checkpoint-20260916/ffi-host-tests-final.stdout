@@ -1,0 +1,22 @@
+
+running 17 tests
+test tests::checked_in_swift_header_matches_canonical_header ... ok
+test tests::config_and_request_initializers_are_versioned ... ok
+test tests::event_text_is_lossless_and_retryable ... ok
+test tests::legacy_configs_cannot_enable_t3_without_the_v3_capability ... ok
+test tests::null_arguments_are_rejected_without_panicking ... ok
+test tests::missing_worker_factory_fails_closed ... ok
+test tests::parsers_reject_nonzero_reserved_bytes_for_every_public_abi ... ok
+test tests::v2_config_copies_required_model_and_optional_resource_paths ... ok
+test tests::v2_config_rejects_missing_model_path ... ok
+test tests::built_in_worker_rejects_an_unvalidated_package_without_fallback ... ok
+test tests::v3_layout_is_an_append_only_extension_of_v2 ... ok
+test tests::v3_persistent_capability_fails_closed_on_incomplete_or_unbounded_inputs ... ok
+test tests::v3_copies_exact_key_and_bounded_root_into_runtime_config ... ok
+test tests::cancellation_crosses_the_abi_while_receive_is_pending ... ok
+test tests::injected_unit_worker_streams_through_c_abi_without_text_loss ... ok
+test tests::injected_continuous_worker_streams_through_the_same_c_abi ... ok
+test tests::memory_pressure_ffi_accepts_explicit_recovery_and_rejects_unknown_levels ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

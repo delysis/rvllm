@@ -98,3 +98,23 @@ which exercises its non-macOS branch without external backend dependencies;
 that is a platform-gate check, not a Linux workspace test. Raw logs are
 `prefill-platform-check.*` and `prefill-non-macos-check.*`. The initial CI defect
 identities are saved in `ci-initial-defects.json`. No accelerator test ran.
+
+CI on portability commit `12ef5efe82966fe292b1f2b0ba5973f6fe801429` passed
+the workspace compile check, GB10 job, and the complete Apple shipping job:
+iPhone/simulator checks, Swift build, XCFramework packaging/scan, platform
+metallibs and shipping private-symbol scan. See `ci-portability-results.json`.
+The Linux test job reached the FFI suite and exposed two test/packaging details:
+the Swift C header copy lacked an explanatory comment present in the canonical
+header, and the missing-worker test expected a macOS-only diagnostic on Linux.
+The follow-up synchronizes the header bytes and asserts the appropriate
+platform error while retaining the backend-unavailable status and null-handle
+checks. There is no ABI layout or production runtime behavior change.
+
+The local FFI rerun additionally reproduced a fixture-only macOS failure:
+`temp_dir()` began with the `/var` symlink, which the persistent-cache capability
+correctly rejects. The fixture now resolves its temporary parent before
+creating its private directory; production path checks are unchanged. The
+original failed log remains `ffi-host-tests.*`. The final host-only command
+`cargo test --offline --locked -j 2 -p rvllm-apple-ffi --lib` passes **17/17**
+tests (`ffi-host-tests-final.*`), and `cmp` confirms the checked-in headers are
+identical. Linux CI must validate its platform-specific error assertion.

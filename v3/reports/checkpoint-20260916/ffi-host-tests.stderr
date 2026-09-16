@@ -1,0 +1,389 @@
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.4
+   Compiling typenum v1.19.0
+   Compiling getrandom v0.2.17
+   Compiling generic-array v0.14.7
+   Compiling rand_core v0.6.4
+   Compiling memchr v2.8.0
+   Compiling crypto-common v0.1.7
+   Compiling zerocopy v0.8.48
+   Compiling serde_core v1.0.228
+   Compiling subtle v2.6.1
+   Compiling serde v1.0.228
+   Compiling zmij v1.0.21
+   Compiling cpufeatures v0.2.17
+   Compiling itoa v1.0.18
+   Compiling thiserror v1.0.69
+   Compiling serde_json v1.0.149
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling half v2.7.1
+   Compiling bitflags v2.11.1
+   Compiling rvllm-core v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-core)
+   Compiling objc2-encode v4.1.0
+   Compiling objc2 v0.6.4
+   Compiling rvllm-mem v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-mem)
+warning: unused imports: `CudaCtx`, `CudaErrorKind`, and `RvllmError`
+ --> crates/rvllm-mem/src/event.rs:5:18
+  |
+5 | use rvllm_core::{CudaCtx, CudaErrorKind, Result, RvllmError};
+  |                  ^^^^^^^  ^^^^^^^^^^^^^          ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `CudaCtx`, `CudaErrorKind`, and `RvllmError`
+ --> crates/rvllm-mem/src/pinned.rs:5:18
+  |
+5 | use rvllm_core::{CudaCtx, CudaErrorKind, Result, RvllmError};
+  |                  ^^^^^^^  ^^^^^^^^^^^^^          ^^^^^^^^^^
+
+warning: unused imports: `CudaCtx`, `CudaErrorKind`, and `RvllmError`
+ --> crates/rvllm-mem/src/stream.rs:5:18
+  |
+5 | use rvllm_core::{CudaCtx, CudaErrorKind, Result, RvllmError};
+  |                  ^^^^^^^  ^^^^^^^^^^^^^          ^^^^^^^^^^
+
+warning: function `cuda_err` is never used
+  --> crates/rvllm-mem/src/context.rs:42:4
+   |
+42 | fn cuda_err(driver_call: &'static str, device: i32) -> RvllmError {
+   |    ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `owns_cuda` is never read
+  --> crates/rvllm-mem/src/hbm.rs:25:5
+   |
+21 | pub struct HbmArena<'ctx> {
+   |            -------- field in this struct
+...
+25 |     owns_cuda: bool,
+   |     ^^^^^^^^^
+   |
+   = note: `HbmArena` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `owns_cuda` is never read
+  --> crates/rvllm-mem/src/pinned.rs:10:5
+   |
+ 7 | pub struct PinnedBuf<T> {
+   |            --------- field in this struct
+...
+10 |     owns_cuda: bool,
+   |     ^^^^^^^^^
+
+warning: `rvllm-mem` (lib) generated 6 warnings (run `cargo fix --lib -p rvllm-mem` to apply 3 suggestions)
+   Compiling sha2 v0.10.9
+   Compiling once_cell v1.21.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling either v1.15.0
+   Compiling crossbeam-epoch v0.9.18
+   Compiling crossbeam-deque v0.8.6
+   Compiling errno v0.3.14
+   Compiling rayon-core v1.13.0
+   Compiling hex v0.4.3
+   Compiling rvllm-kernels v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-kernels)
+warning: unused imports: `CudaCtx` and `CudaErrorKind`
+ --> crates/rvllm-kernels/src/module.rs:6:18
+  |
+6 | use rvllm_core::{CudaCtx, CudaErrorKind, Result, RvllmError};
+  |                  ^^^^^^^  ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `rvllm-kernels` (lib) generated 1 warning (run `cargo fix --lib -p rvllm-kernels` to apply 1 suggestion)
+   Compiling rayon v1.12.0
+   Compiling rustix v1.1.4
+   Compiling inout v0.1.4
+   Compiling bytes v1.11.1
+   Compiling zeroize v1.9.0
+   Compiling prost v0.14.3
+   Compiling cipher v0.4.4
+   Compiling getrandom v0.4.2
+   Compiling tracing-core v0.1.36
+   Compiling block2 v0.6.2
+   Compiling objc2-core-foundation v0.3.2
+   Compiling ppv-lite86 v0.2.21
+   Compiling universal-hash v0.5.1
+   Compiling aho-corasick v1.1.4
+   Compiling opaque-debug v0.3.1
+   Compiling minimal-lexical v0.2.1
+   Compiling pin-project-lite v0.2.17
+   Compiling regex-syntax v0.8.10
+   Compiling fastrand v2.4.1
+   Compiling unicode-width v0.2.2
+   Compiling console v0.15.11
+   Compiling tempfile v3.27.0
+   Compiling regex-automata v0.4.14
+   Compiling tracing v0.1.44
+   Compiling nom v7.1.3
+   Compiling polyval v0.6.2
+   Compiling rand_chacha v0.3.1
+   Compiling objc2-foundation v0.3.2
+   Compiling rvllm-apple-coreml-sys v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-apple-coreml-sys)
+   Compiling onig_sys v69.9.1
+   Compiling portable-atomic v1.13.1
+   Compiling fs4 v0.13.1
+   Compiling itertools v0.11.0
+   Compiling dispatch2 v0.3.1
+   Compiling rvllm-apple-coreml-runtime v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-apple-coreml-runtime)
+   Compiling objc2-io-surface v0.3.2
+   Compiling memmap2 v0.9.10
+   Compiling smallvec v1.15.1
+   Compiling number_prefix v0.4.0
+   Compiling base64 v0.13.1
+   Compiling unicode-segmentation v1.13.2
+   Compiling spm_precompiled v0.1.4
+   Compiling indicatif v0.17.11
+   Compiling macro_rules_attribute v0.2.2
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling monostate v0.1.18
+   Compiling rvllm-loader v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-loader)
+   Compiling objc2-metal v0.3.2
+   Compiling rvllm-apple v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-apple)
+   Compiling rayon-cond v0.3.0
+   Compiling derive_builder v0.20.2
+   Compiling onig v6.5.1
+warning: method `blob_and_constants` is never used
+   --> crates/rvllm-apple/src/ane_int8_ffn_weights.rs:512:19
+    |
+219 | impl AneInt8FfnWeights {
+    | ---------------------- method in this implementation
+...
+512 |     pub(crate) fn blob_and_constants(&self) -> (Vec<u8>, String) {
+    |                   ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `rows` and `columns` are never read
+  --> crates/rvllm-apple/src/ane_lut4_ffn_weights.rs:10:5
+   |
+ 9 | struct PaletteMatrix {
+   |        ------------- fields in this struct
+10 |     rows: usize,
+   |     ^^^^
+11 |     columns: usize,
+   |     ^^^^^^^
+
+warning: method `blob_and_constants` is never used
+   --> crates/rvllm-apple/src/ane_lut4_ffn_weights.rs:167:19
+    |
+117 | impl AneLut4FfnWeights {
+    | ---------------------- method in this implementation
+...
+167 |     pub(crate) fn blob_and_constants(&self) -> (Vec<u8>, String) {
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: function `append_descriptor` is never used
+   --> crates/rvllm-apple/src/ane_lut4_ffn_weights.rs:193:4
+    |
+193 | fn append_descriptor(blob: &mut Vec<u8>, dtype: u32, bytes: usize) -> usize {
+    |    ^^^^^^^^^^^^^^^^^
+
+   Compiling esaxx-rs v0.1.10
+   Compiling rand v0.8.6
+   Compiling ghash v0.5.1
+   Compiling regex v1.12.3
+   Compiling ctr v0.9.2
+   Compiling aes v0.8.4
+   Compiling rvllm-fused v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-fused)
+warning: unused imports: `CudaCtx`, `CudaErrorKind`, `Launch`, and `RvllmError`
+ --> crates/rvllm-fused/src/launch_raw.rs:7:18
+  |
+7 | use rvllm_core::{CudaCtx, CudaErrorKind, Launch, Result, RvllmError};
+  |                  ^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^          ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `rvllm-fused` (lib) generated 1 warning (run `cargo fix --lib -p rvllm-fused` to apply 1 suggestion)
+   Compiling itertools v0.12.1
+   Compiling rvllm-metadata v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-metadata)
+   Compiling hmac v0.12.1
+   Compiling aead v0.5.2
+   Compiling log v0.4.29
+   Compiling arrayref v0.3.9
+   Compiling constant_time_eq v0.4.2
+   Compiling lazy_static v1.5.0
+   Compiling unicode_categories v0.1.1
+   Compiling arrayvec v0.7.8
+   Compiling blake3 v1.8.5
+   Compiling tokenizers v0.20.4
+warning: `rvllm-apple` (lib) generated 4 warnings
+   Compiling aes-gcm v0.10.3
+   Compiling hkdf v0.12.4
+   Compiling rvllm-graph v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-graph)
+warning: unused import: `CudaErrorKind`
+  --> crates/rvllm-graph/src/pool.rs:10:18
+   |
+10 | use rvllm_core::{CudaErrorKind, GraphError, MetaLayoutHash, Result, RvllmError};
+   |                  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `graph_err` is never used
+   --> crates/rvllm-graph/src/pool.rs:150:4
+    |
+150 | fn graph_err(kind: GraphError, bucket: u32) -> RvllmError {
+    |    ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `rvllm-graph` (lib) generated 2 warnings (run `cargo fix --lib -p rvllm-graph` to apply 1 suggestion)
+   Compiling rvllm-sampling v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-sampling)
+   Compiling rvllm-apple-metal v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-apple-metal)
+   Compiling libproc v0.14.11
+   Compiling rvllm-attention v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-attention)
+warning: field `backend` is never read
+  --> crates/rvllm-attention/src/decode.rs:70:5
+   |
+69 | pub struct PagedDecodeLauncher<'a> {
+   |            ------------------- field in this struct
+70 |     backend: &'a super::AttentionBackend,
+   |     ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `backend` is never read
+   --> crates/rvllm-attention/src/decode.rs:256:5
+    |
+255 | pub struct PagedDecodeFp8Launcher<'a> {
+    |            ---------------------- field in this struct
+256 |     backend: &'a super::AttentionBackend,
+    |     ^^^^^^^
+
+warning: field `backend` is never read
+  --> crates/rvllm-attention/src/prefill.rs:90:5
+   |
+89 | pub struct PagedPrefillFp8Launcher<'a> {
+   |            ----------------------- field in this struct
+90 |     backend: &'a super::AttentionBackend,
+   |     ^^^^^^^
+
+warning: `rvllm-attention` (lib) generated 3 warnings
+   Compiling rvllm-cutlass v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-cutlass)
+warning: unused imports: `CudaCtx`, `CudaErrorKind`, and `RvllmError`
+  --> crates/rvllm-cutlass/src/cublaslt.rs:19:18
+   |
+19 | use rvllm_core::{CudaCtx, CudaErrorKind, Result, RvllmError};
+   |                  ^^^^^^^  ^^^^^^^^^^^^^          ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `workspace` and `workspace_bytes` are never read
+  --> crates/rvllm-cutlass/src/cublaslt.rs:36:5
+   |
+33 | pub struct CublasLt {
+   |            -------- fields in this struct
+...
+36 |     workspace: u64,
+   |     ^^^^^^^^^
+37 |     workspace_bytes: usize,
+   |     ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `resolve_sm120_so_path` is never used
+   --> crates/rvllm-cutlass/src/lib_so.rs:418:4
+    |
+418 | fn resolve_sm120_so_path(sm90_hint: &std::path::Path) -> Option<PathBuf> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `v2_symbol_names` is never used
+    --> crates/rvllm-cutlass/src/lib_so.rs:1004:4
+     |
+1004 | fn v2_symbol_names(vid: VariantId) -> (String, String) {
+     |    ^^^^^^^^^^^^^^^
+
+warning: function `variant_missing` is never used
+    --> crates/rvllm-cutlass/src/lib_so.rs:1038:4
+     |
+1038 | fn variant_missing(path: &std::path::Path, vid: VariantId, kind: &'static str) -> RvllmError {
+     |    ^^^^^^^^^^^^^^^
+
+warning: method `into_cutlass_variant_missing` is never used
+    --> crates/rvllm-cutlass/src/lib_so.rs:1056:8
+     |
+1054 | trait CutlassErrExt {
+     |       ------------- method in this trait
+1055 |     fn into_cutlass_so_missing(self, path: PathBuf) -> RvllmError;
+1056 |     fn into_cutlass_variant_missing(self, path: PathBuf, vid: VariantId) -> RvllmError;
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `rvllm-cutlass` (lib) generated 6 warnings (run `cargo fix --lib -p rvllm-cutlass` to apply 1 suggestion)
+   Compiling rvllm-runtime v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime)
+warning: unused imports: `PagedDecodeFp8Launcher` and `PagedDecodeParams`
+  --> crates/rvllm-runtime/src/gemma4_layer_exec.rs:36:41
+   |
+36 | use rvllm_attention::{AttentionBackend, PagedDecodeFp8Launcher, PagedDecodeParams};
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `meta`
+   --> crates/rvllm-runtime/src/gemma4_layer_exec.rs:260:5
+    |
+260 |     meta: &Gemma4MetadataPtrs,
+    |     ^^^^ help: if this is intentional, prefix it with an underscore: `_meta`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `cutlass`
+   --> crates/rvllm-runtime/src/gemma4_layer_exec.rs:262:5
+    |
+262 |     cutlass: &CutlassBackend,
+    |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cutlass`
+
+warning: unused variable: `qkv_rows`
+   --> crates/rvllm-runtime/src/gemma4_layer_exec.rs:281:9
+    |
+281 |     let qkv_rows = (dims.num_heads + 2 * dims.num_kv_heads) * dims.head_dim;
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_qkv_rows`
+
+warning: unused variable: `attention`
+   --> crates/rvllm-runtime/src/gemma4_layer_exec.rs:587:9
+    |
+587 |     let attention = match dims.layer_type {
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_attention`
+
+warning: unused variable: `window_size_left`
+   --> crates/rvllm-runtime/src/gemma4_layer_exec.rs:591:9
+    |
+591 |     let window_size_left: i32 = match dims.layer_type {
+    |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_window_size_left`
+
+warning: unused variable: `dbg_l0`
+   --> crates/rvllm-runtime/src/layer_exec.rs:214:9
+    |
+214 |     let dbg_l0 = false;
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_dbg_l0`
+
+warning: constant `DEFAULT_Q_SCALE` is never used
+  --> crates/rvllm-runtime/src/gemma4_bring_up.rs:32:7
+   |
+32 | const DEFAULT_Q_SCALE: f32 = 0.1;
+   |       ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `DEFAULT_KV_SCALE` is never used
+  --> crates/rvllm-runtime/src/gemma4_bring_up.rs:33:7
+   |
+33 | const DEFAULT_KV_SCALE: f32 = 0.08;
+   |       ^^^^^^^^^^^^^^^^
+
+warning: function `bytemuck_cast_i32` is never used
+    --> crates/rvllm-runtime/src/gemma4_bring_up.rs:2309:4
+     |
+2309 | fn bytemuck_cast_i32(v: &[i32]) -> &[u8] {
+     |    ^^^^^^^^^^^^^^^^^
+
+warning: constant `FAST_PATH_M_MAX` is never used
+   --> crates/rvllm-runtime/src/gemma4_layer_exec.rs:278:11
+    |
+278 |     const FAST_PATH_M_MAX: u32 = 16;
+    |           ^^^^^^^^^^^^^^^
+
+warning: `rvllm-runtime` (lib) generated 11 warnings (run `cargo fix --lib -p rvllm-runtime` to apply 7 suggestions)
+   Compiling rvllm-apple-ffi v0.3.0 (/Users/george/Downloads/rvllm/v3/crates/rvllm-apple-ffi)
+    Finished `test` profile [optimized + debuginfo] target(s) in 2m 19s
+     Running unittests src/lib.rs (target/debug/deps/rvllm_apple_ffi-0e919b76a308931d)
+error: test failed, to rerun pass `-p rvllm-apple-ffi --lib`

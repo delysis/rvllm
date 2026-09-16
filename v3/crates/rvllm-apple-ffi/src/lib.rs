@@ -1561,7 +1561,11 @@ mod tests {
     #[test]
     fn v3_copies_exact_key_and_bounded_root_into_runtime_config() {
         let model = b"/tmp/model";
-        let root = std::env::temp_dir().join(format!(
+        // macOS temp_dir() may start with the /var symlink. The production
+        // capability deliberately rejects symlinks in every path component.
+        let temp_root = std::fs::canonicalize(std::env::temp_dir())
+            .expect("resolve the fixture temporary parent");
+        let root = temp_root.join(format!(
             "rvllm-ffi-t3-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
@@ -1658,7 +1662,12 @@ mod tests {
         let status = unsafe { rvllm_apple_engine_create(&config, &mut engine, &mut error) };
         assert_eq!(status, RVLLM_APPLE_BACKEND_UNAVAILABLE);
         assert!(engine.is_null());
-        assert!(message(&error).contains("model package path is required"));
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        let expected = "model package path is required";
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        let expected = "the built-in Apple Metal worker is unavailable on this target";
+        let detail = message(&error);
+        assert!(detail.contains(expected), "unexpected backend error: {detail}");
     }
 
     #[cfg(any(target_os = "macos", target_os = "ios"))]
