@@ -1,0 +1,617 @@
+{
+  "accelerator_evaluations": 0,
+  "cases": [
+    {
+      "clipped_logits_quantization_error": {
+        "backend_tolerance_violations": 318,
+        "elements": 262144,
+        "maximum_absolute_error": 0.65625,
+        "relative_l2_error": 0.0030725107369850373
+      },
+      "input": {
+        "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-47.fp16",
+        "capture_sha256": "33e77f2fb75d409f4eacfbca476aaec5f8641d5763e1555fc1bd3f8192ae5f06",
+        "normalized_fp16_sha256": "19ccb599b0094d07996235b8679b17adcbd6490e0af092b3d2840147b7935b09",
+        "recorded_next_token": 106,
+        "recorded_top_five": [
+          [
+            106,
+            18.046875
+          ],
+          [
+            1340,
+            1.17578125
+          ],
+          [
+            236748,
+            0.95849609375
+          ],
+          [
+            869,
+            0.64208984375
+          ],
+          [
+            11989,
+            0.453857421875
+          ]
+        ],
+        "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/step-21.json",
+        "step_sha256": "f174a4fd9949d093df6a7b94423682cb530b4f188bca65a404e57444519d8730"
+      },
+      "int8_top_five": [
+        [
+          106,
+          18.09375
+        ],
+        [
+          1340,
+          1.1103515625
+        ],
+        [
+          236748,
+          0.9521484375
+        ],
+        [
+          869,
+          0.5908203125
+        ],
+        [
+          11989,
+          0.454345703125
+        ]
+      ],
+      "int8_winner_margin": 16.9833984375,
+      "original_cpu_vs_recorded_ane_top_logits": [
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 18.046875,
+          "recorded_logit": 18.046875,
+          "token": 106
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 1.17578125,
+          "recorded_logit": 1.17578125,
+          "token": 1340
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 0.95849609375,
+          "recorded_logit": 0.95849609375,
+          "token": 236748
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 0.64208984375,
+          "recorded_logit": 0.64208984375,
+          "token": 869
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 0.453857421875,
+          "recorded_logit": 0.453857421875,
+          "token": 11989
+        }
+      ],
+      "original_top_five": [
+        [
+          106,
+          18.046875
+        ],
+        [
+          1340,
+          1.17578125
+        ],
+        [
+          236748,
+          0.95849609375
+        ],
+        [
+          869,
+          0.64208984375
+        ],
+        [
+          11989,
+          0.453857421875
+        ]
+      ],
+      "original_winner_margin": 16.87109375,
+      "raw_projection_quantization_error": {
+        "backend_tolerance_violations": 1106,
+        "elements": 262144,
+        "maximum_absolute_error": 2.4826431274414062,
+        "relative_l2_error": 0.004107024252968084
+      }
+    },
+    {
+      "clipped_logits_quantization_error": {
+        "backend_tolerance_violations": 10,
+        "elements": 262144,
+        "maximum_absolute_error": 1.671875,
+        "relative_l2_error": 0.0011859689949020474
+      },
+      "input": {
+        "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-47.fp16",
+        "capture_sha256": "46e090bef1a20e59d5fe92bb62e0dcda7cf759371be1c7154d2ce62bb55a4441",
+        "normalized_fp16_sha256": "7e8f6f7b12eb410097578c7611e46360ecced1669e5b901973928f6e0f1d132f",
+        "recorded_next_token": 3730,
+        "recorded_top_five": [
+          [
+            3730,
+            10.9921875
+          ],
+          [
+            37423,
+            -12.5703125
+          ],
+          [
+            9595,
+            -13.1171875
+          ],
+          [
+            861,
+            -13.3046875
+          ],
+          [
+            16045,
+            -13.765625
+          ]
+        ],
+        "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/step-84.json",
+        "step_sha256": "635118e473749155fdaf2e9850614cbccefd86fa28c3868a19ec84cfcd941c6d"
+      },
+      "int8_top_five": [
+        [
+          3730,
+          11.078125
+        ],
+        [
+          37423,
+          -12.5703125
+        ],
+        [
+          9595,
+          -13.234375
+        ],
+        [
+          861,
+          -13.53125
+        ],
+        [
+          16045,
+          -13.7421875
+        ]
+      ],
+      "int8_winner_margin": 23.6484375,
+      "original_cpu_vs_recorded_ane_top_logits": [
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 10.9921875,
+          "recorded_logit": 10.9921875,
+          "token": 3730
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": -12.5703125,
+          "recorded_logit": -12.5703125,
+          "token": 37423
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": -13.1171875,
+          "recorded_logit": -13.1171875,
+          "token": 9595
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": -13.3046875,
+          "recorded_logit": -13.3046875,
+          "token": 861
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": -13.765625,
+          "recorded_logit": -13.765625,
+          "token": 16045
+        }
+      ],
+      "original_top_five": [
+        [
+          3730,
+          10.9921875
+        ],
+        [
+          37423,
+          -12.5703125
+        ],
+        [
+          9595,
+          -13.1171875
+        ],
+        [
+          861,
+          -13.3046875
+        ],
+        [
+          16045,
+          -13.765625
+        ]
+      ],
+      "original_winner_margin": 23.5625,
+      "raw_projection_quantization_error": {
+        "backend_tolerance_violations": 325,
+        "elements": 262144,
+        "maximum_absolute_error": 4.166967391967773,
+        "relative_l2_error": 0.0026926980077250588
+      }
+    },
+    {
+      "clipped_logits_quantization_error": {
+        "backend_tolerance_violations": 958,
+        "elements": 262144,
+        "maximum_absolute_error": 0.59375,
+        "relative_l2_error": 0.0037981170867072665
+      },
+      "input": {
+        "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-47.fp16",
+        "capture_sha256": "b12dd4471bd6cdfeb1e0b7756b3beaa0211662b47b83088e82cc9d2478c9030d",
+        "normalized_fp16_sha256": "aaecb479b6d0a0bec5822a2114c21260e3cc5a90685408d1122a8177d083f962",
+        "recorded_next_token": 236778,
+        "recorded_top_five": [
+          [
+            236778,
+            24.59375
+          ],
+          [
+            236770,
+            10.015625
+          ],
+          [
+            236812,
+            7.65234375
+          ],
+          [
+            236800,
+            6.8984375
+          ],
+          [
+            236771,
+            6.1640625
+          ]
+        ],
+        "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/step-652.json",
+        "step_sha256": "3640223d50f64220896869c9170a34d349351cd5e0d0e1aea3c3c9051eb3c51f"
+      },
+      "int8_top_five": [
+        [
+          236778,
+          24.671875
+        ],
+        [
+          236770,
+          10.09375
+        ],
+        [
+          236812,
+          7.69921875
+        ],
+        [
+          236800,
+          6.78125
+        ],
+        [
+          236743,
+          6.1953125
+        ]
+      ],
+      "int8_winner_margin": 14.578125,
+      "original_cpu_vs_recorded_ane_top_logits": [
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 24.59375,
+          "recorded_logit": 24.59375,
+          "token": 236778
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 10.015625,
+          "recorded_logit": 10.015625,
+          "token": 236770
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 7.65234375,
+          "recorded_logit": 7.65234375,
+          "token": 236812
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 6.8984375,
+          "recorded_logit": 6.8984375,
+          "token": 236800
+        },
+        {
+          "absolute_error": 0.00390625,
+          "cpu_logit": 6.16015625,
+          "recorded_logit": 6.1640625,
+          "token": 236771
+        }
+      ],
+      "original_top_five": [
+        [
+          236778,
+          24.59375
+        ],
+        [
+          236770,
+          10.015625
+        ],
+        [
+          236812,
+          7.65234375
+        ],
+        [
+          236800,
+          6.8984375
+        ],
+        [
+          236771,
+          6.16015625
+        ]
+      ],
+      "original_winner_margin": 14.578125,
+      "raw_projection_quantization_error": {
+        "backend_tolerance_violations": 1204,
+        "elements": 262144,
+        "maximum_absolute_error": 1.0615291595458984,
+        "relative_l2_error": 0.004473745182449594
+      }
+    },
+    {
+      "clipped_logits_quantization_error": {
+        "backend_tolerance_violations": 221,
+        "elements": 262144,
+        "maximum_absolute_error": 0.671875,
+        "relative_l2_error": 0.0027367589273556217
+      },
+      "input": {
+        "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/ane-position-230-layer-47.fp16",
+        "capture_sha256": "414d3321dd15733789bb0f36989df381f85e85f086432307958004f4a42249b7",
+        "normalized_fp16_sha256": "a59bf185ad718e481c174195e9358c13dadaf73b3b38a252b352e545b9f5987b",
+        "recorded_next_token": 106,
+        "recorded_top_five": [
+          [
+            106,
+            17.0625
+          ],
+          [
+            236779,
+            1.548828125
+          ],
+          [
+            1340,
+            0.71142578125
+          ],
+          [
+            236748,
+            0.066162109375
+          ],
+          [
+            954,
+            0.060760498046875
+          ]
+        ],
+        "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/step-230.json",
+        "step_sha256": "3d99aacd99bf044eb3cce10d296ca2c317a2b39a9d98f0808864db170a108230"
+      },
+      "int8_top_five": [
+        [
+          106,
+          17.09375
+        ],
+        [
+          236779,
+          1.744140625
+        ],
+        [
+          1340,
+          0.67724609375
+        ],
+        [
+          236748,
+          0.039306640625
+        ],
+        [
+          954,
+          0.0201568603515625
+        ]
+      ],
+      "int8_winner_margin": 15.349609375,
+      "original_cpu_vs_recorded_ane_top_logits": [
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 17.0625,
+          "recorded_logit": 17.0625,
+          "token": 106
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 1.548828125,
+          "recorded_logit": 1.548828125,
+          "token": 236779
+        },
+        {
+          "absolute_error": 0.0,
+          "cpu_logit": 0.71142578125,
+          "recorded_logit": 0.71142578125,
+          "token": 1340
+        },
+        {
+          "absolute_error": 0.00030517578125,
+          "cpu_logit": 0.06585693359375,
+          "recorded_logit": 0.066162109375,
+          "token": 236748
+        },
+        {
+          "absolute_error": 0.00006103515625,
+          "cpu_logit": 0.060699462890625,
+          "recorded_logit": 0.060760498046875,
+          "token": 954
+        }
+      ],
+      "original_top_five": [
+        [
+          106,
+          17.0625
+        ],
+        [
+          236779,
+          1.548828125
+        ],
+        [
+          1340,
+          0.71142578125
+        ],
+        [
+          236748,
+          0.06585693359375
+        ],
+        [
+          954,
+          0.060699462890625
+        ]
+      ],
+      "original_winner_margin": 15.513671875,
+      "raw_projection_quantization_error": {
+        "backend_tolerance_violations": 580,
+        "elements": 262144,
+        "maximum_absolute_error": 1.9486198425292969,
+        "relative_l2_error": 0.003596215668579014
+      }
+    }
+  ],
+  "claim": "CPU-only full-vocabulary INT8 quantization audit on saved final-layer states. No ANE INT8 head execution, full-model quality, or speed claim.",
+  "compiler_calls": 0,
+  "hidden_size": 3840,
+  "int8_winners_match_recorded_ane": true,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "original_cpu_recorded_ane_tolerance_violations": 0,
+  "original_winners_match_recorded_ane": true,
+  "schema": "rvllm.gemma4_int8_head_host.v1",
+  "tile_rows": 16384,
+  "tiles": [
+    {
+      "first_row": 0,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "b6228f0eb7d8198ff13bfb1b1ea7eed8efca326b10e81c96bab506faa37325fe",
+      "reconstructed_fp16_sha256": "311be70cfa985fb1e2737a5090a6f7433734f34f16e22c3aba7748ae5841ae1d",
+      "row_count": 16384
+    },
+    {
+      "first_row": 16384,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "0b6fb8fddf4b8d47392daf75409bf29f3a44aa7f337b61dc311714fd041af5c0",
+      "reconstructed_fp16_sha256": "44cc9070c64e043e4cacbd86812f92f6884988bb1b025ebf1d134c91edc162b7",
+      "row_count": 16384
+    },
+    {
+      "first_row": 32768,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "faa977f11286f4776d5f188e99d620ed531aa663d09772d5b76978481da5a51a",
+      "reconstructed_fp16_sha256": "213c4e355dab51d863bf8d3efbfddc55343fdd3e7b2b4ac5cd7aef2d63aa2df3",
+      "row_count": 16384
+    },
+    {
+      "first_row": 49152,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "7a4991df63285aa7432c8988f9d37e527a2e71c2aa82e472ab9a667f7163ccff",
+      "reconstructed_fp16_sha256": "a0604b3474fe7cd399868c9b5c32dc3764a5e45463402b82d40b968939d11154",
+      "row_count": 16384
+    },
+    {
+      "first_row": 65536,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "c0aa7b679f83dad8a02b625b7398b76b6eb1fc7f5dcddb777a8b846c31dec099",
+      "reconstructed_fp16_sha256": "29017bd37c2b6f4a5d7aade8531ca06283509abb4f7c47b5234515a79de5b2c0",
+      "row_count": 16384
+    },
+    {
+      "first_row": 81920,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "e35c0f73ca265ff2ff2dacbbb560c4e61dcc0f4b2f7255a9177f7b5d8b2e93fe",
+      "reconstructed_fp16_sha256": "3639efe5b4746ec9b67d6b1058538172d78b43d6b1dab72681545490061783f5",
+      "row_count": 16384
+    },
+    {
+      "first_row": 98304,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "7a28463fee3e5de22f1642d240ec3c1026eb5c18443b213b795c70b34e485148",
+      "reconstructed_fp16_sha256": "5d5b7359f84752161aae4ee0b5ccb07a9def82837a994fbe96c5ae37a2eda941",
+      "row_count": 16384
+    },
+    {
+      "first_row": 114688,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "daa97771d667fa8cc3efec997222e4e26d5bb385b2ab13057c653939400d84a0",
+      "reconstructed_fp16_sha256": "86cf91d113d1f1bd25c28cb77487bd5836a308094fc81f682a154af740d1eaac",
+      "row_count": 16384
+    },
+    {
+      "first_row": 131072,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "8627b12e61e51521301a947f1b9194d5e01c69cafca2eeec86ab363628e32f33",
+      "reconstructed_fp16_sha256": "0c13eb12121d5f5f7613ced7ed237d583bc48e7483e0cc68a63f9069f8e0eeb4",
+      "row_count": 16384
+    },
+    {
+      "first_row": 147456,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "b93e811c5b6dff718ae67378eea838035738c6c065f97189c2348530c2ae6b23",
+      "reconstructed_fp16_sha256": "87486ecc27da81f159ffc5087b781e3c12036028b7d1cfe254d90c803644e1cf",
+      "row_count": 16384
+    },
+    {
+      "first_row": 163840,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "5e30d07fedf623681cca6de1db1bc01f36f08f70106917591620372a717dba08",
+      "reconstructed_fp16_sha256": "dcf26bcae61e8aa40d96591219efae2d8ca30a671bc6982ed1b48e056b8a13a3",
+      "row_count": 16384
+    },
+    {
+      "first_row": 180224,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "bcd1c94f134c851a9eb006f61c03287127f55b728edfdad49fdd7faa68465e4f",
+      "reconstructed_fp16_sha256": "45b748ebba1d3f5d88c6802b73bc6f76f16e5b6816b09ee716e959ec104bf907",
+      "row_count": 16384
+    },
+    {
+      "first_row": 196608,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "3dd8889de9d43a97cf35d183d8fd80e25dac8604cb9dc2d7a3ede00f1d527f17",
+      "reconstructed_fp16_sha256": "53d067c27f2d0774d400029de658b4a05046e3de7ebee3f9ce37e9dce8018ba0",
+      "row_count": 16384
+    },
+    {
+      "first_row": 212992,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "fdd3c3e0dcf16cd99cd1ce5ff3a21e1a776e389403052632f2d32ca2592bb0c8",
+      "reconstructed_fp16_sha256": "72cc000530ba6f43348539902f3a8349a4a2d3eea2e2cc211395d9890fcefcb2",
+      "row_count": 16384
+    },
+    {
+      "first_row": 229376,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "aaf47ca0a86a6b3f8e9ce177efe606a383be9cb164151b5aa157956c7df08ea0",
+      "reconstructed_fp16_sha256": "3a5c6a31cbd363a849ed543ac14fcdabec3a3e6536ba6342e84b0d8ebd0a2fcc",
+      "row_count": 16384
+    },
+    {
+      "first_row": 245760,
+      "int8_source_bytes": 62947520,
+      "original_fp16_sha256": "6bb942a317de0f9c0bd24a2bdcc628e794b7c7a5ccbec195561939eba74a132d",
+      "reconstructed_fp16_sha256": "c525106d1240403427cc50d917b1debb89121a89f3df48dc63a4dd82bb7dd385",
+      "row_count": 16384
+    }
+  ],
+  "vocabulary_rows": 262144
+}

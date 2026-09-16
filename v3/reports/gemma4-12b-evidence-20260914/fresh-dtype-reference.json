@@ -1,0 +1,507 @@
+{
+  "model_revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "transformers_revision": "3384908511545a9c146de65f01f3d29b90b2add6",
+  "load_policy": "independent from_pretrained per dtype; no model.to(dtype)",
+  "cases": [
+    {
+      "dtype": "torch.bfloat16",
+      "prompt": "raw completion",
+      "prompt_ids": [
+        2,
+        818,
+        5279,
+        529,
+        7001,
+        563
+      ],
+      "greedy": 9079,
+      "top_ids": [
+        9079,
+        496,
+        107,
+        159353,
+        49533
+      ],
+      "top_values": [
+        20.875,
+        18.25,
+        14.25,
+        14.125,
+        14.125
+      ],
+      "buffers": {
+        "model.language_model.embed_tokens.embed_scale": {
+          "dtype": "torch.bfloat16",
+          "first": [
+            62.0
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        }
+      }
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "prompt": "Reply with just the capital of France.",
+      "prompt_ids": [
+        2,
+        105,
+        2364,
+        107,
+        40654,
+        607,
+        1164,
+        506,
+        5279,
+        529,
+        7001,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "greedy": 50429,
+      "top_ids": [
+        50429,
+        100,
+        16808,
+        9079,
+        119213
+      ],
+      "top_values": [
+        22.125,
+        2.53125,
+        2.15625,
+        1.578125,
+        0.5859375
+      ],
+      "buffers": {
+        "model.language_model.embed_tokens.embed_scale": {
+          "dtype": "torch.bfloat16",
+          "first": [
+            62.0
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        }
+      }
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "prompt": "Compute 17 \u00d7 19. Reply with only the integer.",
+      "prompt_ids": [
+        2,
+        105,
+        2364,
+        107,
+        55822,
+        236743,
+        236770,
+        236832,
+        15666,
+        236743,
+        236770,
+        236819,
+        236761,
+        24181,
+        607,
+        1186,
+        506,
+        11995,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "greedy": 236800,
+      "top_ids": [
+        236800,
+        236770,
+        236743,
+        236778,
+        236783
+      ],
+      "top_values": [
+        26.125,
+        9.75,
+        6.71875,
+        6.4375,
+        6.34375
+      ],
+      "buffers": {
+        "model.language_model.embed_tokens.embed_scale": {
+          "dtype": "torch.bfloat16",
+          "first": [
+            62.0
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        }
+      }
+    },
+    {
+      "dtype": "torch.float16",
+      "prompt": "raw completion",
+      "prompt_ids": [
+        2,
+        818,
+        5279,
+        529,
+        7001,
+        563
+      ],
+      "greedy": 496,
+      "top_ids": [
+        496,
+        9079,
+        49533,
+        107,
+        99267
+      ],
+      "top_values": [
+        20.53125,
+        20.09375,
+        16.1875,
+        15.265625,
+        15.1875
+      ],
+      "buffers": {
+        "model.language_model.embed_tokens.embed_scale": {
+          "dtype": "torch.float16",
+          "first": [
+            61.96875
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        }
+      }
+    },
+    {
+      "dtype": "torch.float16",
+      "prompt": "Reply with just the capital of France.",
+      "prompt_ids": [
+        2,
+        105,
+        2364,
+        107,
+        40654,
+        607,
+        1164,
+        506,
+        5279,
+        529,
+        7001,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "greedy": 50429,
+      "top_ids": [
+        50429,
+        100,
+        16808,
+        9079,
+        119213
+      ],
+      "top_values": [
+        22.1875,
+        2.38671875,
+        2.197265625,
+        1.681640625,
+        0.61669921875
+      ],
+      "buffers": {
+        "model.language_model.embed_tokens.embed_scale": {
+          "dtype": "torch.float16",
+          "first": [
+            61.96875
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        }
+      }
+    },
+    {
+      "dtype": "torch.float16",
+      "prompt": "Compute 17 \u00d7 19. Reply with only the integer.",
+      "prompt_ids": [
+        2,
+        105,
+        2364,
+        107,
+        55822,
+        236743,
+        236770,
+        236832,
+        15666,
+        236743,
+        236770,
+        236819,
+        236761,
+        24181,
+        607,
+        1186,
+        506,
+        11995,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "greedy": 236800,
+      "top_ids": [
+        236800,
+        236770,
+        236743,
+        236783,
+        236778
+      ],
+      "top_values": [
+        26.0625,
+        9.4375,
+        6.50390625,
+        6.26171875,
+        6.1875
+      ],
+      "buffers": {
+        "model.language_model.embed_tokens.embed_scale": {
+          "dtype": "torch.float16",
+          "first": [
+            61.96875
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.full_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9474635124206543,
+            0.8976871371269226,
+            0.8505258560180664
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        },
+        "model.language_model.rotary_emb.sliding_attention_original_inv_freq": {
+          "dtype": "torch.float32",
+          "first": [
+            1.0,
+            0.9305720329284668,
+            0.8659643530845642,
+            0.8058422207832336
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,240 @@
+{
+  "backend_errors": [
+    [
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.01482391357421875,
+          "relative_l2_error": 0.0002218729795124188
+        },
+        "program": "original"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.019115447998046875,
+          "relative_l2_error": 0.00033570593902539574
+        },
+        "program": "int8"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.013671875,
+          "relative_l2_error": 0.00022667744985206808
+        },
+        "program": "reconstructed_dense"
+      }
+    ],
+    [
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.014080047607421875,
+          "relative_l2_error": 0.00021471014335494633
+        },
+        "program": "original"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.014619827270507812,
+          "relative_l2_error": 0.0003022865759644
+        },
+        "program": "int8"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.012176513671875,
+          "relative_l2_error": 0.00021102883343823692
+        },
+        "program": "reconstructed_dense"
+      }
+    ],
+    [
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.0078582763671875,
+          "relative_l2_error": 0.00022201972854713487
+        },
+        "program": "original"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.018566131591796875,
+          "relative_l2_error": 0.00033030122978388546
+        },
+        "program": "int8"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8192,
+          "maximum_absolute_error": 0.012683868408203125,
+          "relative_l2_error": 0.00021898581640160706
+        },
+        "program": "reconstructed_dense"
+      }
+    ]
+  ],
+  "backend_tolerance": "0.01 + 0.02 * abs(cpu_reference)",
+  "backend_violations": 0,
+  "claim": "One actual QKV projection; quantization error and backend error are separate. No full-model quality or speed claim.",
+  "compiler_calls": 2,
+  "driver_journal_enabled": true,
+  "input_channels": 3840,
+  "input_sources": [
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-00.fp16",
+      "maximum_absolute_input": 68.0625,
+      "normalized_fp16_sha256": "ce522ea7c5feff18d8b1722a6137e1ba5052317d5ef9056beaf3454e2a1521a2",
+      "sha256": "97a65dc47179e99b62234f9fc3d551e25e15992ddd53f748a815dc2d933d435b"
+    },
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-00.fp16",
+      "maximum_absolute_input": 75.25,
+      "normalized_fp16_sha256": "8a56b53258fde6608f7036f335328ca669cbba86e87678b7ab9fc3cbb2284ad5",
+      "sha256": "478c8a61436a8e80737b85a5f4bb000f6663af944d0874a3332e04e5bfbf9ff7"
+    },
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-00.fp16",
+      "maximum_absolute_input": 61.8125,
+      "normalized_fp16_sha256": "ddf5b986c649b40eb7b04f7a1682543c41d5d8c89ad43c83f51cfa0a1db171c6",
+      "sha256": "5c2238d3d65823b9941c667fa492892475c91c31d0e6bb733f8bd9a73cc9e36b"
+    }
+  ],
+  "int8_source_bytes": 31473856,
+  "layer": 1,
+  "mode": "qualify",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "models_dropped": 3,
+  "original_fp16_sha256": "2cf9beee0e26443c9af48406b0b14f5a60b487625ac71559abcf511a3f850863",
+  "output_channels": 8192,
+  "quantization_errors": [
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 714,
+            "elements": 4096,
+            "maximum_absolute_error": 0.1905597448348999,
+            "relative_l2_error": 0.008638372415705075
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 284,
+            "elements": 2048,
+            "maximum_absolute_error": 0.1547163724899292,
+            "relative_l2_error": 0.005950310726382545
+          },
+          "part": "key"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 574,
+            "elements": 2048,
+            "maximum_absolute_error": 0.155045747756958,
+            "relative_l2_error": 0.01365863070823511
+          },
+          "part": "value"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1572,
+        "elements": 8192,
+        "maximum_absolute_error": 0.1905597448348999,
+        "relative_l2_error": 0.008416728327536847
+      }
+    },
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 660,
+            "elements": 4096,
+            "maximum_absolute_error": 0.19017410278320312,
+            "relative_l2_error": 0.007540935950513838
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 272,
+            "elements": 2048,
+            "maximum_absolute_error": 0.14204883575439453,
+            "relative_l2_error": 0.00499153129454569
+          },
+          "part": "key"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 648,
+            "elements": 2048,
+            "maximum_absolute_error": 0.21254651248455048,
+            "relative_l2_error": 0.014019682753084885
+          },
+          "part": "value"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1580,
+        "elements": 8192,
+        "maximum_absolute_error": 0.21254651248455048,
+        "relative_l2_error": 0.007347314003415393
+      }
+    },
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 656,
+            "elements": 4096,
+            "maximum_absolute_error": 0.20719647407531738,
+            "relative_l2_error": 0.008315397192685307
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 265,
+            "elements": 2048,
+            "maximum_absolute_error": 0.15716171264648438,
+            "relative_l2_error": 0.005485269464425324
+          },
+          "part": "key"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 556,
+            "elements": 2048,
+            "maximum_absolute_error": 0.14164559543132782,
+            "relative_l2_error": 0.01469051613600577
+          },
+          "part": "value"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1477,
+        "elements": 8192,
+        "maximum_absolute_error": 0.20719647407531738,
+        "relative_l2_error": 0.008050796190965872
+      }
+    }
+  ],
+  "reconstructed_fp16_sha256": "c6166bf21288fc4707433c1e817ab187bf16a989141dc107681bd8c5c111b318",
+  "schema": "rvllm.gemma4_qkv_int8.v1",
+  "shared_key_value": false
+}

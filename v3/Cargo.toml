@@ -19,6 +19,8 @@ members = [
     "crates/rvllm-apple-metal",
     "crates/rvllm-apple-ane-sys",
     "crates/rvllm-apple-coreml-sys",
+    "crates/rvllm-apple-coreml-runtime",
+    "crates/rvllm-apple-ffi",
     "crates/rvllm-invariants",
 ]
 
@@ -44,6 +46,8 @@ rvllm-sampling  = { path = "crates/rvllm-sampling" }
 rvllm-runtime   = { path = "crates/rvllm-runtime" }
 rvllm-apple     = { path = "crates/rvllm-apple" }
 rvllm-apple-metal = { path = "crates/rvllm-apple-metal" }
+rvllm-apple-coreml-runtime = { path = "crates/rvllm-apple-coreml-runtime" }
+rvllm-serve     = { path = "crates/rvllm-serve" }
 
 half = "2"
 serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/debug/deps/rvllm_apple-13d87f34c7a7e549",
+    "--ignored",
+    "--exact",
+    "ane_dynamic_ffn::tests::hardware_shared_program_keeps_weights_and_request_lifetimes_independent",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "scope": "One small 64x128 FFN graph, two resident weight sets, seven evaluations; no full model.",
+  "executable_sha256": "a8e1cc473bb6207e0d96f587ad6a2c6cffe1891b73fda10c8ac6e2fe944642ea",
+  "source_sha256": {
+    "crates/rvllm-apple/src/ane_dynamic_ffn.rs": "295a562a3e6015052fcd7f90f27c203bc5cb4014414889ec475d0426b577688a",
+    "crates/rvllm-apple/src/ane_ffn_layout.rs": "0aa4e2288de44937043b46f4ccf5cc7e9d4574fa63242021b08b13529859bc13",
+    "crates/rvllm-apple-ane-sys/src/in_memory.rs": "9392b771f1091c1b895e7e70031bae9b1835918a94a1e3a32e6f9d77c302e138"
+  },
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026",
+  "unix_time": 1789403189.781544
+}

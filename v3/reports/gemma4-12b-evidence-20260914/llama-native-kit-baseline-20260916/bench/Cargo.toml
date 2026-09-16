@@ -1,0 +1,19 @@
+[package]
+name = "rvllm-native-kit-baseline"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Isolate this evidence tool from rvllm's product workspace.
+[workspace]
+
+[dependencies]
+llama-cpp-2 = { version = "=0.1.154", git = "https://github.com/delysis/llama-cpp-rs.git", rev = "a3cf95eb1d4fa748480eb780e6fcbfc1a5c1c391", default-features = false, features = ["metal"] }
+# The sole direct use is the named Flash Attention enum constant; all calls use safe wrappers.
+llama-cpp-sys-2 = { version = "=0.1.154", git = "https://github.com/delysis/llama-cpp-rs.git", rev = "a3cf95eb1d4fa748480eb780e6fcbfc1a5c1c391", default-features = false, features = ["metal"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[profile.release]
+debug = 0
+strip = "none"

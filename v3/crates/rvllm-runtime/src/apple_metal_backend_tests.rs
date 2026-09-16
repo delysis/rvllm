@@ -158,6 +158,479 @@ fn temp_fixture_dir() -> std::path::PathBuf {
     dir
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn paged_contract_handoff(fingerprint: [u8; 32]) -> HandoffCapsule {
+    HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(9)],
+        vec![TokenId(7)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    )
+    .with_paged_kv(
+        vec![rvllm_apple::HandoffKvChain {
+            id: 2,
+            generation: 4,
+        }],
+        1,
+        vec![0],
+        vec![0],
+        fingerprint,
+    )
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn ane_prefill_page_plan_binds_complete_prompt_to_logical_pages() {
+    let full = |pages: Vec<u32>, start: u32, tokens: u32| {
+        let slots = (start..start + tokens)
+            .map(|position| (pages[position as usize / 32] * 32 + position % 32) as i32)
+            .collect();
+        HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(9)],
+            vec![TokenId(7); tokens as usize],
+            vec![0, tokens],
+            vec![start + tokens - 1],
+            vec![start + tokens],
+        )
+        .with_paged_kv(
+            vec![rvllm_apple::HandoffKvChain {
+                id: 2,
+                generation: 4,
+            }],
+            pages.len() as u32,
+            pages,
+            slots,
+            [0xA5; 32],
+        )
+    };
+    let valid = full(vec![2, 0], 0, 33);
+    assert_eq!(
+        ane_full_prompt_pages(&valid).unwrap(),
+        vec![BlockId(2), BlockId(0)]
+    );
+    assert!(ane_full_prompt_pages(&full(vec![2, 2], 0, 33)).is_err());
+    assert!(ane_full_prompt_pages(&full(vec![2, 0], 32, 1)).is_err());
+
+    let replace_slots = |slots| {
+        valid.clone().with_paged_kv(
+            valid.kv_chains.clone(),
+            valid.max_blocks_per_seq,
+            valid.block_tables.clone(),
+            slots,
+            valid.model_layout_fingerprint,
+        )
+    };
+    let mut slots = valid.slot_mapping.clone();
+    slots[32] = 32;
+    let mismatched = replace_slots(slots);
+    assert!(mismatched.validate().is_ok());
+    assert!(ane_full_prompt_pages(&mismatched).is_err());
+    assert!(ane_full_prompt_pages(&replace_slots(Vec::new())).is_err());
+    let mut mismatched = valid;
+    mismatched.positions[0] = u32::MAX;
+    assert!(ane_full_prompt_pages(&mismatched).is_err());
+
+    let legacy = HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(9)],
+        vec![TokenId(7)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    assert!(ane_full_prompt_pages(&legacy).is_err());
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn paged_kv_contract_accepts_only_the_prepared_nonzero_fingerprint() {
+    let mut backend = ModelMetalBackend::new(std::path::PathBuf::new());
+    backend.prepared_model_layout_fingerprint = Some([0xA5; 32]);
+    let matching = paged_contract_handoff([0xA5; 32]);
+    assert!(matching.is_well_formed());
+    backend
+        .validate_paged_kv_contract(&matching, "test")
+        .expect("matching prepared layout must be accepted");
+
+    let mismatch = paged_contract_handoff([0x5A; 32]);
+    let error = backend
+        .validate_paged_kv_contract(&mismatch, "test")
+        .expect_err("stale layout fingerprint must fail closed");
+    assert!(format!("{error}").contains("fingerprint mismatch"));
+
+    backend.prepared_model_layout_fingerprint = Some([0; 32]);
+    let error = backend
+        .validate_paged_kv_contract(&paged_contract_handoff([0; 32]), "test")
+        .expect_err("placeholder fingerprints must not authorize paged KV");
+    assert!(format!("{error}").contains("prepared model layout fingerprint must be nonzero"));
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn paged_kv_contract_requires_a_prepared_fingerprint_but_legacy_handoffs_do_not() {
+    let mut backend = ModelMetalBackend::new(std::path::PathBuf::new());
+    let paged = paged_contract_handoff([0x11; 32]);
+    let error = backend
+        .validate_paged_kv_contract(&paged, "test")
+        .expect_err("unprepared layout must fail closed");
+    assert!(format!("{error}").contains("no prepared model layout fingerprint"));
+
+    let legacy = HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(9)],
+        vec![TokenId(7)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    backend
+        .validate_paged_kv_contract(&legacy, "test")
+        .expect("legacy ordinal handoff must remain compatible");
+
+    // Current direct CLI/server plans use the zero placeholder, but they do
+    // not emit paged metadata. Keep that shipping legacy path compatible.
+    backend.prepared_model_layout_fingerprint = Some([0; 32]);
+    backend
+        .validate_paged_kv_contract(&legacy, "test")
+        .expect("a prepared zero-hash plan remains valid for ordinal KV only");
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn paged_kv_contract_cannot_be_bypassed_by_omitting_chain_handles() {
+    let mut backend = ModelMetalBackend::new(std::path::PathBuf::new());
+    backend.prepared_model_layout_fingerprint = Some([0x44; 32]);
+    let handoff = HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(9)],
+        vec![TokenId(7)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    )
+    .with_paged_kv(Vec::new(), 1, vec![0], vec![0], [0x55; 32]);
+    assert!(handoff.is_well_formed());
+
+    let error = backend
+        .validate_paged_kv_contract(&handoff, "test")
+        .expect_err("physical page metadata must always authenticate its layout");
+    assert!(format!("{error}").contains("fingerprint mismatch"));
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn paged_bridge_fingerprint_matches_the_prepared_runtime_plan_contract() {
+    let fingerprint = [0x6D; 32];
+    let mut backend = ModelMetalBackend::new(std::path::PathBuf::new());
+    backend.prepared_model_layout_fingerprint = Some(fingerprint);
+
+    let mut pool =
+        crate::paged_kv::PagedKvPool::new(crate::paged_kv::PagedKvConfig::apple_v1(4, 2))
+            .expect("create Apple-v1 pool");
+    let chain = pool
+        .allocate_chain(rvllm_core::ReqId(41), 33)
+        .expect("allocate request-owned pages");
+    let plan = crate::BatchPlan::Prefill {
+        req_ids: vec![rvllm_core::ReqId(41)],
+        prompt_tokens_flat: vec![TokenId(7)],
+        cu_seqlens_q: vec![0, 1],
+        query_start_positions: vec![32],
+        context_lens: vec![33],
+        kv_chains: vec![Some(chain)],
+    };
+    let handoff = crate::apple_bridge::handoff_from_prefill_plan_with_paged_kv(
+        &plan,
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        None,
+        &pool,
+        fingerprint,
+    )
+    .expect("build the production paged bridge capsule");
+
+    assert!(handoff.is_well_formed());
+    assert_ne!(handoff.model_layout_fingerprint, [0; 32]);
+    backend
+        .validate_paged_kv_contract(&handoff, "test")
+        .expect("the bridge and prepared plan must share the exact fingerprint");
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn paged_kv_fingerprint_mismatch_is_rejected_before_ticket_or_encoding() {
+    let mut backend = ModelMetalBackend::new(std::path::PathBuf::new());
+    backend.prepared = true;
+    backend.prepared_model_layout_fingerprint = Some([0x22; 32]);
+    let error = backend
+        .launch_prefill(&paged_contract_handoff([0x33; 32]))
+        .expect_err("mismatch must be rejected before model state is touched");
+    assert!(format!("{error}").contains("fingerprint mismatch"));
+    assert_eq!(backend.next_step_id, 0);
+    assert_eq!(backend.in_flight.len(), 0);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn configured_metal_float_type_auto_uses_checkpoint_dtype() {
+    let guard = MetalDebugEnvGuard::new(&[RVLLM_METAL_DTYPE_ENV]);
+    guard.remove(RVLLM_METAL_DTYPE_ENV);
+    let f16_dir = write_dtype_probe_fixture("F16", &f16_bytes(&[1.0]));
+    let bf16_dir = write_dtype_probe_fixture("BF16", &bf16_bytes(&[1.0]));
+
+    assert_eq!(
+        configured_metal_float_type(&f16_dir).expect("default f16 dtype"),
+        MetalFloatType::F16
+    );
+    assert_eq!(
+        configured_metal_float_type(&bf16_dir).expect("default bf16 dtype"),
+        MetalFloatType::Bf16
+    );
+
+    guard.set(RVLLM_METAL_DTYPE_ENV, "auto");
+    assert_eq!(
+        configured_metal_float_type(&bf16_dir).expect("auto bf16 dtype"),
+        MetalFloatType::Bf16
+    );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn configured_metal_float_type_keeps_explicit_overrides() {
+    let guard = MetalDebugEnvGuard::new(&[RVLLM_METAL_DTYPE_ENV]);
+    let missing_dir = temp_fixture_dir().join("does-not-need-to-exist");
+
+    guard.set(RVLLM_METAL_DTYPE_ENV, "bfloat16");
+    assert_eq!(
+        configured_metal_float_type(&missing_dir).expect("explicit bf16 dtype"),
+        MetalFloatType::Bf16
+    );
+
+    guard.set(RVLLM_METAL_DTYPE_ENV, "float16");
+    assert_eq!(
+        configured_metal_float_type(&missing_dir).expect("explicit f16 dtype"),
+        MetalFloatType::F16
+    );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn explicit_metal_identity_does_not_follow_process_environment() {
+    use rvllm_apple_metal::{MetalKernelOptions, MetalModelLimits};
+    let names = ["RVLLM_METAL_PREFILL_GEMM", "RVLLM_METAL_PREFILL_ATTENTION", "RVLLM_METAL_BF16_ACCUM"];
+    let guard = MetalDebugEnvGuard::new(&names);
+    let options = ModelMetalOptions {
+        float_type: MetalFloatType::Bf16,
+        kernels: MetalKernelOptions { prefill_mma32: true, prefill_simd_attention: true, ..MetalKernelOptions::default() },
+        limits: MetalModelLimits { max_context_tokens: 1024, max_batch_tokens: 1024, max_batch_sequences: 1 },
+    };
+    let backend = ModelMetalBackend::with_options("unused-model".into(), "unused.metallib".into(), options);
+    let fingerprint = |kernels| metal_numeric_abi_fingerprint_impl(
+        MetalFloatType::Bf16, false, false, None, None,
+        MetalLowBitResidencyPolicy::HybridFallback, kernels,
+    );
+    let before = fingerprint(backend.kernel_options);
+    guard.set(names[0], "off");
+    guard.set(names[1], "off");
+    guard.set(names[2], "quantized");
+    assert_eq!(before, fingerprint(backend.kernel_options));
+    let source = kernels::kernel_source_with_options(options.float_type, backend.kernel_options);
+    assert!(!source.contains("acc = bf16_acc"));
+    let scalar_options = MetalKernelOptions { prefill_simd_attention: false, ..options.kernels };
+    assert_ne!(before, fingerprint(scalar_options));
+    assert!(!backend.debug_sync && !backend.experimental_kv_int8);
+    let mut invalid = ModelMetalBackend::with_options("unused-model".into(), "unused.metallib".into(), ModelMetalOptions {
+        kernels: MetalKernelOptions { quantized_bf16_accumulation: true, ..options.kernels },
+        ..options
+    });
+    let err = invalid.initialize_model_resources().err().expect("reject before opening model/library or creating a device");
+    assert!(err.to_string().contains("explicit native Metal libraries require FP32 accumulation"));
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn metal_numeric_abi_fingerprint_separates_dtype_and_kv_format() {
+    const BF16_ACCUM_ENV: &str = "RVLLM_METAL_BF16_ACCUM";
+    const QKV_PREFILL_ENV: &str = "RVLLM_METAL_QKV_PREFILL";
+    const MMA_PREFILL_ENV: &str = "RVLLM_METAL_PREFILL_GEMM";
+    let guard = MetalDebugEnvGuard::new(&[BF16_ACCUM_ENV, QKV_PREFILL_ENV, MMA_PREFILL_ENV]);
+    guard.remove(BF16_ACCUM_ENV);
+    guard.remove(QKV_PREFILL_ENV);
+    guard.remove(MMA_PREFILL_ENV);
+    let f16_native = metal_numeric_abi_fingerprint(MetalFloatType::F16, false, false);
+    let f16_native_again = metal_numeric_abi_fingerprint(MetalFloatType::F16, false, false);
+    let bf16_native = metal_numeric_abi_fingerprint(MetalFloatType::Bf16, false, false);
+    guard.set(QKV_PREFILL_ENV, "batch8");
+    let bf16_batch8 = metal_numeric_abi_fingerprint(MetalFloatType::Bf16, false, false);
+    guard.remove(QKV_PREFILL_ENV);
+    guard.set(MMA_PREFILL_ENV, "mma32");
+    let bf16_mma32 = metal_numeric_abi_fingerprint(MetalFloatType::Bf16, false, false);
+    guard.remove(MMA_PREFILL_ENV);
+    guard.set(BF16_ACCUM_ENV, "quantized");
+    let bf16_quantized_accum = metal_numeric_abi_fingerprint(MetalFloatType::Bf16, false, false);
+    let f16_int8_opt_in = metal_numeric_abi_fingerprint(MetalFloatType::F16, true, false);
+    let f16_int8_active = metal_numeric_abi_fingerprint(MetalFloatType::F16, true, true);
+    let packaged_a = metal_numeric_abi_fingerprint_impl(
+        MetalFloatType::F16,
+        false,
+        false,
+        None,
+        Some([0x11; 32]),
+        MetalLowBitResidencyPolicy::HybridFallback,
+        rvllm_apple_metal::MetalKernelOptions::from_development_environment(),
+    );
+    let packaged_b = metal_numeric_abi_fingerprint_impl(
+        MetalFloatType::F16,
+        false,
+        false,
+        None,
+        Some([0x22; 32]),
+        MetalLowBitResidencyPolicy::HybridFallback,
+        rvllm_apple_metal::MetalKernelOptions::from_development_environment(),
+    );
+    let replace_native = metal_numeric_abi_fingerprint_impl(
+        MetalFloatType::F16,
+        false,
+        false,
+        None,
+        Some([0x11; 32]),
+        MetalLowBitResidencyPolicy::ReplaceNative,
+        rvllm_apple_metal::MetalKernelOptions::from_development_environment(),
+    );
+
+    assert_eq!(f16_native, f16_native_again);
+    assert_ne!(f16_native, [0; 32]);
+    assert_ne!(f16_native, bf16_native);
+    assert_ne!(bf16_native, bf16_batch8);
+    assert_ne!(bf16_native, bf16_mma32);
+    assert_ne!(bf16_batch8, bf16_mma32);
+    assert_ne!(bf16_native, bf16_quantized_accum);
+    assert_ne!(f16_native, f16_int8_opt_in);
+    assert_ne!(f16_int8_opt_in, f16_int8_active);
+    assert_ne!(f16_native, f16_int8_active);
+    assert_ne!(f16_native, packaged_a);
+    assert_ne!(packaged_a, packaged_b);
+    assert_ne!(packaged_a, replace_native);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn runtime_low_bit_replacement(
+    tensor_name: impl Into<String>,
+    format: AppleLowBitWeightFormat,
+    shape: [usize; 2],
+) -> MetalLowBitWeightReplacement {
+    let row_bytes = match format {
+        AppleLowBitWeightFormat::W4A16 => shape[1].div_ceil(2),
+        AppleLowBitWeightFormat::W8A16 => shape[1],
+    };
+    MetalLowBitWeightReplacement {
+        tensor_name: tensor_name.into(),
+        format,
+        shape,
+        packed_values_bytes: shape[0] * row_bytes,
+        scales_bytes: shape[0]
+            * shape[1].div_ceil(APPLE_LOW_BIT_GROUP_SIZE)
+            * std::mem::size_of::<half::f16>(),
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn low_bit_residency_policy_defaults_to_hybrid_and_requires_explicit_replacement() {
+    let model_dir = temp_fixture_dir();
+    let hybrid = ModelMetalBackend::new(model_dir.clone());
+    assert_eq!(
+        hybrid.low_bit_residency_policy,
+        MetalLowBitResidencyPolicy::HybridFallback
+    );
+    let replacement = ModelMetalBackend::new(model_dir.clone())
+        .with_low_bit_residency_policy(MetalLowBitResidencyPolicy::ReplaceNative);
+    assert_eq!(
+        replacement.low_bit_residency_policy,
+        MetalLowBitResidencyPolicy::ReplaceNative
+    );
+    let _ = fs::remove_dir_all(model_dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn two_layer_low_bit_preflight_is_sorted_complete_and_fail_closed() {
+    let dir = write_tiny_two_layer_fixture(false);
+    let shape = [128, 256];
+    let layer_zero = runtime_low_bit_replacement(
+        "model.layers.0.mlp.down_proj.weight",
+        AppleLowBitWeightFormat::W4A16,
+        shape,
+    );
+    let layer_one = runtime_low_bit_replacement(
+        "model.layers.1.mlp.down_proj.weight",
+        AppleLowBitWeightFormat::W8A16,
+        shape,
+    );
+    let sorted = preflight_low_bit_replacement_descriptors(
+        &dir,
+        MetalFloatType::F16,
+        &[layer_one.clone(), layer_zero.clone()],
+    )
+    .expect("preflight two sidecars");
+    assert_eq!(
+        sorted
+            .iter()
+            .map(|replacement| replacement.tensor_name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "model.layers.0.mlp.down_proj.weight",
+            "model.layers.1.mlp.down_proj.weight",
+        ]
+    );
+    assert_eq!(
+        ModelMetalBackend::hybrid_low_bit_arena_budget_bytes(&sorted).expect("exact hybrid budget"),
+        layer_zero.packed_values_bytes
+            + layer_zero.scales_bytes
+            + layer_one.packed_values_bytes
+            + layer_one.scales_bytes
+    );
+
+    assert!(preflight_low_bit_replacement_descriptors(
+        &dir,
+        MetalFloatType::F16,
+        &[layer_zero.clone(), layer_zero.clone()],
+    )
+    .is_err());
+    assert!(preflight_low_bit_replacement_descriptors(
+        &dir,
+        MetalFloatType::F16,
+        &[runtime_low_bit_replacement(
+            "model.layers.9.mlp.down_proj.weight",
+            AppleLowBitWeightFormat::W4A16,
+            shape,
+        )],
+    )
+    .is_err());
+    let mut wrong_shape = layer_zero.clone();
+    wrong_shape.shape[1] -= 1;
+    wrong_shape.packed_values_bytes = wrong_shape.shape[0] * wrong_shape.shape[1].div_ceil(2);
+    wrong_shape.scales_bytes = wrong_shape.shape[0]
+        * wrong_shape.shape[1].div_ceil(APPLE_LOW_BIT_GROUP_SIZE)
+        * std::mem::size_of::<half::f16>();
+    assert!(
+        preflight_low_bit_replacement_descriptors(&dir, MetalFloatType::F16, &[wrong_shape],)
+            .is_err()
+    );
+    let mut incomplete = layer_one;
+    incomplete.scales_bytes -= 1;
+    assert!(
+        preflight_low_bit_replacement_descriptors(&dir, MetalFloatType::F16, &[incomplete],)
+            .is_err()
+    );
+    assert!(
+        preflight_low_bit_replacement_descriptors(&dir, MetalFloatType::Bf16, &[layer_zero],)
+            .is_err()
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
 fn f16_bytes(values: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(values.len() * std::mem::size_of::<half::f16>());
     for value in values {
@@ -165,6 +638,45 @@ fn f16_bytes(values: &[f32]) -> Vec<u8> {
         out.extend_from_slice(&bits.to_le_bytes());
     }
     out
+}
+
+fn bf16_bytes(values: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(values.len() * std::mem::size_of::<half::bf16>());
+    for value in values {
+        let bits = half::bf16::from_f32(*value).to_bits();
+        out.extend_from_slice(&bits.to_le_bytes());
+    }
+    out
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn write_dtype_probe_fixture(dtype: &str, data: &[u8]) -> std::path::PathBuf {
+    let dir = temp_fixture_dir();
+    let mut header = Map::<String, Value>::new();
+    let mut meta = Map::new();
+    meta.insert("dtype".to_owned(), Value::String(dtype.to_owned()));
+    meta.insert(
+        "shape".to_owned(),
+        Value::Array(vec![Value::Number(1u64.into())]),
+    );
+    meta.insert(
+        "data_offsets".to_owned(),
+        Value::Array(vec![
+            Value::Number(0u64.into()),
+            Value::Number((data.len() as u64).into()),
+        ]),
+    );
+    header.insert("probe.weight".to_owned(), Value::Object(meta));
+
+    let header_json = serde_json::to_string(&header).expect("serialize dtype probe header");
+    let mut out =
+        File::create(dir.join("model.safetensors")).expect("create dtype probe safetensors");
+    out.write_all(&(header_json.len() as u64).to_le_bytes())
+        .expect("write header len");
+    out.write_all(header_json.as_bytes())
+        .expect("write header bytes");
+    out.write_all(data).expect("write payload");
+    dir
 }
 
 fn write_tiny_zero_layer_fixture() -> std::path::PathBuf {
@@ -346,6 +858,272 @@ fn tiny_zero_layer_model_backend_decodes_token_2_to_3() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
 
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn model_kv_page_io_fails_closed_before_prepare() {
+    let mut backend = ModelMetalBackend::new(std::path::PathBuf::new());
+    assert_eq!(backend.page_bytes(), None);
+    assert!(matches!(
+        backend.capture_page(rvllm_core::BlockId(0)),
+        Err(KvPageIoError::BackendUnavailable)
+    ));
+    assert!(matches!(
+        backend.restore_page(rvllm_core::BlockId(0), &[0; 2]),
+        Err(KvPageIoError::BackendUnavailable)
+    ));
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
+fn model_kv_page_io_roundtrips_multilayer_bits_and_rejects_gpu_ownership() {
+    let dir = write_tiny_two_layer_fixture(false);
+    let config_path = dir.join("config.json");
+    let config = fs::read_to_string(&config_path)
+        .expect("read fixture config")
+        .replace(
+            "\"max_position_embeddings\": 16",
+            "\"max_position_embeddings\": 64",
+        );
+    fs::write(&config_path, config).expect("extend fixture to two physical KV pages");
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = two_layer_plan(dir.clone());
+    backend.prepare(&plan).expect("prepare two-layer model");
+
+    let layout = backend.kv_page_layout().expect("validated KV layout");
+    assert_eq!(layout.layers.len(), 2);
+    assert!(layout.total_pages >= 2);
+    let page_bytes = backend.page_bytes().expect("prepared page byte size");
+    assert_eq!(page_bytes, layout.serialized_page_bytes);
+    let source_bits: Vec<u8> = (0..page_bytes)
+        .map(|index| ((index * 131 + 17) & 0xff) as u8)
+        .collect();
+    let other_bits: Vec<u8> = (0..page_bytes)
+        .map(|index| ((index * 29 + 203) & 0xff) as u8)
+        .collect();
+
+    backend
+        .restore_page(rvllm_core::BlockId(0), &source_bits)
+        .expect("restore exact source bits");
+    backend
+        .restore_page(rvllm_core::BlockId(1), &other_bits)
+        .expect("restore distinct destination bits");
+    assert_eq!(
+        backend
+            .capture_page(rvllm_core::BlockId(0))
+            .expect("capture source")
+            .as_ref(),
+        source_bits
+    );
+    assert_eq!(
+        backend
+            .capture_page(rvllm_core::BlockId(1))
+            .expect("capture destination")
+            .as_ref(),
+        other_bits
+    );
+    backend
+        .copy_page(CowPageCopy {
+            source: rvllm_core::BlockId(0),
+            destination: rvllm_core::BlockId(1),
+            valid_tokens: 17,
+        })
+        .expect("copy full physical page for partial-tail COW");
+    assert_eq!(
+        backend
+            .capture_page(rvllm_core::BlockId(1))
+            .expect("capture copied page")
+            .as_ref(),
+        source_bits,
+        "COW must preserve every F16/BF16 payload bit in canonical layer/K/V order"
+    );
+    assert!(matches!(
+        backend.capture_page(rvllm_core::BlockId(layout.total_pages)),
+        Err(KvPageIoError::InvalidPageId { .. })
+    ));
+    assert!(matches!(
+        backend.restore_page(rvllm_core::BlockId(0), &source_bits[..page_bytes - 1]),
+        Err(KvPageIoError::InvalidPageBytes { .. })
+    ));
+
+    let handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let ticket = backend
+        .launch_rollout(&handoff, None)
+        .expect("commit asynchronous rollout");
+    assert!(backend.in_flight.is_submitted(ticket));
+    assert!(matches!(
+        backend.capture_page(rvllm_core::BlockId(0)),
+        Err(KvPageIoError::BackendBusy)
+    ));
+    assert!(matches!(
+        backend.restore_page(rvllm_core::BlockId(0), &source_bits),
+        Err(KvPageIoError::BackendBusy)
+    ));
+    assert!(matches!(
+        backend.copy_page(CowPageCopy {
+            source: rvllm_core::BlockId(0),
+            destination: rvllm_core::BlockId(1),
+            valid_tokens: 17,
+        }),
+        Err(KvPageIoError::BackendBusy)
+    ));
+    backend.collect(ticket).expect("collect rollout");
+    backend
+        .capture_page(rvllm_core::BlockId(0))
+        .expect("collection releases page I/O ownership");
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
+fn model_metal_async_submission_uses_three_independent_execution_slots() {
+    let dir = write_tiny_one_layer_noop_fixture();
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    let plan = one_layer_plan(dir.clone());
+    backend.prepare(&plan).expect("prepare tiny model");
+
+    let handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let ticket = backend
+        .launch_rollout(&handoff, None)
+        .expect("commit asynchronous rollout");
+    assert!(
+        backend.in_flight.is_submitted(ticket),
+        "launch must retain a submitted command buffer instead of manufacturing a ready result"
+    );
+    assert_eq!(
+        backend.probe_perf_stats().forced_waits,
+        0,
+        "normal launch must not wait for Metal completion"
+    );
+
+    let second_handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(2)],
+        vec![rvllm_core::TokenId(7)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let second_ticket = backend
+        .launch_rollout(&second_handoff, None)
+        .expect("a second committed step must own another execution slot");
+    assert_ne!(
+        backend.in_flight.execution_slot(ticket).unwrap(),
+        backend.in_flight.execution_slot(second_ticket).unwrap()
+    );
+    let first_state = &backend.execution_states[backend.in_flight.execution_slot(ticket).unwrap()];
+    let second_state =
+        &backend.execution_states[backend.in_flight.execution_slot(second_ticket).unwrap()];
+    assert_ne!(first_state.token_ids.offset, second_state.token_ids.offset);
+    let arena = backend.arena.as_ref().expect("prepared arena");
+    let first_resident_token = unsafe { *(arena.host_ptr(&first_state.token_ids) as *const u32) };
+    let second_resident_token = unsafe { *(arena.host_ptr(&second_state.token_ids) as *const u32) };
+    assert_eq!(
+        (first_resident_token, second_resident_token),
+        (2, 7),
+        "each live launch must retain private token metadata"
+    );
+
+    let third_handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(3)],
+        vec![rvllm_core::TokenId(5)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let third_ticket = backend
+        .launch_rollout(&third_handoff, None)
+        .expect("third execution slot must be admissible");
+    let full_error = backend
+        .launch_rollout(&third_handoff, None)
+        .expect_err("fourth uncollected step must fail closed");
+    assert!(format!("{full_error}").contains("in_flight_ring_full"));
+
+    let output = match backend.try_collect(ticket).expect("poll submission") {
+        Some(output) => output,
+        None => backend.collect(ticket).expect("wait for submitted rollout"),
+    };
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].token_id, rvllm_core::TokenId(3));
+    let second_output = backend
+        .collect(second_ticket)
+        .expect("collect second rollout");
+    assert_eq!(second_output.len(), 1);
+    assert_eq!(
+        backend.collect(third_ticket).expect("collect third").len(),
+        1
+    );
+
+    let next_ticket = backend
+        .launch_rollout(&handoff, None)
+        .expect("collection must release an execution slot");
+    assert_eq!(backend.collect(next_ticket).expect("collect next").len(), 1);
+
+    // Build an explicitly enqueued-but-uncommitted command buffer so polling
+    // has a deterministic not-ready state independent of GPU speed.
+    let queue = backend
+        .ctx
+        .as_ref()
+        .expect("prepared context")
+        .queue_retained();
+    let command_buffer = queue.commandBuffer().expect("empty command buffer");
+    command_buffer.enqueue();
+    let poll_ticket = backend
+        .in_flight
+        .reserve(999, AppleLaunchKind::Prefill, None)
+        .expect("reserve polling ticket");
+    backend
+        .in_flight
+        .submit(
+            poll_ticket,
+            ModelGpuSubmission {
+                command_buffer: command_buffer.clone(),
+                output: ModelGpuOutput::Prefill,
+                perf_before: backend.perf.snapshot(),
+                wall_start: Instant::now(),
+                num_tokens: 0,
+                is_decode: false,
+            },
+        )
+        .expect("bind enqueued command buffer");
+    assert_eq!(
+        backend.try_collect(poll_ticket).expect("nonblocking poll"),
+        None,
+        "poll must preserve a ticket whose command buffer is not complete"
+    );
+    assert!(backend.in_flight.is_submitted(poll_ticket));
+    assert!(matches!(
+        backend.prefill_for_ane(&paged_contract_handoff([0xA5; 32])),
+        Err(crate::ane_prefill::AnePrefillError::Cache(
+            KvPageIoError::BackendBusy
+        ))
+    ));
+    command_buffer.commit();
+    assert!(backend
+        .collect(poll_ticket)
+        .expect("blocking collect waits and reclaims")
+        .is_empty());
+    assert_eq!(backend.in_flight.len(), 0);
     let _ = fs::remove_dir_all(dir);
 }
 
@@ -3540,6 +4318,40 @@ fn write_tiny_one_layer_full_nonzero_fixture() -> std::path::PathBuf {
         .expect("write header bytes");
     out.write_all(&payload).expect("write payload");
     dir
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn patch_fixture_f16_tensor(
+    model_dir: &std::path::Path,
+    tensor_name: &str,
+    linear_index: usize,
+    value: f32,
+) {
+    let path = model_dir.join("model.safetensors");
+    let mut bytes = fs::read(&path).expect("read fixture safetensors");
+    let header_len = u64::from_le_bytes(
+        bytes[..8]
+            .try_into()
+            .expect("safetensors header length bytes"),
+    ) as usize;
+    let header: Value =
+        serde_json::from_slice(&bytes[8..8 + header_len]).expect("parse safetensors header");
+    let tensor = header
+        .get(tensor_name)
+        .and_then(Value::as_object)
+        .expect("fixture tensor metadata");
+    assert_eq!(tensor.get("dtype").and_then(Value::as_str), Some("F16"));
+    let offsets = tensor
+        .get("data_offsets")
+        .and_then(Value::as_array)
+        .expect("fixture tensor offsets");
+    let start = offsets[0].as_u64().expect("fixture tensor start") as usize;
+    let end = offsets[1].as_u64().expect("fixture tensor end") as usize;
+    let byte_offset = 8 + header_len + start + linear_index * std::mem::size_of::<half::f16>();
+    assert!(byte_offset + 2 <= 8 + header_len + end);
+    bytes[byte_offset..byte_offset + 2]
+        .copy_from_slice(&half::f16::from_f32(value).to_bits().to_le_bytes());
+    fs::write(path, bytes).expect("patch fixture safetensors");
 }
 
 #[test]
@@ -8211,6 +9023,351 @@ fn tiny_one_layer_full_nonzero_model_backend_decodes_token_2_to_3() {
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
+#[ignore = "requires Apple Silicon Metal and RVLLM_TEST_APPLE_METALLIB_ROOT"]
+fn schema_v3_w4_w8_down_proj_sidecars_are_selected_and_execute_real_layer() {
+    use rvllm_apple::model_package_builder::{
+        build_apple_model_package, AppleLowBitExportRequest, AppleModelPackageBuildConfig,
+    };
+
+    let Some(metallib_root) = std::env::var_os("RVLLM_TEST_APPLE_METALLIB_ROOT") else {
+        eprintln!("skipping: RVLLM_TEST_APPLE_METALLIB_ROOT is not set");
+        return;
+    };
+    let dir = write_tiny_one_layer_full_nonzero_fixture();
+    let config_path = dir.join("config.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&config_path).expect("read fixture config"))
+            .expect("parse fixture config");
+    config
+        .as_object_mut()
+        .expect("fixture config object")
+        .insert("model_type".to_owned(), Value::String("gemma4".to_owned()));
+    fs::write(
+        &config_path,
+        serde_json::to_vec_pretty(&config).expect("encode package fixture config"),
+    )
+    .expect("write package fixture config");
+    fs::write(dir.join("tokenizer.json"), b"tiny-tokenizer").expect("write fixture tokenizer");
+    let hidden = 128_usize;
+    let intermediate = 256_usize;
+
+    // Add a second active lane to one down-projection quantization group.
+    // The resulting W4 and W8 projections both differ materially from native
+    // F16 while the LM head still ignores the affected FFN output dimension.
+    patch_fixture_f16_tensor(
+        &dir,
+        "model.layers.0.mlp.gate_proj.weight",
+        hidden + FULL_NONZERO_ORIGINAL_DIM,
+        1.0,
+    );
+    patch_fixture_f16_tensor(
+        &dir,
+        "model.layers.0.mlp.up_proj.weight",
+        hidden + FULL_NONZERO_ORIGINAL_DIM,
+        1.0,
+    );
+    patch_fixture_f16_tensor(
+        &dir,
+        "model.layers.0.mlp.down_proj.weight",
+        FULL_NONZERO_FFN_DIM * intermediate + 1,
+        0.992_187_5,
+    );
+
+    let env_guard =
+        MetalDebugEnvGuard::new(&[RVLLM_METAL_DTYPE_ENV, RVLLM_METAL_DEBUG_TRACE_LAYER_ENV]);
+    env_guard.set(RVLLM_METAL_DTYPE_ENV, "f16");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV, "0");
+
+    for format in [
+        rvllm_apple::AppleLowBitWeightFormat::W4A16,
+        rvllm_apple::AppleLowBitWeightFormat::W8A16,
+    ] {
+        let package_root = dir.with_file_name(format!(
+            "{}-{}-package",
+            dir.file_name()
+                .and_then(|name| name.to_str())
+                .expect("UTF-8 fixture name"),
+            format.name()
+        ));
+        let build = AppleModelPackageBuildConfig {
+            model_dir: dir.clone(),
+            metallib_root: std::path::PathBuf::from(&metallib_root),
+            output_dir: package_root.clone(),
+            package_id: format!("tiny-one-layer-{}", format.name()),
+            weight_format: None,
+            low_bit_down_projections: vec![AppleLowBitExportRequest {
+                tensor_name: "model.layers.0.mlp.down_proj.weight".to_owned(),
+                format,
+            }],
+        };
+        let report = build_apple_model_package(&build).expect("build schema-v3 hybrid package");
+        assert_eq!(report.low_bit_tensors, 1);
+        assert_eq!(report.low_bit_formats, vec![format]);
+
+        let package =
+            rvllm_apple::AppleModelPackage::open(&package_root).expect("open hybrid package");
+        assert_eq!(
+            package.manifest().schema_version,
+            rvllm_apple::AppleModelPackageManifest::SCHEMA_V3
+        );
+        let tensor = package
+            .low_bit_tensor("model.layers.0.mlp.down_proj.weight")
+            .expect("authenticated low-bit descriptor");
+        assert_eq!(tensor.format, format);
+        assert_eq!(tensor.shape, [hidden as u32, intermediate as u32]);
+        let packed = package
+            .load_low_bit_tensor("model.layers.0.mlp.down_proj.weight")
+            .expect("load canonical low-bit tensor");
+
+        let mut backend = ModelMetalBackend::from_model_package_path(package_root.clone())
+            .expect("construct packaged Metal backend");
+        backend
+            .prepare(&one_layer_plan(package_root.clone()))
+            .expect("prepare packaged low-bit model");
+        let capacity = backend.model_capacity().expect("capacity report");
+        let hybrid_weights_bytes = capacity.weights_bytes;
+        let hybrid_numeric_fingerprint = capacity.numeric_abi_fingerprint;
+        assert_eq!(capacity.low_bit_projection_count, 1);
+        assert_eq!(
+            capacity.low_bit_weight_bytes,
+            (packed.packed_values().len()
+                + packed.scales().len() * std::mem::size_of::<half::f16>()) as u64
+        );
+        assert_ne!(
+            capacity.numeric_abi_fingerprint,
+            metal_numeric_abi_fingerprint(MetalFloatType::F16, false, false)
+        );
+        let selected = backend.state.as_ref().expect("prepared state").layers[0]
+            .low_bit_down_proj
+            .expect("selected low-bit down projection");
+        assert_eq!(selected.format(), format);
+        assert_eq!(selected.shape(), [hidden as u32, intermediate as u32]);
+        assert_eq!(
+            selected.kernel_name(),
+            match format {
+                rvllm_apple::AppleLowBitWeightFormat::W4A16 => "projection_w4a16_f16",
+                rvllm_apple::AppleLowBitWeightFormat::W8A16 => "projection_w8a16_f16",
+            }
+        );
+        assert!(
+            backend.state.as_ref().expect("prepared state").layers[0]
+                .down_proj
+                .as_ref()
+                .expect("hybrid native fallback")
+                .size
+                > 0,
+            "native F16 fallback must remain resident"
+        );
+
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![
+                rvllm_core::TokenId(2),
+                rvllm_core::TokenId(2),
+                rvllm_core::TokenId(2),
+            ],
+            vec![0, 3],
+            vec![2],
+            vec![3],
+        );
+        let ticket = backend
+            .launch_prefill(&handoff)
+            .expect("launch real multi-token low-bit prefill");
+        let out = backend.collect(ticket).expect("collect low-bit prefill");
+        assert!(out.is_empty());
+
+        let state = backend.state.as_ref().expect("prepared state");
+        let trace = state.layers[0].trace.as_ref().expect("layer trace");
+        let arena = backend.arena.as_ref().expect("prepared arena");
+        let activation = unsafe {
+            std::slice::from_raw_parts(
+                arena.host_ptr(&trace.ffn_activation).cast::<u16>(),
+                3 * intermediate,
+            )
+            .iter()
+            .map(|bits| half::f16::from_bits(*bits))
+            .collect::<Vec<_>>()
+        };
+        let actual = unsafe {
+            std::slice::from_raw_parts(
+                arena.host_ptr(&trace.after_ffn_branch).cast::<u16>(),
+                3 * hidden,
+            )
+            .iter()
+            .map(|bits| half::f16::from_bits(*bits))
+            .collect::<Vec<_>>()
+        };
+        let expected = rvllm_apple::project_apple_low_bit_reference(&packed, &activation, 3)
+            .expect("CPU low-bit projection");
+        for (index, (actual, expected)) in actual.iter().zip(expected.iter()).enumerate() {
+            let expected = expected.to_f32();
+            let tolerance = 0.02 + expected.abs() * 0.002;
+            assert!(
+                (actual.to_f32() - expected).abs() <= tolerance,
+                "{format:?} real layer output[{index}] actual={} expected={expected} tolerance={tolerance}",
+                actual.to_f32()
+            );
+        }
+        let dense = activation[0].to_f32() * 4.0 + activation[1].to_f32() * 0.992_187_5;
+        let low_bit = expected[FULL_NONZERO_FFN_DIM].to_f32();
+        let metal = actual[FULL_NONZERO_FFN_DIM].to_f32();
+        assert!(
+            (dense - low_bit).abs() > 0.5,
+            "{format:?} fixture must distinguish native dense ({dense}) from low-bit ({low_bit})"
+        );
+        assert!((metal - low_bit).abs() < (metal - dense).abs());
+
+        drop(backend);
+        let mut replacement_backend =
+            ModelMetalBackend::from_model_package_path(package_root.clone())
+                .expect("construct replacement Metal backend")
+                .with_low_bit_residency_policy(MetalLowBitResidencyPolicy::ReplaceNative);
+        replacement_backend
+            .prepare(&one_layer_plan(package_root.clone()))
+            .expect("prepare native-replacement low-bit model");
+        let replacement_capacity = replacement_backend
+            .model_capacity()
+            .expect("replacement capacity report");
+        assert_eq!(replacement_capacity.low_bit_projection_count, 1);
+        assert!(replacement_capacity.weights_bytes < hybrid_weights_bytes);
+        assert_ne!(
+            replacement_capacity.numeric_abi_fingerprint,
+            hybrid_numeric_fingerprint
+        );
+        let replacement_layer = &replacement_backend
+            .state
+            .as_ref()
+            .expect("replacement state")
+            .layers[0];
+        assert!(replacement_layer.down_proj.is_none());
+        assert!(replacement_layer.low_bit_down_proj.is_some());
+        let replacement_ticket = replacement_backend
+            .launch_prefill(&handoff)
+            .expect("launch native-replacement low-bit prefill");
+        assert!(replacement_backend
+            .collect(replacement_ticket)
+            .expect("collect native-replacement low-bit prefill")
+            .is_empty());
+        let _ = fs::remove_dir_all(package_root);
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal and RVLLM_TEST_APPLE_METALLIB_ROOT"]
+fn schema_v3_two_layer_mixed_low_bit_package_replaces_both_native_projections() {
+    use rvllm_apple::model_package_builder::{
+        build_apple_model_package, AppleLowBitExportRequest, AppleModelPackageBuildConfig,
+    };
+
+    let Some(metallib_root) = std::env::var_os("RVLLM_TEST_APPLE_METALLIB_ROOT") else {
+        eprintln!("skipping: RVLLM_TEST_APPLE_METALLIB_ROOT is not set");
+        return;
+    };
+    let dir = write_tiny_two_layer_fixture(false);
+    let config_path = dir.join("config.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&config_path).expect("read fixture config"))
+            .expect("parse fixture config");
+    config
+        .as_object_mut()
+        .expect("fixture config object")
+        .insert("model_type".to_owned(), Value::String("gemma4".to_owned()));
+    fs::write(
+        &config_path,
+        serde_json::to_vec_pretty(&config).expect("encode package fixture config"),
+    )
+    .expect("write package fixture config");
+    fs::write(dir.join("tokenizer.json"), b"tiny-tokenizer").expect("write fixture tokenizer");
+
+    let package_root = dir.with_file_name(format!(
+        "{}-mixed-low-bit-package",
+        dir.file_name()
+            .and_then(|name| name.to_str())
+            .expect("UTF-8 fixture name")
+    ));
+    let report = build_apple_model_package(&AppleModelPackageBuildConfig {
+        model_dir: dir.clone(),
+        metallib_root: std::path::PathBuf::from(metallib_root),
+        output_dir: package_root.clone(),
+        package_id: "tiny-two-layer-mixed-low-bit".to_owned(),
+        weight_format: None,
+        // Deliberately reverse manifest input order. Runtime preflight and
+        // arena installation must use canonical tensor-name order.
+        low_bit_down_projections: vec![
+            AppleLowBitExportRequest {
+                tensor_name: "model.layers.1.mlp.down_proj.weight".to_owned(),
+                format: AppleLowBitWeightFormat::W8A16,
+            },
+            AppleLowBitExportRequest {
+                tensor_name: "model.layers.0.mlp.down_proj.weight".to_owned(),
+                format: AppleLowBitWeightFormat::W4A16,
+            },
+        ],
+    })
+    .expect("build two-layer mixed low-bit package");
+    assert_eq!(report.low_bit_tensors, 2);
+
+    let env_guard = MetalDebugEnvGuard::new(&[RVLLM_METAL_DTYPE_ENV]);
+    env_guard.set(RVLLM_METAL_DTYPE_ENV, "f16");
+    let mut backend = ModelMetalBackend::from_model_package_path(package_root.clone())
+        .expect("construct two-layer package backend")
+        .with_low_bit_residency_policy(MetalLowBitResidencyPolicy::ReplaceNative);
+    backend
+        .prepare(&two_layer_plan(package_root.clone()))
+        .expect("prepare two-layer replacement model");
+    let state = backend.state.as_ref().expect("prepared state");
+    assert_eq!(state.layers.len(), 2);
+    assert!(state
+        .layers
+        .iter()
+        .all(|layer| layer.down_proj.is_none() && layer.low_bit_down_proj.is_some()));
+    assert_eq!(
+        state.layers[0]
+            .low_bit_down_proj
+            .expect("layer zero sidecar")
+            .format(),
+        AppleLowBitWeightFormat::W4A16
+    );
+    assert_eq!(
+        state.layers[1]
+            .low_bit_down_proj
+            .expect("layer one sidecar")
+            .format(),
+        AppleLowBitWeightFormat::W8A16
+    );
+    assert_eq!(
+        backend
+            .model_capacity()
+            .expect("two-layer capacity")
+            .low_bit_projection_count,
+        2
+    );
+
+    let handoff = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![rvllm_core::TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let ticket = backend
+        .launch_prefill(&handoff)
+        .expect("launch two-layer mixed low-bit prefill");
+    assert!(backend
+        .collect(ticket)
+        .expect("collect two-layer mixed low-bit prefill")
+        .is_empty());
+
+    let _ = fs::remove_dir_all(package_root);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
 #[ignore = "requires Apple Silicon Metal device"]
 fn tiny_one_layer_full_nonzero_model_backend_selected_logits_match_cpu() {
     let cpu_logits = cpu_reference_one_layer_full_nonzero_logits();
@@ -8566,6 +9723,76 @@ fn real_gemma4_e2b_model_backend_prepare_with_large_model_opt_in() {
     }
 
     prepare.expect("real Gemma4 E2B Metal prepare/load should complete under explicit opt-in");
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory and Apple Silicon Metal device"]
+fn real_gemma4_e2b_model_capacity_reports_budgeted_kv_accounts() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before prepare");
+    let env_guard = MetalDebugEnvGuard::new(&[
+        "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE",
+        "RVLLM_METAL_MAX_TOTAL_TOKENS",
+        "RVLLM_METAL_MAX_BATCH_TOKENS",
+        "RVLLM_METAL_MAX_BATCH_SEQUENCES",
+    ]);
+    env_guard.set("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+    env_guard.set("RVLLM_METAL_MAX_TOTAL_TOKENS", "128");
+    env_guard.set("RVLLM_METAL_MAX_BATCH_TOKENS", "128");
+    env_guard.set("RVLLM_METAL_MAX_BATCH_SEQUENCES", "8");
+
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+    let mut backend = ModelMetalBackend::new(model_dir);
+    backend.prepare(&plan).expect("budgeted prepare");
+    let capacity = backend.model_capacity().expect("prepared capacity report");
+
+    assert_eq!(capacity.max_context_tokens, 128);
+    assert_eq!(capacity.max_batch_tokens, 128);
+    assert_eq!(capacity.max_batch_sequences, 8);
+    assert_eq!(capacity.kv_page_size, 32);
+    assert_eq!(capacity.max_useful_kv_pages, 32);
+    assert_eq!(capacity.admission_required_kv_pages, 32);
+    assert_eq!(capacity.physical_kv_pages, 32);
+    assert_eq!(
+        capacity.reserve_bytes,
+        capacity.recommended_working_set_bytes * 20 / 100
+    );
+    assert_eq!(
+        capacity.usable_bytes,
+        capacity.recommended_working_set_bytes - capacity.reserve_bytes
+    );
+    assert_eq!(
+        capacity.scratch_budget_bytes,
+        capacity.scratch_slot_bytes * 3
+    );
+    assert_eq!(
+        capacity.allocated_kv_bytes,
+        capacity.kv_page_bytes * u64::from(capacity.physical_kv_pages)
+    );
+    assert_eq!(
+        capacity.kv_budget_bytes,
+        capacity.usable_bytes
+            - capacity.weights_bytes
+            - capacity.scratch_budget_bytes
+            - capacity.metadata_bytes
+    );
+    assert!(capacity.prepared_arena_bytes <= capacity.usable_bytes);
+    assert_eq!(
+        capacity.metal_float_type,
+        backend.metal_compute_dtype_report()
+    );
+    assert_eq!(capacity.kv_storage_format, capacity.metal_float_type);
+    assert!(!capacity.experimental_kv_int8_active);
+    assert_eq!(capacity.numeric_abi_version, METAL_NUMERIC_ABI_VERSION);
+    assert_ne!(capacity.numeric_abi_fingerprint, [0; 32]);
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -10762,13 +11989,31 @@ fn real_e2b_probe_profile_artifact_json(
             "pipeline_state_compiles": stats.pipeline_state_compiles,
             "command_buffers": stats.command_buffers,
             "encoders": stats.encoders,
+            "embedding_encoders": stats.embedding_encoders,
+            "ple_encoders": stats.ple_encoders,
+            "layer_encoders": stats.layer_encoders,
+            "layer_scale_encoder_fusions": stats.layer_scale_encoder_fusions,
+            "final_sample_encoders": stats.final_sample_encoders,
+            "final_logits_encoders": stats.final_logits_encoders,
+            "encoder_counts_by_kernel_family": {
+                "embedding": stats.embedding_encoders,
+                "ple_input": stats.ple_encoders,
+                "layer_body": stats.layer_encoders,
+                "layer_scale_fused": stats.layer_scale_encoder_fusions,
+                "final_sample": stats.final_sample_encoders,
+                "final_logits_diagnostic": stats.final_logits_encoders,
+            },
             "forced_waits": stats.forced_waits,
             "cpu_wall_ns": stats.cpu_wall_ns,
+            "cpu_encode_ns": stats.cpu_encode_ns,
+            "command_buffer_wait_ns": stats.command_buffer_wait_ns,
             "last_step_tokens": stats.last_step_tokens,
             "last_step_command_buffers": stats.last_step_command_buffers,
             "last_step_encoders": stats.last_step_encoders,
             "last_step_forced_waits": stats.last_step_forced_waits,
             "last_step_cpu_wall_ns": stats.last_step_cpu_wall_ns,
+            "last_step_cpu_encode_ns": stats.last_step_cpu_encode_ns,
+            "last_step_command_buffer_wait_ns": stats.last_step_command_buffer_wait_ns,
         },
         "debug_sync": debug_sync,
         "claim_boundary": "single-host probe artifact; not production performance, ANE, or regression evidence",
@@ -10779,6 +12024,7 @@ fn real_e2b_probe_profile_artifact_json(
 #[test]
 fn real_e2b_probe_profile_artifact_schema_records_unmeasured_slots() {
     let stats = MetalProbePerfStats {
+        last_step_gpu_execution_ns: None,
         prefill_steps: 1,
         decode_steps: 4,
         tokens: 6,
@@ -10786,13 +12032,23 @@ fn real_e2b_probe_profile_artifact_schema_records_unmeasured_slots() {
         pipeline_state_compiles: kernels::KERNEL_COUNT as u64,
         command_buffers: 5,
         encoders: 3187,
+        embedding_encoders: 5,
+        ple_encoders: 20,
+        layer_encoders: 3150,
+        layer_scale_encoder_fusions: 0,
+        final_sample_encoders: 12,
+        final_logits_encoders: 0,
         forced_waits: 5,
         cpu_wall_ns: 123,
+        cpu_encode_ns: 100,
+        command_buffer_wait_ns: 23,
         last_step_tokens: 1,
         last_step_command_buffers: 1,
         last_step_encoders: 700,
         last_step_forced_waits: 1,
         last_step_cpu_wall_ns: 456,
+        last_step_cpu_encode_ns: 400,
+        last_step_command_buffer_wait_ns: 56,
     };
 
     let artifact = real_e2b_probe_profile_artifact_json(stats, 478_027, 586, 1_767, false);
@@ -11068,4 +12324,165 @@ fn real_gemma4_e2b_arena_and_pipeline_counters_do_not_change_after_rollout() {
     }
 
     result.expect("real Gemma4 E2B hot-path arena and pipeline invariant test should run");
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn model_metal_in_flight_ring_holds_three_distinct_tickets() {
+    let mut ring = ModelInFlightRing::default();
+    let mut tickets = Vec::new();
+    for step_id in 0..MODEL_METAL_IN_FLIGHT_SLOTS as u64 {
+        let ticket = ring
+            .reserve(step_id, AppleLaunchKind::Rollout, None)
+            .expect("three fixed slots must be admissible");
+        assert_eq!(
+            ring.execution_slot(ticket).expect("ticket owns a slot"),
+            step_id as usize,
+            "first three tickets must deterministically own distinct slots"
+        );
+        ring.complete(
+            ticket,
+            Ok(vec![StepToken {
+                req_id: rvllm_core::ReqId(step_id + 10),
+                token_id: TokenId(step_id as u32 + 100),
+                finished: false,
+            }]),
+        )
+        .expect("reserved slot must accept its completion");
+        tickets.push(ticket);
+    }
+
+    assert_eq!(ring.len(), MODEL_METAL_IN_FLIGHT_SLOTS);
+    for (step_id, ticket) in tickets.into_iter().enumerate() {
+        let output = ring
+            .collect(ticket)
+            .expect("ticket must retain its own output");
+        assert_eq!(output[0].token_id, TokenId(step_id as u32 + 100));
+    }
+    assert_eq!(ring.len(), 0);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn model_metal_in_flight_ring_full_fails_closed_without_overwrite() {
+    let mut ring = ModelInFlightRing::default();
+    let tickets: Vec<_> = (0..MODEL_METAL_IN_FLIGHT_SLOTS as u64)
+        .map(|step_id| {
+            let ticket = ring
+                .reserve(step_id, AppleLaunchKind::Prefill, None)
+                .expect("fixed slot must be available");
+            ring.complete(ticket, Ok(Vec::new()))
+                .expect("completion must bind to reserved ticket");
+            ticket
+        })
+        .collect();
+
+    let error = ring
+        .reserve(99, AppleLaunchKind::Rollout, None)
+        .expect_err("a fourth uncollected step must be rejected");
+    assert!(format!("{error}").contains("in_flight_ring_full"));
+    assert_eq!(ring.len(), MODEL_METAL_IN_FLIGHT_SLOTS);
+    for ticket in tickets {
+        assert!(
+            ring.collect(ticket).is_ok(),
+            "ring-full must not overwrite live steps"
+        );
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn model_metal_in_flight_ring_collects_out_of_order_and_rejects_stale_tickets() {
+    let mut ring = ModelInFlightRing::default();
+    let tickets: Vec<_> = (0..3)
+        .map(|step_id| {
+            let ticket = ring
+                .reserve(step_id, AppleLaunchKind::Rollout, None)
+                .expect("slot must be available");
+            ring.complete(
+                ticket,
+                Ok(vec![StepToken {
+                    req_id: rvllm_core::ReqId(step_id),
+                    token_id: TokenId(step_id as u32),
+                    finished: false,
+                }]),
+            )
+            .expect("completion must bind");
+            ticket
+        })
+        .collect();
+
+    assert_eq!(
+        ring.collect(tickets[1]).expect("middle ticket")[0].token_id,
+        TokenId(1)
+    );
+    let stale = ring
+        .collect(tickets[1])
+        .expect_err("a completion may be collected only once");
+    assert!(format!("{stale}").contains("collect_stale_ticket"));
+    assert_eq!(
+        ring.len(),
+        2,
+        "stale collection must not reclaim another step"
+    );
+    assert_eq!(
+        ring.collect(tickets[2]).expect("last ticket")[0].token_id,
+        TokenId(2)
+    );
+    assert_eq!(
+        ring.collect(tickets[0]).expect("first ticket")[0].token_id,
+        TokenId(0)
+    );
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn model_metal_in_flight_error_collection_reclaims_the_slot() {
+    let mut ring = ModelInFlightRing::default();
+    let failed = ring
+        .reserve(7, AppleLaunchKind::Rollout, None)
+        .expect("slot must be available");
+    ring.complete(
+        failed,
+        Err(RvllmError::apple(
+            AppleError::InvalidWeightBlob {
+                reason: "injected completion failure",
+            },
+            model_ctx("test_completion"),
+        )),
+    )
+    .expect("error completion must bind to its ticket");
+
+    let error = ring
+        .collect(failed)
+        .expect_err("completion failure must propagate through collect");
+    assert!(format!("{error}").contains("injected completion failure"));
+    assert_eq!(ring.len(), 0, "failed completion must reclaim its slot");
+    let replacement = ring
+        .reserve(8, AppleLaunchKind::Prefill, None)
+        .expect("reclaimed slot must admit subsequent work");
+    assert_eq!(ring.execution_slot(replacement).unwrap(), 0);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn model_metal_command_buffer_error_collection_reclaims_the_slot() {
+    let mut ring = ModelInFlightRing::default();
+    let ticket = ring
+        .reserve(11, AppleLaunchKind::Rollout, None)
+        .expect("slot must be available");
+    let command_error = metal_command_buffer_completion_error(MTLCommandBufferStatus::Error)
+        .expect("Metal error status must map to a backend error");
+    ring.complete(ticket, Err(command_error))
+        .expect("GPU completion error must bind to its ticket");
+
+    let error = ring
+        .collect(ticket)
+        .expect_err("Metal completion error must propagate");
+    assert!(format!("{error}").contains("metal_command_buffer_failed"));
+    assert_eq!(ring.len(), 0, "error collection must reclaim the slot");
+    let replacement = ring
+        .reserve(12, AppleLaunchKind::Prefill, None)
+        .expect("reclaimed GPU-error slot must admit later work");
+    assert_eq!(ring.execution_slot(replacement).unwrap(), 0);
 }

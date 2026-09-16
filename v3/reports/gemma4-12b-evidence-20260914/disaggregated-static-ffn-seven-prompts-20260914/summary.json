@@ -1,0 +1,39 @@
+{
+  "qualified": true,
+  "prompts": 7,
+  "matched_token_ids": 31,
+  "actual_ane_decode_steps": 24,
+  "metal_decode_steps": 0,
+  "weight_plan": "static-ffn",
+  "compiled_programs": 116,
+  "metal_prepare_ms": 24825.630125,
+  "ane_prepare_ms": 334072.85645799997,
+  "total_prefill_sample_capture_ms": 42464.113667,
+  "total_decode_ms": 11271.415337,
+  "decode_tokens_per_second": 2.1292800666493616,
+  "median_decode_ms": 380.965688,
+  "minimum_decode_ms": 300.307083,
+  "p95_decode_ms": 567.6205,
+  "stage_totals_ms": {
+    "qkv_ms": 1421.86057,
+    "attention_ms": 748.49435,
+    "output_ms": 3298.675507,
+    "ffn_ms": 4876.3109030000005,
+    "vocabulary_ms": 686.379957,
+    "host_ms": 239.69404999999983
+  },
+  "stage_percent": {
+    "qkv_ms": 12.614747371898748,
+    "attention_ms": 6.640642081061129,
+    "output_ms": 29.265850014164908,
+    "ffn_ms": 43.26263168559521,
+    "vocabulary_ms": 6.089563169115609,
+    "host_ms": 2.1265656781643965
+  },
+  "baseline_dynamic_ffn_decode_tokens_per_second": 0.3169438469346739,
+  "observed_speed_ratio": 6.718161867607523,
+  "binary_sha256": "9ca813c9d58e65a4f7f9c64a8377fcfc77d80151c7a7ce3b667e8f4943d39877",
+  "load_before": "13:57  up  5:39, 1 user, load averages: 24.69 35.98 50.58\n",
+  "load_after": "14:05  up  5:46, 1 user, load averages: 13.22 20.40 36.81\n",
+  "claim": "Sequential qualified application runs under varying unrelated load. Observed ratio, not an isolated hardware speedup. Initialization and Metal first-token work are excluded from ANE decode throughput."
+}

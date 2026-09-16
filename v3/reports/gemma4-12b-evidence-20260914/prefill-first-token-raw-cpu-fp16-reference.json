@@ -1,0 +1,387 @@
+{
+  "schema": "rvllm.metal_prefill_cpu_fp16_decode_reference.v1",
+  "model_revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "transformers_revision": "3384908511545a9c146de65f01f3d29b90b2add6",
+  "transformers_version": "5.18.0.dev0",
+  "torch_version": "2.14.0",
+  "load_policy": "Fresh FP16 CPU from_pretrained; no model.to(dtype); eager attention",
+  "seed_report_sha256": "671b6ef0e2e5513fdf3d44745469b6d4397caa0575471ef3e9e363ae94904410",
+  "seed_source_dtype": "Bf16",
+  "seed_metal_numeric_abi": [
+    125,
+    219,
+    90,
+    129,
+    134,
+    218,
+    223,
+    79,
+    210,
+    205,
+    93,
+    138,
+    237,
+    83,
+    20,
+    215,
+    163,
+    28,
+    142,
+    174,
+    122,
+    179,
+    78,
+    186,
+    71,
+    51,
+    219,
+    243,
+    123,
+    214,
+    53,
+    114
+  ],
+  "prompt_token_ids": [
+    2,
+    818,
+    5279,
+    529,
+    7001,
+    563
+  ],
+  "decode_start_position": 6,
+  "generated_tokens": [
+    9079,
+    236761,
+    107,
+    100,
+    45518,
+    107,
+    101,
+    6372,
+    563,
+    4338,
+    236761,
+    9079,
+    563,
+    506,
+    5279,
+    532
+  ],
+  "generated_text": " Paris.\nthought\nThat is correct. Paris is the capital and",
+  "matches_full_bf16_reference": true,
+  "consumed_converted_ane_cache": true,
+  "verified_cache_layers": 48,
+  "ane_execution_verified": false,
+  "buffers": {
+    "model.language_model.embed_tokens.embed_scale": "torch.float16",
+    "model.language_model.rotary_emb.full_attention_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.full_attention_original_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.sliding_attention_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.sliding_attention_original_inv_freq": "torch.float32"
+  },
+  "steps": [
+    {
+      "position": 6,
+      "input_token": 9079,
+      "next_token": 236761,
+      "top5_tokens": [
+        236761,
+        532,
+        236764,
+        107,
+        236793
+      ],
+      "top5_logits": [
+        15.1015625,
+        11.84375,
+        10.953125,
+        10.359375,
+        9.6015625
+      ],
+      "seconds": 0.976425291999476
+    },
+    {
+      "position": 7,
+      "input_token": 236761,
+      "next_token": 107,
+      "top5_tokens": [
+        107,
+        106,
+        108,
+        101,
+        669
+      ],
+      "top5_logits": [
+        15.3515625,
+        11.7421875,
+        10.3046875,
+        8.859375,
+        8.375
+      ],
+      "seconds": 0.781582083000103
+    },
+    {
+      "position": 8,
+      "input_token": 107,
+      "next_token": 100,
+      "top5_tokens": [
+        100,
+        818,
+        45518,
+        1437,
+        101
+      ],
+      "top5_logits": [
+        20.015625,
+        13.03125,
+        10.609375,
+        10.4765625,
+        9.671875
+      ],
+      "seconds": 0.7315232090004429
+    },
+    {
+      "position": 9,
+      "input_token": 100,
+      "next_token": 45518,
+      "top5_tokens": [
+        45518,
+        3305,
+        44027,
+        107,
+        37484
+      ],
+      "top5_logits": [
+        20.5,
+        9.6484375,
+        7.01953125,
+        6.70703125,
+        6.3984375
+      ],
+      "seconds": 0.5618314590010414
+    },
+    {
+      "position": 10,
+      "input_token": 45518,
+      "next_token": 107,
+      "top5_tokens": [
+        107,
+        100,
+        594,
+        9628,
+        1689
+      ],
+      "top5_logits": [
+        20.046875,
+        10.796875,
+        7.81640625,
+        7.76953125,
+        6.921875
+      ],
+      "seconds": 0.8321963340004004
+    },
+    {
+      "position": 11,
+      "input_token": 107,
+      "next_token": 101,
+      "top5_tokens": [
+        101,
+        45518,
+        1018,
+        8291,
+        818
+      ],
+      "top5_logits": [
+        22.765625,
+        13.671875,
+        9.0390625,
+        8.9765625,
+        8.6953125
+      ],
+      "seconds": 0.7946464579999883
+    },
+    {
+      "position": 12,
+      "input_token": 101,
+      "next_token": 6372,
+      "top5_tokens": [
+        6372,
+        34318,
+        818,
+        50429,
+        4339
+      ],
+      "top5_logits": [
+        24.0625,
+        20.90625,
+        19.0625,
+        17.1875,
+        16.953125
+      ],
+      "seconds": 0.4740396250017511
+    },
+    {
+      "position": 13,
+      "input_token": 6372,
+      "next_token": 563,
+      "top5_tokens": [
+        563,
+        236789,
+        236858,
+        4338,
+        5456
+      ],
+      "top5_logits": [
+        22.3125,
+        17.140625,
+        13.109375,
+        10.84375,
+        10.4765625
+      ],
+      "seconds": 0.9010273749991029
+    },
+    {
+      "position": 14,
+      "input_token": 563,
+      "next_token": 4338,
+      "top5_tokens": [
+        4338,
+        496,
+        506,
+        15195,
+        21648
+      ],
+      "top5_logits": [
+        22.046875,
+        17.265625,
+        10.6640625,
+        9.203125,
+        8.7265625
+      ],
+      "seconds": 0.6753975419997005
+    },
+    {
+      "position": 15,
+      "input_token": 4338,
+      "next_token": 236761,
+      "top5_tokens": [
+        236761,
+        236888,
+        236764,
+        236787,
+        236793
+      ],
+      "top5_logits": [
+        24.15625,
+        22.015625,
+        13.875,
+        12.25,
+        12.015625
+      ],
+      "seconds": 0.7830434169991349
+    },
+    {
+      "position": 16,
+      "input_token": 236761,
+      "next_token": 9079,
+      "top5_tokens": [
+        9079,
+        5213,
+        106,
+        236743,
+        5612
+      ],
+      "top5_logits": [
+        26.125,
+        20.625,
+        20.328125,
+        17.46875,
+        15.984375
+      ],
+      "seconds": 0.871521417000622
+    },
+    {
+      "position": 17,
+      "input_token": 9079,
+      "next_token": 563,
+      "top5_tokens": [
+        563,
+        815,
+        14736,
+        236764,
+        5151
+      ],
+      "top5_logits": [
+        19.65625,
+        13.8984375,
+        12.8046875,
+        8.3359375,
+        7.69140625
+      ],
+      "seconds": 0.7832137500008685
+    },
+    {
+      "position": 18,
+      "input_token": 563,
+      "next_token": 506,
+      "top5_tokens": [
+        506,
+        711,
+        1800,
+        886,
+        3224
+      ],
+      "top5_logits": [
+        22.375,
+        19.09375,
+        16.28125,
+        16.203125,
+        15.875
+      ],
+      "seconds": 0.5090565840000636
+    },
+    {
+      "position": 19,
+      "input_token": 506,
+      "next_token": 5279,
+      "top5_tokens": [
+        5279,
+        7488,
+        1346,
+        2891,
+        5255
+      ],
+      "top5_logits": [
+        17.34375,
+        12.7734375,
+        12.3203125,
+        7.08984375,
+        5.59375
+      ],
+      "seconds": 0.8944434590011952
+    },
+    {
+      "position": 20,
+      "input_token": 5279,
+      "next_token": 532,
+      "top5_tokens": [
+        532,
+        3207,
+        529,
+        236764,
+        618
+      ],
+      "top5_logits": [
+        25.34375,
+        17.734375,
+        16.109375,
+        13.390625,
+        11.015625
+      ],
+      "seconds": 0.7671924999995099
+    }
+  ],
+  "load_and_import_seconds": 6.316303292000157,
+  "total_seconds": 17.659069625000484
+}

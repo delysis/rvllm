@@ -1,0 +1,37 @@
+{
+  "after": [],
+  "command": {
+    "args": [],
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "env": {},
+    "executable": {
+      "path": "/usr/bin/true",
+      "sha256": "ccb5264afd44f9c8539ef99ac96aec86d07bff579cabf1be3c0b57b1ed99afc5"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 1073741824,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "quiet_process_names": [
+      "llama-server"
+    ],
+    "thermal_state": 1
+  },
+  "id": "02-ac-fair",
+  "inputs": [],
+  "max_run_seconds": 10,
+  "max_wait_seconds": 120,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 2,
+  "validator": null
+}

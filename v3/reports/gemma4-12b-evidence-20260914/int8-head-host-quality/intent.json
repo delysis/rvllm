@@ -1,0 +1,16 @@
+{
+  "schema": "rvllm.int8_head_host_intent.v1",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "steps": [
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/step-21.json",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/step-84.json",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/step-652.json",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/step-230.json"
+  ],
+  "vocabulary_rows": 262144,
+  "tile_rows": 16384,
+  "accelerator_calls": 0,
+  "original_reference": "CPU dot of original FP16 weights, Gemma FP16 softcap, winner and top logits checked against saved ANE results",
+  "candidate": "Same hidden states with the established per-output INT8 quantizer on every head row",
+  "limitation": "Available saved states have large winner margins; this is not a small-margin or full-model quality evaluation."
+}

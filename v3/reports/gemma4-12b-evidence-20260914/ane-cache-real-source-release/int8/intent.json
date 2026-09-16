@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_ane_int8_probe",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--mode",
+    "int8",
+    "--iterations",
+    "12",
+    "--cache",
+    "require",
+    "--report",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/ane-cache-real-source-release/int8/probe.json"
+  ],
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "disk_free_before": 27870998528,
+  "scope": "One previously provisioned layer-0 FFN; require cache hit, no explicit compilation fallback. Three unchanged CPU checks, five warmups, twelve evaluations. Stop on failure."
+}

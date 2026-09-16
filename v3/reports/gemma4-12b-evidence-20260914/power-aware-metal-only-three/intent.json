@@ -1,0 +1,34 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--metallib-bf16",
+    "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+    "--max-new-tokens",
+    "1",
+    "--capture-layer-states",
+    "true",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/power-aware-metal-only-three/inference",
+    "--prompt-file",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/power-aware-metal-only-three/prompt-0.txt",
+    "--prompt-file",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/power-aware-metal-only-three/prompt-1.txt",
+    "--prompt-file",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/power-aware-metal-only-three/prompt-2.txt"
+  ],
+  "binary_sha256": "28db861526445debc6e21d6af3b86466043f45e6ed17dc7742acd8367cea5e9e",
+  "metallib_sha256": "6efa8fbed39f6d36fb83fe823da1a5d0733c22970b96b431439be27a07617705",
+  "boot_before": "kern.boottime: { sec = 1789488066, usec = 242846 } Tue Sep 15 12:01:06 2026\n",
+  "scope": "Default Metal kernels under incompatible legacy dtype/sizing/debug environment. One generated token per actual text prompt; no ANE loading or decode.",
+  "legacy_overrides": {
+    "RVLLM_METAL_DTYPE": "float16",
+    "RVLLM_METAL_MAX_TOTAL_TOKENS": "1",
+    "RVLLM_METAL_MAX_BATCH_TOKENS": "1",
+    "RVLLM_METAL_MAX_BATCH_SEQUENCES": "99",
+    "RVLLM_METAL_DEBUG_SYNC": "1",
+    "RVLLM_METAL_DEBUG_TRACE_LAYER": "0"
+  },
+  "disk_free_before": 17001877504
+}

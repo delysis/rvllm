@@ -4,6 +4,11 @@ mod ffi;
 pub use ffi::*;
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+mod in_memory;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub use in_memory::{compile_budget_used, AneInMemoryKernel, AneInMemoryProgram, AneProgramCachePolicy};
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod platform {
     use super::*;
     use objc2::rc::Retained;

@@ -139,7 +139,6 @@ pub fn validate_gemma4_model_dir_metadata(model_dir: &Path) -> Result<Gemma4DryR
     }
 
     let tensors = scan_safetensor_tensor_metadata(model_dir)?;
-    validate_no_unsupported_moe_tensors(model_dir, &tensors)?;
     let weight_prefix = arch.weight_prefix.clone();
     let embed_tokens = join_weight_name(&weight_prefix, "embed_tokens.weight");
     let final_norm = join_weight_name(&weight_prefix, "norm.weight");
@@ -355,6 +354,65 @@ fn validate_gemma4_dry_run_layer(
         &[arch.hidden_size, intermediate_size],
     )?;
     validate_linear_tensor_dtype(model_dir, tensors, &down_proj)?;
+
+    if arch.enable_moe_block {
+        let pre_feedforward_layernorm_2 = format!("{lprefix}.pre_feedforward_layernorm_2.weight");
+        let post_feedforward_layernorm_1 = format!("{lprefix}.post_feedforward_layernorm_1.weight");
+        let post_feedforward_layernorm_2 = format!("{lprefix}.post_feedforward_layernorm_2.weight");
+        for name in [
+            &pre_feedforward_layernorm_2,
+            &post_feedforward_layernorm_1,
+            &post_feedforward_layernorm_2,
+        ] {
+            validate_required_shape(model_dir, tensors, name, &[arch.hidden_size])?;
+            validate_floating_tensor_dtype(model_dir, tensors, name)?;
+        }
+
+        let router_proj = format!("{lprefix}.router.proj.weight");
+        let router_scale = format!("{lprefix}.router.scale");
+        let router_per_expert_scale = format!("{lprefix}.router.per_expert_scale");
+        validate_required_shape(
+            model_dir,
+            tensors,
+            &router_proj,
+            &[arch.num_experts, arch.hidden_size],
+        )?;
+        validate_linear_tensor_dtype(model_dir, tensors, &router_proj)?;
+        validate_required_shape(model_dir, tensors, &router_scale, &[arch.hidden_size])?;
+        validate_floating_tensor_dtype(model_dir, tensors, &router_scale)?;
+        validate_required_shape(
+            model_dir,
+            tensors,
+            &router_per_expert_scale,
+            &[arch.num_experts],
+        )?;
+        validate_floating_tensor_dtype(model_dir, tensors, &router_per_expert_scale)?;
+
+        let experts_gate_up = format!("{lprefix}.experts.gate_up_proj");
+        let experts_down = format!("{lprefix}.experts.down_proj");
+        validate_required_shape(
+            model_dir,
+            tensors,
+            &experts_gate_up,
+            &[
+                arch.num_experts,
+                2 * arch.moe_intermediate_size,
+                arch.hidden_size,
+            ],
+        )?;
+        validate_linear_tensor_dtype(model_dir, tensors, &experts_gate_up)?;
+        validate_required_shape(
+            model_dir,
+            tensors,
+            &experts_down,
+            &[
+                arch.num_experts,
+                arch.hidden_size,
+                arch.moe_intermediate_size,
+            ],
+        )?;
+        validate_linear_tensor_dtype(model_dir, tensors, &experts_down)?;
+    }
 
     let layer_scalar = resolve_required_dry_run_alias(
         model_dir,
@@ -696,40 +754,7 @@ fn validate_gemma4_dry_run_config_identity(model_dir: &Path) -> Result<()> {
         }
     }
 
-    for (scope, value) in [("root", &config), ("text_config", text_config)] {
-        for field in [
-            "enable_moe_block",
-            "num_experts",
-            "top_k_experts",
-            "expert_intermediate_size",
-            "moe_intermediate_size",
-            "num_local_experts",
-            "num_experts_per_tok",
-            "router_aux_loss_coef",
-        ] {
-            if config_value_is_truthy(value.get(field)) {
-                return Err(corrupt_error(
-                    &path,
-                    format!(
-                        "Gemma4 dry-run supports dense Gemma4 only; unsupported MoE marker {scope}.{field}"
-                    ),
-                ));
-            }
-        }
-    }
-
     Ok(())
-}
-
-fn config_value_is_truthy(value: Option<&serde_json::Value>) -> bool {
-    match value {
-        Some(serde_json::Value::Bool(value)) => *value,
-        Some(serde_json::Value::Number(value)) => value.as_f64().is_some_and(|n| n != 0.0),
-        Some(serde_json::Value::String(value)) => !value.is_empty() && value != "0",
-        Some(serde_json::Value::Array(value)) => !value.is_empty(),
-        Some(serde_json::Value::Object(value)) => !value.is_empty(),
-        Some(serde_json::Value::Null) | None => false,
-    }
 }
 
 fn scan_safetensor_tensor_metadata(model_dir: &Path) -> Result<BTreeMap<String, DryRunTensorInfo>> {
@@ -746,31 +771,6 @@ fn scan_safetensor_tensor_metadata(model_dir: &Path) -> Result<BTreeMap<String, 
         }
     }
     Ok(tensors)
-}
-
-fn validate_no_unsupported_moe_tensors(
-    model_dir: &Path,
-    tensors: &BTreeMap<String, DryRunTensorInfo>,
-) -> Result<()> {
-    for name in tensors.keys() {
-        if tensor_name_is_unsupported_moe(name) {
-            return Err(corrupt_error(
-                model_dir,
-                format!("Gemma4 dry-run supports dense Gemma4 only; unsupported MoE tensor {name}"),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn tensor_name_is_unsupported_moe(name: &str) -> bool {
-    name.contains(".experts.")
-        || name.contains(".expert.")
-        || name.contains(".router.")
-        || name.contains(".router_")
-        || name.contains(".block_sparse_moe.")
-        || name.contains("block_sparse_moe")
-        || name.contains(".moe.")
 }
 
 fn parse_safetensor_metadata_file(path: &Path) -> Result<Vec<(String, DryRunTensorInfo)>> {
@@ -1894,12 +1894,8 @@ mod tests {
     }
 
     #[test]
-    fn gemma4_dry_run_rejects_explicit_moe_markers() {
-        for (field, value) in [
-            ("enable_moe_block", serde_json::json!(true)),
-            ("num_experts", serde_json::json!(128)),
-            ("top_k_experts", serde_json::json!(8)),
-        ] {
+    fn gemma4_dry_run_rejects_incomplete_moe_metadata() {
+        for missing_field in ["num_experts", "top_k_experts", "moe_intermediate_size"] {
             let dir = write_dry_run_full_gemma_style_fixture(
                 false,
                 false,
@@ -1911,22 +1907,24 @@ mod tests {
                 Some("layer_scalar"),
             );
             mutate_fixture_config(&dir, |config| {
-                config["text_config"][field] = value;
+                config["text_config"]["enable_moe_block"] = serde_json::json!(true);
+                config["text_config"]["num_experts"] = serde_json::json!(4);
+                config["text_config"]["top_k_experts"] = serde_json::json!(2);
+                config["text_config"]["moe_intermediate_size"] = serde_json::json!(8);
+                config["text_config"][missing_field] = Value::Null;
             });
             let err =
-                Gemma4DryRunValidation::from_model_dir(&dir).expect_err("MoE marker must fail");
+                Gemma4DryRunValidation::from_model_dir(&dir).expect_err("incomplete MoE must fail");
             let msg = format!("{err}");
 
-            assert!(msg.contains("Corrupt"));
-            assert!(msg.contains("dense Gemma4 only"));
-            assert!(msg.contains(field));
+            assert!(msg.contains("MoE") || msg.contains("MissingTensor"));
 
             let _ = fs::remove_dir_all(dir);
         }
     }
 
     #[test]
-    fn gemma4_dry_run_rejects_moe_tensor_metadata() {
+    fn gemma4_dry_run_allows_extra_moe_tensor_metadata_when_dense() {
         for tensor_name in [
             "model.language_model.layers.0.mlp.router.weight",
             "model.language_model.layers.0.mlp.experts.0.gate_proj.weight",
@@ -1945,14 +1943,8 @@ mod tests {
                 Some(tensor_name),
                 false,
             );
-            let err = Gemma4DryRunValidation::from_model_dir(&dir)
-                .expect_err("MoE tensor metadata must fail");
-            let msg = format!("{err}");
-
-            assert!(msg.contains("Corrupt"));
-            assert!(msg.contains("dense Gemma4 only"));
-            assert!(msg.contains("unsupported MoE tensor"));
-            assert!(msg.contains(tensor_name));
+            Gemma4DryRunValidation::from_model_dir(&dir)
+                .expect("dense configs should ignore unrelated MoE-format tensors");
 
             let _ = fs::remove_dir_all(dir);
         }

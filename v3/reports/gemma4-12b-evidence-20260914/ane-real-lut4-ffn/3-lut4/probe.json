@@ -1,0 +1,178 @@
+{
+  "ane_execution_verified": true,
+  "ane_vs_original_cpu_reference": {
+    "elements": 15360,
+    "max_abs_error": 11.192340850830078,
+    "relative_l2_error": 0.18581393089150003
+  },
+  "ane_vs_selected_cpu_reference": {
+    "elements": 15360,
+    "max_abs_error": 0.02666473388671875,
+    "relative_l2_error": 0.000406945139049776
+  },
+  "cache_policy": "RequireExisting",
+  "claim": "One real FFN numerical/latency experiment. Source blob size is not compiled/resident size or proof of compressed runtime bandwidth. Quantization errors are observed, not full-model quality acceptance.",
+  "compile_load_ms": 1534.014792,
+  "cpu_or_gpu_fallback": false,
+  "cpu_quantization_errors_gate_up_gated_down": [
+    {
+      "elements": 61440,
+      "max_abs_error": 13.609375,
+      "relative_l2_error": 0.12366354029775428
+    },
+    {
+      "elements": 61440,
+      "max_abs_error": 12.125,
+      "relative_l2_error": 0.13684878270038256
+    },
+    {
+      "elements": 61440,
+      "max_abs_error": 53.625,
+      "relative_l2_error": 0.16419787441659314
+    },
+    {
+      "elements": 15360,
+      "max_abs_error": 11.190332412719727,
+      "relative_l2_error": 0.18578576521643267
+    }
+  ],
+  "dense_reconstruction_fp16_sha256": "a72573ef0574b0b5602947060fca8023f3f20fd0d31e8a76bf0fc9e2a2e7c5ad",
+  "diagnostic_journal_enabled": false,
+  "full_model_quality_qualified": false,
+  "input_sources": [
+    {
+      "synthetic_pattern": 0
+    },
+    {
+      "synthetic_pattern": 1
+    },
+    {
+      "synthetic_pattern": 2
+    },
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16",
+      "sha256": "17f5439b339ba2e5c17ea8d2241bbae1824c61ae05728597cf9d88d48ff6883d"
+    }
+  ],
+  "iterations": 32,
+  "layer": 0,
+  "median_ms": 3.7905835000000003,
+  "minimum_ms": 3.6316249999999997,
+  "mode": "lut4",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "numerical_inputs_checked": 4,
+  "original_fp16_sha256": "2def7d665d86b519f8c50369914aa30c07f7d73282fa0633b1a47f15a17ffdd3",
+  "original_weight_payload_bytes": 353894400,
+  "p95_ms": 5.499625,
+  "per_input_errors": [
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.7088007926940918,
+        "relative_l2_error": 0.1549518754816783
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.003178529441356659,
+        "relative_l2_error": 0.0028894345660284535
+      },
+      "input_max_abs": 0.75
+    },
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.43840837478637695,
+        "relative_l2_error": 0.14532786365525743
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.00340841431170702,
+        "relative_l2_error": 0.0030004011157610984
+      },
+      "input_max_abs": 0.75
+    },
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.7056186199188232,
+        "relative_l2_error": 0.1711227301690843
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.0036112070083618164,
+        "relative_l2_error": 0.003689053991722865
+      },
+      "input_max_abs": 0.75
+    },
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 11.192340850830078,
+        "relative_l2_error": 0.18594531733504696
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.02666473388671875,
+        "relative_l2_error": 0.00034926629400335496
+      },
+      "input_max_abs": 171.5
+    }
+  ],
+  "quantization": "Three scalar per-tensor 16-entry FP16 codebooks; weighted FP16 histogram Lloyd fitting, quantile-midpoint initialization, up to 50 iterations; final assignment to nearest stored FP16 centroid; low nibble first; no format fallback",
+  "quantize_and_reconstruct_ms": 8549.876292,
+  "quantized_source_blob_bytes": 88474240,
+  "samples_ms": [
+    3.6316249999999997,
+    3.644208,
+    3.693333,
+    3.706292,
+    3.7097919999999998,
+    3.715125,
+    3.717958,
+    3.731625,
+    3.7378329999999997,
+    3.741791,
+    3.755458,
+    3.757084,
+    3.76025,
+    3.774417,
+    3.77625,
+    3.787542,
+    3.793625,
+    3.794583,
+    3.805541,
+    3.8140829999999997,
+    3.8287500000000003,
+    3.892292,
+    3.902875,
+    3.9499169999999997,
+    4.097125,
+    4.155791,
+    4.336874999999999,
+    4.381125,
+    4.490708000000001,
+    4.497417,
+    5.499625,
+    6.939334000000001
+  ],
+  "schema": "rvllm.ane_weight_ffn_probe.v2",
+  "warmups": 5,
+  "weight_load_ms": 3575.8877079999997,
+  "weight_reconstruction_errors_gate_up_down": [
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.1591796875,
+      "relative_l2_error": 0.14374607121723612
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.1846923828125,
+      "relative_l2_error": 0.14353803181582964
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.13409423828125,
+      "relative_l2_error": 0.1532297958189417
+    }
+  ]
+}

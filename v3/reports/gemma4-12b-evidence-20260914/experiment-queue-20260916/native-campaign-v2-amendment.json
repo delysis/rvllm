@@ -1,0 +1,17 @@
+{
+  "schema": "rvllm.native_ane_comparison_amendment.v1",
+  "state": "predeclared-no-model-runs",
+  "prior_plan": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-campaign-plan.json",
+  "queue": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-fair-v2",
+  "queue_binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/rvllm_experiment_queue-release-v2",
+  "queue_sha256": "b010269acf9993643365f6dd9b5cc93c25bb79371a4c6a7f3c8d06bdbe579915",
+  "changes": [
+    "Preparation jobs permit stable nominal or Fair at launch (thermal_state null), and never qualify performance. Timing jobs continue requiring exact Fair1.",
+    "Decode ratio eligibility uses outer ANE median decode drift <=5%. Prefill/import and phase-sum ratios use their own <=5% drift gates; all drifts are reported. No measured result has informed this decision."
+  ],
+  "host_tests": {
+    "passed": 10,
+    "failed": 0
+  },
+  "old_queue": "Stopped before any model run; no attempts."
+}

@@ -13,13 +13,20 @@
 //!   RVLLM_PPL_TEXT    = path to plain-text file to evaluate
 //!   RVLLM_PROMPT      = inline text (alternative to file)
 
+#[cfg(any(feature = "apple", feature = "cuda"))]
 use std::path::PathBuf;
+#[cfg(feature = "cuda")]
 use std::time::Instant;
 
+use rvllm_bench::ane_meta::{AppleCliProfile, BackendProfile};
+#[cfg(feature = "cuda")]
 use rvllm_core::{ModelArch as HfModelArch, ModelConfig};
+#[cfg(feature = "cuda")]
 use rvllm_runtime::gemma4_bring_up::{Gemma4Bringup, Gemma4EnginePaths};
+#[cfg(feature = "cuda")]
 use rvllm_runtime::{Bringup, EnginePaths};
 
+#[cfg(any(feature = "apple", feature = "cuda"))]
 fn env_path(k: &str) -> Result<PathBuf, String> {
     std::env::var(k)
         .map_err(|_| format!("missing env var: {k}"))
@@ -28,12 +35,14 @@ fn env_path(k: &str) -> Result<PathBuf, String> {
 
 /// Optional env var: returns `/dev/null` when missing. For paths that
 /// the sm_121 backend never opens (SM90-only .so files + policy).
+#[cfg(feature = "cuda")]
 fn env_path_or_placeholder(k: &str) -> PathBuf {
     std::env::var(k)
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/dev/null"))
 }
 
+#[cfg(feature = "cuda")]
 fn is_gemma4_model_dir(model_dir: &std::path::Path) -> Result<bool, String> {
     Ok(matches!(
         ModelConfig::load_hf(model_dir)
@@ -54,22 +63,70 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let profile = AppleCliProfile::from_env();
+    if matches!(profile.backend(), BackendProfile::Apple) {
+        return run_apple_ppl();
+    }
+    run_cuda_ppl()
+}
+
+#[cfg(feature = "apple")]
+fn run_apple_ppl() -> Result<(), String> {
+    let model_dir = env_path("RVLLM_MODEL_DIR")?;
+    let text = read_eval_text()?;
+    let chunk_len = std::env::var("RVLLM_PPL_CHUNK")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16);
+    let max_chunks = std::env::var("RVLLM_PPL_CHUNKS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let max_total_tokens = rvllm_bench::apple_metal_text::env_usize(
+        "RVLLM_METAL_MAX_TOTAL_TOKENS",
+        rvllm_bench::apple_metal_text::env_usize("RVLLM_METAL_MAX_PROBE_TOKENS", 2048),
+    );
+    let report =
+        rvllm_bench::apple_metal_text::run_ppl(rvllm_bench::apple_metal_text::MetalPplOptions {
+            model_dir,
+            text,
+            chunk_len,
+            max_chunks,
+            no_bos: rvllm_bench::apple_metal_text::env_bool("RVLLM_NO_BOS"),
+            max_total_tokens,
+            large_model_opt_in: rvllm_bench::apple_metal_text::env_bool(
+                "RVLLM_APPLE_LARGE_MODEL_OPT_IN",
+            ),
+        })?;
+    eprintln!(
+        "metal-ppl: perplexity={:.4} tokens={} elapsed_s={:.1} prepare_ms={:.1}",
+        report.perplexity, report.tokens, report.elapsed_s, report.prepare_ms
+    );
+    eprintln!("{}", report.claim);
+    println!(
+        "{}",
+        serde_json::to_string(&report).map_err(|e| format!("serialize json: {e}"))?
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "apple"))]
+fn run_apple_ppl() -> Result<(), String> {
+    Err(
+        "RVLLM_BACKEND_PROFILE=apple requires building rvllm-ppl with --features apple on macOS"
+            .to_owned(),
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn run_cuda_ppl() -> Result<(), String> {
     let model_dir = env_path("RVLLM_MODEL_DIR")?;
 
     let tok_path = model_dir.join("tokenizer.json");
     let tokenizer = tokenizers::Tokenizer::from_file(&tok_path)
         .map_err(|e| format!("tokenizer load {}: {e}", tok_path.display()))?;
 
-    let text = if let Ok(path) = std::env::var("RVLLM_PPL_TEXT") {
-        std::fs::read_to_string(&path).map_err(|e| format!("read {path}: {e}"))?
-    } else if let Ok(p) = std::env::var("RVLLM_PROMPT") {
-        p
-    } else {
-        let mut buf = String::new();
-        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
-            .map_err(|e| format!("stdin: {e}"))?;
-        buf
-    };
+    let text = read_eval_text()?;
     if text.is_empty() {
         return Err("empty text (set RVLLM_PPL_TEXT or RVLLM_PROMPT)".into());
     }
@@ -245,4 +302,30 @@ fn run() -> Result<(), String> {
         "{{\"perplexity\":{ppl:.4},\"tokens\":{total_tokens},\"chunk_len\":{chunk_len},\"elapsed_s\":{elapsed:.1}}}"
     );
     Ok(())
+}
+
+#[cfg(not(feature = "cuda"))]
+fn run_cuda_ppl() -> Result<(), String> {
+    Err(
+        "rvllm-ppl CUDA path requires --features cuda; set RVLLM_BACKEND_PROFILE=apple and build with --features apple for Metal"
+            .to_owned(),
+    )
+}
+
+#[cfg(any(feature = "apple", feature = "cuda"))]
+fn read_eval_text() -> Result<String, String> {
+    let text = if let Ok(path) = std::env::var("RVLLM_PPL_TEXT") {
+        std::fs::read_to_string(&path).map_err(|e| format!("read {path}: {e}"))?
+    } else if let Ok(p) = std::env::var("RVLLM_PROMPT") {
+        p
+    } else {
+        let mut buf = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+            .map_err(|e| format!("stdin: {e}"))?;
+        buf
+    };
+    if text.is_empty() {
+        return Err("empty text (set RVLLM_PPL_TEXT or RVLLM_PROMPT)".into());
+    }
+    Ok(text)
 }

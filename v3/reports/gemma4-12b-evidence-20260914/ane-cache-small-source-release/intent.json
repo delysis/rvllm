@@ -1,0 +1,11 @@
+{
+  "binary_sha256": "5cd5924f22002513a39486faaf1841784d7b4cecf6a901f1ead0b5782ac42112",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "tests": [
+    "cache_different_weights_miss",
+    "cache_compile_and_reload",
+    "cache_require_existing",
+    "cache_purge_owned_fixture"
+  ],
+  "scope": "One disposable owned 32-channel diagonal projection. Serial fresh processes; no full model. Check changed-weight miss, cold compile/reload, cross-process load without compile, then purge only this unloaded fixture and verify cache query. Stop on failure."
+}

@@ -1,5 +1,8 @@
 # rvllm v3 — implementation plan
 
+For the paused Gemma 4 12B Metal/ANE campaign, read [HANDOFF.md](HANDOFF.md).
+Its evidence and restart status supersede historical progress notes.
+
 Consolidates `v3/specs/*.md` into a build order, resolves conflicts, sets the first 3 milestones.
 
 ## 1. Locked decisions
@@ -24,14 +27,17 @@ rvllm-graph     — capture.rs replay.rs pool.rs validate.rs fingerprint.rs
 rvllm-loader    — safetensors.rs fp8_quant.rs placement.rs
 rvllm-sampling  — greedy.rs topk_topp.rs dtoh_pinned.rs rng.rs
 rvllm-runtime   — layer_exec.rs scheduler.rs lifecycle.rs sched_state.rs engine.rs
-rvllm-serve     — http.rs openai.rs
-rvllm-bench     — harness.rs gates.rs profile.rs
+rvllm-serve     — http.rs openai.rs (runtime; optional Apple plan + model metadata)
+rvllm-bench     — harness.rs gates.rs profile.rs (runtime; optional Apple plan + model metadata)
 rvllm-deploy    — tarball.rs spawn.rs deploy_and_bench.rs
 rvllm-zig       — bpe.zig topk.zig metapack.zig (FFI shim in rvllm-core)
 tools/          — parity, perplexity, bench-gate, autotune (binaries, not crates)
 ```
 
-DAG enforced by `cargo deny` + `tests/dag.rs`. Cycles forbidden. No crate may import from a sibling at its own level.
+DAG enforced by `cargo deny` + `tests/dag.rs`. Cycles are forbidden. The Apple
+Metal backend may consume loader metadata, and Apple-enabled serving/benchmark
+frontends may consume the Apple plan plus loader metadata; all of these edges
+point down the DAG and are feature-gated where the dependency is platform-specific.
 
 ### 1.2 Conflict resolutions
 

@@ -40,6 +40,10 @@ pub struct Gemma4Arch {
     pub num_kv_heads_global: usize,
     pub intermediate_size: usize,
     pub use_double_wide_mlp: bool,
+    pub enable_moe_block: bool,
+    pub num_experts: usize,
+    pub top_k_experts: usize,
+    pub moe_intermediate_size: usize,
     pub num_kv_shared_layers: usize,
     pub hidden_size_per_layer_input: usize,
     pub vocab_size_per_layer_input: usize,
@@ -96,6 +100,26 @@ impl Gemma4Arch {
             .as_bool()
             .or_else(|| v["use_double_wide_mlp"].as_bool())
             .unwrap_or(false);
+        let enable_moe_block = tc["enable_moe_block"]
+            .as_bool()
+            .or_else(|| v["enable_moe_block"].as_bool())
+            .unwrap_or(false);
+        let num_experts = tc["num_experts"]
+            .as_u64()
+            .or_else(|| v["num_experts"].as_u64())
+            .unwrap_or(0) as usize;
+        let top_k_experts = tc["top_k_experts"]
+            .as_u64()
+            .or_else(|| tc["num_experts_per_tok"].as_u64())
+            .or_else(|| v["top_k_experts"].as_u64())
+            .or_else(|| v["num_experts_per_tok"].as_u64())
+            .unwrap_or(0) as usize;
+        let moe_intermediate_size = tc["moe_intermediate_size"]
+            .as_u64()
+            .or_else(|| tc["expert_intermediate_size"].as_u64())
+            .or_else(|| v["moe_intermediate_size"].as_u64())
+            .or_else(|| v["expert_intermediate_size"].as_u64())
+            .unwrap_or(0) as usize;
         let num_kv_shared_layers = tc["num_kv_shared_layers"]
             .as_u64()
             .or_else(|| v["num_kv_shared_layers"].as_u64())
@@ -183,6 +207,32 @@ impl Gemma4Arch {
                 bt: std::backtrace::Backtrace::capture(),
             });
         }
+        if enable_moe_block
+            && (num_experts == 0 || top_k_experts == 0 || top_k_experts > num_experts)
+        {
+            return Err(RvllmError::Loader {
+                err: LoaderError::Corrupt {
+                    detail: "Gemma4 MoE requires 0 < top_k_experts <= num_experts".into(),
+                },
+                ctx: LoaderCtx {
+                    path: p.clone(),
+                    tensor: None,
+                },
+                bt: std::backtrace::Backtrace::capture(),
+            });
+        }
+        if enable_moe_block && moe_intermediate_size == 0 {
+            return Err(RvllmError::Loader {
+                err: LoaderError::Corrupt {
+                    detail: "Gemma4 MoE requires nonzero moe_intermediate_size".into(),
+                },
+                ctx: LoaderCtx {
+                    path: p.clone(),
+                    tensor: None,
+                },
+                bt: std::backtrace::Backtrace::capture(),
+            });
+        }
 
         Ok(Self {
             num_hidden_layers,
@@ -194,6 +244,10 @@ impl Gemma4Arch {
             num_kv_heads_global,
             intermediate_size,
             use_double_wide_mlp,
+            enable_moe_block,
+            num_experts,
+            top_k_experts,
+            moe_intermediate_size,
             num_kv_shared_layers,
             hidden_size_per_layer_input,
             vocab_size_per_layer_input,
@@ -405,40 +459,7 @@ fn validate_gemma4_config_identity(config: &serde_json::Value, path: &Path) -> R
         }
     }
 
-    for (scope, value) in [("root", config), ("text_config", text_config)] {
-        for field in [
-            "enable_moe_block",
-            "num_experts",
-            "top_k_experts",
-            "expert_intermediate_size",
-            "moe_intermediate_size",
-            "num_local_experts",
-            "num_experts_per_tok",
-            "router_aux_loss_coef",
-        ] {
-            if config_value_is_truthy(value.get(field)) {
-                return Err(corrupt_error(
-                    path,
-                    format!(
-                        "Gemma4 arch supports dense Gemma4 only; unsupported MoE marker {scope}.{field}"
-                    ),
-                ));
-            }
-        }
-    }
-
     Ok(())
-}
-
-fn config_value_is_truthy(value: Option<&serde_json::Value>) -> bool {
-    match value {
-        Some(serde_json::Value::Bool(value)) => *value,
-        Some(serde_json::Value::Number(value)) => value.as_f64().is_some_and(|n| n != 0.0),
-        Some(serde_json::Value::String(value)) => !value.is_empty() && value != "0",
-        Some(serde_json::Value::Array(value)) => !value.is_empty(),
-        Some(serde_json::Value::Object(value)) => !value.is_empty(),
-        Some(serde_json::Value::Null) | None => false,
-    }
 }
 
 fn corrupt_error(path: &Path, detail: impl Into<String>) -> RvllmError {
@@ -776,41 +797,24 @@ mod tests {
     }
 
     #[test]
-    fn from_dir_rejects_explicit_moe_markers() {
-        for (scope, field, value) in [
-            ("root", "enable_moe_block", serde_json::json!(true)),
-            ("text_config", "num_experts", serde_json::json!(128)),
-            ("text_config", "top_k_experts", serde_json::json!(8)),
-            (
-                "text_config",
-                "expert_intermediate_size",
-                serde_json::json!(1024),
-            ),
-            (
-                "text_config",
-                "router_aux_loss_coef",
-                serde_json::json!(0.01),
-            ),
-        ] {
-            let dir = tempdir();
-            write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
-            let path = dir.join("config.json");
-            let mut config: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-            if scope == "root" {
-                config[field] = value;
-            } else {
-                config["text_config"][field] = value;
-            }
-            std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    fn from_dir_parses_explicit_moe_config() {
+        let dir = tempdir();
+        write_minimal_config(&dir, "Gemma4ForConditionalGeneration");
+        let path = dir.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["text_config"]["enable_moe_block"] = serde_json::json!(true);
+        config["text_config"]["num_experts"] = serde_json::json!(128);
+        config["text_config"]["top_k_experts"] = serde_json::json!(8);
+        config["text_config"]["moe_intermediate_size"] = serde_json::json!(704);
+        std::fs::write(path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
 
-            let err = Gemma4Arch::from_dir(&dir).expect_err("MoE marker should fail");
-            let msg = format!("{err}");
+        let arch = Gemma4Arch::from_dir(&dir).expect("valid MoE metadata should parse");
 
-            assert!(msg.contains("dense Gemma4 only"));
-            assert!(msg.contains(scope));
-            assert!(msg.contains(field));
-        }
+        assert!(arch.enable_moe_block);
+        assert_eq!(arch.num_experts, 128);
+        assert_eq!(arch.top_k_experts, 8);
+        assert_eq!(arch.moe_intermediate_size, 704);
     }
 
     #[test]
@@ -825,6 +829,10 @@ mod tests {
             num_kv_heads_global: 4,
             intermediate_size: 21504,
             use_double_wide_mlp: false,
+            enable_moe_block: false,
+            num_experts: 0,
+            top_k_experts: 0,
+            moe_intermediate_size: 0,
             num_kv_shared_layers: 0,
             hidden_size_per_layer_input: 0,
             vocab_size_per_layer_input: 0,
@@ -856,6 +864,10 @@ mod tests {
             num_kv_heads_global: 4,
             intermediate_size: 21504,
             use_double_wide_mlp: false,
+            enable_moe_block: false,
+            num_experts: 0,
+            top_k_experts: 0,
+            moe_intermediate_size: 0,
             num_kv_shared_layers: 0,
             hidden_size_per_layer_input: 0,
             vocab_size_per_layer_input: 0,

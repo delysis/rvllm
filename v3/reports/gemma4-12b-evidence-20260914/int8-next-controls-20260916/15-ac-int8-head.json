@@ -1,0 +1,96 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "15-ac-int8-head",
+  "purpose": "timing",
+  "command": {
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-head-device/rvllm_runtime-head-device-probe",
+      "sha256": "63f6859d8a42f94082370464815462629817465b84ce60ecd3d4c41da4b0ba00"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "gemma_ane_decode::int8_projection_tests::head::device::checkpoint_vocabulary_tile_int8",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RVLLM_GEMMA4_MODEL_DIR": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "RVLLM_INT8_HEAD_TILE": "0",
+      "RVLLM_INT8_HEAD_DEVICE_MODE": "time",
+      "RVLLM_INT8_HEAD_DEVICE_OUTPUT": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-only-v5/results/15-ac-int8-head/head",
+      "RVLLM_INT8_HEAD_STEPS": "[\"/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/step-21.json\",\"/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/step-84.json\",\"/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/step-652.json\",\"/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/step-230.json\"]"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/step-21.json",
+      "sha256": "f174a4fd9949d093df6a7b94423682cb530b4f188bca65a404e57444519d8730"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/step-84.json",
+      "sha256": "635118e473749155fdaf2e9850614cbccefd86fa28c3868a19ec84cfcd941c6d"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/step-652.json",
+      "sha256": "3640223d50f64220896869c9170a34d349351cd5e0d0e1aea3c3c9051eb3c51f"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/step-230.json",
+      "sha256": "3d99aacd99bf044eb3cce10d296ca2c317a2b39a9d98f0808864db170a108230"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-47.fp16",
+      "sha256": "33e77f2fb75d409f4eacfbca476aaec5f8641d5763e1555fc1bd3f8192ae5f06"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-47.fp16",
+      "sha256": "46e090bef1a20e59d5fe92bb62e0dcda7cf759371be1c7154d2ce62bb55a4441"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-47.fp16",
+      "sha256": "b12dd4471bd6cdfeb1e0b7756b3beaa0211662b47b83088e82cc9d2478c9030d"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/ane-position-230-layer-47.fp16",
+      "sha256": "414d3321dd15733789bb0f36989df381f85e85f086432307958004f4a42249b7"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    }
+  ],
+  "after": [
+    "14-ac-analysis"
+  ],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": 0,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_experiment_queue-v3"
+    ],
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ]
+  },
+  "stable_seconds": 120,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 600,
+  "validator": null
+}

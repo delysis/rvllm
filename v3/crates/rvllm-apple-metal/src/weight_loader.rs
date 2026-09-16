@@ -1,15 +1,18 @@
 //! Weight loader: load safetensors model weights into Metal buffers.
 //!
-//! Handles BF16 → F16 conversion (Metal 3 / Apple9 has no native BF16
-//! compute). Weights are loaded via mmap and converted in-place or
-//! via the bf16_to_f16 Metal kernel.
+//! Handles Metal scalar dtype conversion for F16 and native BF16 paths.
+//! Weights are loaded via mmap and converted before upload when needed.
 
 use std::collections::{BTreeMap, HashSet};
-use std::io::{Read, Write};
+#[cfg(test)]
+use std::io::Write;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::arena::{MetalBufferArena, MetalRegion};
-use crate::context::MetalContext;
+use crate::{
+    arena::{MetalBufferArena, MetalRegion},
+    MetalFloatType,
+};
 use rvllm_core::{AppleCtx, AppleError, DType, Result, RvllmError};
 
 #[derive(Clone, Debug)]
@@ -85,6 +88,62 @@ pub fn bf16_to_f16_cpu(bf16_data: &[u8]) -> Vec<u8> {
         f16_data[i * 2 + 1] = (f16_bits >> 8) as u8;
     }
     f16_data
+}
+
+pub fn bf16_to_f32_cpu(bf16_data: &[u8]) -> Vec<u8> {
+    let count = bf16_data.len() / 2;
+    let mut f32_data = vec![0u8; count * 4];
+
+    for i in 0..count {
+        let bf16_bits = u16::from_le_bytes([bf16_data[i * 2], bf16_data[i * 2 + 1]]);
+        let f32_bits = (bf16_bits as u32) << 16;
+        f32_data[i * 4..i * 4 + 4].copy_from_slice(&f32_bits.to_le_bytes());
+    }
+    f32_data
+}
+
+pub fn f16_to_f32_cpu(f16_data: &[u8]) -> Vec<u8> {
+    let count = f16_data.len() / 2;
+    let mut f32_data = vec![0u8; count * 4];
+
+    for i in 0..count {
+        let f16_bits = u16::from_le_bytes([f16_data[i * 2], f16_data[i * 2 + 1]]);
+        let f32_val = half::f16::from_bits(f16_bits).to_f32();
+        f32_data[i * 4..i * 4 + 4].copy_from_slice(&f32_val.to_le_bytes());
+    }
+    f32_data
+}
+
+pub fn f16_to_bf16_cpu(f16_data: &[u8]) -> Vec<u8> {
+    let count = f16_data.len() / 2;
+    let mut bf16_data = vec![0u8; count * 2];
+
+    for i in 0..count {
+        let f16_bits = u16::from_le_bytes([f16_data[i * 2], f16_data[i * 2 + 1]]);
+        let f32_val = half::f16::from_bits(f16_bits).to_f32();
+        let bf16_bits = half::bf16::from_f32(f32_val).to_bits();
+        bf16_data[i * 2] = bf16_bits as u8;
+        bf16_data[i * 2 + 1] = (bf16_bits >> 8) as u8;
+    }
+    bf16_data
+}
+
+pub fn f32_to_bf16_cpu(f32_data: &[u8]) -> Vec<u8> {
+    let count = f32_data.len() / 4;
+    let mut bf16_data = vec![0u8; count * 2];
+
+    for i in 0..count {
+        let value = f32::from_le_bytes([
+            f32_data[i * 4],
+            f32_data[i * 4 + 1],
+            f32_data[i * 4 + 2],
+            f32_data[i * 4 + 3],
+        ]);
+        let bf16_bits = half::bf16::from_f32(value).to_bits();
+        bf16_data[i * 2] = bf16_bits as u8;
+        bf16_data[i * 2 + 1] = (bf16_bits >> 8) as u8;
+    }
+    bf16_data
 }
 
 pub fn parse_safetensors_index(model_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
@@ -370,32 +429,7 @@ pub fn load_safetensor_f16(model_dir: &Path, name: &str) -> Result<Vec<u8>> {
             ctx("load_safetensor_f16"),
         ));
     };
-    let bytes = std::fs::read(&info.file).map_err(|source| RvllmError::Io {
-        err: rvllm_core::IoError::from(&source),
-        path: info.file.clone(),
-        source,
-    })?;
-    let slice = &bytes[info.file_offset..info.file_offset + info.nbytes];
-    Ok(match info.dtype {
-        DType::F16 => slice.to_vec(),
-        DType::Bf16 => bf16_to_f16_cpu(slice),
-        DType::F32 | DType::Fp8E4M3 => {
-            return Err(RvllmError::apple(
-                AppleError::InvalidWeightBlob {
-                    reason: "unsupported dtype for metal f16 path",
-                },
-                ctx("load_safetensor_f16"),
-            ))
-        }
-        _ => {
-            return Err(RvllmError::apple(
-                AppleError::InvalidWeightBlob {
-                    reason: "unsupported dtype for metal f16 path",
-                },
-                ctx("load_safetensor_f16"),
-            ))
-        }
-    })
+    load_safetensor_entry_f16(info)
 }
 
 pub fn map_safetensor_to_arena(
@@ -407,26 +441,21 @@ pub fn map_safetensor_to_arena(
     map_safetensor_to_arena_from_tensors(arena, &tensors, names)
 }
 
-fn load_safetensor_entry_f16(entry: &SafetensorTensorInfo) -> Result<Vec<u8>> {
-    let bytes = std::fs::read(&entry.file).map_err(|source| RvllmError::Io {
-        err: rvllm_core::IoError::from(&source),
-        path: entry.file.clone(),
-        source,
-    })?;
-    let start = entry.file_offset;
-    let end = entry.file_offset + entry.nbytes;
-    if end > bytes.len() {
-        return Err(RvllmError::apple(
-            AppleError::InvalidWeightBlob {
-                reason: "tensor byte slice out of bounds",
-            },
-            ctx("load_safetensor_entry_f16"),
-        ));
-    }
-    let slice = &bytes[start..end];
+pub fn map_safetensor_to_arena_with_float_type(
+    arena: &mut MetalBufferArena,
+    model_dir: &Path,
+    names: &[&str],
+    float_type: MetalFloatType,
+) -> Result<Vec<(String, MetalRegion)>> {
+    let tensors = scan_safetensor_tensors(model_dir)?;
+    map_safetensor_to_arena_from_tensors_with_float_type(arena, &tensors, names, float_type)
+}
+
+pub(crate) fn load_safetensor_entry_f16(entry: &SafetensorTensorInfo) -> Result<Vec<u8>> {
+    let bytes = load_safetensor_entry_raw(entry)?;
     Ok(match entry.dtype {
-        DType::F16 => slice.to_vec(),
-        DType::Bf16 => bf16_to_f16_cpu(slice),
+        DType::F16 => bytes,
+        DType::Bf16 => bf16_to_f16_cpu(&bytes),
         DType::F32 | DType::Fp8E4M3 => {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -446,10 +475,101 @@ fn load_safetensor_entry_f16(entry: &SafetensorTensorInfo) -> Result<Vec<u8>> {
     })
 }
 
+pub(crate) fn load_safetensor_entry_f32(entry: &SafetensorTensorInfo) -> Result<Vec<u8>> {
+    let bytes = load_safetensor_entry_raw(entry)?;
+    Ok(match entry.dtype {
+        DType::F32 => bytes,
+        DType::F16 => f16_to_f32_cpu(&bytes),
+        DType::Bf16 => bf16_to_f32_cpu(&bytes),
+        DType::Fp8E4M3 => {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "unsupported dtype for metal f32 path",
+                },
+                ctx("load_safetensor_entry_f32"),
+            ))
+        }
+        _ => {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "unsupported dtype for metal f32 path",
+                },
+                ctx("load_safetensor_entry_f32"),
+            ))
+        }
+    })
+}
+
+pub(crate) fn load_safetensor_entry_for_float_type(
+    entry: &SafetensorTensorInfo,
+    float_type: MetalFloatType,
+) -> Result<Vec<u8>> {
+    match float_type {
+        MetalFloatType::F16 => load_safetensor_entry_f16(entry),
+        MetalFloatType::Bf16 => load_safetensor_entry_bf16(entry),
+    }
+}
+
+pub(crate) fn load_safetensor_entry_bf16(entry: &SafetensorTensorInfo) -> Result<Vec<u8>> {
+    let bytes = load_safetensor_entry_raw(entry)?;
+    Ok(match entry.dtype {
+        DType::Bf16 => bytes,
+        DType::F16 => f16_to_bf16_cpu(&bytes),
+        DType::F32 => f32_to_bf16_cpu(&bytes),
+        DType::Fp8E4M3 => {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "unsupported dtype for metal bf16 path",
+                },
+                ctx("load_safetensor_entry_bf16"),
+            ))
+        }
+        _ => {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "unsupported dtype for metal bf16 path",
+                },
+                ctx("load_safetensor_entry_bf16"),
+            ))
+        }
+    })
+}
+
+pub(crate) fn load_safetensor_entry_raw(entry: &SafetensorTensorInfo) -> Result<Vec<u8>> {
+    let mut file = std::fs::File::open(&entry.file).map_err(|source| RvllmError::Io {
+        err: rvllm_core::IoError::from(&source),
+        path: entry.file.clone(),
+        source,
+    })?;
+    file.seek(SeekFrom::Start(entry.file_offset as u64))
+        .map_err(|source| RvllmError::Io {
+            err: rvllm_core::IoError::from(&source),
+            path: entry.file.clone(),
+            source,
+        })?;
+    let mut bytes = vec![0u8; entry.nbytes];
+    file.read_exact(&mut bytes)
+        .map_err(|source| RvllmError::Io {
+            err: rvllm_core::IoError::from(&source),
+            path: entry.file.clone(),
+            source,
+        })?;
+    Ok(bytes)
+}
+
 pub fn map_safetensor_to_arena_from_tensors(
     arena: &mut MetalBufferArena,
     tensors: &BTreeMap<String, SafetensorTensorInfo>,
     names: &[&str],
+) -> Result<Vec<(String, MetalRegion)>> {
+    map_safetensor_to_arena_from_tensors_with_float_type(arena, tensors, names, MetalFloatType::F16)
+}
+
+pub fn map_safetensor_to_arena_from_tensors_with_float_type(
+    arena: &mut MetalBufferArena,
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    names: &[&str],
+    float_type: MetalFloatType,
 ) -> Result<Vec<(String, MetalRegion)>> {
     let mut seen = HashSet::new();
     let mut out = Vec::with_capacity(names.len());
@@ -470,7 +590,7 @@ pub fn map_safetensor_to_arena_from_tensors(
                 ctx("map_safetensor_to_arena"),
             )
         })?;
-        let bytes = load_safetensor_entry_f16(entry)?;
+        let bytes = load_safetensor_entry_for_float_type(entry, float_type)?;
         let region = arena.region(name, bytes.len(), 16)?;
         unsafe {
             arena.write_region(&region, &bytes)?;
@@ -487,7 +607,7 @@ pub fn map_safetensor_to_model_weights(
 ) -> Result<MetalModelWeights> {
     let mut ordered = Vec::new();
     let mut seen = HashSet::new();
-    let mut add_name =
+    let add_name =
         |name: &str, ordered: &mut Vec<String>, seen: &mut HashSet<String>| -> Result<()> {
             if !seen.insert(name.to_owned()) {
                 return Err(RvllmError::apple(
@@ -717,7 +837,7 @@ mod tests {
             rope_sin: "rope_sin".to_owned(),
         };
 
-        let mut context = match crate::context::MetalContext::new() {
+        let context = match crate::context::MetalContext::new() {
             Ok(v) => v,
             Err(e) => panic!("unexpected metal context: {e}"),
         };

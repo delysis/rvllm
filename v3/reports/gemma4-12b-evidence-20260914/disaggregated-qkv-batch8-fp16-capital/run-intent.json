@@ -1,0 +1,27 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/disaggregated-qkv-batch8-fp16-capital/inference",
+    "--ane-weights",
+    "static-all-cached",
+    "--ane-compile-budget",
+    "16",
+    "--capture-layer-states",
+    "true",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json"
+  ],
+  "binary_sha256": "18daf3cf4c8e6a48c57bcf2f890d322e3766100c63a50d2e07d780d5abc88537",
+  "metallib_sha256": "f3bc2a3ea26ed5f7e599e8759b21373ae075eeb77ce8b8df8d7e9526c4a963cf",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 869693 } Mon Sep 14 08:19:23 2026\n",
+  "load_before": "16:28  up  8:09, 1 user, load averages: 5.39 7.69 17.55\n",
+  "disk_free_before": 13090897920,
+  "swap_before": "vm.swapusage: total = 6144.00M  used = 4457.56M  free = 1686.44M  (encrypted)\n",
+  "memory_before": "The system has 137438953472 (8388608 pages with a page size of 16384).\nSystem-wide memory free percentage: 85%\n",
+  "qkv_candidate": true,
+  "ane_weight_plan": "static-all-cached",
+  "scope": "162 programs, at most 16 process-wide explicit compiler attempts for cache misses; no inference fallback. ANE weight plan and QKV opt-in are recorded separately. Full-model quality is under test. One captured Metal-prefill/ANE continuation; 208 evaluations. Journaling excludes a speed claim."
+}

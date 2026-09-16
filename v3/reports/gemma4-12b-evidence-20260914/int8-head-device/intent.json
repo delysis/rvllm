@@ -1,0 +1,19 @@
+{
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "steps": [
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/step-21.json",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/step-84.json",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/step-652.json",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/step-230.json"
+  ],
+  "tile": 0,
+  "first_row": 0,
+  "row_count": 16384,
+  "binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-head-device/rvllm_runtime-head-device-probe",
+  "binary_sha256": "63f6859d8a42f94082370464815462629817465b84ce60ecd3d4c41da4b0ba00",
+  "test": "gemma_ane_decode::int8_projection_tests::head::device::checkpoint_vocabulary_tile_int8",
+  "qualification_compiles": 2,
+  "qualification_evaluations": 12,
+  "timing": "strict cache; no driver journal; sampled matched eligible controls only",
+  "claim": "One head tile; no full-model promotion"
+}

@@ -1,0 +1,40 @@
+{
+  "policy": "simdgroup",
+  "exit_code": 0,
+  "seconds": 60.680124044418335,
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--metallib-bf16",
+    "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/run-2-simdgroup/inference",
+    "--max-new-tokens",
+    "1",
+    "--prompt-file",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+    "--prompt-file",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+    "--prompt-file",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt"
+  ],
+  "metal_prepare_ms": 11310.451125,
+  "prefills_ms": [
+    18375.883542,
+    16726.627875,
+    13533.382
+  ],
+  "kv_capture_ms": [
+    325.93758299999996,
+    166.84625,
+    80.10825000000001
+  ],
+  "command_wait_ms": [
+    18042.741708,
+    16555.215584,
+    13450.302583
+  ],
+  "tokens_match": true,
+  "ane_programs_loaded": 0
+}

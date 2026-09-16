@@ -1,0 +1,60 @@
+{
+  "schema": "rvllm.frozen_test_build.v1",
+  "tests_job": "60-two-token-reference-host-tests",
+  "host_tests_passed": 3,
+  "device_tests_ignored": 1,
+  "source_pins": [
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/Cargo.toml",
+      "sha256": "2ecaed1c38ee1ad04418558651ee268234e75517b0039abdca3eac7480b53f96"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/Cargo.lock",
+      "sha256": "96d6c5a7c5ad992c54d2222614d37fd2c101353c140eeac75d7b337455df268e"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/Cargo.toml",
+      "sha256": "e03764467d25a4b1753aa91480958a016b436b6a6c47bd05d0faee4a9cec3ab7"
+    },
+    {
+      "path": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "sha256": "12cab30aa9890d54445e29149a1e82d18fbe457de12801bd11bbe7e5e7fe33a0"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/ane_two_token_reference.rs",
+      "sha256": "e9898bf7caf19a3aefb35ebe03a158bf5e97ee54ee744156849aa199735758ac"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/ane_two_token_reference_live_tests.rs",
+      "sha256": "2c1151355fb6f256939c03c661295a8cbec45242947662088b3b2948018665a7"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/gemma_ane_decode.rs",
+      "sha256": "8131dcfbdc11eb1b779b10637329c5a21cb489bb02408247d9e70fbdad2884a6"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/src/ane_attention.rs",
+      "sha256": "bed24c972a345f531b1c1e035068050aa5fddf1437cb94d2e24e004df5532ad9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/src/ane_attention_layout.rs",
+      "sha256": "fafbdd4e2eb690ffed0ae00222f795e31de1ae0df52ca45f9d7b1a3986f62f49"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/Cargo.toml",
+      "sha256": "e954dd89fa4eac6d650363f6c4f06a206f68a6b0d2e51fe153b2842b3280f390"
+    }
+  ],
+  "executable": {
+    "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/two-token-reference-20260916/rvllm_runtime-two-token-reference",
+    "sha256": "fad1ff59d073794974676dcdfdd1d7321cf24d7886fd01faddd5b4ec87b038ca"
+  },
+  "signing_identifier": "rvllm_disaggregated_infer-9d1f7275eb5937c9",
+  "device_qualification_job": "61-two-token-reference-qualification",
+  "device_qualification_status": "submitted",
+  "expected_evaluations_if_complete": 3960,
+  "expected_program_loads": 162,
+  "expected_program_unloads": 162,
+  "compiler_calls_allowed": 0,
+  "timing_claim": false
+}

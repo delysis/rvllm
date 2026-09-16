@@ -1,0 +1,32 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "20-short-trial",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/bin/sleep",
+      "sha256": "15a29af110c232f9bc47b20cbb4bb3f0497c9fd92a5dea3d9661bd60c4b5e91d"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "1"
+    ],
+    "env": {}
+  },
+  "inputs": [],
+  "after": [],
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": true,
+    "minimum_free_bytes": 1,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "thermal_state": null,
+    "quiet_process_names": []
+  },
+  "stable_seconds": 1,
+  "max_wait_seconds": 120,
+  "max_run_seconds": 20,
+  "validator": null
+}

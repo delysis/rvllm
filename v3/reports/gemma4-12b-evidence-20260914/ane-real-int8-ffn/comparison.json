@@ -1,0 +1,119 @@
+{
+  "original": {
+    "median": 4.2436875,
+    "minimum": 3.236709,
+    "p95": 4.578833,
+    "maximum": 4.636458,
+    "backend_error": {
+      "elements": 11520,
+      "max_abs_error": 0.0038565718568861485,
+      "relative_l2_error": 0.0027558858937981085
+    },
+    "total_error": {
+      "elements": 11520,
+      "max_abs_error": 0.0038565718568861485,
+      "relative_l2_error": 0.0027558858937981085
+    },
+    "quantization_stages": [
+      {
+        "elements": 46080,
+        "max_abs_error": 0.03564453125,
+        "relative_l2_error": 0.014331582565337113
+      },
+      {
+        "elements": 46080,
+        "max_abs_error": 0.037109375,
+        "relative_l2_error": 0.012748126902281878
+      },
+      {
+        "elements": 46080,
+        "max_abs_error": 0.0400390625,
+        "relative_l2_error": 0.018014428115253035
+      },
+      {
+        "elements": 11520,
+        "max_abs_error": 0.02561497688293457,
+        "relative_l2_error": 0.011840043722445334
+      }
+    ]
+  },
+  "dense-int8": {
+    "median": 4.3205415,
+    "minimum": 4.13275,
+    "p95": 4.658875,
+    "maximum": 4.78725,
+    "backend_error": {
+      "elements": 11520,
+      "max_abs_error": 0.003445670008659363,
+      "relative_l2_error": 0.002704722960084389
+    },
+    "total_error": {
+      "elements": 11520,
+      "max_abs_error": 0.02570056915283203,
+      "relative_l2_error": 0.012146859858512172
+    },
+    "quantization_stages": [
+      {
+        "elements": 46080,
+        "max_abs_error": 0.03564453125,
+        "relative_l2_error": 0.014331582565337113
+      },
+      {
+        "elements": 46080,
+        "max_abs_error": 0.037109375,
+        "relative_l2_error": 0.012748126902281878
+      },
+      {
+        "elements": 46080,
+        "max_abs_error": 0.0400390625,
+        "relative_l2_error": 0.018014428115253035
+      },
+      {
+        "elements": 11520,
+        "max_abs_error": 0.02561497688293457,
+        "relative_l2_error": 0.011840043722445334
+      }
+    ]
+  },
+  "int8": {
+    "median": 3.667979,
+    "minimum": 3.501459,
+    "p95": 4.047458000000001,
+    "maximum": 4.359958,
+    "backend_error": {
+      "elements": 11520,
+      "max_abs_error": 0.002964019775390625,
+      "relative_l2_error": 0.0007662764265004112
+    },
+    "total_error": {
+      "elements": 11520,
+      "max_abs_error": 0.02560865879058838,
+      "relative_l2_error": 0.011827990906767413
+    },
+    "quantization_stages": [
+      {
+        "elements": 46080,
+        "max_abs_error": 0.03564453125,
+        "relative_l2_error": 0.014331582565337113
+      },
+      {
+        "elements": 46080,
+        "max_abs_error": 0.037109375,
+        "relative_l2_error": 0.012748126902281878
+      },
+      {
+        "elements": 46080,
+        "max_abs_error": 0.0400390625,
+        "relative_l2_error": 0.018014428115253035
+      },
+      {
+        "elements": 11520,
+        "max_abs_error": 0.02561497688293457,
+        "relative_l2_error": 0.011840043722445334
+      }
+    ]
+  },
+  "original_to_int8_median_ratio": 1.1569552333860145,
+  "dense_to_int8_median_ratio": 1.1779079160485926,
+  "claim": "Layer-only measurements under changing load; full-model INT8 quality/latency and lowered compiled/resident representation remain unqualified. Staging net.plist matches MIL, and data matches source blob length/header."
+}

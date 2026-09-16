@@ -1,0 +1,76 @@
+{
+  "schema": "rvllm.stacked_int8_nominal_comparison.v1",
+  "policy": "nominal-only",
+  "status": "prepared",
+  "binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/rvllm_disaggregated_infer",
+  "binary_sha256": "aa015ca92c735e36c1da17d258031a4c743823a4b29feacb5ba46cbbc9f3c605",
+  "common_args": [
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--context-capacity",
+    "1024",
+    "--interleave",
+    "true",
+    "--max-new-tokens",
+    "10",
+    "--ane-compile-budget",
+    "0",
+    "--metallib-bf16",
+    "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib"
+  ],
+  "prompt_file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+  "plans": {
+    "A": "static-int8-ffn-cached",
+    "B": "static-int8-stacked-ffn-cached"
+  },
+  "order": [
+    "A",
+    "B",
+    "B",
+    "A",
+    "B",
+    "A",
+    "A",
+    "B",
+    "A",
+    "B",
+    "B",
+    "A"
+  ],
+  "warmups_per_process": 2,
+  "measured_requests_per_process": 7,
+  "expected_prompt_tokens": 84,
+  "expected_output_ids": [
+    818,
+    3730,
+    37423,
+    38167,
+    1024,
+    506,
+    12010,
+    8858,
+    236761,
+    106
+  ],
+  "expected_steps_per_request": 9,
+  "qualification": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/checked/report.json",
+  "comparison_cli_final_flag": null,
+  "required_stratum": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": 0
+  },
+  "stop_conditions": [
+    "Any accelerator or cache error; no repair/retry within timing",
+    "Any missing, transitioning, stale or inconsistent power evidence",
+    "Serious/Critical thermal state",
+    "An outer repeated-plan process-median decode drift exceeding5% within a completed block; report the block as inconclusive"
+  ],
+  "analysis": "Compute seven-request process medians after two warmups; pair adjacent processes in each counterbalanced block. Preserve all raw requests, FFN component times, prefill/import/decode/end-to-end phases and outer-plan drift. No cycle-based normalization or pooling with other power states. Analysis uses six process pairs and repeated outer-plan drift.",
+  "sources": [
+    "https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/RespondToThermalStateChanges.html",
+    "https://www.itl.nist.gov/div898/handbook/pri/section3/pri332.htm"
+  ],
+  "claim": "Predeclared nominal AC/low-power comparison after separate cache maintenance; no timing outcome yet."
+}

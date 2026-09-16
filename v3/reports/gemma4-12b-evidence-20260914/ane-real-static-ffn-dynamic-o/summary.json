@@ -1,0 +1,93 @@
+[
+  {
+    "name": "static-ffn-storage",
+    "exit_code": 0,
+    "elapsed_seconds": 7.594110012054443,
+    "boot_after": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+    "load_after": "13:43  up  5:24, 1 user, load averages: 94.50 78.51 68.31\n",
+    "disk_free_after": 30390059008,
+    "observed_disk_free_min": 29423378432,
+    "artifacts": {
+      ".dat.nosyncBFDE.GDhcKb": {
+        "logical_bytes": 0,
+        "allocated_bytes": 353898496
+      },
+      "model.mil": {
+        "logical_bytes": 3326,
+        "allocated_bytes": 4096
+      },
+      "net.plist": {
+        "logical_bytes": 3326,
+        "allocated_bytes": 4096
+      },
+      "weights/weight.bin": {
+        "logical_bytes": 353894656,
+        "allocated_bytes": 353898496
+      },
+      "data": {
+        "logical_bytes": 353894656,
+        "allocated_bytes": 353898496
+      }
+    }
+  },
+  {
+    "name": "dynamic-ffn",
+    "exit_code": 0,
+    "elapsed_seconds": 5.688535213470459,
+    "boot_after": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+    "load_after": "13:43  up  5:24, 1 user, load averages: 94.38 78.75 68.46\n",
+    "disk_free_after": 30290128896,
+    "observed_disk_free_min": 30130814976,
+    "artifacts": {}
+  },
+  {
+    "name": "static-ffn",
+    "exit_code": 0,
+    "elapsed_seconds": 6.307452201843262,
+    "boot_after": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+    "load_after": "13:43  up  5:24, 1 user, load averages: 94.67 79.07 68.63\n",
+    "disk_free_after": 30214692864,
+    "observed_disk_free_min": 28976619520,
+    "artifacts": {}
+  },
+  {
+    "name": "sliding-o-constant",
+    "exit_code": 0,
+    "elapsed_seconds": 0.6175839900970459,
+    "boot_after": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+    "load_after": "13:43  up  5:24, 1 user, load averages: 94.67 79.07 68.63\n",
+    "disk_free_after": 30182670336,
+    "observed_disk_free_min": 30119800832,
+    "artifacts": {}
+  },
+  {
+    "name": "sliding-o-dynamic",
+    "exit_code": 0,
+    "elapsed_seconds": 0.6100647449493408,
+    "boot_after": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+    "load_after": "13:43  up  5:24, 1 user, load averages: 94.67 79.07 68.63\n",
+    "disk_free_after": 30164746240,
+    "observed_disk_free_min": 30164901888,
+    "artifacts": {}
+  },
+  {
+    "name": "global-o-constant",
+    "exit_code": 0,
+    "elapsed_seconds": 1.0254008769989014,
+    "boot_after": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+    "load_after": "13:43  up  5:24, 1 user, load averages: 92.46 78.86 68.62\n",
+    "disk_free_after": 30094581760,
+    "observed_disk_free_min": 29968740352,
+    "artifacts": {}
+  },
+  {
+    "name": "global-o-dynamic",
+    "exit_code": 0,
+    "elapsed_seconds": 1.424929141998291,
+    "boot_after": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+    "load_after": "13:43  up  5:24, 1 user, load averages: 92.46 78.86 68.62\n",
+    "disk_free_after": 30068289536,
+    "observed_disk_free_min": 30077722624,
+    "artifacts": {}
+  }
+]

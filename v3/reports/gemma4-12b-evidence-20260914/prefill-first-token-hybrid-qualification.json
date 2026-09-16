@@ -1,0 +1,127 @@
+{
+  "schema": "rvllm.prefill_first_token_hybrid_qualification.v1",
+  "cases": [
+    {
+      "case": "raw",
+      "prompt_tokens": 6,
+      "generated_tokens": [
+        9079,
+        236761,
+        107,
+        100,
+        45518,
+        107,
+        101,
+        6372,
+        563,
+        4338,
+        236761,
+        9079,
+        563,
+        506,
+        5279,
+        532
+      ],
+      "decode_start_position": 6,
+      "seed_report": "prefill-first-token-raw-seed.json",
+      "seed_report_sha256": "671b6ef0e2e5513fdf3d44745469b6d4397caa0575471ef3e9e363ae94904410",
+      "cpu_oracle": "prefill-first-token-raw-cpu-fp16-reference.json",
+      "cpu_oracle_sha256": "9ab0b604a5abea9ce51d55892510ffc7475eb6ae7593256cc79c2a5700608623"
+    },
+    {
+      "case": "capital",
+      "prompt_tokens": 21,
+      "generated_tokens": [
+        50429,
+        106
+      ],
+      "decode_start_position": 21,
+      "seed_report": "prefill-first-token-chat-capital-seed.json",
+      "seed_report_sha256": "e9bb1ab3023d78b7aaebb70a4426ceb1c2dfad96d17b8f275cd653dfce1b6360",
+      "cpu_oracle": "prefill-first-token-chat-capital-cpu-fp16.json",
+      "cpu_oracle_sha256": "e82d2cbba647c21b3812c8d6fc6671a656401034345cad663d234aac50b3472f"
+    },
+    {
+      "case": "arithmetic",
+      "prompt_tokens": 28,
+      "generated_tokens": [
+        236800,
+        236778,
+        236800,
+        106
+      ],
+      "decode_start_position": 28,
+      "seed_report": "prefill-first-token-chat-arithmetic-seed.json",
+      "seed_report_sha256": "6d40db89b387c5f51738cb73d16f88f32e0beffeb5fcb1ca4f9a23b5ea708a0d",
+      "cpu_oracle": "prefill-first-token-chat-arithmetic-cpu-fp16.json",
+      "cpu_oracle_sha256": "a2bbca46db96b5b990e7d8c32b3a74f2b0dbe816dd97782c4d8250ad8e8c96f6"
+    },
+    {
+      "case": "addition",
+      "prompt_tokens": 27,
+      "generated_tokens": [
+        236812,
+        236778,
+        106
+      ],
+      "decode_start_position": 27,
+      "seed_report": "prefill-first-token-chat-addition-seed.json",
+      "seed_report_sha256": "b06401851ff95e10a5208ddf08b67c5192f756ea5970980c6d4eb4c0bbe67ea6",
+      "cpu_oracle": "prefill-first-token-chat-addition-cpu-fp16.json",
+      "cpu_oracle_sha256": "0b3bf585b66bf4c74c2e69699cb036a97083427b5207096df8a9b9a34e7b8cf9"
+    },
+    {
+      "case": "opposite",
+      "prompt_tokens": 23,
+      "generated_tokens": [
+        66020,
+        106
+      ],
+      "decode_start_position": 23,
+      "seed_report": "prefill-first-token-chat-opposite-seed.json",
+      "seed_report_sha256": "6fb91b0d74af0b5fb3a84ee74a10a550eead7333f739f1943ac8b5e94d485ff8",
+      "cpu_oracle": "prefill-first-token-chat-opposite-cpu-fp16.json",
+      "cpu_oracle_sha256": "a66c724b1e6da6225fad73fa1a654137d42dc6c90423bc602e59e066a64e457e"
+    },
+    {
+      "case": "gold",
+      "prompt_tokens": 28,
+      "generated_tokens": [
+        36928,
+        106
+      ],
+      "decode_start_position": 28,
+      "seed_report": "prefill-first-token-chat-gold-seed.json",
+      "seed_report_sha256": "9f59bb5dccc65981cfdc145a8e1c1bad05fbd30d0fd5945d8ea71221bcff6230",
+      "cpu_oracle": "prefill-first-token-chat-gold-cpu-fp16.json",
+      "cpu_oracle_sha256": "0b906d465ec539fd05d6540f2ed74d5087a9ac37df7edd138522e9a0630772fc"
+    },
+    {
+      "case": "cpu",
+      "prompt_tokens": 22,
+      "generated_tokens": [
+        32936,
+        106
+      ],
+      "decode_start_position": 22,
+      "seed_report": "prefill-first-token-chat-cpu-seed.json",
+      "seed_report_sha256": "4efa3dd8cfd6afb2522398f383cd1deb81ceda98c8597bc6410efa2e40d6111c",
+      "cpu_oracle": "prefill-first-token-chat-cpu-cpu-fp16.json",
+      "cpu_oracle_sha256": "00d1c66d74577fd80cf6a74caa7d4948a46254081bc9b3adbb0d4e866977e9ee"
+    }
+  ],
+  "generated_ids_matched": 31,
+  "source_sha256": {
+    "crates/rvllm-runtime/src/ane_prefill.rs": "db28725678c814458fdecea5284c601d059c13d80cbbcf814fda4a66719366a5",
+    "crates/rvllm-runtime/src/apple_metal_backend.rs": "01492a8ff71e09b4b5b8a9dec2b560f2768386580c0930975760c1505abd06d2",
+    "crates/rvllm-runtime/src/apple_metal_backend_tests.rs": "1b09bf343d512c70d7ec310ffe1ae97f2ed4b0dc5735eb224da621442b3a9c13",
+    "crates/rvllm-runtime/src/bin/rvllm_prefill_handoff.rs": "3cb27bb4cd5f3b2f5bdca3532db1627b84aed23f665003b9a170707e205c3857"
+  },
+  "cpu_oracle_source": "prefill-first-token-cpu-oracle-source.txt",
+  "cpu_oracle_source_sha256": "ebf1e64307398318cd6dbf79f716e319473f32fd37dd9cf3c97cbd452a505996",
+  "ane_execution_verified": false,
+  "claim": "Seven real Metal BF16 prefill starts and exported 48-layer FP16 caches; each actual cache consumed by fresh pinned CPU FP16 Transformers; all output IDs match the BF16 reference. No ANE execution or performance claim.",
+  "chat_probe_sha256": "670a3d886a8206ae06ebaef970231878675823a008b7a570f36c6d3463067640",
+  "raw_probe_sha256": null,
+  "raw_probe_identity_note": "Raw case ran before the formatting-only final rebuild; its executable hash was not recorded. Six chat cases used the recorded executable."
+}

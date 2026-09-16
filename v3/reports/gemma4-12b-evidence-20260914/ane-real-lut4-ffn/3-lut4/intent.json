@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_ane_int8_probe",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--mode",
+    "lut4",
+    "--cache",
+    "require",
+    "--iterations",
+    "32",
+    "--input-fp16",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16",
+    "--report",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/ane-real-lut4-ffn/3-lut4/probe.json"
+  ],
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "free_before": 19802066944,
+  "load_before": "15:40  up  7:21, 1 user, load averages: 153.57 87.15 50.14\n"
+}

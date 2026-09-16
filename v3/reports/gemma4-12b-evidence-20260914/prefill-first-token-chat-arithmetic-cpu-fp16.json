@@ -1,0 +1,157 @@
+{
+  "schema": "rvllm.metal_prefill_cpu_fp16_decode_reference.v1",
+  "model_revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "transformers_revision": "3384908511545a9c146de65f01f3d29b90b2add6",
+  "transformers_version": "5.18.0.dev0",
+  "torch_version": "2.14.0",
+  "load_policy": "Fresh FP16 CPU from_pretrained; no model.to(dtype); eager attention",
+  "seed_report_sha256": "6d40db89b387c5f51738cb73d16f88f32e0beffeb5fcb1ca4f9a23b5ea708a0d",
+  "seed_source_dtype": "Bf16",
+  "seed_metal_numeric_abi": [
+    125,
+    219,
+    90,
+    129,
+    134,
+    218,
+    223,
+    79,
+    210,
+    205,
+    93,
+    138,
+    237,
+    83,
+    20,
+    215,
+    163,
+    28,
+    142,
+    174,
+    122,
+    179,
+    78,
+    186,
+    71,
+    51,
+    219,
+    243,
+    123,
+    214,
+    53,
+    114
+  ],
+  "prompt_token_ids": [
+    2,
+    105,
+    2364,
+    107,
+    55822,
+    236743,
+    236770,
+    236832,
+    15666,
+    236743,
+    236770,
+    236819,
+    236761,
+    24181,
+    607,
+    1186,
+    506,
+    11995,
+    236761,
+    106,
+    107,
+    105,
+    4368,
+    107,
+    100,
+    45518,
+    107,
+    101
+  ],
+  "decode_start_position": 28,
+  "generated_tokens": [
+    236800,
+    236778,
+    236800,
+    106
+  ],
+  "generated_text": "323",
+  "matches_full_bf16_reference": true,
+  "consumed_converted_ane_cache": true,
+  "verified_cache_layers": 48,
+  "ane_execution_verified": false,
+  "buffers": {
+    "model.language_model.embed_tokens.embed_scale": "torch.float16",
+    "model.language_model.rotary_emb.full_attention_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.full_attention_original_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.sliding_attention_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.sliding_attention_original_inv_freq": "torch.float32"
+  },
+  "steps": [
+    {
+      "position": 28,
+      "input_token": 236800,
+      "next_token": 236778,
+      "top5_tokens": [
+        236778,
+        236770,
+        236800,
+        236771,
+        236812
+      ],
+      "top5_logits": [
+        25.953125,
+        10.140625,
+        9.3984375,
+        8.7734375,
+        7.58203125
+      ],
+      "seconds": 0.5537730409996584
+    },
+    {
+      "position": 29,
+      "input_token": 236778,
+      "next_token": 236800,
+      "top5_tokens": [
+        236800,
+        236770,
+        236778,
+        236812,
+        236771
+      ],
+      "top5_logits": [
+        23.3125,
+        9.109375,
+        8.421875,
+        7.359375,
+        5.328125
+      ],
+      "seconds": 0.8019747500002268
+    },
+    {
+      "position": 30,
+      "input_token": 236800,
+      "next_token": 106,
+      "top5_tokens": [
+        106,
+        1340,
+        954,
+        40616,
+        236760
+      ],
+      "top5_logits": [
+        17.359375,
+        0.556640625,
+        0.3388671875,
+        0.216064453125,
+        0.052459716796875
+      ],
+      "seconds": 0.6163457919992652
+    }
+  ],
+  "load_and_import_seconds": 3.8825804169991898,
+  "total_seconds": 5.856678833999467
+}

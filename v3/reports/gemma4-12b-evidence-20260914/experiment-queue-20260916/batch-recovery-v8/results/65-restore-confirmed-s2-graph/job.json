@@ -1,0 +1,77 @@
+{
+  "after": [
+    "64-s2-restoration-build"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--report",
+      "{output}/probe.json",
+      "--layer",
+      "0",
+      "--mode",
+      "int8",
+      "--restore-int8-cache",
+      "true",
+      "--int8-batch",
+      "2",
+      "--cache",
+      "reuse",
+      "--ane-compile-budget",
+      "1"
+    ],
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/batch-recovery-v8/results/65-restore-confirmed-s2-graph/driver.jsonl"
+    },
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-s2-restoration-20260916/rvllm_ane_int8_probe-s2-restore",
+      "sha256": "341966b7ad6d732d659e9548dae0b3a62a45b1f29017b307696a6815deb7ae53"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ],
+    "thermal_state": null
+  },
+  "id": "65-restore-confirmed-s2-graph",
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/30-batch-ffn-qualification/probe.json",
+      "sha256": "344ed6c6b029be94f2d031084362bcf9827c7ee7d72e5a6fbbc3e9331d5429f4"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/62-batch-output-capture-after-recovery/driver.jsonl",
+      "sha256": "5ab67c7219a7ebdb6bfba96921656958f60b4e13471ce89b28923bc8cef15af0"
+    }
+  ],
+  "max_run_seconds": 600,
+  "max_wait_seconds": 86400,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 10,
+  "validator": null
+}

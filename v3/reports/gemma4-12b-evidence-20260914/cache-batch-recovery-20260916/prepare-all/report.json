@@ -1,0 +1,127 @@
+{
+  "all_programs_available_at_visit": true,
+  "claim": "Serial, bounded, fresh-process cache visits; availability can change. Does not prove simultaneous residency or numerical inference.",
+  "error": null,
+  "expected_programs": 162,
+  "global_context_capacity": 1024,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "operation": "prepare",
+  "parts": [
+    {
+      "part": "qkv",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cache-batch-recovery-20260916/prepare-all/qkv/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 29,
+        "journal_events": {
+          "cache_hit": 19,
+          "cache_miss": 29,
+          "cached_source_staged": 19,
+          "compile_begin": 29,
+          "compile_completed": 29,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "output",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cache-batch-recovery-20260916/prepare-all/output/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 28,
+        "journal_events": {
+          "cache_hit": 20,
+          "cache_miss": 28,
+          "cached_source_staged": 20,
+          "compile_begin": 28,
+          "compile_completed": 28,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "ffn-int8",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cache-batch-recovery-20260916/prepare-all/ffn-int8/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 25,
+        "journal_events": {
+          "cache_hit": 23,
+          "cache_miss": 25,
+          "cached_source_staged": 23,
+          "compile_begin": 25,
+          "compile_completed": 25,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "head-attention",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cache-batch-recovery-20260916/prepare-all/head-attention/report.json",
+      "validated": {
+        "available": 18,
+        "compiler_calls": 14,
+        "journal_events": {
+          "cache_hit": 4,
+          "cache_miss": 14,
+          "cached_source_staged": 4,
+          "compile_begin": 14,
+          "compile_completed": 14,
+          "compile_requested": 18,
+          "descriptor_created": 18,
+          "load_begin": 18,
+          "load_completed": 18,
+          "request_created": 16,
+          "source_data_removed": 17,
+          "source_weights_removed": 16,
+          "surfaces_created": 16,
+          "unload_begin": 18,
+          "unload_completed": 18,
+          "unload_returned": 18
+        },
+        "missing": [],
+        "successful_unloads": 18
+      }
+    }
+  ],
+  "schema": "rvllm.ane_cache_batch.v1",
+  "status": "complete",
+  "verified_available_programs": 162,
+  "verified_compiler_calls": 96
+}

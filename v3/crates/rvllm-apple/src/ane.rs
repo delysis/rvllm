@@ -1,30 +1,82 @@
 #![allow(unsafe_code)]
-#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 use prost::Message;
-#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 use rvllm_core::error::AneCompileError;
 use rvllm_core::{AppleCtx, AppleError, DType, Result, RvllmError};
 use serde::{Deserialize, Serialize};
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 use std::collections::VecDeque;
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 use std::process::Command;
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 use std::sync::{Mutex, OnceLock};
 
 use crate::iosurface::IoSurfaceTensorDesc;
 use crate::plan::RolloutBucket;
 
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 type CompileOutput = Result<()>;
 
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 const ANE_DIAGNOSTIC_CAPACITY: usize = 8;
 
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 static ANE_DIAGNOSTICS: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
 
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 fn ane_diagnostics() -> &'static Mutex<VecDeque<String>> {
     ANE_DIAGNOSTICS.get_or_init(|| Mutex::new(VecDeque::new()))
 }
 
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 fn locate_compiled_bundle(workspace: &Path) -> Option<PathBuf> {
     let direct = workspace.join("model.mlmodelc");
     if direct.exists() {
@@ -44,6 +96,11 @@ fn locate_compiled_bundle(workspace: &Path) -> Option<PathBuf> {
     seen.into_iter().next()
 }
 
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 fn push_diagnostic(message: impl Into<String>) {
     if let Ok(mut cache) = ane_diagnostics().lock() {
         if cache.len() == ANE_DIAGNOSTIC_CAPACITY {
@@ -61,11 +118,25 @@ fn ctx(op: &'static str) -> AppleCtx {
     }
 }
 
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 pub fn last_ane_diagnostics() -> Vec<String> {
     match ane_diagnostics().lock() {
         Ok(cache) => cache.iter().cloned().collect(),
         Err(_) => Vec::new(),
     }
+}
+
+#[cfg(not(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+)))]
+pub fn last_ane_diagnostics() -> Vec<String> {
+    Vec::new()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -202,7 +273,11 @@ impl AneProgramPlan {
     }
 }
 
-#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 pub fn compile_private_ane_program(plan: &AneProgramPlan, weights_path: &Path) -> Result<PathBuf> {
     compile_private_ane_program_with_mil_options(
         plan,
@@ -211,7 +286,11 @@ pub fn compile_private_ane_program(plan: &AneProgramPlan, weights_path: &Path) -
     )
 }
 
-#[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+#[cfg(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+))]
 fn compile_private_ane_program_with_mil_options(
     plan: &AneProgramPlan,
     weights_path: &Path,
@@ -442,7 +521,11 @@ fn compile_private_ane_program_with_mil_options(
     Ok(compiled)
 }
 
-#[cfg(not(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64")))]
+#[cfg(not(all(
+    target_os = "macos",
+    feature = "macos-private-ane-research",
+    target_arch = "aarch64"
+)))]
 pub fn compile_private_ane_program(
     _plan: &AneProgramPlan,
     _weights_path: &Path,
@@ -458,11 +541,18 @@ pub fn compile_private_ane_program(
 
 #[cfg(test)]
 mod tests {
-    #[cfg(all(target_os = "macos", feature = "private-ane"))]
+    #[cfg(all(target_os = "macos", feature = "macos-private-ane-research"))]
     use super::*;
+    #[cfg(all(
+        target_os = "macos",
+        target_arch = "aarch64",
+        feature = "macos-private-ane-research"
+    ))]
+    use prost::Message;
 
     #[test]
-    #[cfg(all(target_os = "macos", feature = "private-ane"))]
+    #[ignore = "requires explicit private ANE compiler opt-in; excluded from host checks"]
+    #[cfg(all(target_os = "macos", feature = "macos-private-ane-research"))]
     fn test_hardware_ane_compilation_integration() {
         let config = AneRolloutConfig {
             bucket: RolloutBucket {
@@ -497,7 +587,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires private ANE compile/load/evaluate opt-in"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_tiny_projection_evaluate_smoke() {
         let config = AneRolloutConfig {
             bucket: RolloutBucket {
@@ -596,7 +690,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires private ANE compile/load opt-in; records load boundary only"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_tiny_projection_load_boundary_is_reported() {
         let config = AneRolloutConfig {
             bucket: RolloutBucket {
@@ -651,7 +749,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires private ANE compile/load opt-in; records FP16/rank-4 private boundaries only"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_tiny_projection_fp16_and_rank4_boundaries_are_reported() {
         struct EnvGuard {
             name: &'static str,
@@ -770,7 +872,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires private ANE compile/load opt-in; records rank-3 source/compiled load boundaries only"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_tiny_projection_rank3_load_source_boundaries_are_reported() {
         struct EnvGuard {
             name: &'static str,
@@ -863,14 +969,9 @@ mod tests {
             source_model.display()
         );
 
-        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
-        let public_compiled = rvllm_apple_ane_sys::coreml_compile_model(
-            source_model
-                .to_str()
-                .expect("source model path should be UTF-8"),
-        )
-        .expect("public CoreML compile should accept generated rank-3 projection model");
-        let public_compiled = std::path::PathBuf::from(public_compiled);
+        rvllm_apple_ane_sys::load_frameworks().expect("private ANE framework should load");
+        let public_compiled = rvllm_apple_coreml_runtime::compile_model(&source_model)
+            .expect("public CoreML compile should accept generated rank-3 projection model");
         eprintln!(
             "[ANE DIAG] public MLModel compileModelAtURL accepted source {}; compiled to {}",
             source_model.display(),
@@ -890,7 +991,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires private ANE compile/load opt-in; records load option/client boundaries only"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_tiny_projection_load_options_boundaries_are_reported() {
         struct EnvGuard {
             name: &'static str,
@@ -997,7 +1102,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires private ANE compile opt-in; records private compile boundary only"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_tiny_projection_private_compile_boundary_is_reported() {
         struct EnvGuard {
             name: &'static str,
@@ -1095,17 +1204,13 @@ mod tests {
             source_model.display()
         );
 
-        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
-        let public_compiled = rvllm_apple_ane_sys::coreml_compile_model(
-            source_model
-                .to_str()
-                .expect("source model path should be UTF-8"),
-        )
-        .expect("public CoreML compile should accept generated tiny projection model");
+        rvllm_apple_ane_sys::load_frameworks().expect("private ANE framework should load");
+        let public_compiled = rvllm_apple_coreml_runtime::compile_model(&source_model)
+            .expect("public CoreML compile should accept generated tiny projection model");
         eprintln!(
             "[ANE DIAG] public MLModel compileModelAtURL accepted source {}; compiled to {}",
             source_model.display(),
-            public_compiled
+            public_compiled.display()
         );
 
         let source_private_ok = report_private_compile_boundary("source .mlmodel", &source_model);
@@ -1138,7 +1243,11 @@ mod tests {
 
     #[test]
     #[ignore = "child process for private ANE compile-boundary diagnostics"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_compile_model_child_probe() {
         let Some(path) = std::env::var_os("RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_PATH") else {
             eprintln!("skipping: RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_PATH is not set");
@@ -1147,7 +1256,7 @@ mod tests {
         let kind = std::env::var("RVLLM_ANE_PRIVATE_COMPILE_BOUNDARY_KIND")
             .unwrap_or_else(|_| "model".to_string());
         let path = std::path::PathBuf::from(path);
-        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
+        rvllm_apple_ane_sys::load_frameworks().expect("private ANE framework should load");
         let client = rvllm_apple_ane_sys::get_ane_client()
             .expect("_ANEClient sharedConnection should be available");
         let path_str = path.to_str().expect("ANE model path should be UTF-8");
@@ -1173,7 +1282,11 @@ mod tests {
 
     #[test]
     #[ignore = "child process for private ANE load-options/client boundary diagnostics"]
-    #[cfg(all(target_os = "macos", feature = "private-ane", target_arch = "aarch64"))]
+    #[cfg(all(
+        target_os = "macos",
+        feature = "macos-private-ane-research",
+        target_arch = "aarch64"
+    ))]
     fn private_ane_load_options_child_probe() {
         let Some(path) = std::env::var_os("RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_PATH") else {
             eprintln!("skipping: RVLLM_ANE_LOAD_OPTIONS_BOUNDARY_PATH is not set");
@@ -1194,7 +1307,7 @@ mod tests {
             other => panic!("unknown private ANE load options boundary case: {other}"),
         };
         let path = std::path::PathBuf::from(path);
-        rvllm_apple_ane_sys::load_frameworks().expect("ANE/CoreML frameworks should load");
+        rvllm_apple_ane_sys::load_frameworks().expect("private ANE framework should load");
         let Some(client) = rvllm_apple_ane_sys::get_ane_client_with_connection(connection) else {
             eprintln!(
                 "[ANE DIAG] _ANEClient {} unavailable for loadModel options={}; no ANE execution claim made",

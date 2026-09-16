@@ -1,0 +1,17 @@
+[package]
+name = "rvllm-apple-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Fail-closed C ABI for embedding the rvllm Apple inference runtime"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+rvllm-apple = { workspace = true }
+rvllm-core = { workspace = true }
+rvllm-runtime = { workspace = true, features = ["apple"] }
+zeroize = "1.8"

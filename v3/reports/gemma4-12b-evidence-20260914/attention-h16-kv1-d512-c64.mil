@@ -1,0 +1,33 @@
+program(1.3)
+[buildInfo = dict<string, string>({{"coremlc-component-MIL", "3510.2.1"}, {"coremlc-version", "3505.4.1"}, {"coremltools-version", "9.0"}})]
+{
+    func main<ios18>(tensor<fp16, [1, 513, 1, 160]> x) {
+        tensor<int32, [4]> bq = const()[name = string("bq"), val = tensor<int32, [4]>([0, 0, 0, 0])];
+        tensor<int32, [4]> bk = const()[name = string("bk"), val = tensor<int32, [4]>([0, 0, 0, 32])];
+        tensor<int32, [4]> bv = const()[name = string("bv"), val = tensor<int32, [4]>([0, 0, 0, 96])];
+        tensor<int32, [4]> bm = const()[name = string("bm"), val = tensor<int32, [4]>([0, 512, 0, 0])];
+        tensor<int32, [4]> sq = const()[name = string("sq"), val = tensor<int32, [4]>([1, 512, 1, 16])];
+        tensor<int32, [4]> skv = const()[name = string("skv"), val = tensor<int32, [4]>([1, 512, 1, 64])];
+        tensor<int32, [4]> sm = const()[name = string("sm"), val = tensor<int32, [4]>([1, 1, 1, 64])];
+        tensor<int32, [4]> rq = const()[name = string("rq"), val = tensor<int32, [4]>([1, 1, 512, 16])];
+        tensor<int32, [4]> rkv = const()[name = string("rkv"), val = tensor<int32, [4]>([1, 1, 512, 64])];
+        tensor<int32, [4]> perm = const()[name = string("perm"), val = tensor<int32, [4]>([0, 1, 3, 2])];
+        bool no_transpose = const()[name = string("no_transpose"), val = bool(false)];
+        int32 axis = const()[name = string("axis"), val = int32(-1)];
+        tensor<fp16, [1, 512, 1, 16]> qf = slice_by_size(x = x, begin = bq, size = sq)[name = string("qf")];
+        tensor<fp16, [1, 512, 1, 64]> kf = slice_by_size(x = x, begin = bk, size = skv)[name = string("kf")];
+        tensor<fp16, [1, 512, 1, 64]> vf = slice_by_size(x = x, begin = bv, size = skv)[name = string("vf")];
+        tensor<fp16, [1, 1, 1, 64]> mask = slice_by_size(x = x, begin = bm, size = sm)[name = string("mask")];
+        tensor<fp16, [1, 1, 512, 16]> qr = reshape(x = qf, shape = rq)[name = string("qr")];
+        tensor<fp16, [1, 1, 16, 512]> q = transpose(x = qr, perm = perm)[name = string("q")];
+        tensor<fp16, [1, 1, 512, 64]> k = reshape(x = kf, shape = rkv)[name = string("k")];
+        tensor<fp16, [1, 1, 512, 64]> vr = reshape(x = vf, shape = rkv)[name = string("vr")];
+        tensor<fp16, [1, 1, 64, 512]> v = transpose(x = vr, perm = perm)[name = string("v")];
+        tensor<fp16, [1, 1, 16, 64]> scores = matmul(x = q, y = k, transpose_x = no_transpose, transpose_y = no_transpose)[name = string("scores")];
+        tensor<fp16, [1, 1, 16, 64]> masked = add(x = scores, y = mask)[name = string("masked")];
+        tensor<fp16, [1, 1, 16, 64]> probabilities = softmax(x = masked, axis = axis)[name = string("probabilities")];
+        tensor<fp16, [1, 1, 16, 512]> attention = matmul(x = probabilities, y = v, transpose_x = no_transpose, transpose_y = no_transpose)[name = string("attention")];
+        tensor<fp16, [1, 1, 512, 16]> transposed = transpose(x = attention, perm = perm)[name = string("transposed")];
+        tensor<fp16, [1, 512, 1, 16]> y = reshape(x = transposed, shape = sq)[name = string("y")];
+    } -> (y);
+}

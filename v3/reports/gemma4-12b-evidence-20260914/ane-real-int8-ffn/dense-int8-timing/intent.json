@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_ane_int8_probe",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--layer",
+    "0",
+    "--mode",
+    "dense-int8",
+    "--iterations",
+    "64",
+    "--report",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/ane-real-int8-ffn/dense-int8-timing/probe.json"
+  ],
+  "binary_sha256": "f2066cf996c2c1004b3d004da99b1da0b15f0a895576e0135fa25c0a2c9d0c4c",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "load_before": "14:17  up  5:58, 1 user, load averages: 11.89 12.43 21.71\n",
+  "disk_free_before": 30002012160,
+  "scope": "One ANE program, three numerical inputs with original/reconstructed CPU references, five warmups, 64 measured evaluations. Stop on first failure. No full-model INT8 qualification."
+}

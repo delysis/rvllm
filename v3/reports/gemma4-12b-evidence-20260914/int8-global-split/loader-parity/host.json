@@ -1,0 +1,120 @@
+{
+  "backend_tolerance": "0.01 + 0.02 * abs(cpu_reference)",
+  "claim": "One actual QKV projection; quantization error and backend error are separate. No full-model quality or speed claim.",
+  "input_channels": 3840,
+  "input_sources": [
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-04.fp16",
+      "maximum_absolute_input": 76.0625,
+      "normalized_fp16_sha256": "693e60398e66d9405d8af214923ebcc849dc038ee24cda04143ea9be178c9190",
+      "sha256": "656e3f99edfd386d42d0c290cd63f7c1d536d92ac4757ee51e6bd9caf046462c"
+    },
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-04.fp16",
+      "maximum_absolute_input": 62.84375,
+      "normalized_fp16_sha256": "01d5a565b676be2732b4b87d72e6fa4985157ee9b6a5565ab85ebd0c3b0e78b9",
+      "sha256": "28e158844c213c4ae39543c6db97e7cabfcefe6dcba03e99c8923c3be345619a"
+    },
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-04.fp16",
+      "maximum_absolute_input": 79.3125,
+      "normalized_fp16_sha256": "248a5edfb9eeb1bc52681c37dea2469c5f99ef7196bafc5a6c8c753ab8a1948a",
+      "sha256": "e3051b59fae8d90bef8ad3440c1f4cd7b88a1a4daf36b6387354784f18fbf843"
+    }
+  ],
+  "int8_source_bytes": 33440960,
+  "layer": 5,
+  "mode": "cpu",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "original_fp16_sha256": "75a4891481f9ce4b3c3db7445359f0e695cea179786e6d72a29905644c5fb9d7",
+  "output_channels": 8704,
+  "quantization_errors": [
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 1727,
+            "elements": 8192,
+            "maximum_absolute_error": 0.5773515701293945,
+            "relative_l2_error": 0.0072999013516216495
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 123,
+            "elements": 512,
+            "maximum_absolute_error": 0.3747274875640869,
+            "relative_l2_error": 0.010169091843360284
+          },
+          "part": "key"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1850,
+        "elements": 8704,
+        "maximum_absolute_error": 0.5773515701293945,
+        "relative_l2_error": 0.007396047785470041
+      }
+    },
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 1749,
+            "elements": 8192,
+            "maximum_absolute_error": 0.5206489562988281,
+            "relative_l2_error": 0.008486012465913713
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 105,
+            "elements": 512,
+            "maximum_absolute_error": 0.2516665458679199,
+            "relative_l2_error": 0.007886888243608264
+          },
+          "part": "key"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1854,
+        "elements": 8704,
+        "maximum_absolute_error": 0.5206489562988281,
+        "relative_l2_error": 0.008455107098790283
+      }
+    },
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 1741,
+            "elements": 8192,
+            "maximum_absolute_error": 0.4269278049468994,
+            "relative_l2_error": 0.008076092540182227
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 127,
+            "elements": 512,
+            "maximum_absolute_error": 0.25973081588745117,
+            "relative_l2_error": 0.010945890398296345
+          },
+          "part": "key"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1868,
+        "elements": 8704,
+        "maximum_absolute_error": 0.4269278049468994,
+        "relative_l2_error": 0.008174215359280422
+      }
+    }
+  ],
+  "reconstructed_fp16_sha256": "65d2c96005e44ae1150633444fd7497619bc82da0d344a7168510c3806ab1643",
+  "schema": "rvllm.gemma4_qkv_int8.v1",
+  "shared_key_value": true
+}

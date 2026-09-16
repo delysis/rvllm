@@ -1,0 +1,34 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/disaggregated-static-ffn-capital-20260914/inference",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+    "--capture-layer-states",
+    "true",
+    "--ane-weights",
+    "static-ffn"
+  ],
+  "binary_sha256": "9ca813c9d58e65a4f7f9c64a8377fcfc77d80151c7a7ce3b667e8f4943d39877",
+  "metallib_sha256": "24086ed59b6e079a5e5ac219036c90eb81db1d489a72fdd356d4c79433a4a762",
+  "reference_sha256": "57a3fee12427f25c35f62fead004130ee56e3c30994b7e9196335964a2b249cd",
+  "source_sha256": {
+    "crates/rvllm-runtime/src/bin/rvllm_disaggregated_infer.rs": "05a833c8d08ae8ae32ba300dcb048e19f5cb71dfd945dae54c93e3e38ecd36e2",
+    "crates/rvllm-runtime/src/gemma_ane_decode.rs": "ac5186bdcc2e26088644c27109b8d21938ef19481911a7b2f8b65a8ebe457ccd",
+    "crates/rvllm-runtime/src/ane_prefill.rs": "db28725678c814458fdecea5284c601d059c13d80cbbcf814fda4a66719366a5",
+    "crates/rvllm-apple/src/ane_attention.rs": "c2c1221f52f3243156f4c4a276837a82d46d0b8ad2694a0367c0970608ed7ee5",
+    "crates/rvllm-apple/src/ane_attention_layout.rs": "5c4833b49a066c5d7bfe8dfb641fbb6b20d064a161388f72d7c06bafb010154e",
+    "crates/rvllm-apple/src/ane_dynamic_ffn.rs": "9d1e12f46112c4351df2b060486984e5e4d4509b6c6ab016cbf7d02f0e1bd5b0",
+    "crates/rvllm-apple/src/ane_dynamic_linear.rs": "7d74a471afee25520668fba4f4b78976e3298ed7da3028f0f6c272aba7979beb",
+    "crates/rvllm-apple/src/ane_ffn_layout.rs": "32bcccff82806656d6c12b46b2b62576e753a20e084811b869cda51fb1ad6337",
+    "crates/rvllm-apple/src/ane_linear.rs": "4ca1bfe850ec9f50c192ad093090540938ebcfc36c18008d9cd7527fbae28817",
+    "crates/rvllm-apple/src/gemma_decode_math.rs": "aaac1585c9215fe82982fe184c33aba9c75f41a477e457e5151489f14f0069b2",
+    "crates/rvllm-apple-ane-sys/src/in_memory.rs": "ecbeca9366003d51118c8b650c0f986e7239259cc9ccf82999e4f6e4e8040668"
+  },
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "load_before": "13:50  up  5:32, 1 user, load averages: 48.30 70.74 68.27\n",
+  "scope": "One fresh Metal prefill and one actual full 48-layer ANE continuation for the capital chat reference. At most 116 compiled ANE programs with static FFNs and dynamic output projections and 208 evaluations. Stop on first error. No performance claim with journaling and layer captures enabled."
+}

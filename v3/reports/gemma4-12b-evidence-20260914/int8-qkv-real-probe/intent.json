@@ -1,0 +1,33 @@
+{
+  "schema": "rvllm.int8_qkv_probe_intent.v1",
+  "layers": [
+    1,
+    5
+  ],
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "capture_report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/report.json",
+  "inputs": {
+    "1": [
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-00.fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-00.fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-00.fp16"
+    ],
+    "5": [
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-04.fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-04.fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-04.fp16"
+    ]
+  },
+  "order": [
+    "CPU quantization audit",
+    "bounded single I/O backend qualification",
+    "strict-cache paired timing if controls eligible"
+  ],
+  "qualification_compiles_per_process": 2,
+  "qualification_evaluations_per_layer": 9,
+  "timing_compiles": 0,
+  "baseline": "existing original FP16 QKV",
+  "candidate": "per-output INT8 with FP16 activations",
+  "control": "FP16 reconstruction of identical INT8 coefficients",
+  "scope": "No full-model route change; no four-bit work."
+}

@@ -30,11 +30,20 @@ impl ModelArch {
 }
 
 pub fn is_gemma4_hf_architecture(name: &str) -> bool {
-    matches!(name, "Gemma4ForConditionalGeneration" | "Gemma4ForCausalLM")
+    matches!(
+        name,
+        "Gemma4ForConditionalGeneration"
+            | "Gemma4ForCausalLM"
+            | "Gemma4UnifiedForConditionalGeneration"
+            | "Gemma4UnifiedForCausalLM"
+    )
 }
 
 pub fn is_gemma4_model_type(name: &str) -> bool {
-    matches!(name, "gemma4" | "gemma4_text")
+    matches!(
+        name,
+        "gemma4" | "gemma4_text" | "gemma4_unified" | "gemma4_unified_text"
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -114,6 +123,7 @@ impl ModelConfig {
             .or_else(|| hf::bool_field_opt(v, "tie_word_embeddings"))
             .unwrap_or(false);
         let torch_dtype = match hf::str_field(v, "torch_dtype", file)
+            .or_else(|_| hf::str_field(v, "dtype", file))
             .or_else(|_| hf::str_field(tc, "dtype", file))?
             .as_str()
         {
@@ -183,7 +193,7 @@ fn validate_optional_gemma4_model_type(
                 ConfigError::InvalidField {
                     name: field_name,
                     reason: format!(
-                        "Gemma4 config requires model_type gemma4 or gemma4_text, got {model_type}"
+                        "Gemma4 config requires model_type gemma4, gemma4_text, gemma4_unified or gemma4_unified_text, got {model_type}"
                     ),
                 },
                 field_name,
@@ -256,6 +266,23 @@ mod tests {
             .expect("Gemma4 model_type fields should parse");
 
         assert_eq!(config.architecture, ModelArch::Gemma4);
+    }
+
+    #[test]
+    fn parses_gemma4_unified_12b_identity_and_root_dtype() {
+        for architecture in [
+            "Gemma4UnifiedForConditionalGeneration",
+            "Gemma4UnifiedForCausalLM",
+        ] {
+            let mut value = gemma4_config(architecture);
+            value.as_object_mut().unwrap().remove("torch_dtype");
+            value["dtype"] = serde_json::json!("bfloat16");
+            value["model_type"] = serde_json::json!("gemma4_unified");
+            value["text_config"]["model_type"] = serde_json::json!("gemma4_unified_text");
+            let config = ModelConfig::from_hf_value(&value, Path::new("config.json")).unwrap();
+            assert_eq!(config.architecture, ModelArch::Gemma4);
+            assert_eq!(config.torch_dtype, DType::Bf16);
+        }
     }
 
     #[test]

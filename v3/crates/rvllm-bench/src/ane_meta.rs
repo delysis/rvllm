@@ -1,7 +1,8 @@
 //! Shared benchmark/probe CLI metadata for strict-ANE and Apple backend
 //! intent capture.
 
-use rvllm_core::{AneComputeProfile, AneFallbackPolicy, AppleBackendMode};
+use rvllm_core::config::{AneComputeProfile, AneFallbackPolicy};
+use rvllm_core::AppleBackendMode;
 use serde_json::Value;
 
 use std::fmt;
@@ -88,7 +89,7 @@ impl AppleCliProfile {
             backend_profile: backend.to_string(),
             apple_mode: env_apple_mode(),
             strict_ane,
-            private_ane_opt_in: private_ane_opt_in.unwrap_or(strict_ane),
+            private_ane_opt_in: private_ane_opt_in || strict_ane,
             ane_compute_profile: parse_ane_profile(),
             ane_fallback_policy: parse_ane_fallback(),
             apple_rollout_tokens: rollout_tokens,
@@ -139,7 +140,7 @@ impl AppleCliProfile {
             self.strict_ane,
             self.private_ane_opt_in,
             self.ane_compute_profile.as_str(),
-            self.ane_fallback_policy,
+            ane_fallback_label(self.ane_fallback_policy),
             self.apple_rollout_tokens,
             self.rollout_bucket_seqs,
             self.rollout_bucket_tokens,

@@ -1,0 +1,20 @@
+{
+  "binary": {
+    "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-batch-capture-20260916/rvllm_ane_int8_probe-batch-capture",
+    "sha256": "04cc6b66de2d07b5f3853fa1ac4369fafb292842f448fcbb012380a3888ed56b"
+  },
+  "host_test_job": "43-batch-capture-journal-tests",
+  "host_tests_passed": 9,
+  "release_build_job": "44-batch-capture-journal-build",
+  "signing_identifier": "rvllm_disaggregated_infer-9d1f7275eb5937c9",
+  "source_snapshot": "source-v2",
+  "negative_cli_check": {
+    "missing_driver_journal_rejected": true,
+    "exit_code": 1,
+    "rejected_before_model_access": true,
+    "model_path": "/nonexistent/rvllm-control-probe",
+    "message": "batch capture requires only the two-token INT8 comparison, cache require, zero compilation and a driver journal"
+  },
+  "hardware_capture_job": "45-batch-output-capture",
+  "performance_claim": false
+}

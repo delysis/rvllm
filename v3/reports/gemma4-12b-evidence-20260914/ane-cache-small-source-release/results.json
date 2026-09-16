@@ -1,0 +1,78 @@
+[
+  {
+    "test": "cache_different_weights_miss",
+    "exit_code": 0,
+    "seconds": 0.10267305374145508,
+    "stages": {
+      "cache_miss": 1,
+      "compile_requested": 1,
+      "descriptor_created": 1
+    }
+  },
+  {
+    "test": "cache_compile_and_reload",
+    "exit_code": 0,
+    "seconds": 5.026080846786499,
+    "stages": {
+      "cache_hit": 1,
+      "cache_miss": 1,
+      "cached_source_staged": 1,
+      "compile_begin": 1,
+      "compile_completed": 1,
+      "compile_requested": 2,
+      "descriptor_created": 2,
+      "evaluate_begin": 6,
+      "evaluate_completed": 6,
+      "load_begin": 2,
+      "load_completed": 2,
+      "request_created": 2,
+      "source_data_removed": 2,
+      "source_weights_removed": 2,
+      "surfaces_created": 2,
+      "unload_begin": 2,
+      "unload_returned": 2
+    }
+  },
+  {
+    "test": "cache_require_existing",
+    "exit_code": 0,
+    "seconds": 1.6294939517974854,
+    "stages": {
+      "cache_hit": 1,
+      "cached_source_staged": 1,
+      "compile_requested": 1,
+      "descriptor_created": 1,
+      "evaluate_begin": 3,
+      "evaluate_completed": 3,
+      "load_begin": 1,
+      "load_completed": 1,
+      "request_created": 1,
+      "source_data_removed": 1,
+      "source_weights_removed": 1,
+      "surfaces_created": 1,
+      "unload_begin": 1,
+      "unload_returned": 1
+    }
+  },
+  {
+    "test": "cache_purge_owned_fixture",
+    "exit_code": 0,
+    "seconds": 3.7928953170776367,
+    "stages": {
+      "cache_hit": 1,
+      "cached_source_staged": 1,
+      "compile_requested": 1,
+      "descriptor_created": 1,
+      "evaluate_begin": 3,
+      "evaluate_completed": 3,
+      "load_begin": 1,
+      "load_completed": 1,
+      "request_created": 1,
+      "source_data_removed": 1,
+      "source_weights_removed": 1,
+      "surfaces_created": 1,
+      "unload_begin": 1,
+      "unload_returned": 1
+    }
+  }
+]

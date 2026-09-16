@@ -1,0 +1,34 @@
+{
+  "schema": "rvllm.queue_buffered_read_build.v1",
+  "executable": {
+    "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/rvllm_experiment_queue-release-v6",
+    "sha256": "bc02bf13c917874a066cd0de66b17fd81461ae612c12f07b355817eed39aa210"
+  },
+  "sources": [
+    {
+      "path": "crates/rvllm-runtime/src/bin/rvllm_experiment_queue.rs",
+      "sha256": "06c57486d22d79b0cd03ab3a4b6cb1054d8cf28a6a1f6f0611b5878932e91eb1"
+    },
+    {
+      "path": "crates/rvllm-runtime/src/bin/rvllm_experiment_queue/queue.rs",
+      "sha256": "0a7c0b52cd4ddcefd6cfc33e1ee4f8af98e6293fb42b23993edc62c03887726e"
+    },
+    {
+      "path": "crates/rvllm-runtime/src/bin/rvllm_compare_disaggregated/fair.rs",
+      "sha256": "cf6a6be84742bf2ea89de6adb2c892f66b18a50d3221ae91e70c7ac16554cf78"
+    }
+  ],
+  "tests_passed": 11,
+  "test_exit_code": 0,
+  "build_exit_code": 0,
+  "old_worker_pid": 92273,
+  "old_worker_exit_code": 0,
+  "queue": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7",
+  "stop_marker_preserved": "STOP-before-buffered-reports",
+  "status_observations": {
+    "before_seconds": 3.64,
+    "after_seconds": 0.3,
+    "same_job_summaries": true,
+    "claim": "Two host status-read observations; not a controlled accelerator or inference speedup."
+  }
+}

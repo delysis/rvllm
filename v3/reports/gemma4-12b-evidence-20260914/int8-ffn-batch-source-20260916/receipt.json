@@ -1,0 +1,19 @@
+{
+  "schema": "rvllm.int8_candidate_host_receipt.v1",
+  "base_commit": "144cdd01dd51bb7d0c2c9d942e50cefc25d3ba5f",
+  "working_tree": "Dirty; these source hashes, not the base commit, identify the tested changes.",
+  "source_sha256": {
+    "ane_linear.rs": "20c146bcdb55f7dbfdc85f1fb5a2e6b5bee58d7282b2861947bfcf30fced81e6",
+    "gemma_ane_decode.rs": "e9ad4a9b90fedc2a0e657f96991faeb27e88148ece3ce77008ba58b219ca38bb",
+    "rvllm_disaggregated_infer.rs": "c1c3d04672cb48fe6671a769f2e4fbd3ad013975fe83fbecc72c0404a8f05e58"
+  },
+  "checks": {
+    "sliding_qkv_host_tests": 2,
+    "sliding_qkv_cli_cargo_check": "passed",
+    "logical_batch_host_tests": 3,
+    "original_ffn_mil_fixture_test": "passed"
+  },
+  "new_candidate_accelerator_compiles": 0,
+  "new_candidate_accelerator_evaluations": 0,
+  "acceptance": "Host implementation checks only. No batched ANE or full-model sliding-QKV numerical/performance acceptance. No default model change."
+}

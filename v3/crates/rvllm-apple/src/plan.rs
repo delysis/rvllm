@@ -306,7 +306,6 @@ impl AneCapabilityStatus {
 pub enum CoreMlComputeUnitsPlan {
     All,
     CpuAndNeuralEngine,
-    NeuralEngineOnly,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -315,6 +314,10 @@ pub struct CoreMlAneComputePlan {
     pub compute_units: CoreMlComputeUnitsPlan,
     pub uses_public_coreml_execution: bool,
     pub requires_private_ane: bool,
+    /// Public Core ML has no Neural-Engine-only compute-unit setting. This is
+    /// therefore always false until measured execution evidence is attached by
+    /// a higher-level runtime report.
+    pub guarantees_neural_engine_execution: bool,
 }
 
 impl CoreMlAneComputePlan {
@@ -326,13 +329,17 @@ impl CoreMlAneComputePlan {
         let compute_units = match compute_profile {
             AneComputeProfile::AnyAvailable => CoreMlComputeUnitsPlan::All,
             AneComputeProfile::NeuralEnginePreferred => CoreMlComputeUnitsPlan::CpuAndNeuralEngine,
-            AneComputeProfile::NeuralEngineOnly => CoreMlComputeUnitsPlan::NeuralEngineOnly,
+            // MLComputeUnits exposes CPUAndNeuralEngine, not a public
+            // NeuralEngineOnly mode. A strict/private profile must not leak a
+            // stronger claim into public Core ML capability reporting.
+            AneComputeProfile::NeuralEngineOnly => CoreMlComputeUnitsPlan::CpuAndNeuralEngine,
         };
         Self {
             compute_profile,
             compute_units,
             uses_public_coreml_execution: !requires_private_ane,
             requires_private_ane,
+            guarantees_neural_engine_execution: false,
         }
     }
 }
@@ -359,7 +366,7 @@ pub fn private_ane_feature_enabled() -> bool {
     cfg!(all(
         target_os = "macos",
         target_arch = "aarch64",
-        feature = "private-ane"
+        feature = "macos-private-ane-research"
     ))
 }
 
@@ -384,7 +391,16 @@ pub fn probe_ane_capability(
     let private_ane_feature_enabled = private_ane_feature_enabled();
     let private_ane_env_opt_in = private_ane_env_opted_in();
     let compute_plan = CoreMlAneComputePlan::from_profile(compute_profile, private_ane_requested);
-    let status = if !cfg!(target_os = "macos") {
+    // Private framework research is macOS-only. Public Core ML, however, is a
+    // supported API surface on both macOS and iOS, so an iOS public request
+    // must reach the honest "path not enabled" boundary below instead of
+    // being mislabeled as an unsupported Apple platform.
+    let platform_is_eligible = if private_ane_requested {
+        cfg!(target_os = "macos")
+    } else {
+        cfg!(any(target_os = "macos", target_os = "ios"))
+    };
+    let status = if !platform_is_eligible {
         AneCapabilityStatus::Unsupported {
             reason: AneUnsupportedReason::NonMacOs,
         }
@@ -939,5 +955,19 @@ mod tests {
             AneCapabilityStatus::Unsupported { .. }
         ));
         assert!(!report.compute_plan.requires_private_ane);
+        assert!(!report.compute_plan.guarantees_neural_engine_execution);
+    }
+
+    #[test]
+    fn public_coreml_strict_profile_does_not_claim_neural_engine_only() {
+        let plan = CoreMlAneComputePlan::from_profile(AneComputeProfile::NeuralEngineOnly, false);
+
+        assert_eq!(
+            plan.compute_units,
+            CoreMlComputeUnitsPlan::CpuAndNeuralEngine
+        );
+        assert!(plan.uses_public_coreml_execution);
+        assert!(!plan.requires_private_ane);
+        assert!(!plan.guarantees_neural_engine_execution);
     }
 }

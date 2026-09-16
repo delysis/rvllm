@@ -17,7 +17,7 @@ pub struct MetalRegion {
     pub size: usize,
 }
 
-/// Stub Metal context unavailable on non-macOS targets.
+/// Fail-closed Metal context for non-Apple targets.
 #[derive(Debug)]
 pub struct MetalContext;
 
@@ -84,7 +84,7 @@ impl MetalContext {
     }
 }
 
-/// Stub metal arena unavailable on non-macOS targets.
+/// Fail-closed Metal arena for non-Apple targets.
 #[derive(Debug)]
 pub struct MetalBufferArena;
 
@@ -143,7 +143,7 @@ impl MetalBufferArena {
     pub fn reset(&mut self) {}
 }
 
-/// Stub pipeline cache unavailable on non-macOS targets.
+/// Fail-closed pipeline cache for non-Apple targets.
 #[derive(Debug, Default)]
 pub struct PipelineCache;
 
@@ -170,6 +170,18 @@ impl PipelineCache {
             },
             ctx("compile_pipelines"),
         ))
+    }
+
+    pub fn compile_all_for_type(
+        &mut self,
+        context: &MetalContext,
+        _dtype: crate::MetalFloatType,
+    ) -> Result<()> {
+        self.compile_all(context)
+    }
+
+    pub const fn float_type(&self) -> Option<crate::MetalFloatType> {
+        None
     }
 
     pub fn get(&self, _name: &str) -> Result<&()> {

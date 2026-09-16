@@ -1,0 +1,115 @@
+{
+  "all_programs_available_at_visit": true,
+  "claim": "Serial, bounded, fresh-process cache visits; availability can change. Does not prove simultaneous residency or numerical inference.",
+  "error": null,
+  "expected_programs": 162,
+  "global_context_capacity": 1024,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "operation": "inspect",
+  "parts": [
+    {
+      "part": "qkv",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/48-post-recovery-cache-survival/backend/qkv/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 48,
+          "cached_source_staged": 48,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "output",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/48-post-recovery-cache-survival/backend/output/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 48,
+          "cached_source_staged": 48,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "ffn-int8",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/48-post-recovery-cache-survival/backend/ffn-int8/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 48,
+          "cached_source_staged": 48,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "head-attention",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/48-post-recovery-cache-survival/backend/head-attention/report.json",
+      "validated": {
+        "available": 18,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 18,
+          "cached_source_staged": 18,
+          "compile_requested": 18,
+          "descriptor_created": 18,
+          "load_begin": 18,
+          "load_completed": 18,
+          "request_created": 16,
+          "source_data_removed": 18,
+          "source_weights_removed": 16,
+          "surfaces_created": 16,
+          "unload_begin": 18,
+          "unload_completed": 18,
+          "unload_returned": 18
+        },
+        "missing": [],
+        "successful_unloads": 18
+      }
+    }
+  ],
+  "schema": "rvllm.ane_cache_batch.v1",
+  "status": "complete",
+  "verified_available_programs": 162,
+  "verified_compiler_calls": 0
+}

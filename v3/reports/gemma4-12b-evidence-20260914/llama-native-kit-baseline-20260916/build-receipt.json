@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "recorded_at_utc": "2026-09-16T10:51:25.741867+00:00",
+  "build_command": "CARGO_TARGET_DIR=/Users/george/Documents/llama-native-kit/target cargo build --offline --release -j 2 --manifest-path /Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/bench/Cargo.toml",
+  "build_exit_code": 0,
+  "build_reported_elapsed": "6m 15s",
+  "host_test_command": "CARGO_TARGET_DIR=/Users/george/Documents/llama-native-kit/target cargo test --offline --locked --release -j 2 --manifest-path /Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/bench/Cargo.toml",
+  "host_tests": {
+    "passed": 2,
+    "failed": 0,
+    "scope": "pure greedy and prompt-ID validation; no backend initialization/model execution"
+  },
+  "bindings_commit": "a3cf95eb1d4fa748480eb780e6fcbfc1a5c1c391",
+  "llama_cpp_commit": "5f55650a78f92aff4d48d671423e888fac0469ff",
+  "dependency_source_status": "No tracked changes; Cargo-created untracked .cargo-ok files only in checkout/submodule.",
+  "cmake_cache": "/Users/george/Documents/llama-native-kit/target/release/build/llama-cpp-sys-2-ba05eaedc65d83e1/out/build/CMakeCache.txt",
+  "cmake_observed": {
+    "build_type": "Release",
+    "GGML_METAL": true,
+    "LLAMA_BUILD_COMMON": true,
+    "LLAMA_BUILD_TOOLS": false
+  },
+  "rust_features": "default-features=false; metal enabled; common/mtmd Rust features not enabled",
+  "model_loaded": false,
+  "accelerator_executed": false,
+  "expected_model_sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+  "full_model_hash_verified_this_task": false,
+  "files": [
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/rvllm-native-kit-baseline",
+      "bytes": 5283784,
+      "sha256": "91fcfde541135113652c62dd696fd8a560071d505e50784470901b10a9cff8fe"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/bench/Cargo.toml",
+      "bytes": 740,
+      "sha256": "5e4cf85a3fd791d3ce96ae3279df2ee6f92b3dcc5b68ad340a98199c95c69425"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/bench/Cargo.lock",
+      "bytes": 16933,
+      "sha256": "6080322e60665a67297a35f63b00d75798dfa0cd40548a20bafcf1dd320370f1"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/bench/src/main.rs",
+      "bytes": 17209,
+      "sha256": "df35116972a368a8b7faedddd843370f960c831da008968d5422a45691af3394"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/build.log",
+      "bytes": 2411,
+      "sha256": "26f7c8d757a86f93b8965fa8211fd0d1ede558fd0f34c9bcb3c33e980ae5b210"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/host-tests.log",
+      "bytes": 606,
+      "sha256": "36519362d113b741d36f481e9761329ce77b0401b5fa06e899c445d493cea6b6"
+    }
+  ]
+}

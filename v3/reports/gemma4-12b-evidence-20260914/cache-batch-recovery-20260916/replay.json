@@ -1,0 +1,58 @@
+{
+  "schema": "rvllm.cache_batch_replay.v1",
+  "executable": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cache-batch-recovery-20260916/rvllm_disaggregated_infer",
+  "sha256": "b2a5fcd1c7f567f98431b018e43b90fdf690e82ef12ad202c09cd6b0dafe3ae1",
+  "signing_identifier": "rvllm_disaggregated_infer-9d1f7275eb5937c9",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "context_capacity": 1024,
+  "inspect_args": [
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--context-capacity",
+    "1024",
+    "--inspect-ane-cache",
+    "all-int8",
+    "--output-dir",
+    "NEW_ABSOLUTE_OUTPUT_DIRECTORY"
+  ],
+  "prepare_args": [
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--context-capacity",
+    "1024",
+    "--prepare-ane-cache",
+    "all-int8",
+    "--output-dir",
+    "NEW_ABSOLUTE_OUTPUT_DIRECTORY"
+  ],
+  "cancellation_observation": {
+    "signal": "SIGTERM",
+    "target": "batch parent only",
+    "parent_pid": 63206,
+    "part_at_cancellation": "ffn-int8",
+    "expected": "Parent writes marker, waits for child graph-boundary cleanup, exits nonzero and writes cancelled status. No subsequent part starts."
+  },
+  "worker_replay": {
+    "working_directory": "/Users/george/Downloads/rvllm/v3",
+    "environment": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "NEW_ABSOLUTE_JOURNAL_PATH"
+    },
+    "args_after_model_dir": [
+      "--context-capacity", "1024",
+      "--runtime-worker", "true",
+      "--metallib-bf16", "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+      "--hf-reference", "crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+      "--hf-reference", "reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/copy96.json",
+      "--hf-reference", "reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/recall768.json",
+      "--hf-reference", "crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+      "--ane-compile-budget", "0",
+      "--output-dir", "NEW_ABSOLUTE_OUTPUT_DIRECTORY"
+    ],
+    "expected_output_token_counts": [2, 10, 3, 2],
+    "expected_ane_steps": 13,
+    "expected_compiler_calls": 0,
+    "expected_completed_evaluations": 2704,
+    "expected_successful_unloads": 162
+  },
+  "claim": "Recovery and lifecycle qualification only; thermal pressure excludes throughput claims."
+}

@@ -1,0 +1,444 @@
+
+running 140 tests
+test ane::tests::private_ane_compile_model_child_probe ... ignored, child process for private ANE compile-boundary diagnostics
+test ane::tests::private_ane_load_options_child_probe ... ignored, child process for private ANE load-options/client boundary diagnostics
+test ane::tests::private_ane_tiny_projection_evaluate_smoke ... ignored, requires private ANE compile/load/evaluate opt-in
+test ane::tests::private_ane_tiny_projection_fp16_and_rank4_boundaries_are_reported ... ignored, requires private ANE compile/load opt-in; records FP16/rank-4 private boundaries only
+test ane::tests::private_ane_tiny_projection_load_boundary_is_reported ... ignored, requires private ANE compile/load opt-in; records load boundary only
+test ane::tests::private_ane_tiny_projection_load_options_boundaries_are_reported ... ignored, requires private ANE compile/load opt-in; records load option/client boundaries only
+test ane::tests::private_ane_tiny_projection_private_compile_boundary_is_reported ... ignored, requires private ANE compile opt-in; records private compile boundary only
+test ane::tests::private_ane_tiny_projection_rank3_load_source_boundaries_are_reported ... ignored, requires private ANE compile/load opt-in; records rank-3 source/compiled load boundaries only
+test ane::tests::test_hardware_ane_compilation_integration ... ignored, requires explicit private ANE compiler opt-in; excluded from host checks
+test ane_attention::tests::hardware_attention_matches_imported_prefill_and_appended_decode ... ignored, executes private ANE API; two qualified shapes, six short-context evaluations
+test ane_attention::tests::hardware_cached_attention_matches_imported_prefill_and_appended_decode ... ignored, two qualified graphs; four loads, twelve evaluations, including load-only reuse
+test ane_attention::tests::hardware_qualifies_global_1024_request_isolation_and_capacity ... ignored, qualification only: one single-input global-1024 graph, two requests, sixteen evaluations
+test ane_attention::tests::hardware_reports_attention_probability_sums ... ignored, diagnostic only: one full-window probability graph, one evaluation
+test ane_attention::tests::hardware_shared_attention_preserves_caches_across_window_wrap ... ignored, executes private ANE API; two graphs, four requests, fourteen evaluations
+test ane_attention::tests::unqualified_attention_is_rejected_before_private_api_access ... ok
+test ane_attention_layout::tests::causal_and_sliding_masks_exclude_uninitialized_tail ... ok
+test ane_attention_layout::tests::invalid_shapes_and_io_fail_without_device_access ... ok
+test ane_dynamic_ffn::tests::hardware_reports_ffn_intermediate_error ... ignored, diagnostic only: four small ANE graphs expose FFN intermediates; not a numerical acceptance test
+test ane_dynamic_ffn::tests::hardware_shared_program_keeps_weights_and_request_lifetimes_independent ... ignored, executes private ANE API; one graph, two weight sets, seven evaluations
+test ane_dynamic_linear::tests::hardware_shared_linear_preserves_independent_weights ... ignored, executes private ANE API; one graph, two resident weight sets, four evaluations
+test ane_dynamic_ffn::tests::invalid_dimensions_are_rejected_before_private_api_access ... ok
+test ane_dynamic_linear::tests::tiled_weight_packing_preserves_nonsquare_matrix_and_padding ... ok
+test ane_ffn_layout::tests::gemma_12b_fits_one_surface_with_small_activation_padding ... ok
+test ane_int8_ffn_weights::tests::blob_descriptors_decode_all_three_nonsquare_matrices ... ok
+test ane_attention_layout::tests::kv_import_scratch_invalid_geometry_preserves_destination ... ok
+test ane_ffn_layout::tests::packed_weights_preserve_all_three_matrix_orientations ... ok
+test ane_linear::tests::hardware_exact_int8_palette_matches_affine ... ignored, private ANE single-I/O INT8 representation smoke; at most two compiles, six evaluations; explicit receipt
+test ane_linear::tests::hardware_gemma_ffn_matches_cpu ... ignored, executes private ANE API on Apple Silicon
+test ane_linear::tests::hardware_int8_ffn_matches_dense_reconstruction ... ignored, executes private ANE API; two programs, six evaluations
+test ane_linear::tests::hardware_int8_projection_matches_cpu_and_dense_reconstruction ... ignored, private ANE single-I/O INT8 projection smoke; at most two compiles, six evaluations; explicit receipt
+test ane_attention_layout::tests::gemma_layout_preserves_head_identity_and_cache_positions ... ok
+test ane_linear::tests::hardware_lut4_ffn_matches_dense_reconstruction ... ignored, executes private ANE API; two programs, six evaluations
+test ane_linear::tests::batch_ffn_changes_logical_width_without_changing_math_or_io_count ... ok
+test ane_linear::tests::batch_ffn_packing_keeps_distinct_columns_and_erases_padding ... ok
+test ane_linear::tests::batch_ffn_rejects_unbounded_width_before_private_api_access ... ok
+test ane_linear::tests::batch_projection_reads_each_logical_column_and_rejects_bad_shapes ... ok
+test ane_linear::tests::ffn_projection_refactor_preserves_qualified_cache_identity ... ok
+test ane_linear::tests::hardware_projection_matches_independent_cpu_dot_products ... ignored, executes private ANE API on Apple Silicon
+test ane_linear::tests::hardware_stacked_int8_matches_affine_and_cpu ... ignored, single-I/O stacked INT8 smoke: explicit journal/receipt, at most two compiles and six evaluations
+test ane_int8_ffn_weights::tests::stored_scales_round_ties_even_and_zero_rows_are_exact ... ok
+test ane_int8_ffn_weights::tests::exact_lut8_serialization_matches_every_signed_index_and_row_scale ... ok
+test ane_int8_ffn_weights::tests::int8_linear_blob_roundtrips_nonsquare_rows_and_matches_ffn_quantization ... ok
+test ane_linear::tests::projection_refactor_preserves_qualified_fp16_cache_identity ... ok
+test ane_linear::tests::invalid_shapes_fail_before_compilation ... ok
+test backend::tests::backend_requires_prepare_before_launch ... ok
+test backend::tests::production_backend_non_ane_rollout_returns_not_implemented ... ok
+test coreml_artifact::tests::cache_identity_covers_every_compilation_dimension ... ok
+test ane_int8_ffn_weights::tests::vectorized_quantizer_matches_gemma_row_widths_and_source_blob ... ok
+test coreml_artifact::tests::requested_compute_units_are_not_execution_evidence ... ok
+test ane_linear::tests::int8_projection_keeps_graph_and_rejects_invalid_io_before_compilation ... ok
+test ane_lut4_ffn_weights::tests::stored_blob_roundtrips_nibbles_and_codebooks_at_aligned_offsets ... ok
+test ane_lut4_ffn_weights::tests::palette_reconstruction_handles_constant_and_discrete_weights ... ok
+test ane_int8_ffn_weights::tests::stacked_serialization_preserves_distinct_gate_up_and_down_rows ... ok
+test ane_int8_ffn_weights::tests::vectorized_quantizer_covers_all_half_patterns_and_rounding_ties ... ok
+test coreml_artifact::tests::held_lock_times_out_without_running_builder ... ok
+test coreml_artifact::tests::invalid_or_mismatched_policy_never_promotes ... ok
+test coreml_projection::tests::exact_gated_ffn_executes_through_public_coreml_without_ane_claim ... ignored, requires the public Core ML runtime on Apple Silicon
+test coreml_projection::tests::artifact_validation_rejects_model_tampering ... ok
+test coreml_artifact::tests::validation_failure_never_promotes_artifact ... ok
+test ane_attention_layout::tests::two_token_reference_rollback_preserves_prefix_and_replacement ... ok
+test coreml_projection::tests::exact_nonzero_projection_executes_through_public_coreml_without_ane_claim ... ignored, requires the public Core ML runtime on Apple Silicon
+test coreml_projection::tests::exports_exact_five_layer_gated_ffn_and_validates_deterministically ... ok
+test device::tests::detects_family_tier_nax_and_ane_cores ... ok
+test device::tests::m10_does_not_match_m1 ... ok
+test coreml_projection::tests::rejects_checkpoint_shape_mismatch ... ok
+test coreml_projection::tests::exports_nonzero_f16_checkpoint_weights_bit_exactly_and_validates ... ok
+test coreml_projection::tests::gated_ffn_rejects_shape_alias_and_graph_semantic_tampering ... ok
+test coreml_projection::tests::rejects_dtype_without_lossless_coreml_weight_mapping ... ok
+test device::tests::ultra_has_two_die_ane_core_estimate ... ok
+test coreml_artifact::tests::stale_lock_path_without_live_owner_does_not_block_build ... ok
+test ane_attention_layout::tests::kv_import_scratch_matches_all_bytes_across_sizes_prefixes_and_wraps ... ok
+test coreml_artifact::tests::rejected_stricter_policy_preserves_existing_manifest_and_payload ... ok
+test gemma_decode_math::tests::malformed_inputs_and_fp16_overflow_fail ... ok
+test disaggregated::tests::synthetic_one_layer_ane_ffn_noop_matches_metal_only_fallback ... ok
+test disaggregated::tests::strict_ane_static_partition_unavailable_does_not_fake_execution ... ok
+test handoff::tests::capsule_detects_tampering ... ok
+test handoff::tests::capsule_validates_spans_and_layout_hash ... ok
+test disaggregated::tests::synthetic_one_layer_ane_ffn_nonzero_matches_metal_only_fallback ... ok
+test handoff::tests::paged_kv_handoff_validates_absolute_positions_and_flattened_tables ... ok
+test coreml_projection::tests::gated_ffn_rejects_refreshed_padding_and_feature_contract_tampering ... ok
+test iosurface::tests::byte_surface_shape_matches_ane_runtime_convention ... ok
+test gemma_decode_math::tests::norms_and_rotary_match_pinned_transformers_fp16 ... ok
+test coreml_projection::tests::widens_bf16_checkpoint_weights_to_f32_without_numerical_loss ... ok
+test iosurface::tests::single_input_spatial_pack_requires_same_dtype_and_channels ... ok
+test low_bit_weights::tests::from_parts_rejects_invalid_scales_reserved_values_and_padding ... ok
+test low_bit_weights::tests::from_parts_rejects_version_and_storage_sizes ... ok
+test low_bit_weights::tests::projection_reference_handles_group_and_row_tails ... ok
+test low_bit_weights::tests::quantize_rejects_invalid_shape_count_and_input ... ok
+test low_bit_weights::tests::w4_tail_groups_and_rows_have_independent_scales_and_padding ... ok
+test low_bit_weights::tests::w4_v1_uses_low_nibble_first_and_symmetric_domain ... ok
+test coreml_artifact::tests::request_and_evidence_changes_never_reuse_stale_reporting ... ok
+test coreml_artifact::tests::validated_artifact_is_reused_without_rebuilding ... ok
+test low_bit_weights::tests::w8_tail_roundtrip_matches_fp16_scale_reference ... ok
+test low_bit_weights::tests::zero_groups_have_zero_scales_and_values ... ok
+test metal::tests::direct_metal_contract_forbids_hot_path_allocations ... ok
+test metal::tests::mlx_contract_is_marked_prototype ... ok
+test mil::tests::neural_network_projection_can_emit_fp16_weights_and_rank4_features ... ok
+test mil::tests::default_neural_network_projection_uses_fp32_rank3_contract ... ok
+test coreml_artifact::tests::policy_change_revalidates_payload_without_recompiling ... ok
+test ane_attention_layout::tests::sliding_ring_import_and_append_match_chronological_attention ... ok
+test model_package::tests::rejects_symlinked_assets_even_when_target_is_inside_package ... ok
+test model_package::tests::rejects_parent_traversal_before_reading_outside_package ... ok
+test coreml_artifact::tests::tampered_deleted_or_corrupt_compiled_bundle_is_never_reused ... ok
+test model_package::tests::rejects_fingerprint_not_derived_from_authenticated_assets ... ok
+test model_package::tests::schema_v2_cannot_smuggle_a_low_bit_sidecar ... ok
+test plan::tests::allow_metal_policy_selects_fallback_plan_when_ane_unavailable ... ok
+test plan::tests::ane_cache_key_is_deterministic_and_scoped ... ok
+test plan::tests::ane_mode_requires_private_opt_in ... ok
+test plan::tests::ane_partition_selection_models_dense_blocks ... ok
+test plan::tests::capability_probe_reports_unsupported_reason_without_private_api ... ok
+test plan::tests::public_coreml_strict_profile_does_not_claim_neural_engine_only ... ok
+test model_package::tests::rejects_config_semantics_that_disagree_with_manifest ... ok
+test plan::tests::rollout_bucket_minimizes_padding_waste ... ok
+test plan::tests::strict_ane_partition_unavailable_fails_fast ... ok
+test profiling::tests::ane_utilization_may_be_unobservable_when_reason_is_recorded ... ok
+test profiling::tests::ane_utilization_unobservable_requires_an_honest_reason ... ok
+test profiling::tests::backend_parity_complete_reference_can_pass_in_isolation ... ok
+test profiling::tests::backend_parity_current_repository_status_blocks_false_parity_claims ... ok
+test profiling::tests::complete_evidence_can_pass_evaluator_in_isolation ... ok
+test profiling::tests::current_incomplete_evidence_fails_with_clear_reasons ... ok
+test profiling::tests::current_real_e2b_probe_evidence_records_progress_but_not_production_readiness ... ok
+test profiling::tests::performance_regression_over_threshold_blocks_production_candidate_status ... ok
+test profiling::tests::performance_regression_tracking_requires_sample_ids_or_comparable_evidence ... ok
+test model_package::tests::schema_v3_model_fingerprint_binds_low_bit_tensor_semantics ... ok
+test profiling::tests::toy_backend_evidence_fails_and_default_toy_disabled_is_required ... ok
+test weight_blob::tests::weight_blob_header_offsets_and_fp16_values_are_stable ... ok
+test weight_blob::tests::multi_chunk_descriptors_match_blob_offsets ... ok
+test model_package::tests::validates_all_assets_and_selects_exact_metallib ... ok
+test model_package::tests::rejects_corrupted_asset ... ok
+test model_package::tests::low_bit_reload_rejects_package_mutation_after_open ... ok
+test model_package::tests::rejects_semantically_invalid_low_bit_values_even_with_fresh_checksum ... ok
+test model_package::tests::rejects_externally_relabelled_low_bit_weight_manifests ... ok
+test model_package_builder::tests::refuses_to_create_output_inside_source_model ... ok
+test model_package_builder::tests::refuses_to_relabel_native_weights_as_low_bit ... ok
+test model_package::tests::schema_v3_authenticates_and_validates_exact_low_bit_sidecars ... ok
+test model_package_builder::tests::hybrid_export_rejects_non_down_projection_and_bf16_sources ... ok
+test model_package_builder::tests::rejects_ambiguous_weight_layout ... ok
+test model_package_builder::tests::rejects_missing_platform_dtype_artifact ... ok
+test model_package_builder::tests::exports_authenticated_hybrid_down_projection_without_relabelling_native_shard ... ok
+test model_package_builder::tests::builds_deterministic_self_contained_package ... ok
+
+test result: ok. 114 passed; 0 failed; 26 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+
+running 294 tests
+test apple_continuous_worker::tests::maintenance_queue_is_fifo_and_discards_stale_ownership ... ok
+test apple_continuous_worker::tests::new_cache_admission_degrades_from_t1_only_to_fully_disabled ... ok
+test apple_continuous_worker::tests::embedded_policy_and_package_requirements_fail_before_backend_creation ... ok
+test apple_bridge::tests::prefill_plan_maps_to_well_formed_capsule ... ok
+test apple_bridge::tests::paged_handoff_uses_request_owned_pages_after_batch_reorder ... ok
+test apple_bridge::tests::chain_only_handoff_fails_closed_instead_of_emitting_zero_width ... ok
+test apple_continuous_worker::tests::pending_page_io_drains_the_ring_before_running_idle_maintenance ... ok
+test apple_continuous_worker::tests::persistent_restore_requires_measured_io_and_strict_total_cost_win ... ok
+test apple_bridge::tests::decode_plan_maps_to_unit_spans_and_bucket ... ok
+test apple_continuous_worker::tests::pressure_admission_limits_are_level_specific_and_explicitly_recoverable ... ok
+test ane_prefill::tests::page_order_partial_tail_and_both_scalar_formats_survive_handoff ... ok
+test apple_continuous_worker::tests::pressure_keeps_active_inference_and_cancels_optional_maintenance ... ok
+test apple_continuous_worker::tests::queued_warm_restore_recomputes_once_wait_cost_erases_the_win ... ok
+test apple_continuous_worker::tests::released_t0_attachment_is_reswept_while_pressure_remains_active ... ok
+test apple_continuous_worker::tests::submission_ring_refills_each_reclaimed_slot_without_reordering ... ok
+test apple_continuous_worker::tests::submission_ring_stops_at_idle_and_preserves_entries_on_error ... ok
+test apple_continuous_worker::tests::token_budget_fails_closed ... ok
+test apple_measurement::tests::power_source_uses_current_supply_not_battery_presence ... ok
+test apple_measurement::tests::unsupported_or_reset_counters_are_not_zero_work ... ok
+test apple_measurement::tests::transitions_thermal_pressure_and_sampling_gaps_reject_comparisons ... ok
+test apple_measurement::tests::paired_comparison_rejects_missing_and_different_power_states ... ok
+test apple_metal_backend::platform_policy_tests::real_backend_and_shipping_asset_policy_match_target ... ok
+test apple_metal_backend::tests::ane_prefill_page_plan_binds_complete_prompt_to_logical_pages ... ok
+test apple_metal_backend::tests::cpu_reference_multihead_gqa_attention_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_multihead_gqa_attention_full_logits_are_stable ... ok
+test apple_metal_backend::tests::cpu_reference_multihead_gqa_attention_residual_vector_is_stable ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_attention_nonzero_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_generated_tiny_hf_end_to_end_sequence_is_3_5 ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_ffn_nonzero_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_full_nonzero_selected_hidden_values_are_expected ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_full_nonzero_selected_logits_pick_token_3 ... ok
+test apple_metal_backend::tests::cpu_reference_generated_tiny_hf_full_logits_are_stable ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_extra_norms_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_integrated_gemma_probe_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_full_nonzero_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_qkv_norm_nonzero_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_qdim_not_hidden_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_prompt_len_two_prefill_selected_logits_pick_token_3 ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_full_nonzero_residual_vector_is_stable ... ok
+test apple_metal_backend::tests::cpu_reference_prompt_len_two_prefill_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::cpu_reference_qdim_not_hidden_full_logits_are_stable ... ok
+test apple_metal_backend::tests::cpu_reference_qdim_not_hidden_residual_vector_is_stable ... ok
+test apple_metal_backend::tests::cpu_reference_one_layer_layer_scalar_fixture_argmax_is_3 ... ok
+test apple_metal_backend::tests::engine_four_layer_noop_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_generated_gemma4_hf_end_to_end_full_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::cpu_reference_zero_layer_decode_loop_sequence_is_3_4_5 ... ok
+test apple_metal_backend::tests::engine_generated_gemma4_hf_end_to_end_matches_cpu_tokens ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_multihead_gqa_attention_full_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_multihead_gqa_attention_full_residual_matches_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_multihead_gqa_attention_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::cpu_reference_real_hf_style_one_layer_slice_argmax_is_3 ... ok
+test apple_metal_backend::tests::engine_one_layer_attention_nonzero_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_extra_norms_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_ffn_nonzero_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_full_nonzero_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_hf_style_noop_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_integrated_gemma_probe_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_layer_scalar_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_noop_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_one_layer_qkv_norm_nonzero_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_prompt_len_two_prefill_selected_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_prompt_len_two_prefill_then_decode_token_2_4_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_qdim_not_hidden_full_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_qdim_not_hidden_full_residual_matches_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_qdim_not_hidden_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_real_hf_style_one_layer_slice_prefill_then_decode_cpu_expected_token ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_two_layer_first_ffn_nonzero_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_two_layer_sliding_global_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_zero_layer_decode_batch_four_returns_exact_tokens ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_zero_layer_decode_batch_two_returns_exact_tokens ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_zero_layer_decode_loop_generates_3_4_5 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::engine_zero_layer_model_backend_prefill_then_decode_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::configured_metal_float_type_auto_uses_checkpoint_dtype ... ok
+test apple_metal_backend::tests::generated_tiny_hf_reference_bundle_can_be_exported ... ok
+test apple_metal_backend::tests::metal_debug_sync_env_preserves_zero_layer_decode_output ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::metal_probe_arena_regions_do_not_change_after_rollout ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::metal_probe_microbench_counters_hook_reports_decode_work ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::metal_probe_perf_counters_are_populated_and_monotonic ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::metal_probe_pipeline_compilation_counters_do_not_change_after_rollout ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::model_kv_page_io_roundtrips_multilayer_bits_and_rejects_gpu_ownership ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::model_metal_async_submission_uses_three_independent_execution_slots ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::model_kv_page_io_fails_closed_before_prepare ... ok
+test apple_metal_backend::tests::configured_metal_float_type_keeps_explicit_overrides ... ok
+test apple_metal_backend::tests::model_metal_backend_prepare_rejects_missing_dir ... ok
+test apple_metal_backend::tests::model_metal_command_buffer_error_collection_reclaims_the_slot ... ok
+test apple_metal_backend::tests::model_metal_in_flight_error_collection_reclaims_the_slot ... ok
+test apple_metal_backend::tests::model_metal_in_flight_ring_collects_out_of_order_and_rejects_stale_tickets ... ok
+test apple_metal_backend::tests::model_metal_in_flight_ring_full_fails_closed_without_overwrite ... ok
+test apple_metal_backend::tests::model_metal_in_flight_ring_holds_three_distinct_tickets ... ok
+test apple_metal_backend::tests::low_bit_residency_policy_defaults_to_hybrid_and_requires_explicit_replacement ... ok
+test apple_metal_backend::tests::paged_bridge_fingerprint_matches_the_prepared_runtime_plan_contract ... ok
+test apple_metal_backend::tests::paged_kv_contract_accepts_only_the_prepared_nonzero_fingerprint ... ok
+test apple_metal_backend::tests::paged_kv_contract_cannot_be_bypassed_by_omitting_chain_handles ... ok
+test apple_metal_backend::tests::paged_kv_fingerprint_mismatch_is_rejected_before_ticket_or_encoding ... ok
+test apple_metal_backend::tests::paged_kv_contract_requires_a_prepared_fingerprint_but_legacy_handoffs_do_not ... ok
+test apple_metal_backend::tests::real_gemma4_e2b_arena_and_pipeline_counters_do_not_change_after_rollout ... ignored, requires cached Gemma4 E2B model directory and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_batch_two_prefill_decode_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, batch full HF reference artifacts, and large Metal arena opt-in
+test apple_metal_backend::tests::real_e2b_probe_profile_artifact_schema_records_unmeasured_slots ... ok
+test apple_metal_backend::tests::real_gemma4_e2b_batch_two_prefill_decode_two_steps_forced_hf_tokens_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, batch two-step HF reference artifacts, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_batch_two_prefill_layers_0_to_4_residuals_are_finite ... ignored, requires cached Gemma4 E2B model directory and bounded layer finite debug opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_engine_batch_three_mixed_prompt_lengths_one_step_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, batch-three HF reference artifacts, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_engine_batch_two_mixed_prompt_lengths_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, mixed-length batch HF reference artifacts, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_engine_batch_two_mixed_prompt_lengths_two_steps_forced_hf_tokens_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, mixed-length two-step batch HF reference artifacts, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_engine_batch_two_prefill_decode_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, batch full HF reference artifacts, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_engine_batch_two_prefill_decode_two_steps_forced_hf_tokens_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, batch two-step HF reference artifacts, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_layer4_metal_trace_compares_to_hf_summary ... ignored, requires cached Gemma4 E2B model directory and /tmp/gemma4-e2b-hf-layer4-trace.json
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_broader_prompt_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, broader-prompt full HF reference artifact, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_prefill_decode_eight_steps_forced_hf_tokens_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, eight-step full HF reference artifact, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_prefill_decode_four_steps_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, four-step full HF reference artifact, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_prefill_decode_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, full HF reference artifact, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_prefill_decode_selected_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, HF reference artifact, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_prefill_decode_two_steps_full_vocab_logits_match_hf_reference ... ignored, requires cached Gemma4 E2B model directory, two-step full HF reference artifact, and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_prepare_reports_current_large_model_gate ... ignored, requires cached Gemma4 E2B model directory in RVLLM_GEMMA4_MODEL_DIR
+test apple_metal_backend::tests::real_gemma4_e2b_model_backend_prepare_with_large_model_opt_in ... ignored, requires cached Gemma4 E2B model directory in RVLLM_GEMMA4_MODEL_DIR and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_model_capacity_reports_budgeted_kv_accounts ... ignored, requires cached Gemma4 E2B model directory and Apple Silicon Metal device
+test apple_metal_backend::tests::real_gemma4_e2b_prefill_layers_0_to_4_residuals_are_finite ... ignored, requires cached Gemma4 E2B model directory and bounded layer finite debug opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters ... ignored, requires cached Gemma4 E2B model directory and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_shared_kv_baseline_vs_skip_trace_identifies_first_divergence ... ignored, requires cached Gemma4 E2B model directory and large Metal arena opt-in
+test apple_metal_backend::tests::real_gemma4_e2b_shared_kv_layers_13_to_16_decode_trace_explains_tail_cache_use ... ignored, requires cached Gemma4 E2B model directory and large Metal arena opt-in
+test apple_metal_backend::tests::schema_v3_two_layer_mixed_low_bit_package_replaces_both_native_projections ... ignored, requires Apple Silicon Metal and RVLLM_TEST_APPLE_METALLIB_ROOT
+test apple_metal_backend::tests::schema_v3_w4_w8_down_proj_sidecars_are_selected_and_execute_real_layer ... ignored, requires Apple Silicon Metal and RVLLM_TEST_APPLE_METALLIB_ROOT
+test apple_metal_backend::tests::tiny_generated_gemma4_hf_end_to_end_model_backend_full_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_generated_gemma4_hf_end_to_end_model_backend_matches_cpu_tokens ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_generated_gemma4_hf_model_backend_one_prompt_token_matches_cpu_token ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_multihead_gqa_attention_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_multihead_gqa_attention_model_backend_full_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_multihead_gqa_attention_model_backend_full_residual_matches_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_attention_nonzero_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_extra_norms_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_ffn_nonzero_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_full_nonzero_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_full_nonzero_model_backend_full_residual_matches_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_full_nonzero_model_backend_selected_hidden_matches_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_full_nonzero_model_backend_selected_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_hf_style_noop_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::hf_style_one_layer_fixture_has_separate_tensors ... ok
+test apple_metal_backend::tests::tiny_one_layer_integrated_gemma_probe_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_layer_scalar_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_noop_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_noop_prefill_batch_two_then_decode_batch_two_returns_token_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_one_layer_qkv_norm_nonzero_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_prompt_len_two_model_backend_prefill_then_decode_token_2_4_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_prompt_len_two_prefill_selected_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_qdim_not_hidden_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_qdim_not_hidden_model_backend_full_logits_match_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_qdim_not_hidden_model_backend_full_residual_matches_cpu ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_real_hf_style_one_layer_slice_model_backend_decodes_cpu_expected_token ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_shared_kv_tail_local_kv_poison_does_not_change_logits_but_source_v_does ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_three_layer_noop_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_two_layer_first_ffn_nonzero_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_two_layer_noop_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_two_layer_sliding_global_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_zero_layer_decode_batch_two_returns_independent_tokens ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::tiny_zero_layer_decode_loop_model_backend_generates_3_4_5 ... ignored, requires Apple Silicon Metal device
+test apple_metal_backend::tests::generated_tiny_gemma4_hf_fixture_uses_real_names_and_dry_run_validates ... ok
+test apple_metal_backend::tests::tiny_zero_layer_model_backend_decodes_token_2_to_3 ... ignored, requires Apple Silicon Metal device
+test engine::tests::apple_default_metal_route_requires_model_dir_unless_toy_is_explicitly_enabled ... ok
+test engine::tests::cancellation_defers_paged_kv_release_until_submitted_completion ... ok
+test engine::tests::e2e_apple_backend_wiring_toy_metal ... ignored, requires Metal hardware and explicit shader assets; excluded from host checks
+test engine::tests::cancellation_releases_pages_and_request_id_reuse_gets_new_generation ... ok
+test engine::tests::cached_attachment_restores_exact_cursor_and_defers_cancel_release ... ok
+test engine::tests::empty_engine_has_no_pending_work ... ok
+test engine::tests::engine_fails_closed_on_shared_partial_tail_without_device_cow ... ok
+test engine::tests::chunked_prefill_and_decode_reserve_absolute_request_pages ... ok
+test engine::tests::failed_terminal_warm_capture_does_not_leak_deferred_chain ... ok
+test engine::tests::inserting_a_cache_miss_cannot_reassign_an_active_requests_pages ... ok
+test engine::tests::failed_stale_cache_release_keeps_engine_ownership_guard ... ok
+test engine::tests::launch_then_collect_releases_borrow_for_next_launch ... ok
+test engine::tests::launch_and_collect_failures_rollback_paged_reservations ... ok
+test engine::tests::owned_submissions_exclude_in_flight_requests_and_collect_out_of_order ... ok
+test engine::tests::paged_kv_reservation_rolls_back_all_requests_on_exhaustion ... ok
+test engine::tests::terminal_backend_output_releases_request_owned_pages ... ok
+test gemma_ane_decode::conversion_tests::checkpoint_conversion_abba ... ignored, host-only actual Gemma FFN conversion ABBA; explicit model/output paths; zero accelerator calls
+test apple_metal_backend::tests::real_hf_style_one_layer_slice_fixture_has_hf_names_and_norm_alias ... ok
+test gemma_ane_decode::int8_projection_tests::checkpoint_qkv_int8_qualification ... ignored, actual Gemma QKV: explicit paths/mode; cpu zero device calls; restore-original one compile, zero evaluations; qualify at most two compiles; time strictly cached
+test gemma_ane_decode::int8_projection_tests::global_split::checkpoint_global_split_int8_query ... ignored, actual global QKV split: explicit paths/mode; cpu zero accelerator calls, qualify at most two compiles and nine evaluations; time strict cache
+test gemma_ane_decode::int8_projection_tests::head::checkpoint_vocabulary_int8_ranking ... ignored, CPU-only all 262144 Gemma vocabulary rows; explicit model/capture step JSON/output paths; zero accelerator calls
+test gemma_ane_decode::int8_projection_tests::head::device::checkpoint_vocabulary_tile_int8 ... ignored, one actual head tile: explicit paths/tile/mode; qualify at most two compiles; restore-original at most one compile and zero evaluations; time strict cache
+test gemma_ane_decode::tests::cache_cancellation_precedes_checkpoint_access ... ok
+test gemma_ane_decode::conversion_tests::conversion_handles_chunk_tails_and_length_errors ... ok
+test gemma_ane_decode::tests::cache_inspection_continues_only_for_confirmed_absence ... ok
+test gemma_ane_decode::tests::conversion_rejects_nonfinite_or_unrepresentable_weights ... ok
+test gemma_ane_decode::tests::sliding_qkv_candidate_preserves_global_precision_and_ffn_policy ... ok
+test gemma_ane_decode::tests::sliding_qkv_candidate_rejects_global_shape_before_device_access ... ok
+test gemma_ane_decode::tests::stacked_ffn_check_rejects_compilation_before_checkpoint_access ... ok
+test gemma_ane_decode::tests::vectorized_int8_source_matches_all_checkpoint_layers ... ignored, host-only full checkpoint FFN source audit; requires RVLLM_GEMMA4_MODEL_DIR; no accelerator calls
+test gemma_ane_decode::two_token_reference::kv_import_scratch_tests::kv_import_scratch_captured_bytes_and_host_measurement ... ignored, hash-checked captured KV; CPU only, optional bounded packing measurements
+test gemma_ane_decode::two_token_reference::kv_import_scratch_tests::kv_import_scratch_device_continuation ... ignored, Gemma 4 12B cached ANE import/continuation qualification; no new graphs or timing
+test gemma_ane_decode::tests::stacked_ffn_check_requires_finite_bit_identical_outputs ... ok
+test gemma_ane_decode::two_token_reference::layer_major::tests::layer_major_matches_serial_layers_and_transaction_continuations ... ignored, Gemma 4 12B layer-major S1 reference; 162 cache-only loads, no compilation or timing
+test gemma_ane_decode::two_token_reference::layer_major::tests::first_projection_failure_stops_before_second_lane ... ok
+test gemma_ane_decode::two_token_reference::live_tests::two_token_reference_accept_reject_and_poisoning ... ignored, Gemma 4 12B single-I/O reference transaction; 162 cache-only loads, no compilation, no timing
+test gemma_ane_decode::two_token_reference::layer_major::tests::paired_projection_validates_before_calls_and_keeps_lanes_independent ... ok
+test gemma_ane_decode::two_token_reference::tests::eos_stop_or_output_budget_keeps_only_anchor_even_when_draft_matches ... ok
+test apple_metal_backend::tests::tiny_zero_layer_fixture_has_expected_files ... ok
+test gemma_disaggregated_worker::live_tests::full_checkpoint_successive_requests_and_cancellation ... ignored, Gemma 4 12B resident Metal/ANE A-B-A and cancel-then-fresh; strict zero compiles
+test gemma_ane_decode::two_token_reference::tests::preflight_rejects_without_device_work ... ok
+test gemma_disaggregated_worker::tests::cancellation_before_and_after_prefill_emits_nothing ... ok
+test gemma_disaggregated_worker::tests::cancelled_decode_then_new_prompt_imports_fresh_position ... ok
+test gemma_disaggregated_worker::tests::critical_pressure_releases_once_and_never_reloads_implicitly ... ok
+test gemma_disaggregated_worker::tests::device_failure_invalid_result_and_position_drift_poison_owner ... ok
+test gemma_disaggregated_worker::tests::exact_capacity_eos_first_and_length_one_do_not_decode ... ok
+test gemma_ane_decode::tests::embedding_tiles_respect_tensor_offset_rows_and_dtype ... ok
+test gemma_disaggregated_worker::tests::request_rejections_happen_before_hardware_and_keep_owner ... ok
+test apple_metal_backend::tests::explicit_metal_identity_does_not_follow_process_environment ... ok
+test layer_exec::tests::layer_dims_are_plausible ... ok
+test paged_kv::tests::allocation_is_transactional_on_page_exhaustion ... ok
+test paged_kv::tests::append_rolls_back_when_all_pages_are_not_available ... ok
+test paged_kv::tests::apple_v1_rejects_non_32_page_size ... ok
+test paged_kv::tests::cancel_is_idempotent_and_stale_release_cannot_free_new_chain ... ok
+test paged_kv::tests::cow_copy_failure_rolls_back_reserved_page ... ok
+test paged_kv::tests::fork_shares_pages_and_cow_makes_partial_tail_private ... ok
+test paged_kv::tests::full_page_prefix_can_append_without_cow ... ok
+test paged_kv::tests::request_ownership_does_not_depend_on_batch_order ... ok
+test paged_kv::tests::truncate_restores_length_and_releases_only_suffix_pages ... ok
+test paged_prompt_cache::tests::cow_tail_fails_closed_without_copy_hook_then_copies_exact_page ... ok
+test paged_prompt_cache::tests::critical_purge_of_unpinned_hot_pages_unblocks_cache_miss_admission ... ok
+test paged_prompt_cache::tests::hot_attachment_has_independent_request_and_cache_ownership ... ok
+test paged_prompt_cache::tests::identity_layout_mismatch_is_rejected_before_lookup_or_capture ... ok
+test paged_prompt_cache::tests::persistent_record_restore_revalidates_reusable_length ... ok
+test paged_prompt_cache::tests::prepared_persistent_restore_does_no_io_until_transactional_materialization ... ok
+test paged_prompt_cache::tests::prepared_warm_restore_cancellation_releases_transactional_chain ... ok
+test apple_metal_backend::tests::two_layer_low_bit_preflight_is_sorted_complete_and_fail_closed ... ok
+test paged_prompt_cache::tests::prepared_warm_restore_survives_eviction_and_busy_materialization ... ok
+test paged_prompt_cache::tests::unavailable_backend_and_cancelled_restore_leave_no_chain ... ok
+test paged_prompt_cache::tests::warm_capture_and_restore_moves_exact_bytes_into_private_pages ... ok
+test paged_prompt_cache::tests::warm_pages_promote_to_leased_hot_pages_without_double_accounting ... ok
+test gemma_ane_decode::conversion_tests::all_half_encodings_match_scalar_conversion_or_error ... ok
+test gemma_disaggregated_worker::tests::engine_factory_confines_non_send_owner_through_shutdown ... ok
+test persistent_prompt_cache::tests::continuation_pages_are_rejected ... ok
+test persistent_prompt_cache::tests::disabled_by_default_and_does_not_touch_disk ... ok
+test apple_metal_backend::tests::metal_numeric_abi_fingerprint_separates_dtype_and_kv_format ... ok
+test gemma_disaggregated_worker::tests::dropping_backpressured_stream_allows_the_next_queued_request ... ok
+test persistent_prompt_cache::tests::cancelled_store_never_publishes_a_record ... ok
+test persistent_prompt_cache::tests::host_config_requires_key_root_quota_consent_and_redacts_secret ... ok
+test persistent_prompt_cache::tests::epoch_invalidation_cannot_return_during_final_publication ... ok
+test persistent_prompt_cache::tests::cache_root_rejects_symlinked_ancestor_components ... ok
+test prompt_cache::tests::boundary_formula_leaves_final_token_private ... ok
+test prompt_cache::tests::critical_pressure_preserves_pins_then_purges_after_release ... ok
+test prompt_cache::tests::deepest_exact_prefix_hits_but_other_identity_misses ... ok
+test persistent_prompt_cache::tests::cancellation_after_sync_removes_temporary_record_before_publish ... ok
+test prompt_cache::tests::normal_pressure_is_an_explicit_no_op ... ok
+test prompt_cache::tests::forced_hash_collision_is_exactly_verified ... ok
+test prompt_cache::tests::tinylfu_rejects_a_cold_page_then_admits_it_after_repeated_misses ... ok
+test prompt_cache::tests::warm_page_debug_redacts_kv_bytes ... ok
+test prompt_cache::tests::warning_purges_bit_exact_warm_pages ... ok
+test request_api::tests::bounded_ingress_reports_queue_full_without_blocking ... ok
+test persistent_prompt_cache::tests::tenant_lock_wait_is_cancellation_safe ... ok
+test request_api::tests::cancellation_reaches_a_running_worker ... ok
+test request_api::tests::explicit_shutdown_stops_admission_through_all_clones ... ok
+test request_api::tests::continuous_worker_observes_two_active_requests_and_streams_independently ... ok
+test persistent_prompt_cache::tests::tenant_advisory_lock_serializes_independent_open_file_descriptions ... ok
+test request_api::tests::factory_runs_on_worker_thread_and_failure_is_synchronous ... ok
+test request_api::tests::continuous_queue_time_is_frozen_at_admission ... ok
+test persistent_prompt_cache::tests::encrypted_roundtrip_and_restore_cost_gate ... ok
+test request_api::tests::last_handle_drop_joins_a_backpressured_owner_with_live_stream ... ok
+test persistent_prompt_cache::tests::best_effort_quarantine_never_waits_for_tenant_lock ... ok
+test request_api::tests::memory_pressure_bypasses_full_ingress_and_precedes_admission ... ok
+test request_api::tests::memory_pressure_is_acknowledged_after_worker_handles_it ... ok
+test request_api::tests::nonpersistent_policy_rejects_persistent_cache_capability ... ok
+test persistent_prompt_cache::tests::record_header_and_name_do_not_expose_raw_identity_or_token_digests ... ok
+test request_api::tests::opportunistic_coalescing_caps_continuous_ingress_to_available_slots ... ok
+test request_api::tests::pressure_limits_leave_excess_requests_waiting_and_normal_resumes_them ... ok
+test request_api::tests::requests_can_only_narrow_the_engine_cache_policy ... ok
+test request_api::tests::response_disconnect_requires_worker_abort_before_active_state_is_dropped ... ok
+test sched_state::tests::chunked_prefill_and_restore_advance_only_when_committed ... ok
+test persistent_prompt_cache::tests::quarantined_corruption_becomes_an_exact_miss ... ok
+test sched_state::tests::request_finishes_at_max_tokens ... ok
+test scheduler::tests::backpressured_request_keeps_state_but_is_not_scheduled ... ok
+test scheduler::tests::bucket_rounds_up ... ok
+test request_api::tests::worker_failure_is_delivered_to_the_request ... ok
+test request_api::tests::streaming_tokens_are_ordered_and_finish_is_terminal ... ok
+test request_api::tests::persistent_policy_requires_separate_host_material_factory ... ok
+test scheduler::tests::cache_restore_and_cancellation_are_schedulable_without_false_progress ... ok
+test persistent_prompt_cache::tests::replacing_configured_root_cannot_redirect_store_or_restore ... ok
+test scheduler::tests::calibrated_decode_deadline_is_one_and_a_quarter_batch_one_latency ... ok
+test request_api::tests::slow_response_pauses_independently_then_resumes_exactly ... ok
+test persistent_prompt_cache::tests::wrong_key_cannot_locate_or_authenticate_records ... ok
+test scheduler::tests::chunked_prefill_uses_absolute_query_starts_and_commits_explicitly ... ok
+test persistent_prompt_cache::tests::record_reads_reject_hardlinks_and_symlinks_without_blocking ... ok
+test scheduler::tests::decode_plan_advances_last_token_position_and_context_len_after_commit ... ok
+test scheduler::tests::decode_plan_bucket_four_preserves_independent_context_lens ... ok
+test scheduler::tests::finish_request_removes_request_from_decode ... ok
+test scheduler::tests::request_id_reuse_targets_the_newest_live_generation ... ok
+test scheduler::tests::priority_aging_eventually_schedules_an_old_cache_miss_first ... ok
+test request_api::tests::live_worker_loop_keeps_critical_admission_throttled_until_normal_recovery ... ok
+test scheduler::tests::schedule_emits_prefill_then_decode ... ok
+test scheduler::tests::sustained_decode_pressure_allows_only_a_reduced_starvation_prefill_chunk ... ok
+test text_generation::tests::qualified_checkpoint_text_encoding_and_streaming ... ignored, requires RVLLM_GEMMA4_MODEL_DIR; reads tokenizer/template only, no accelerator access
+test persistent_prompt_cache::tests::replacing_tenant_while_lock_waits_cannot_redirect_publication ... ok
+test persistent_prompt_cache::tests::stale_well_formed_temporary_record_is_removed_under_tenant_lock ... ok
+test persistent_prompt_cache::tests::corruption_and_partial_records_are_rejected ... ok
+test persistent_prompt_cache::tests::quota_is_enforced_per_namespace ... ok
+test persistent_prompt_cache::tests::tenant_namespaces_are_isolated ... ok
+
+test result: ok. 189 passed; 0 failed; 105 ignored; 0 measured; 0 filtered out; finished in 0.30s
+

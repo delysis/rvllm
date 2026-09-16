@@ -1,0 +1,32 @@
+program(1.3)
+[buildInfo = dict<string, string>({{"coremlc-component-MIL", "3510.2.1"}, {"coremlc-version", "3505.4.1"}, {"coremltools-version", "9.0"}})]
+{
+    func main<ios18>(tensor<fp16, [1, 3840, 1, 1]> x) {
+        string pad_type = const()[name = string("pad_type"), val = string("valid")];
+        tensor<int32, [2]> strides = const()[name = string("strides"), val = tensor<int32, [2]>([1, 1])];
+        tensor<int32, [4]> pad = const()[name = string("pad"), val = tensor<int32, [4]>([0, 0, 0, 0])];
+        tensor<int32, [2]> dilations = const()[name = string("dilations"), val = tensor<int32, [2]>([1, 1])];
+        int32 groups = const()[name = string("groups"), val = int32(1)];
+        fp16 gelu_half = const()[name = string("gelu_half"), val = fp16(0.5)];
+        fp16 gelu_one = const()[name = string("gelu_one"), val = fp16(1.0)];
+        fp16 gelu_cubic = const()[name = string("gelu_cubic"), val = fp16(0.044715)];
+        fp16 gelu_root = const()[name = string("gelu_root"), val = fp16(0.7978845608)];
+        tensor<fp16, [15360, 3840, 1, 1]> Wg = constexpr_affine_dequantize()[axis = int32(0), name = string("Wg"), quantized_data = tensor<int8, [15360, 3840, 1, 1]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64(64))), scale = tensor<fp16, [15360]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64(58982528))), zero_point = int8(0)];
+        tensor<fp16, [15360, 3840, 1, 1]> Wu = constexpr_affine_dequantize()[axis = int32(0), name = string("Wu"), quantized_data = tensor<int8, [15360, 3840, 1, 1]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64(59013312))), scale = tensor<fp16, [15360]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64(117995776))), zero_point = int8(0)];
+        tensor<fp16, [3840, 15360, 1, 1]> Wd = constexpr_affine_dequantize()[axis = int32(0), name = string("Wd"), quantized_data = tensor<int8, [3840, 15360, 1, 1]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64(118026560))), scale = tensor<fp16, [3840]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64(177009024))), zero_point = int8(0)];
+
+        tensor<fp16, [1, 15360, 1, 1]> gate = conv(dilations = dilations, groups = groups, pad = pad, pad_type = pad_type, strides = strides, weight = Wg, x = x)[name = string("gate")];
+        tensor<fp16, [1, 15360, 1, 1]> up = conv(dilations = dilations, groups = groups, pad = pad, pad_type = pad_type, strides = strides, weight = Wu, x = x)[name = string("up")];
+        tensor<fp16, [1, 15360, 1, 1]> gate_squared = mul(x = gate, y = gate)[name = string("gate_squared")];
+        tensor<fp16, [1, 15360, 1, 1]> gate_cubed = mul(x = gate_squared, y = gate)[name = string("gate_cubed")];
+        tensor<fp16, [1, 15360, 1, 1]> cubic_scaled = mul(x = gate_cubed, y = gelu_cubic)[name = string("cubic_scaled")];
+        tensor<fp16, [1, 15360, 1, 1]> gelu_sum = add(x = gate, y = cubic_scaled)[name = string("gelu_sum")];
+        tensor<fp16, [1, 15360, 1, 1]> gelu_argument = mul(x = gelu_sum, y = gelu_root)[name = string("gelu_argument")];
+        tensor<fp16, [1, 15360, 1, 1]> gelu_tanh = tanh(x = gelu_argument)[name = string("gelu_tanh")];
+        tensor<fp16, [1, 15360, 1, 1]> gelu_factor = add(x = gelu_tanh, y = gelu_one)[name = string("gelu_factor")];
+        tensor<fp16, [1, 15360, 1, 1]> gate_halved = mul(x = gate, y = gelu_half)[name = string("gate_halved")];
+        tensor<fp16, [1, 15360, 1, 1]> activated = mul(x = gate_halved, y = gelu_factor)[name = string("activated")];
+        tensor<fp16, [1, 15360, 1, 1]> gated = mul(x = activated, y = up)[name = string("gated")];
+        tensor<fp16, [1, 3840, 1, 1]> y = conv(dilations = dilations, groups = groups, pad = pad, pad_type = pad_type, strides = strides, weight = Wd, x = gated)[name = string("down")];
+    } -> (y);
+}

@@ -1,0 +1,1967 @@
+{
+  "backend_errors": [
+    [
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.0297393798828125,
+          "relative_l2_error": 0.0002031634476412255
+        },
+        "program": "original"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.06183624267578125,
+          "relative_l2_error": 0.00033227573099227787
+        },
+        "program": "int8"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.0311737060546875,
+          "relative_l2_error": 0.00020656517092660485
+        },
+        "program": "reconstructed_dense"
+      }
+    ],
+    [
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.0235137939453125,
+          "relative_l2_error": 0.00021106494713381044
+        },
+        "program": "original"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.04659271240234375,
+          "relative_l2_error": 0.0003441172418830938
+        },
+        "program": "int8"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.0298309326171875,
+          "relative_l2_error": 0.0002083072344212377
+        },
+        "program": "reconstructed_dense"
+      }
+    ],
+    [
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.02944183349609375,
+          "relative_l2_error": 0.00021006439621815604
+        },
+        "program": "original"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.04926300048828125,
+          "relative_l2_error": 0.00033932994149352125
+        },
+        "program": "int8"
+      },
+      {
+        "error": {
+          "backend_tolerance_violations": 0,
+          "elements": 8704,
+          "maximum_absolute_error": 0.0311431884765625,
+          "relative_l2_error": 0.00021755641361476217
+        },
+        "program": "reconstructed_dense"
+      }
+    ]
+  ],
+  "backend_tolerance": "0.01 + 0.02 * abs(cpu_reference)",
+  "backend_violations": 0,
+  "claim": "One actual QKV projection; quantization error and backend error are separate. No full-model quality or speed claim.",
+  "compiler_calls": 0,
+  "driver_journal_enabled": false,
+  "input_channels": 3840,
+  "input_sources": [
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-04.fp16",
+      "maximum_absolute_input": 76.0625,
+      "normalized_fp16_sha256": "693e60398e66d9405d8af214923ebcc849dc038ee24cda04143ea9be178c9190",
+      "sha256": "656e3f99edfd386d42d0c290cd63f7c1d536d92ac4757ee51e6bd9caf046462c"
+    },
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-04.fp16",
+      "maximum_absolute_input": 62.84375,
+      "normalized_fp16_sha256": "01d5a565b676be2732b4b87d72e6fa4985157ee9b6a5565ab85ebd0c3b0e78b9",
+      "sha256": "28e158844c213c4ae39543c6db97e7cabfcefe6dcba03e99c8923c3be345619a"
+    },
+    {
+      "file": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-04.fp16",
+      "maximum_absolute_input": 79.3125,
+      "normalized_fp16_sha256": "248a5edfb9eeb1bc52681c37dea2469c5f99ef7196bafc5a6c8c753ab8a1948a",
+      "sha256": "e3051b59fae8d90bef8ad3440c1f4cd7b88a1a4daf36b6387354784f18fbf843"
+    }
+  ],
+  "int8_source_bytes": 33440960,
+  "layer": 5,
+  "mode": "time",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "models_dropped": 3,
+  "original_fp16_sha256": "75a4891481f9ce4b3c3db7445359f0e695cea179786e6d72a29905644c5fb9d7",
+  "output_channels": 8704,
+  "quantization_errors": [
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 1727,
+            "elements": 8192,
+            "maximum_absolute_error": 0.5773515701293945,
+            "relative_l2_error": 0.0072999013516216495
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 123,
+            "elements": 512,
+            "maximum_absolute_error": 0.3747274875640869,
+            "relative_l2_error": 0.010169091843360284
+          },
+          "part": "key"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1850,
+        "elements": 8704,
+        "maximum_absolute_error": 0.5773515701293945,
+        "relative_l2_error": 0.007396047785470041
+      }
+    },
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 1749,
+            "elements": 8192,
+            "maximum_absolute_error": 0.5206489562988281,
+            "relative_l2_error": 0.008486012465913713
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 105,
+            "elements": 512,
+            "maximum_absolute_error": 0.2516665458679199,
+            "relative_l2_error": 0.007886888243608264
+          },
+          "part": "key"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1854,
+        "elements": 8704,
+        "maximum_absolute_error": 0.5206489562988281,
+        "relative_l2_error": 0.008455107098790283
+      }
+    },
+    {
+      "parts": [
+        {
+          "error": {
+            "backend_tolerance_violations": 1741,
+            "elements": 8192,
+            "maximum_absolute_error": 0.4269278049468994,
+            "relative_l2_error": 0.008076092540182227
+          },
+          "part": "query"
+        },
+        {
+          "error": {
+            "backend_tolerance_violations": 127,
+            "elements": 512,
+            "maximum_absolute_error": 0.25973081588745117,
+            "relative_l2_error": 0.010945890398296345
+          },
+          "part": "key"
+        }
+      ],
+      "whole": {
+        "backend_tolerance_violations": 1868,
+        "elements": 8704,
+        "maximum_absolute_error": 0.4269278049468994,
+        "relative_l2_error": 0.008174215359280422
+      }
+    }
+  ],
+  "reconstructed_fp16_sha256": "65d2c96005e44ae1150633444fd7497619bc82da0d344a7168510c3806ab1643",
+  "schema": "rvllm.gemma4_qkv_int8.v1",
+  "shared_key_value": true,
+  "timing": {
+    "pairs": [
+      {
+        "baseline_program": 0,
+        "baseline_trial": 0,
+        "candidate_trial": 1,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 0.9611500161924481,
+          "baseline_over_candidate_cpu_instructions": 0.9911634421443187,
+          "baseline_over_candidate_wall": 1.1591916267753852,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 0,
+        "baseline_trial": 3,
+        "candidate_trial": 2,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 1.0196979186951227,
+          "baseline_over_candidate_cpu_instructions": 1.0040016799119835,
+          "baseline_over_candidate_wall": 1.0897608217582317,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 0,
+        "baseline_trial": 5,
+        "candidate_trial": 4,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 1.158496029097918,
+          "baseline_over_candidate_cpu_instructions": 1.071772750208325,
+          "baseline_over_candidate_wall": 1.1885249815781005,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 0,
+        "baseline_trial": 6,
+        "candidate_trial": 7,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 0.9646043039961818,
+          "baseline_over_candidate_cpu_instructions": 1.0358347845348985,
+          "baseline_over_candidate_wall": 0.674951039808741,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 0,
+        "baseline_trial": 8,
+        "candidate_trial": 9,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 1.0493951960738246,
+          "baseline_over_candidate_cpu_instructions": 0.9992112192087073,
+          "baseline_over_candidate_wall": 1.1161195081686153,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 0,
+        "baseline_trial": 11,
+        "candidate_trial": 10,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 0.9937120278739933,
+          "baseline_over_candidate_cpu_instructions": 1.000090993690839,
+          "baseline_over_candidate_wall": 0.9923057260911686,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 2,
+        "baseline_trial": 12,
+        "candidate_trial": 13,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 1.102886745746123,
+          "baseline_over_candidate_cpu_instructions": 1.0336303856411337,
+          "baseline_over_candidate_wall": 1.2942271005645183,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 2,
+        "baseline_trial": 15,
+        "candidate_trial": 14,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 1.0691679858726395,
+          "baseline_over_candidate_cpu_instructions": 1.0014633855519226,
+          "baseline_over_candidate_wall": 1.2040518489690963,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 2,
+        "baseline_trial": 17,
+        "candidate_trial": 16,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 0.9455669594292997,
+          "baseline_over_candidate_cpu_instructions": 0.9968997186249213,
+          "baseline_over_candidate_wall": 0.9959530033263738,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 2,
+        "baseline_trial": 18,
+        "candidate_trial": 19,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 0.7672936171841644,
+          "baseline_over_candidate_cpu_instructions": 0.9700750944796862,
+          "baseline_over_candidate_wall": 0.41587542840254804,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 2,
+        "baseline_trial": 20,
+        "candidate_trial": 21,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 0.9124878417608614,
+          "baseline_over_candidate_cpu_instructions": 1.0667459400495112,
+          "baseline_over_candidate_wall": 0.7063632530706611,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      },
+      {
+        "baseline_program": 2,
+        "baseline_trial": 23,
+        "candidate_trial": 22,
+        "comparison": {
+          "baseline_over_candidate_cpu_cycles": 1.0391243053454822,
+          "baseline_over_candidate_cpu_instructions": 1.00563304567364,
+          "baseline_over_candidate_wall": 1.1177241992203146,
+          "claim": "One paired observation. Repeat alternating candidates on identical work; clocks and contention are not controlled by this check.",
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          }
+        },
+        "eligible": true
+      }
+    ],
+    "preflight": {
+      "ane_cycles": null,
+      "comparison_stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": true,
+        "pmset_power_mode": 1,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      },
+      "cpu_counter_error": null,
+      "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+      "cpu_cycles_per_instruction": 1.5998078770413064,
+      "cpu_cycles_per_unit": 16654.0,
+      "cpu_frequency_hz": null,
+      "cpu_instructions_per_unit": 10410.0,
+      "end_host": {
+        "low_power_mode": true,
+        "thermal_state": 0
+      },
+      "end_ms": 66.08770899999999,
+      "gpu_cycles": null,
+      "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+      "observer_journal_error": null,
+      "power_samples": [
+        {
+          "controls": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "end_ms": 66.036125,
+          "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+          "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+          "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "start_ms": 0.011459
+        }
+      ],
+      "process_cpu_cycles": 16654,
+      "process_cpu_instructions": 10410,
+      "sampled_controls_eligible": true,
+      "schema": "rvllm.apple_phase_measurement.v1",
+      "start_host": {
+        "low_power_mode": true,
+        "thermal_state": 0
+      },
+      "start_ms": 66.08749999999999,
+      "units": 1,
+      "wall_ms": 0.000209
+    },
+    "repetitions_per_trial": 128,
+    "trials": [
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5556766539369961,
+          "cpu_cycles_per_unit": 205851.40625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 370451.78125,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 271.38425,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 66.036125,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 0.011459
+            }
+          ],
+          "process_cpu_cycles": 26348980,
+          "process_cpu_instructions": 47417828,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 86.872917,
+          "units": 128,
+          "wall_ms": 184.511333
+        },
+        "program": 0
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5730285343148266,
+          "cpu_cycles_per_unit": 214171.984375,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 373754.484375,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 430.607959,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 66.036125,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 0.011459
+            }
+          ],
+          "process_cpu_cycles": 27414014,
+          "process_cpu_instructions": 47840574,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 271.435542,
+          "units": 128,
+          "wall_ms": 159.17241700000002
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5797056885357169,
+          "cpu_cycles_per_unit": 215039.375,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 370945.7734375,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 582.105709,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 66.036125,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 0.011459
+            }
+          ],
+          "process_cpu_cycles": 27525040,
+          "process_cpu_instructions": 47481059,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 430.66204200000004,
+          "units": 128,
+          "wall_ms": 151.443667
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.588768620494156,
+          "cpu_cycles_per_unit": 219275.203125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 372430.1796875,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 747.1938339999999,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 66.036125,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 0.011459
+            }
+          ],
+          "process_cpu_cycles": 28067226,
+          "process_cpu_instructions": 47671063,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 582.156459,
+          "units": 128,
+          "wall_ms": 165.037375
+        },
+        "program": 0
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5809606427458951,
+          "cpu_cycles_per_unit": 215728.4921875,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 371330.6484375,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 920.757917,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 66.036125,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 0.011459
+            }
+          ],
+          "process_cpu_cycles": 27613247,
+          "process_cpu_instructions": 47530323,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 747.2592500000001,
+          "units": 128,
+          "wall_ms": 173.49866699999998
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.627969499646704,
+          "cpu_cycles_per_unit": 249920.6015625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 397982.0703125,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 1127.017125,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 66.036125,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 0.011459
+            }
+          ],
+          "process_cpu_cycles": 31989837,
+          "process_cpu_instructions": 50941705,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 920.809625,
+          "units": 128,
+          "wall_ms": 206.20749999999998
+        },
+        "program": 0
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6418813489681168,
+          "cpu_cycles_per_unit": 249855.484375,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 389254.9375,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 1255.999375,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 66.036125,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 0.011459
+            },
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            }
+          ],
+          "process_cpu_cycles": 31981502,
+          "process_cpu_instructions": 49824632,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 1127.0629999999999,
+          "units": 128,
+          "wall_ms": 128.936375
+        },
+        "program": 0
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6892805952149172,
+          "cpu_cycles_per_unit": 259023.8125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 375788.6328125,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 1447.0931249999999,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            }
+          ],
+          "process_cpu_cycles": 33155048,
+          "process_cpu_instructions": 48100945,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 1256.0624169999999,
+          "units": 128,
+          "wall_ms": 191.030708
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6323706825482174,
+          "cpu_cycles_per_unit": 236410.7421875,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 373848.359375,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 1620.8605,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            }
+          ],
+          "process_cpu_cycles": 30260575,
+          "process_cpu_instructions": 47852590,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 1447.160542,
+          "units": 128,
+          "wall_ms": 173.69995799999998
+        },
+        "program": 0
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6021295724098157,
+          "cpu_cycles_per_unit": 225282.8515625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 374143.4765625,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 1776.545167,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            }
+          ],
+          "process_cpu_cycles": 28836205,
+          "process_cpu_instructions": 47890365,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 1620.9167089999999,
+          "units": 128,
+          "wall_ms": 155.628458
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5959979255697123,
+          "cpu_cycles_per_unit": 222644.8125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 373566.421875,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 1940.261917,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            }
+          ],
+          "process_cpu_cycles": 28498536,
+          "process_cpu_instructions": 47816502,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 1776.6012500000002,
+          "units": 128,
+          "wall_ms": 163.66066700000002
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5921964210885156,
+          "cpu_cycles_per_unit": 221244.828125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 373600.4140625,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 2102.712584,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            }
+          ],
+          "process_cpu_cycles": 28319338,
+          "process_cpu_instructions": 47820853,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 1940.3111669999998,
+          "units": 128,
+          "wall_ms": 162.40141699999998
+        },
+        "program": 0
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6280221271981122,
+          "cpu_cycles_per_unit": 250651.7265625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 399112.890625,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 2295.249917,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            }
+          ],
+          "process_cpu_cycles": 32083421,
+          "process_cpu_instructions": 51086450,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 2102.782709,
+          "units": 128,
+          "wall_ms": 192.467208
+        },
+        "program": 2
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5885851435160669,
+          "cpu_cycles_per_unit": 227268.78125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 386127.28125,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 2444.018125,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 1171.5950420000001,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 1070.8246669999999
+            },
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            }
+          ],
+          "process_cpu_cycles": 29090404,
+          "process_cpu_instructions": 49424292,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 2295.306042,
+          "units": 128,
+          "wall_ms": 148.712083
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.523745858534765,
+          "cpu_cycles_per_unit": 195533.6953125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 373336.9765625,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 2582.680375,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            }
+          ],
+          "process_cpu_cycles": 25028313,
+          "process_cpu_instructions": 47787133,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 2444.1118340000003,
+          "units": 128,
+          "wall_ms": 138.56854099999998
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.559154046725474,
+          "cpu_cycles_per_unit": 209058.3671875,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 373883.3125,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 2749.612,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            }
+          ],
+          "process_cpu_cycles": 26759471,
+          "process_cpu_instructions": 47857064,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 2582.7682919999997,
+          "units": 128,
+          "wall_ms": 166.84370800000002
+        },
+        "program": 2
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6029695071569765,
+          "cpu_cycles_per_unit": 226237.390625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 375205.359375,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 2932.160959,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            }
+          ],
+          "process_cpu_cycles": 28958386,
+          "process_cpu_instructions": 48026286,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 2749.679959,
+          "units": 128,
+          "wall_ms": 182.481
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5719211600314645,
+          "cpu_cycles_per_unit": 213922.6015625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 374042.1171875,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 3113.956084,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            }
+          ],
+          "process_cpu_cycles": 27382093,
+          "process_cpu_instructions": 47877391,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 2932.213584,
+          "units": 128,
+          "wall_ms": 181.7425
+        },
+        "program": 2
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5278034835011391,
+          "cpu_cycles_per_unit": 196377.9453125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 372066.40625,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 3222.57825,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            }
+          ],
+          "process_cpu_cycles": 25136377,
+          "process_cpu_instructions": 47624500,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 3114.006917,
+          "units": 128,
+          "wall_ms": 108.57133300000001
+        },
+        "program": 2
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6672921586433366,
+          "cpu_cycles_per_unit": 255935.8515625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 383543.921875,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 3483.718875,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            }
+          ],
+          "process_cpu_cycles": 32759789,
+          "process_cpu_instructions": 49093622,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 3222.6519169999997,
+          "units": 128,
+          "wall_ms": 261.066958
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.5280316605039779,
+          "cpu_cycles_per_unit": 209952.203125,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 397612.90625,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 3598.1268750000004,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 2371.349209,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 2181.806834
+            },
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 3533.915709,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 3387.7114170000004
+            }
+          ],
+          "process_cpu_cycles": 26873882,
+          "process_cpu_instructions": 50894452,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 3483.7845,
+          "units": 128,
+          "wall_ms": 114.34237499999999
+        },
+        "program": 2
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.617296586629852,
+          "cpu_cycles_per_unit": 230087.671875,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 372734.3984375,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 3760.759625,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 3533.915709,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 3387.7114170000004
+            }
+          ],
+          "process_cpu_cycles": 29451222,
+          "process_cpu_instructions": 47710003,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 3598.884875,
+          "units": 128,
+          "wall_ms": 161.87475
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.581995351299381,
+          "cpu_cycles_per_unit": 216679.765625,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 372304.9765625,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 3927.768584,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 3533.915709,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 3387.7114170000004
+            }
+          ],
+          "process_cpu_cycles": 27735010,
+          "process_cpu_instructions": 47655037,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 3760.8102089999998,
+          "units": 128,
+          "wall_ms": 166.958375
+        },
+        "program": 1
+      },
+      {
+        "measurement": {
+          "ane_cycles": null,
+          "comparison_stratum": {
+            "available_cpus": null,
+            "cpu_speed_limit_percent": null,
+            "low_power_mode": true,
+            "pmset_power_mode": 1,
+            "power_source": "ac",
+            "scheduler_limit_percent": null,
+            "thermal_state": 0
+          },
+          "cpu_counter_error": null,
+          "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+          "cpu_cycles_per_instruction": 0.6013779258100622,
+          "cpu_cycles_per_unit": 225157.2109375,
+          "cpu_frequency_hz": null,
+          "cpu_instructions_per_unit": 374402.1875,
+          "end_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "end_ms": 4114.453375,
+          "gpu_cycles": null,
+          "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+          "observer_journal_error": null,
+          "power_samples": [
+            {
+              "controls": {
+                "available_cpus": null,
+                "cpu_speed_limit_percent": null,
+                "low_power_mode": true,
+                "pmset_power_mode": 1,
+                "power_source": "ac",
+                "scheduler_limit_percent": null,
+                "thermal_state": 0
+              },
+              "end_ms": 3533.915709,
+              "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=20840547)\t47%; charging; 1:49 remaining present: true\n",
+              "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, coreaudiod, coreaudiod)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+              "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+              "start_ms": 3387.7114170000004
+            }
+          ],
+          "process_cpu_cycles": 28820123,
+          "process_cpu_instructions": 47923480,
+          "sampled_controls_eligible": true,
+          "schema": "rvllm.apple_phase_measurement.v1",
+          "start_host": {
+            "low_power_mode": true,
+            "thermal_state": 0
+          },
+          "start_ms": 3927.839959,
+          "units": 128,
+          "wall_ms": 186.613416
+        },
+        "program": 2
+      }
+    ]
+  }
+}

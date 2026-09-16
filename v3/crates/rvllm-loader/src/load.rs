@@ -59,6 +59,10 @@ pub struct ModelArch {
     pub head_dim: usize,
     pub intermediate_size: usize,
     pub use_double_wide_mlp: bool,
+    pub enable_moe_block: bool,
+    pub num_experts: Option<usize>,
+    pub top_k_experts: Option<usize>,
+    pub moe_intermediate_size: Option<usize>,
     pub num_kv_shared_layers: usize,
     pub hidden_size_per_layer_input: usize,
     pub vocab_size_per_layer_input: usize,
@@ -142,6 +146,26 @@ impl ModelArch {
             .as_bool()
             .or_else(|| v["use_double_wide_mlp"].as_bool())
             .unwrap_or(false);
+        let enable_moe_block = tc["enable_moe_block"]
+            .as_bool()
+            .or_else(|| v["enable_moe_block"].as_bool())
+            .unwrap_or(false);
+        let num_experts = tc["num_experts"]
+            .as_u64()
+            .or_else(|| v["num_experts"].as_u64())
+            .map(|value| value as usize);
+        let top_k_experts = tc["top_k_experts"]
+            .as_u64()
+            .or_else(|| tc["num_experts_per_tok"].as_u64())
+            .or_else(|| v["top_k_experts"].as_u64())
+            .or_else(|| v["num_experts_per_tok"].as_u64())
+            .map(|value| value as usize);
+        let moe_intermediate_size = tc["moe_intermediate_size"]
+            .as_u64()
+            .or_else(|| tc["expert_intermediate_size"].as_u64())
+            .or_else(|| v["moe_intermediate_size"].as_u64())
+            .or_else(|| v["expert_intermediate_size"].as_u64())
+            .map(|value| value as usize);
         let num_kv_shared_layers = tc["num_kv_shared_layers"]
             .as_u64()
             .or_else(|| v["num_kv_shared_layers"].as_u64())
@@ -278,6 +302,34 @@ impl ModelArch {
                 bt: std::backtrace::Backtrace::capture(),
             });
         }
+        if enable_moe_block {
+            let num_experts_value = num_experts.unwrap_or(0);
+            let top_k_value = top_k_experts.unwrap_or(0);
+            if num_experts_value == 0 || top_k_value == 0 || top_k_value > num_experts_value {
+                return Err(RvllmError::Loader {
+                    err: LoaderError::Corrupt {
+                        detail: "Gemma4 MoE requires 0 < top_k_experts <= num_experts".into(),
+                    },
+                    ctx: LoaderCtx {
+                        path: p.clone(),
+                        tensor: None,
+                    },
+                    bt: std::backtrace::Backtrace::capture(),
+                });
+            }
+            if moe_intermediate_size.unwrap_or(0) == 0 {
+                return Err(RvllmError::Loader {
+                    err: LoaderError::Corrupt {
+                        detail: "Gemma4 MoE requires nonzero moe_intermediate_size".into(),
+                    },
+                    ctx: LoaderCtx {
+                        path: p.clone(),
+                        tensor: None,
+                    },
+                    bt: std::backtrace::Backtrace::capture(),
+                });
+            }
+        }
 
         Ok(Self {
             num_hidden_layers,
@@ -287,6 +339,10 @@ impl ModelArch {
             head_dim,
             intermediate_size,
             use_double_wide_mlp,
+            enable_moe_block,
+            num_experts,
+            top_k_experts,
+            moe_intermediate_size,
             num_kv_shared_layers,
             hidden_size_per_layer_input,
             vocab_size_per_layer_input,
@@ -996,6 +1052,10 @@ mod tests {
             head_dim: 192,
             intermediate_size: 4096,
             use_double_wide_mlp: true,
+            enable_moe_block: false,
+            num_experts: None,
+            top_k_experts: None,
+            moe_intermediate_size: None,
             num_kv_shared_layers: shared_layers,
             hidden_size_per_layer_input: 0,
             vocab_size_per_layer_input: 0,
@@ -1045,6 +1105,10 @@ mod tests {
             head_dim: 128,
             intermediate_size: 256,
             use_double_wide_mlp: false,
+            enable_moe_block: false,
+            num_experts: None,
+            top_k_experts: None,
+            moe_intermediate_size: None,
             num_kv_shared_layers: 0,
             hidden_size_per_layer_input: 0,
             vocab_size_per_layer_input: 0,

@@ -1,5 +1,9 @@
 # rvLLM
 
+**Apple inference checkpoint:** Gemma 4 12B Metal prefill / ANE decode research
+is paused. See the [status and agent handoff](v3/HANDOFF.md) for verified results,
+pending benchmarks, and restart instructions.
+
 LLM inference engine. Rust+CUDA on GPU, JAX+XLA on TPU.
 
 Three Gemma 4 models on TPU v6e-4: **E4B** (16,794 tok/s peak, 78.3 tok/s B=1, PPL 5.87), **26B-A4B MoE** (14,899 tok/s peak), **31B** (9,600 tok/s peak, 128K context). GPU: 31B on H100 at **8,786 tok/s** (FP8, CUDA graph, PPL 14.75). Zero custom kernels on TPU -- ~500 lines of JAX. Native Rust binary on GPU -- zero Python in the serving path.

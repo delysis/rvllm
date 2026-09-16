@@ -1,0 +1,169 @@
+{
+  "results": [
+    {
+      "policy": "off",
+      "exit_code": 0,
+      "seconds": 87.99061393737793,
+      "command": [
+        "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+        "--model-dir",
+        "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+        "--metallib-bf16",
+        "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+        "--output-dir",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/run-0-off/inference",
+        "--max-new-tokens",
+        "1",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt"
+      ],
+      "metal_prepare_ms": 7816.754041,
+      "prefills_ms": [
+        22355.149125,
+        30528.036624999997,
+        26249.810958000002
+      ],
+      "kv_capture_ms": [
+        129.381959,
+        120.919042,
+        122.608458
+      ],
+      "command_wait_ms": [
+        22215.406292,
+        30404.890916,
+        26124.320041
+      ],
+      "tokens_match": true,
+      "ane_programs_loaded": 0
+    },
+    {
+      "policy": "simdgroup",
+      "exit_code": 0,
+      "seconds": 80.44328212738037,
+      "command": [
+        "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+        "--model-dir",
+        "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+        "--metallib-bf16",
+        "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+        "--output-dir",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/run-1-simdgroup/inference",
+        "--max-new-tokens",
+        "1",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt"
+      ],
+      "metal_prepare_ms": 15583.07725,
+      "prefills_ms": [
+        20170.701375,
+        18046.709791,
+        25455.183458
+      ],
+      "kv_capture_ms": [
+        154.28062500000001,
+        119.013041,
+        86.06970899999999
+      ],
+      "command_wait_ms": [
+        20006.59125,
+        17924.97875,
+        25367.233083
+      ],
+      "tokens_match": true,
+      "ane_programs_loaded": 0
+    },
+    {
+      "policy": "simdgroup",
+      "exit_code": 0,
+      "seconds": 60.680124044418335,
+      "command": [
+        "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+        "--model-dir",
+        "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+        "--metallib-bf16",
+        "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+        "--output-dir",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/run-2-simdgroup/inference",
+        "--max-new-tokens",
+        "1",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt"
+      ],
+      "metal_prepare_ms": 11310.451125,
+      "prefills_ms": [
+        18375.883542,
+        16726.627875,
+        13533.382
+      ],
+      "kv_capture_ms": [
+        325.93758299999996,
+        166.84625,
+        80.10825000000001
+      ],
+      "command_wait_ms": [
+        18042.741708,
+        16555.215584,
+        13450.302583
+      ],
+      "tokens_match": true,
+      "ane_programs_loaded": 0
+    },
+    {
+      "policy": "off",
+      "exit_code": 0,
+      "seconds": 69.9767758846283,
+      "command": [
+        "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+        "--model-dir",
+        "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+        "--metallib-bf16",
+        "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+        "--output-dir",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/run-3-off/inference",
+        "--max-new-tokens",
+        "1",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt",
+        "--prompt-file",
+        "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/metal-only-prefill-attention-policy-comparison/prompt.txt"
+      ],
+      "metal_prepare_ms": 9324.790208,
+      "prefills_ms": [
+        25093.604166999998,
+        19183.544125,
+        15609.230916999999
+      ],
+      "kv_capture_ms": [
+        123.822333,
+        77.894208,
+        77.46887500000001
+      ],
+      "command_wait_ms": [
+        24956.456958,
+        19103.820167,
+        15530.404708
+      ],
+      "tokens_match": true,
+      "ane_programs_loaded": 0
+    }
+  ],
+  "warm_prefill_medians": {
+    "off": 22716.6775415,
+    "simdgroup": 17386.668833
+  },
+  "boot_after": "kern.boottime: { sec = 1789388363, usec = 869693 } Mon Sep 14 08:19:23 2026\n"
+}

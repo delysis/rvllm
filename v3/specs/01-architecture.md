@@ -28,13 +28,17 @@ rvllm-runtime   cutlass,attention,
                 fused,metadata,
                 graph,loader,
                 sampling          layer_exec.rs scheduler.rs lifecycle.rs sched_state.rs
-rvllm-serve     runtime           http.rs grpc.rs openai.rs
-rvllm-bench     runtime           harness.rs gates.rs profile.rs
+rvllm-serve     runtime; optional apple,loader  http.rs grpc.rs openai.rs
+rvllm-bench     runtime; optional apple,loader  harness.rs gates.rs profile.rs
 rvllm-deploy    (script)          tarball.rs deploy_and_bench.rs
 rvllm-zig       core (FFI)        bpe.zig topk.zig metapack.zig
 ```
 
-Cycles forbidden by `cargo deny`. `runtime` is the only crate naming cutlass+attention+fused+graph+loader+sampling together.
+Cycles are forbidden by `cargo deny`. `runtime` is the only crate naming
+cutlass+attention+fused+graph+loader+sampling together. The Apple Metal backend
+uses loader-owned Gemma metadata directly; Apple-enabled serving and benchmark
+frontends use the Apple runtime plan and loader metadata without introducing a
+reverse edge.
 
 ## Public API sketch
 

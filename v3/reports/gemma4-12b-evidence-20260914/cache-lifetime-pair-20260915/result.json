@@ -1,0 +1,54 @@
+{
+  "schema": "rvllm.ane_source_lifetime_pair.v1",
+  "source_bytes_each": 31457408,
+  "input_channels": 4096,
+  "output_channels": 3840,
+  "signing_identifier": "rvllm-ane-cache-lifetime-fixture",
+  "counts": {
+    "compile": {
+      "compile_requested": 4,
+      "descriptor_created": 4,
+      "cache_miss": 4,
+      "compile_begin": 2,
+      "compile_completed": 2,
+      "load_begin": 2,
+      "load_completed": 2,
+      "source_data_removed": 1,
+      "source_weights_removed": 1,
+      "unload_begin": 2,
+      "unload_completed": 2,
+      "unload_returned": 2,
+      "source_staging_retained": 1
+    },
+    "fresh": {
+      "compile_requested": 2,
+      "descriptor_created": 2,
+      "cache_hit": 2,
+      "cached_source_staged": 2,
+      "load_begin": 2,
+      "load_completed": 2,
+      "source_data_removed": 1,
+      "source_weights_removed": 1,
+      "unload_begin": 2,
+      "unload_completed": 2,
+      "unload_returned": 2,
+      "source_staging_retained": 1
+    },
+    "delayed": {
+      "compile_requested": 2,
+      "descriptor_created": 2,
+      "cache_hit": 2,
+      "cached_source_staged": 2,
+      "load_begin": 2,
+      "load_completed": 2,
+      "source_data_removed": 1,
+      "source_weights_removed": 1,
+      "unload_begin": 2,
+      "unload_completed": 2,
+      "unload_returned": 2,
+      "source_staging_retained": 1
+    }
+  },
+  "delayed_fresh_process_seconds_after_last_compile_process_unload": 63.388,
+  "conclusion": "Both immediate-cleanup and retain-until-unload arms remained available in both fresh-process checks. All six loads returned successful unloads. This pair does not reproduce the missing-cache failure and does not establish persistence under larger FFN or prolonged disk pressure."
+}

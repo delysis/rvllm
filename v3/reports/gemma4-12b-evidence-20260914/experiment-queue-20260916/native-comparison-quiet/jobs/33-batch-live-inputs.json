@@ -1,0 +1,99 @@
+{
+  "after": [
+    "32-live-ffn-inputs"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--report",
+      "{output}/probe.json",
+      "--layer",
+      "0",
+      "--mode",
+      "int8",
+      "--compare",
+      "true",
+      "--int8-batch",
+      "2",
+      "--ane-compile-budget",
+      "0",
+      "--cache",
+      "require",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-0/ane-position-21-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-84-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-85-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-652-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-653-layer-00-ffn-input.fp16"
+    ],
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/33-batch-live-inputs/driver.jsonl"
+    },
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-ffn-batch-probe-20260916/rvllm_ane_int8_probe",
+      "sha256": "b89c68308f5e10b636e606ab2315225a3be42bee2379d46737809a1c7a0c5bf0"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ],
+    "thermal_state": null
+  },
+  "id": "33-batch-live-inputs",
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-0/ane-position-21-layer-00-ffn-input.fp16",
+      "sha256": "20f3ffd3aa4bf8b388d90e54c781bbe03eb229d6af4abe46a0ee4b7b2badae86"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-84-layer-00-ffn-input.fp16",
+      "sha256": "1780cf3e9f1d111badcac5fcc2e5940ee4db71308e9d09eb1568c8ccf14e7c52"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-85-layer-00-ffn-input.fp16",
+      "sha256": "404639d2daa01c3e39326ff1fc4b0ca663893bdf2c6bc40e543b4c61e7654e4f"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-652-layer-00-ffn-input.fp16",
+      "sha256": "8a8337024f125bf66e89642311bf98121b4155d021b16c6915620e1d4098a941"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-653-layer-00-ffn-input.fp16",
+      "sha256": "f0ddc34dd2065ce6f2c97aaeab5b01830ecbe6fa618080413770552161be6f34"
+    }
+  ],
+  "max_run_seconds": 300,
+  "max_wait_seconds": 86400,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 10,
+  "validator": null
+}

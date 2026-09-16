@@ -1,0 +1,37 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "44-ac-fair-analysis",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/rvllm-native-kit-paired-analyzer-v3",
+      "sha256": "68d3b64f899dc4cf0e5dea8f08fdb517e3841d24dfe28b8fa41840ef9c67cd67"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/40-ac-fair-A-ane",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/41-ac-fair-B-native",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/42-ac-fair-B-native",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/43-ac-fair-A-ane"
+    ],
+    "env": {}
+  },
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": null,
+    "minimum_free_bytes": 0,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": [],
+    "idle_llama_servers": []
+  },
+  "inputs": [],
+  "after": [
+    "43-ac-fair-A-ane"
+  ],
+  "stable_seconds": 1,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 60,
+  "validator": null
+}

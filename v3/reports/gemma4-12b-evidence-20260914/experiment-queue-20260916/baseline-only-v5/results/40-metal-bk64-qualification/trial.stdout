@@ -1,0 +1,157 @@
+
+running 1 test
+test layer_forward::prefill_mma_tile_tests::native_bf16_bk64_checks_precision_and_m84_ffn ... {
+  "cases": [
+    {
+      "bf16_rounding_exact": true,
+      "commands": 4,
+      "fp32_bit_parity_required": true,
+      "gpu_median_ms": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "gpu_ms": [
+        [],
+        [],
+        [],
+        []
+      ],
+      "guards_intact": true,
+      "k": 65,
+      "m": 63,
+      "n": 67,
+      "projection": "all-tails",
+      "relative_l2_vs_mma32": [
+        0.0,
+        0.0
+      ],
+      "sampled_fp64_max_abs": [
+        0.0,
+        0.0
+      ],
+      "trial_order": [],
+      "wall_ms": [
+        [],
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "bf16_rounding_exact": true,
+      "commands": 4,
+      "fp32_bit_parity_required": true,
+      "gpu_median_ms": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "gpu_ms": [
+        [],
+        [],
+        [],
+        []
+      ],
+      "guards_intact": true,
+      "k": 3840,
+      "m": 84,
+      "n": 30720,
+      "projection": "gate-up",
+      "relative_l2_vs_mma32": [
+        0.0,
+        0.0
+      ],
+      "sampled_fp64_max_abs": [
+        0.07236909866333008,
+        0.07236909866333008
+      ],
+      "trial_order": [],
+      "wall_ms": [
+        [],
+        [],
+        [],
+        []
+      ]
+    },
+    {
+      "bf16_rounding_exact": true,
+      "commands": 4,
+      "fp32_bit_parity_required": true,
+      "gpu_median_ms": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "gpu_ms": [
+        [],
+        [],
+        [],
+        []
+      ],
+      "guards_intact": true,
+      "k": 15360,
+      "m": 84,
+      "n": 3840,
+      "projection": "down",
+      "relative_l2_vs_mma32": [
+        0.0,
+        0.0
+      ],
+      "sampled_fp64_max_abs": [
+        0.27500152587890625,
+        0.27500152587890625
+      ],
+      "trial_order": [],
+      "wall_ms": [
+        [],
+        [],
+        [],
+        []
+      ]
+    }
+  ],
+  "pipeline_resources": [
+    {
+      "execution_width": 32,
+      "max_threads": 1024,
+      "name": "qkv_project_f32_mma32",
+      "static_shared_bytes": 8192
+    },
+    {
+      "execution_width": 32,
+      "max_threads": 1024,
+      "name": "bk64_bf16_f32",
+      "static_shared_bytes": 12288
+    },
+    {
+      "execution_width": 32,
+      "max_threads": 1024,
+      "name": "gemm_f16_mma32",
+      "static_shared_bytes": 8192
+    },
+    {
+      "execution_width": 32,
+      "max_threads": 1024,
+      "name": "bk64_bf16_bf16",
+      "static_shared_bytes": 12288
+    }
+  ],
+  "qualification_only": true,
+  "reduction64": true,
+  "schema": "rvllm.metal_tile_comparison.v2",
+  "scope": "Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt.",
+  "variants": [
+    "qkv_project_f32_mma32",
+    "bk64_bf16_f32",
+    "gemm_f16_mma32",
+    "bk64_bf16_bf16"
+  ]
+}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 91 filtered out; finished in 1.60s
+

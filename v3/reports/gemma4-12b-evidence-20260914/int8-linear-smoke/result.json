@@ -1,0 +1,31 @@
+{
+  "cases": [
+    {
+      "dense_cpu_maximum_absolute_error": 0.0000553131103515625,
+      "input_case": 0,
+      "int8_cpu_maximum_absolute_error": 0.0000667572021484375,
+      "int8_dense_maximum_absolute_difference": 0.0001220703125
+    },
+    {
+      "dense_cpu_maximum_absolute_error": 0.0000629425048828125,
+      "input_case": 1,
+      "int8_cpu_maximum_absolute_error": 0.0000629425048828125,
+      "int8_dense_maximum_absolute_difference": 0.00006103515625
+    },
+    {
+      "dense_cpu_maximum_absolute_error": 0.0048065185546875,
+      "input_case": 2,
+      "int8_cpu_maximum_absolute_error": 0.012264251708984375,
+      "int8_dense_maximum_absolute_difference": 0.015625
+    }
+  ],
+  "claim": "Synthetic projection backend qualification only; not Gemma quality or speed.",
+  "compiler_calls": 2,
+  "evaluations": 6,
+  "input_channels": 64,
+  "input_output_count": 1,
+  "output_channels": 128,
+  "schema": "rvllm.int8_linear_smoke.v1",
+  "tolerance": "0.002 + 0.01 * abs(cpu_reference)",
+  "violations": 0
+}

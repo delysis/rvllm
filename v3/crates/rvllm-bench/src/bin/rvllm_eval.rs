@@ -16,14 +16,22 @@
 //!   RVLLM_APPLE_ANE_PROFILE     = any|neural_engine_preferred|neural_engine_only
 //!   RVLLM_APPLE_ANE_FALLBACK    = allow-metal|allow-soft|failfast
 
+#[cfg(any(feature = "apple", feature = "cuda"))]
 use std::io::Read;
+#[cfg(any(feature = "apple", feature = "cuda"))]
 use std::path::PathBuf;
+#[cfg(feature = "cuda")]
 use std::time::Instant;
 
+use rvllm_bench::ane_meta::{AppleCliProfile, BackendProfile};
+#[cfg(feature = "cuda")]
 use rvllm_core::{DType, ModelArch as HfModelArch, ModelConfig};
+#[cfg(feature = "cuda")]
 use rvllm_runtime::gemma4_bring_up::{Gemma4Bringup, Gemma4EnginePaths};
+#[cfg(feature = "cuda")]
 use rvllm_runtime::{Bringup, EnginePaths};
 
+#[cfg(any(feature = "apple", feature = "cuda"))]
 fn env_path(k: &str) -> Result<PathBuf, String> {
     std::env::var(k)
         .map_err(|_| format!("missing env var: {k}"))
@@ -32,12 +40,14 @@ fn env_path(k: &str) -> Result<PathBuf, String> {
 
 /// Optional env var: returns `/dev/null` when missing. For paths that
 /// the sm_121 backend never opens (SM90-only .so files + policy).
+#[cfg(feature = "cuda")]
 fn env_path_or_placeholder(k: &str) -> PathBuf {
     std::env::var(k)
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/dev/null"))
 }
 
+#[cfg(feature = "cuda")]
 fn is_gemma4_model_dir(model_dir: &std::path::Path) -> Result<bool, String> {
     Ok(matches!(
         ModelConfig::load_hf(model_dir)
@@ -58,6 +68,69 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let profile = AppleCliProfile::from_env();
+    if matches!(profile.backend(), BackendProfile::Apple) {
+        return run_apple_eval();
+    }
+    run_cuda_eval()
+}
+
+#[cfg(feature = "apple")]
+fn run_apple_eval() -> Result<(), String> {
+    let model_dir = env_path("RVLLM_MODEL_DIR")?;
+    let prompt = if let Ok(p) = std::env::var("RVLLM_PROMPT") {
+        p
+    } else {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("stdin: {e}"))?;
+        buf
+    };
+    let max_new_tokens = std::env::var("RVLLM_MAX_TOKENS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1);
+    let max_total_tokens = rvllm_bench::apple_metal_text::env_usize(
+        "RVLLM_METAL_MAX_TOTAL_TOKENS",
+        rvllm_bench::apple_metal_text::env_usize("RVLLM_METAL_MAX_PROBE_TOKENS", 2048),
+    );
+    let report =
+        rvllm_bench::apple_metal_text::run_eval(rvllm_bench::apple_metal_text::MetalTextOptions {
+            model_dir,
+            prompt,
+            max_new_tokens,
+            max_total_tokens,
+            max_batch_tokens: 0,
+            no_bos: rvllm_bench::apple_metal_text::env_bool("RVLLM_NO_BOS"),
+            eos_token_ids: vec![1, 2, 107],
+            large_model_opt_in: rvllm_bench::apple_metal_text::env_bool(
+                "RVLLM_APPLE_LARGE_MODEL_OPT_IN",
+            ),
+        })?;
+    eprintln!(
+        "metal-eval: generated={} tok_per_sec={:.3} prepare_ms={:.1} prefill_ms={:.1} decode_ms={:.1}",
+        report.generated_token_ids.len(),
+        report.tok_per_sec,
+        report.prepare_ms,
+        report.prefill_ms,
+        report.decode_ms
+    );
+    eprintln!("{}", report.claim);
+    println!("{}", report.generated_text);
+    Ok(())
+}
+
+#[cfg(not(feature = "apple"))]
+fn run_apple_eval() -> Result<(), String> {
+    Err(
+        "RVLLM_BACKEND_PROFILE=apple requires building rvllm-eval with --features apple on macOS"
+            .to_owned(),
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn run_cuda_eval() -> Result<(), String> {
     let model_dir = env_path("RVLLM_MODEL_DIR")?;
     eprintln!("run_profile={}", eval_profile_summary());
 
@@ -227,6 +300,15 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(feature = "cuda"))]
+fn run_cuda_eval() -> Result<(), String> {
+    Err(
+        "rvllm-eval CUDA path requires --features cuda; set RVLLM_BACKEND_PROFILE=apple and build with --features apple for Metal"
+            .to_owned(),
+    )
+}
+
+#[cfg(feature = "cuda")]
 fn eval_profile_summary() -> String {
     let strict_ane = parse_bool("RVLLM_STRICT_ANE");
     let private = parse_bool("RVLLM_APPLE_PRIVATE_ANE");
@@ -243,6 +325,7 @@ fn eval_profile_summary() -> String {
     )
 }
 
+#[cfg(feature = "cuda")]
 fn parse_bool(name: &str) -> bool {
     std::env::var(name)
         .ok()
@@ -250,6 +333,7 @@ fn parse_bool(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(feature = "cuda")]
 fn parse_bool_value(s: &str) -> Option<bool> {
     match s.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "on" => Some(true),
@@ -780,16 +864,7 @@ unsafe fn generate(
     Ok(output_ids)
 }
 
-#[cfg(not(feature = "cuda"))]
-unsafe fn generate(
-    _br: &Bringup,
-    _fn_embed: rvllm_kernels::KernelFn,
-    _prompt_ids: &[u32],
-    _max_new: u32,
-) -> Result<Vec<u32>, String> {
-    Err("rvllm-eval requires cuda feature".into())
-}
-
+#[cfg(feature = "cuda")]
 fn bytemuck_i32(v: &[i32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) }
 }

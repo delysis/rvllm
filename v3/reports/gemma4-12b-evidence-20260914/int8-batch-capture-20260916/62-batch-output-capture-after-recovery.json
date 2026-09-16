@@ -1,0 +1,105 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "62-batch-output-capture-after-recovery",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-batch-capture-20260916/rvllm_ane_int8_probe-batch-capture",
+      "sha256": "04cc6b66de2d07b5f3853fa1ac4369fafb292842f448fcbb012380a3888ed56b"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--report",
+      "{output}/probe.json",
+      "--layer",
+      "0",
+      "--mode",
+      "int8",
+      "--ane-compile-budget",
+      "0",
+      "--cache",
+      "require",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-0/ane-position-21-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-84-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-85-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-652-layer-00-ffn-input.fp16",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-653-layer-00-ffn-input.fp16",
+      "--compare",
+      "true",
+      "--int8-batch",
+      "2",
+      "--capture-batch-outputs",
+      "true"
+    ],
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/62-batch-output-capture-after-recovery/driver.jsonl"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-0/ane-position-21-layer-00-ffn-input.fp16",
+      "sha256": "20f3ffd3aa4bf8b388d90e54c781bbe03eb229d6af4abe46a0ee4b7b2badae86"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-84-layer-00-ffn-input.fp16",
+      "sha256": "1780cf3e9f1d111badcac5fcc2e5940ee4db71308e9d09eb1568c8ccf14e7c52"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-1/ane-position-85-layer-00-ffn-input.fp16",
+      "sha256": "404639d2daa01c3e39326ff1fc4b0ca663893bdf2c6bc40e543b4c61e7654e4f"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-652-layer-00-ffn-input.fp16",
+      "sha256": "8a8337024f125bf66e89642311bf98121b4155d021b16c6915620e1d4098a941"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/backend/case-2/ane-position-653-layer-00-ffn-input.fp16",
+      "sha256": "f0ddc34dd2065ce6f2c97aaeab5b01830ecbe6fa618080413770552161be6f34"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/61-two-token-reference-qualification/report.json",
+      "sha256": "ce5fa2f98171647a77a53bdc428cc74347f0262f87906d0cbca3efd8581d2ce5"
+    }
+  ],
+  "after": [
+    "61-two-token-reference-qualification"
+  ],
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "thermal_state": null,
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ]
+  },
+  "stable_seconds": 10,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 600,
+  "validator": null
+}

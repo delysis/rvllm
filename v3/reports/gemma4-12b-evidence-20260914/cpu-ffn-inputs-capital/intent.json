@@ -1,0 +1,26 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "--no-project",
+    "--python",
+    "3.12",
+    "--with",
+    "torch",
+    "--with",
+    "transformers @ git+https://github.com/huggingface/transformers.git@3384908511545a9c146de65f01f3d29b90b2add6",
+    "--with",
+    "accelerate",
+    "python",
+    "/Users/george/Downloads/rvllm/v3/target/capture-cpu-ffn-inputs.py",
+    "--case-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/disaggregated-all-static-phased-capital/inference/case-0",
+    "--output",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/cpu-comparison.json",
+    "--ffn-output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs"
+  ],
+  "script_sha256": "e4ebc482f6a8e8d28c643a87a6b7aec29d966ed42f8ecd4b239edbd13ee32d2f",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "scope": "Fresh pinned FP16 CPU model, actual Metal KV, one continuation. Capture all 48 FFN inputs for component quality experiments; no ANE execution or performance claim."
+}

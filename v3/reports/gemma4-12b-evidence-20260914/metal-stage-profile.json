@@ -1,0 +1,125 @@
+{
+  "attribution": "Stage names inferred from checked 11-encoder Gemma12B layer order; encoders are unlabeled. Durations union overlapping Compute intervals per encoder and exclude other channels. Summed per-encoder times are not total device wall time.",
+  "commands": [
+    {
+      "command_id": "941371410",
+      "total_encoder_gpu_union_ns": 1770740171,
+      "stages": {
+        "embedding": {
+          "gpu_union_ns": 4214917,
+          "encoders": 1
+        },
+        "input_norm": {
+          "gpu_union_ns": 11627584,
+          "encoders": 48
+        },
+        "qkv_norm_rope_cache": {
+          "gpu_union_ns": 204731923,
+          "encoders": 48
+        },
+        "attention": {
+          "gpu_union_ns": 88319752,
+          "encoders": 48
+        },
+        "o_projection": {
+          "gpu_union_ns": 142904162,
+          "encoders": 48
+        },
+        "post_attention_norm": {
+          "gpu_union_ns": 5628661,
+          "encoders": 48
+        },
+        "attention_residual_pre_ffn_norm": {
+          "gpu_union_ns": 12745918,
+          "encoders": 48
+        },
+        "gate_up_projection": {
+          "gpu_union_ns": 860056958,
+          "encoders": 48
+        },
+        "gelu_mul": {
+          "gpu_union_ns": 32867084,
+          "encoders": 48
+        },
+        "down_projection": {
+          "gpu_union_ns": 377019045,
+          "encoders": 48
+        },
+        "post_ffn_norm": {
+          "gpu_union_ns": 10754999,
+          "encoders": 48
+        },
+        "residual_layer_scale": {
+          "gpu_union_ns": 19869168,
+          "encoders": 48
+        }
+      }
+    },
+    {
+      "command_id": "941371940",
+      "total_encoder_gpu_union_ns": 470741601,
+      "stages": {
+        "embedding": {
+          "gpu_union_ns": 42458,
+          "encoders": 1
+        },
+        "input_norm": {
+          "gpu_union_ns": 15196546,
+          "encoders": 48
+        },
+        "qkv_norm_rope_cache": {
+          "gpu_union_ns": 69519792,
+          "encoders": 48
+        },
+        "attention": {
+          "gpu_union_ns": 32941501,
+          "encoders": 48
+        },
+        "o_projection": {
+          "gpu_union_ns": 40117295,
+          "encoders": 48
+        },
+        "post_attention_norm": {
+          "gpu_union_ns": 8216584,
+          "encoders": 48
+        },
+        "attention_residual_pre_ffn_norm": {
+          "gpu_union_ns": 4990251,
+          "encoders": 48
+        },
+        "gate_up_projection": {
+          "gpu_union_ns": 149820789,
+          "encoders": 48
+        },
+        "gelu_mul": {
+          "gpu_union_ns": 10286252,
+          "encoders": 48
+        },
+        "down_projection": {
+          "gpu_union_ns": 84561378,
+          "encoders": 48
+        },
+        "post_ffn_norm": {
+          "gpu_union_ns": 10734669,
+          "encoders": 48
+        },
+        "residual_layer_scale": {
+          "gpu_union_ns": 10672087,
+          "encoders": 48
+        },
+        "final_norm": {
+          "gpu_union_ns": 49458,
+          "encoders": 1
+        },
+        "vocabulary_tiles": {
+          "gpu_union_ns": 33501249,
+          "encoders": 1
+        },
+        "argmax": {
+          "gpu_union_ns": 91292,
+          "encoders": 1
+        }
+      }
+    }
+  ]
+}

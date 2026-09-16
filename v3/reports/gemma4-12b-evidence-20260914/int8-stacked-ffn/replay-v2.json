@@ -1,0 +1,26 @@
+{
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "layer": 0,
+  "binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-ffn/rvllm_ane_int8_probe-v2",
+  "binary_sha256": "52bfad56fe6517839833c57f67085951e2bc78b5fd42c74ac13fe1e8bd683931",
+  "common_args": [
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--layer",
+    "0",
+    "--mode",
+    "int8",
+    "--int8-stacked",
+    "true",
+    "--input-fp16",
+    "reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16"
+  ],
+  "actual_input": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16",
+  "synthetic_inputs": 3,
+  "matrices": "3840 -> stacked gate/up30720 -> GELU and multiply15360 -> down3840",
+  "compiler_limit": 2,
+  "qualification_evaluations": 12,
+  "precision": "existing INT8 integers/per-output scales and FP16 activations; no four-bit work",
+  "io": "one external input/output; existing qualified ABI",
+  "measurement": "strict cache; no driver journal; matched eligible power controls"
+}

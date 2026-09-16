@@ -5,18 +5,144 @@
 
 use crate::arena::MetalBufferArena;
 use crate::context::MetalContext;
+use crate::low_bit_metal::MetalLowBitProjectionOffsets;
 use crate::pipeline::PipelineCache;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
     MTLBuffer, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder,
     MTLSize,
 };
+use rvllm_apple::device::AppleGpuFamily;
 use rvllm_core::Result;
+
+// Measured on M4 Max with Gemma 4 E2B: cooperative projection remains faster
+// through M=18, is effectively tied at M=19, and regresses sharply at M=20.
+const COOPERATIVE_GEMV_MAX_M: u32 = 19;
+
+// Gemma 4 12B's gate/up, output, and down projections benefit from sharing
+// weights across prompt rows. Keep the larger window limited to these shapes.
+fn is_gemma4_12b_prompt_projection(m: u32, n: u32, k: u32) -> bool {
+    (20..=32).contains(&m) && matches!((n, k), (30_720, 3_840) | (3_840, 4_096 | 8_192 | 15_360))
+}
+
+/// Eligibility shared by encoding and diagnostic encoder accounting.
+#[must_use]
+pub fn supports_qkv_prefill_projection(pipelines: &PipelineCache, dims: &MetalLayerDims) -> bool {
+    (pipelines.kernel_options().qkv_prefill_batch8
+        || prefill_mma_enabled(pipelines))
+        // The diagnostic scalar-rounding rewrite does not apply to batch8.
+        && !pipelines.kernel_options().quantized_bf16_accumulation
+        && matches!(pipelines.gpu_family(), AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10)
+        && ((prefill_mma_enabled(pipelines) && (6..=1024).contains(&dims.num_tokens))
+            || (20..=32).contains(&dims.num_tokens))
+        && dims.hidden == 3840
+        && dims.intermediate == 15360
+        && dims.num_layers == 48
+        && dims.moe_num_experts == 0
+        && dims.moe_top_k == 0
+        && dims.moe_intermediate == 0
+        && dims.ple_dim == 0
+        && dims.num_heads == 16
+        && matches!((dims.num_kv_heads, dims.head_dim), (8, 256) | (1, 512))
+}
+
+fn prefill_mma_enabled(pipelines: &PipelineCache) -> bool {
+    pipelines.kernel_options().prefill_mma32
+        && !pipelines.kernel_options().quantized_bf16_accumulation
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(
+            pipelines.gpu_family(),
+            AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10
+        )
+}
+
+// Arithmetic-changing prefill experiment. Keep the route separate from MMA
+// and limited to the model, dtype and GPU families qualified by the component.
+fn supports_gemma4_prefill_simd_attention(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+) -> bool {
+    pipelines.kernel_options().prefill_simd_attention
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(
+            pipelines.gpu_family(),
+            AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10
+        )
+        && (6..=1024).contains(&dims.num_tokens)
+        && dims.hidden == 3840
+        && dims.intermediate == 15360
+        && dims.num_layers == 48
+        && dims.moe_num_experts == 0
+        && dims.moe_top_k == 0
+        && dims.moe_intermediate == 0
+        && dims.ple_dim == 0
+        && dims.num_heads == 16
+        && matches!(
+            (dims.num_kv_heads, dims.head_dim, dims.attention_window),
+            (8, 256, 1024) | (1, 512, 0)
+        )
+}
+
+fn is_prefill_mma_shape(m: u32, n: u32, k: u32, output_f32: bool) -> bool {
+    (6..=1024).contains(&m)
+        && if output_f32 {
+            k == 3840 && matches!(n, 8192 | 9216)
+        } else {
+            matches!((n, k), (30_720, 3_840) | (3_840, 4_096 | 8_192 | 15_360))
+        }
+}
+
+/// Resolve the matrix policy once from the actual layer and execution phase.
+/// Batched decode and unrelated architectures retain their existing routing.
+#[must_use]
+pub fn supports_gemma4_prefill_mma(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+) -> bool {
+    matches!(phase, MetalPhase::Prefill { .. })
+        && prefill_mma_enabled(pipelines)
+        && supports_qkv_prefill_projection(pipelines, dims)
+}
+
+#[cfg(test)]
+#[path = "qkv_prefill_tests.rs"]
+mod qkv_prefill_tests;
+
+#[cfg(test)]
+#[path = "prefill_attention_tests.rs"]
+mod prefill_attention_tests;
+
+#[cfg(test)]
+#[path = "pointwise_dispatch_tests.rs"]
+mod pointwise_dispatch_tests;
+
+#[cfg(test)]
+#[path = "prefill_mma_tile_tests.rs"]
+mod prefill_mma_tile_tests;
+
+#[cfg(test)]
+#[path = "prefill_mma_tests.rs"]
+mod prefill_mma_tests;
+
+/// Canonical lower bound for a causal attention extent. `attention_window ==
+/// 0` is the stable full-attention encoding; otherwise the returned extent
+/// contains at most the requested number of tokens, including the query.
+#[must_use]
+pub const fn attention_window_start(attention_len: u32, attention_window: u32) -> u32 {
+    if attention_window == 0 {
+        0
+    } else {
+        attention_len.saturating_sub(attention_window)
+    }
+}
 
 /// Dimensions for a single decoder layer, matching rvllm-runtime's LayerDims.
 #[derive(Copy, Clone, Debug)]
 pub struct MetalLayerDims {
     pub layer_idx: u32,
+    /// Exact causal attention width. Zero denotes full attention.
+    pub attention_window: u32,
     pub num_tokens: u32,
     pub hidden: u32,
     pub num_layers: u32,
@@ -24,6 +150,9 @@ pub struct MetalLayerDims {
     pub num_kv_heads: u32,
     pub head_dim: u32,
     pub intermediate: u32,
+    pub moe_num_experts: u32,
+    pub moe_top_k: u32,
+    pub moe_intermediate: u32,
     pub ple_dim: u32,
     pub block_size: u32,
     pub max_blocks_per_seq: u32,
@@ -51,11 +180,25 @@ pub struct MetalLayerWeights {
     pub layer_scalar_offset: Option<usize>,
     pub layer_scalar_dim: u32,
     pub gate_up_offset: usize,
-    pub down_proj_offset: usize,
+    pub down_proj_offset: Option<usize>,
+    pub low_bit_down_proj: Option<MetalLowBitProjectionOffsets>,
+    pub moe: Option<MetalMoeWeights>,
     pub per_layer_inputs_offset: Option<usize>,
     pub per_layer_input_gate_offset: Option<usize>,
     pub per_layer_projection_offset: Option<usize>,
     pub post_per_layer_input_norm_offset: Option<usize>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct MetalMoeWeights {
+    pub router_proj_offset: usize,
+    pub router_scale_offset: usize,
+    pub router_per_expert_scale_offset: usize,
+    pub pre_ff2_norm_offset: usize,
+    pub post_ff1_norm_offset: usize,
+    pub post_ff2_norm_offset: usize,
+    pub expert_gate_up_offset: usize,
+    pub expert_down_offset: usize,
 }
 
 /// Pre-allocated scratch buffer offsets.
@@ -70,6 +213,10 @@ pub struct MetalScratch {
     pub gate_up_out: usize,
     pub activated: usize,
     pub mlp_out: usize,
+    pub moe_topk_indices: Option<usize>,
+    pub moe_topk_weights: Option<usize>,
+    pub moe_activated: Option<usize>,
+    pub moe_out: Option<usize>,
 }
 
 /// Optional trace-only snapshot offsets within the arena buffer.
@@ -166,6 +313,7 @@ fn validate_qkv_scratch_planar(
     num_tokens: usize,
     q_dim: usize,
     kv_dim: usize,
+    projection_f32: bool,
 ) -> Result<()> {
     let elem = std::mem::size_of::<u16>();
     let qkv_elems = num_tokens.checked_mul(q_dim + 2 * kv_dim).ok_or_else(|| {
@@ -181,7 +329,12 @@ fn validate_qkv_scratch_planar(
             },
         )
     })?;
-    let qkv_len = qkv_elems.checked_mul(elem).ok_or_else(|| {
+    let projection_bytes = if projection_f32 {
+        std::mem::size_of::<f32>()
+    } else {
+        elem
+    };
+    let qkv_len = qkv_elems.checked_mul(projection_bytes).ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::FeatureNotAvailable {
                 backend: "metal",
@@ -219,7 +372,7 @@ fn validate_qkv_scratch_planar(
     Ok(())
 }
 
-fn supports_attention_decode_reduction(dims: &MetalLayerDims) -> bool {
+fn supports_attention_decode_online(dims: &MetalLayerDims) -> bool {
     dims.num_heads > 0
         && dims.num_kv_heads > 0
         && dims.num_heads % dims.num_kv_heads == 0
@@ -229,11 +382,105 @@ fn supports_attention_decode_reduction(dims: &MetalLayerDims) -> bool {
 }
 
 fn supports_tiled_gemm(m: u32, n: u32, k: u32) -> bool {
-    m > 0 && n > 0 && k > 0 && m <= 16 && n <= 1024 && k <= 1024
+    m > 0 && n > 0 && k > 0 && m <= 16 && n <= 262_144 && k <= 16_384
+}
+
+fn supports_vec_gemm(m: u32, n: u32, k: u32) -> bool {
+    m > 0
+        && n > 0
+        && k > 0
+        && (m <= COOPERATIVE_GEMV_MAX_M || is_gemma4_12b_prompt_projection(m, n, k))
+        && n <= 262_144
+        && k <= 65_536
+}
+
+/// Apple9/10 batch-eight projection path. Each simdgroup owns one output
+/// column and accumulates eight request rows, so the dominant `[N,K]` weight
+/// stream is shared across the batch instead of being fetched once per row.
+/// The eight-row path also covers 20–32-token Gemma 4 12B prompt projections;
+/// smaller microbatches retain the established cooperative GEMV reduction.
+fn supports_batch8_gemm(gpu_family: AppleGpuFamily, m: u32, n: u32, k: u32) -> bool {
+    matches!(gpu_family, AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10)
+        && (m == 8 || is_gemma4_12b_prompt_projection(m, n, k))
+        && n >= 1_024
+        && n <= 262_144
+        && n.is_multiple_of(8)
+        && k >= 1_024
+        && k <= 65_536
+        && k.is_multiple_of(32)
+}
+
+/// Number of encoders used by the projection + RMSNorm policy.
+///
+/// For decode and prompt microbatches, the cooperative GEMV kernel exposes
+/// enough parallelism to keep the GPU occupied. The single-encoder fused
+/// kernel launches only one threadgroup per token and serializes large output
+/// projections, so the small-batch path deliberately spends a second encoder
+/// on RMSNorm. Qualified native BF16 matrix prefills also materialize the
+/// projection before RMSNorm; other larger prefills retain the fused fallback.
+#[must_use]
+pub fn metal_gemm_rmsnorm_encoder_count(m: u32, n: u32, k: u32, allow_prefill_mma: bool) -> u64 {
+    if supports_vec_gemm(m, n, k) || (allow_prefill_mma && is_prefill_mma_shape(m, n, k, false)) {
+        2
+    } else {
+        1
+    }
 }
 
 fn supports_fused_final_logits_small(num_tokens: u32, hidden: u32, vocab: u32) -> bool {
     num_tokens > 0 && num_tokens <= 256 && hidden > 0 && hidden <= 4096 && vocab > 0 && vocab <= 256
+}
+
+fn supports_final_sample_tiles(num_tokens: u32, hidden: u32, vocab: u32) -> bool {
+    num_tokens > 0
+        && num_tokens <= 256
+        && hidden > 0
+        && hidden <= 65_536
+        && vocab > 256
+        && vocab <= 262_144
+}
+
+fn supports_batch8_final_sample(
+    gpu_family: AppleGpuFamily,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+) -> bool {
+    matches!(gpu_family, AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10)
+        && num_tokens == 8
+        && hidden >= 1_024
+        && hidden <= 65_536
+        && hidden.is_multiple_of(32)
+        && vocab >= 1_024
+        && vocab <= 262_144
+}
+
+fn supports_batch4_final_sample(
+    gpu_family: AppleGpuFamily,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+) -> bool {
+    matches!(gpu_family, AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10)
+        && num_tokens == 4
+        && hidden >= 1_024
+        && hidden <= 65_536
+        && hidden.is_multiple_of(32)
+        && vocab >= 1_024
+        && vocab <= 262_144
+}
+
+#[must_use]
+pub fn supports_qkv_rope_cache_fusion(dims: &MetalLayerDims) -> bool {
+    dims.num_tokens > 0
+        && dims.hidden > 0
+        && dims.head_dim > 0
+        && dims.head_dim <= 512
+        && dims.rope_dim > 0
+        && dims.rope_dim <= dims.head_dim
+        && dims.rope_dim % 2 == 0
+        && dims.num_heads > 0
+        && dims.num_kv_heads > 0
 }
 
 #[must_use]
@@ -247,6 +494,17 @@ pub fn metal_finalize_logits_encoder_count(
         1
     } else {
         3
+    }
+}
+
+#[must_use]
+pub fn metal_finalize_sample_encoder_count(num_tokens: u32, hidden: u32, vocab: u32) -> u64 {
+    if supports_fused_final_logits_small(num_tokens, hidden, vocab) {
+        1
+    } else if supports_final_sample_tiles(num_tokens, hidden, vocab) {
+        3
+    } else {
+        metal_finalize_logits_encoder_count(num_tokens, hidden, vocab, 0.0)
     }
 }
 
@@ -479,17 +737,50 @@ pub unsafe fn metal_encode_forward_layer(
     attention_kv_cache_v_offset: usize,
     debug_skip: MetalLayerDebugSkip,
 ) -> Result<()> {
+    let allow_prefill_mma = trace.is_none() && supports_gemma4_prefill_mma(pipelines, dims, phase);
     let buf = arena.buffer_retained();
     let num_tokens = dims.num_tokens;
     let hidden = dims.hidden;
     let q_dim = dims.num_heads * dims.head_dim;
     let kv_dim = dims.num_kv_heads * dims.head_dim;
     let qkv_n = q_dim + 2 * kv_dim;
+    let native_down_proj_offset = validate_down_projection_sources(
+        weights.down_proj_offset,
+        weights.low_bit_down_proj.is_some(),
+    )?
+    // Low-bit branches never read this value. The source validation above
+    // guarantees every native branch receives the real offset.
+    .unwrap_or(0);
+    if let Some(projection) = weights.low_bit_down_proj {
+        let expected = [hidden, dims.intermediate];
+        if projection.shape() != expected {
+            return Err(rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit down projection shape does not match prepared layer",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_down_projection_shape",
+                    device: "apple-silicon",
+                },
+            ));
+        }
+    }
+    let use_fused_qkv_rope_cache = trace.is_none()
+        && !debug_skip.skip_kv_projection
+        && !debug_skip.skip_local_kv_cache_write
+        && weights.q_norm_offset.is_some()
+        && weights.k_norm_offset.is_some()
+        && supports_qkv_rope_cache_fusion(dims);
+    let use_qkv_prefill_projection = use_fused_qkv_rope_cache
+        && matches!(phase, MetalPhase::Prefill { .. })
+        && supports_qkv_prefill_projection(pipelines, dims);
     validate_qkv_scratch_planar(
         scratch,
         num_tokens as usize,
         q_dim as usize,
         kv_dim as usize,
+        use_qkv_prefill_projection,
     )?;
     if let Some(trace) = trace {
         encode_trace_copy(
@@ -560,7 +851,7 @@ pub unsafe fn metal_encode_forward_layer(
         (weights.q_norm_offset, weights.k_norm_offset)
     {
         if let Some(trace) = trace {
-            encode_gemm(
+            encode_gemm_with_output(
                 &cmd_buf,
                 pipelines,
                 buf,
@@ -572,6 +863,8 @@ pub unsafe fn metal_encode_forward_layer(
                 hidden,
                 1.0,
                 0.0,
+                false,
+                allow_prefill_mma,
             )?;
             encode_split_qkv(
                 &cmd_buf,
@@ -613,23 +906,107 @@ pub unsafe fn metal_encode_forward_layer(
                 "trace_v_projection",
             )?;
         }
-        encode_gemm_headwise_rmsnorm(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.normed_hidden,
-            weights.qkv_offset,
-            q_norm_offset,
-            scratch.q_offset,
-            num_tokens,
-            hidden,
-            dims.head_dim,
-            dims.num_heads,
-            0,
-            dims.rms_eps,
-            "q_norm",
-        )?;
-        if !debug_skip.skip_kv_projection {
+        if trace.is_none() && !debug_skip.skip_kv_projection {
+            let v_gamma_offset = weights.v_norm_offset.unwrap_or(q_norm_offset);
+            if use_fused_qkv_rope_cache {
+                if use_qkv_prefill_projection {
+                    encode_gemm_with_output(
+                        &cmd_buf,
+                        pipelines,
+                        buf,
+                        scratch.normed_hidden,
+                        weights.qkv_offset,
+                        scratch.qkv_out,
+                        num_tokens,
+                        qkv_n,
+                        hidden,
+                        1.0,
+                        0.0,
+                        true,
+                        allow_prefill_mma,
+                    )?;
+                }
+                encode_qkv_headwise_rmsnorm_rope_cache(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    if use_qkv_prefill_projection {
+                        scratch.qkv_out
+                    } else {
+                        scratch.normed_hidden
+                    },
+                    weights.qkv_offset,
+                    q_norm_offset,
+                    k_norm_offset,
+                    v_gamma_offset,
+                    scratch.q_offset,
+                    scratch.k_offset,
+                    scratch.v_offset,
+                    meta.cos_offset,
+                    meta.sin_offset,
+                    meta.positions_offset,
+                    meta.slot_mapping_offset,
+                    kv_cache_k_offset,
+                    kv_cache_v_offset,
+                    num_tokens,
+                    hidden,
+                    dims.head_dim,
+                    dims.num_heads,
+                    dims.num_kv_heads,
+                    0,
+                    q_dim,
+                    q_dim + kv_dim,
+                    dims.rms_eps,
+                    weights.v_norm_offset.is_some(),
+                    dims.rope_dim,
+                    "qkv_headwise_norm_rope_cache",
+                    use_qkv_prefill_projection,
+                )?;
+            } else {
+                encode_qkv_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.normed_hidden,
+                    weights.qkv_offset,
+                    q_norm_offset,
+                    k_norm_offset,
+                    v_gamma_offset,
+                    scratch.q_offset,
+                    scratch.k_offset,
+                    scratch.v_offset,
+                    num_tokens,
+                    hidden,
+                    dims.head_dim,
+                    dims.num_heads,
+                    dims.num_kv_heads,
+                    0,
+                    q_dim,
+                    q_dim + kv_dim,
+                    dims.rms_eps,
+                    weights.v_norm_offset.is_some(),
+                    "qkv_headwise_norm",
+                )?;
+            }
+        } else {
+            encode_gemm_headwise_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                weights.qkv_offset,
+                q_norm_offset,
+                scratch.q_offset,
+                num_tokens,
+                hidden,
+                dims.head_dim,
+                dims.num_heads,
+                0,
+                dims.rms_eps,
+                "q_norm",
+            )?;
+        }
+        if trace.is_some() && !debug_skip.skip_kv_projection {
             encode_gemm_headwise_rmsnorm(
                 &cmd_buf,
                 pipelines,
@@ -713,7 +1090,7 @@ pub unsafe fn metal_encode_forward_layer(
             )?;
         }
     } else {
-        encode_gemm(
+        encode_gemm_with_output(
             &cmd_buf,
             pipelines,
             buf,
@@ -725,6 +1102,8 @@ pub unsafe fn metal_encode_forward_layer(
             hidden,
             1.0,
             0.0,
+            false,
+            allow_prefill_mma,
         )?;
 
         encode_split_qkv(
@@ -847,8 +1226,10 @@ pub unsafe fn metal_encode_forward_layer(
         }
     }
 
-    // 5. RoPE: apply partial RoPE to Q and K
-    {
+    // 5. RoPE: apply partial RoPE to Q and K. The normal Gemma 4 path fuses
+    // this into QKV projection/norm above; keep the standalone encoder for
+    // trace/debug/fallback paths.
+    if !use_fused_qkv_rope_cache {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
@@ -926,8 +1307,10 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    // 6. KV cache write
-    if !debug_skip.skip_local_kv_cache_write {
+    // 6. KV cache write. The normal Gemma 4 path fuses this into QKV
+    // projection/norm above; keep the standalone encoder for trace/debug/
+    // fallback paths.
+    if !use_fused_qkv_rope_cache && !debug_skip.skip_local_kv_cache_write {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
             rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::MetalUnavailable,
@@ -982,9 +1365,9 @@ pub unsafe fn metal_encode_forward_layer(
                     },
                 )
             })?;
-            let use_reduction = supports_attention_decode_reduction(dims);
-            let pso = pipelines.get(if use_reduction {
-                "attention_decode_reduction_f16"
+            let use_online = supports_attention_decode_online(dims);
+            let pso = pipelines.get(if use_online {
+                "attention_decode_online_f16"
             } else {
                 "attention_decode_f16"
             })?;
@@ -1030,6 +1413,11 @@ pub unsafe fn metal_encode_forward_layer(
                 4,
                 12,
             );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.attention_window as *const _ as *mut _),
+                4,
+                13,
+            );
             let total_heads = num_tokens * dims.num_heads;
             let groups = MTLSize {
                 width: total_heads as usize,
@@ -1037,7 +1425,7 @@ pub unsafe fn metal_encode_forward_layer(
                 depth: 1,
             };
             let tpg = MTLSize {
-                width: if use_reduction { 256 } else { 1 },
+                width: if use_online { 32 } else { 1 },
                 height: 1,
                 depth: 1,
             };
@@ -1059,7 +1447,13 @@ pub unsafe fn metal_encode_forward_layer(
                     },
                 )
             })?;
-            let pso = pipelines.get("attention_prefill_f16")?;
+            let use_simd =
+                trace.is_none() && supports_gemma4_prefill_simd_attention(pipelines, dims);
+            let pso = pipelines.get(if use_simd {
+                "attention_prefill_simdgroup_f16"
+            } else {
+                "attention_prefill_f16"
+            })?;
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
             encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
@@ -1070,45 +1464,51 @@ pub unsafe fn metal_encode_forward_layer(
             if let Some(cu_off) = meta.cu_seqlens_offset {
                 encoder.setBuffer_offset_atIndex(Some(buf), cu_off, 6);
             }
+            encoder.setBuffer_offset_atIndex(Some(buf), meta.positions_offset, 7);
             encoder.setBytes_length_atIndex(
                 std::ptr::NonNull::new_unchecked(&total_q as *const _ as *mut _),
-                4,
-                7,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&batch_size as *const _ as *mut _),
                 4,
                 8,
             );
             encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
+                std::ptr::NonNull::new_unchecked(&batch_size as *const _ as *mut _),
                 4,
                 9,
             );
             encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
+                std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
                 4,
                 10,
             );
             encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
+                std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
                 4,
                 11,
             );
             encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
+                std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
                 4,
                 12,
             );
             encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _),
+                std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
                 4,
                 13,
             );
             encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
+                std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _),
                 4,
                 14,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
+                4,
+                15,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&dims.attention_window as *const _ as *mut _),
+                4,
+                16,
             );
             let groups = MTLSize {
                 width: total_q as usize,
@@ -1116,11 +1516,15 @@ pub unsafe fn metal_encode_forward_layer(
                 depth: 1,
             };
             let tpg = MTLSize {
-                width: 1,
+                width: if use_simd { 32 } else { 1 },
                 height: 1,
                 depth: 1,
             };
-            encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+            if use_simd {
+                encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+            } else {
+                encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+            }
             encoder.endEncoding();
         }
     }
@@ -1139,7 +1543,7 @@ pub unsafe fn metal_encode_forward_layer(
     // 8. O projection, post-attention norm, then residual add.
     let attn_addition_offset = if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
         if let Some(trace) = trace {
-            encode_gemm(
+            encode_gemm_with_output(
                 &cmd_buf,
                 pipelines,
                 buf,
@@ -1151,6 +1555,8 @@ pub unsafe fn metal_encode_forward_layer(
                 q_dim,
                 1.0,
                 0.0,
+                false,
+                allow_prefill_mma,
             )?;
         }
         encode_gemm_rmsnorm(
@@ -1166,6 +1572,7 @@ pub unsafe fn metal_encode_forward_layer(
             q_dim,
             dims.rms_eps,
             "post_attn_norm",
+            allow_prefill_mma,
         )?;
         if let Some(trace) = trace {
             encode_trace_copy(
@@ -1180,7 +1587,7 @@ pub unsafe fn metal_encode_forward_layer(
         }
         scratch.normed_hidden
     } else {
-        encode_gemm(
+        encode_gemm_with_output(
             &cmd_buf,
             pipelines,
             buf,
@@ -1192,6 +1599,8 @@ pub unsafe fn metal_encode_forward_layer(
             q_dim,
             1.0,
             0.0,
+            false,
+            allow_prefill_mma,
         )?;
         if let Some(trace) = trace {
             encode_trace_copy(
@@ -1246,9 +1655,15 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    // 11. Gate||Up projection: normed_hidden × W_gate_up → gate_up_out
+    // 11. Dense FFN branch: Gate||Up projection, GELU, Down projection.
     let two_inter = 2 * dims.intermediate;
-    encode_gemm(
+    let has_per_layer_input_branch = dims.ple_dim > 0
+        && weights.per_layer_inputs_offset.is_some()
+        && weights.per_layer_input_gate_offset.is_some()
+        && weights.per_layer_projection_offset.is_some()
+        && weights.post_per_layer_input_norm_offset.is_some();
+    let mut layer_scale_fused = false;
+    encode_gemm_with_output(
         &cmd_buf,
         pipelines,
         buf,
@@ -1260,6 +1675,8 @@ pub unsafe fn metal_encode_forward_layer(
         hidden,
         1.0,
         0.0,
+        false,
+        allow_prefill_mma,
     )?;
     if let Some(trace) = trace {
         encode_trace_copy(
@@ -1273,45 +1690,16 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    // 12. GELU(gate) * up → activated
-    {
-        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-            rvllm_core::RvllmError::apple(
-                rvllm_core::AppleError::MetalUnavailable,
-                rvllm_core::AppleCtx {
-                    backend: "metal",
-                    op: "gelu_mul",
-                    device: "apple-silicon",
-                },
-            )
-        })?;
-        let pso = pipelines.get("gelu_mul_f16")?;
-        encoder.setComputePipelineState(pso);
-        encoder.setBuffer_offset_atIndex(Some(buf), scratch.gate_up_out, 0);
-        encoder.setBuffer_offset_atIndex(Some(buf), scratch.activated, 1);
-        encoder.setBytes_length_atIndex(
-            std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
-            4,
-            2,
-        );
-        encoder.setBytes_length_atIndex(
-            std::ptr::NonNull::new_unchecked(&dims.intermediate as *const _ as *mut _),
-            4,
-            3,
-        );
-        let groups = MTLSize {
-            width: num_tokens as usize,
-            height: dims.intermediate as usize,
-            depth: 1,
-        };
-        let tpg = MTLSize {
-            width: 1,
-            height: 1,
-            depth: 1,
-        };
-        encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
-        encoder.endEncoding();
-    }
+    encode_gelu_mul(
+        &cmd_buf,
+        pipelines,
+        buf,
+        scratch.gate_up_out,
+        scratch.activated,
+        num_tokens,
+        dims.intermediate,
+        "gelu_mul",
+    )?;
     if let Some(trace) = trace {
         encode_trace_copy(
             &cmd_buf,
@@ -1324,37 +1712,236 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    // 13. Down projection, post-FFN norm, then residual add.
-    let ffn_addition_offset = if let Some(post_ff_norm_offset) = weights.post_ff_norm_offset {
-        if let Some(trace) = trace {
-            encode_gemm(
+    let ffn_addition_offset = if let Some(moe) = weights.moe {
+        let Some(topk_indices_offset) = scratch.moe_topk_indices else {
+            return Err(missing_moe_scratch("moe_topk_indices"));
+        };
+        let Some(topk_weights_offset) = scratch.moe_topk_weights else {
+            return Err(missing_moe_scratch("moe_topk_weights"));
+        };
+        let Some(moe_activated_offset) = scratch.moe_activated else {
+            return Err(missing_moe_scratch("moe_activated"));
+        };
+        let Some(moe_out_offset) = scratch.moe_out else {
+            return Err(missing_moe_scratch("moe_out"));
+        };
+        if dims.moe_num_experts == 0 || dims.moe_top_k == 0 || dims.moe_intermediate == 0 {
+            return Err(missing_moe_scratch("moe_dims"));
+        }
+
+        // HF Gemma4 MoE keeps the dense MLP and adds a separately routed
+        // expert branch. Dense branch uses post_feedforward_layernorm_1.
+        if let Some(projection) = weights.low_bit_down_proj {
+            encode_low_bit_down_projection(
+                &cmd_buf,
+                pipelines,
+                buf,
+                projection,
+                scratch.activated,
+                scratch.mlp_out,
+                num_tokens,
+            )?;
+            encode_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                scratch.normed_hidden,
+                moe.post_ff1_norm_offset,
+                hidden,
+                dims.rms_eps,
+                num_tokens,
+                "post_ff1_norm_low_bit",
+            )?;
+        } else {
+            encode_gemm_rmsnorm(
                 &cmd_buf,
                 pipelines,
                 buf,
                 scratch.activated,
-                weights.down_proj_offset,
-                trace.after_ffn_branch,
+                native_down_proj_offset,
+                moe.post_ff1_norm_offset,
+                scratch.normed_hidden,
                 num_tokens,
                 hidden,
                 dims.intermediate,
-                1.0,
-                0.0,
+                dims.rms_eps,
+                "post_ff1_norm",
+                allow_prefill_mma,
             )?;
         }
-        encode_gemm_rmsnorm(
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                trace.after_ffn_branch,
+                num_tokens * hidden,
+                "trace_after_ffn_branch",
+            )?;
+        }
+
+        encode_moe_router_topk(
             &cmd_buf,
             pipelines,
             buf,
-            scratch.activated,
-            weights.down_proj_offset,
-            post_ff_norm_offset,
-            scratch.normed_hidden,
+            residual_offset,
+            moe.router_proj_offset,
+            moe.router_scale_offset,
+            moe.router_per_expert_scale_offset,
+            topk_indices_offset,
+            topk_weights_offset,
             num_tokens,
             hidden,
-            dims.intermediate,
+            dims.moe_num_experts,
+            dims.moe_top_k,
             dims.rms_eps,
-            "post_ff_norm",
         )?;
+        encode_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            residual_offset,
+            scratch.mlp_out,
+            moe.pre_ff2_norm_offset,
+            hidden,
+            dims.rms_eps,
+            num_tokens,
+            "pre_ff2_norm",
+        )?;
+        encode_moe_expert_gate_up(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.mlp_out,
+            moe.expert_gate_up_offset,
+            topk_indices_offset,
+            topk_weights_offset,
+            moe_activated_offset,
+            num_tokens,
+            hidden,
+            dims.moe_num_experts,
+            dims.moe_top_k,
+            dims.moe_intermediate,
+        )?;
+        encode_moe_expert_down(
+            &cmd_buf,
+            pipelines,
+            buf,
+            moe_activated_offset,
+            moe.expert_down_offset,
+            topk_indices_offset,
+            moe_out_offset,
+            num_tokens,
+            hidden,
+            dims.moe_num_experts,
+            dims.moe_top_k,
+            dims.moe_intermediate,
+        )?;
+        encode_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            moe_out_offset,
+            moe_out_offset,
+            moe.post_ff2_norm_offset,
+            hidden,
+            dims.rms_eps,
+            num_tokens,
+            "post_ff2_norm",
+        )?;
+
+        // Sum the normalized dense and expert branches, apply the final
+        // post_feedforward_layernorm, then add the result to the residual.
+        encode_residual_add_rmsnorm(
+            &cmd_buf,
+            pipelines,
+            buf,
+            scratch.normed_hidden,
+            moe_out_offset,
+            scratch.mlp_out,
+            weights
+                .post_ff_norm_offset
+                .unwrap_or(weights.mlp_norm_offset),
+            hidden,
+            dims.rms_eps,
+            num_tokens,
+            None,
+            0,
+        )?;
+        if let Some(trace) = trace {
+            encode_trace_copy(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                trace.after_post_feedforward_layernorm,
+                num_tokens * hidden,
+                "trace_after_post_feedforward_layernorm",
+            )?;
+        }
+        scratch.mlp_out
+    } else if let Some(post_ff_norm_offset) = weights.post_ff_norm_offset {
+        if let Some(projection) = weights.low_bit_down_proj {
+            let raw_output = trace
+                .map(|trace| trace.after_ffn_branch)
+                .unwrap_or(scratch.mlp_out);
+            encode_low_bit_down_projection(
+                &cmd_buf,
+                pipelines,
+                buf,
+                projection,
+                scratch.activated,
+                raw_output,
+                num_tokens,
+            )?;
+            encode_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                raw_output,
+                scratch.normed_hidden,
+                post_ff_norm_offset,
+                hidden,
+                dims.rms_eps,
+                num_tokens,
+                "post_ff_norm_low_bit",
+            )?;
+        } else {
+            if let Some(trace) = trace {
+                encode_gemm_with_output(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.activated,
+                    native_down_proj_offset,
+                    trace.after_ffn_branch,
+                    num_tokens,
+                    hidden,
+                    dims.intermediate,
+                    1.0,
+                    0.0,
+                    false,
+                    allow_prefill_mma,
+                )?;
+            }
+            encode_gemm_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.activated,
+                native_down_proj_offset,
+                post_ff_norm_offset,
+                scratch.normed_hidden,
+                num_tokens,
+                hidden,
+                dims.intermediate,
+                dims.rms_eps,
+                "post_ff_norm",
+                allow_prefill_mma,
+            )?;
+        }
         if let Some(trace) = trace {
             encode_trace_copy(
                 &cmd_buf,
@@ -1368,19 +1955,33 @@ pub unsafe fn metal_encode_forward_layer(
         }
         scratch.normed_hidden
     } else {
-        encode_gemm(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.activated,
-            weights.down_proj_offset,
-            scratch.mlp_out,
-            num_tokens,
-            hidden,
-            dims.intermediate,
-            1.0,
-            0.0,
-        )?;
+        if let Some(projection) = weights.low_bit_down_proj {
+            encode_low_bit_down_projection(
+                &cmd_buf,
+                pipelines,
+                buf,
+                projection,
+                scratch.activated,
+                scratch.mlp_out,
+                num_tokens,
+            )?;
+        } else {
+            encode_gemm_with_output(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.activated,
+                native_down_proj_offset,
+                scratch.mlp_out,
+                num_tokens,
+                hidden,
+                dims.intermediate,
+                1.0,
+                0.0,
+                false,
+                allow_prefill_mma,
+            )?;
+        }
         if let Some(trace) = trace {
             encode_trace_copy(
                 &cmd_buf,
@@ -1403,17 +2004,46 @@ pub unsafe fn metal_encode_forward_layer(
         }
         scratch.mlp_out
     };
-    encode_residual_add(
-        &cmd_buf,
-        pipelines,
-        buf,
-        residual_offset,
-        ffn_addition_offset,
-        num_tokens * hidden,
-        hidden,
-        None,
-        0,
-    )?;
+    if !has_per_layer_input_branch {
+        if let Some(layer_scalar_offset) = weights.layer_scalar_offset {
+            encode_residual_add_then_scale(
+                &cmd_buf,
+                pipelines,
+                buf,
+                residual_offset,
+                ffn_addition_offset,
+                num_tokens * hidden,
+                hidden,
+                layer_scalar_offset,
+                weights.layer_scalar_dim,
+            )?;
+            layer_scale_fused = true;
+        } else {
+            encode_residual_add(
+                &cmd_buf,
+                pipelines,
+                buf,
+                residual_offset,
+                ffn_addition_offset,
+                num_tokens * hidden,
+                hidden,
+                None,
+                0,
+            )?;
+        }
+    } else {
+        encode_residual_add(
+            &cmd_buf,
+            pipelines,
+            buf,
+            residual_offset,
+            ffn_addition_offset,
+            num_tokens * hidden,
+            hidden,
+            None,
+            0,
+        )?;
+    }
 
     if let (
         Some(per_layer_inputs_offset),
@@ -1426,7 +2056,7 @@ pub unsafe fn metal_encode_forward_layer(
         weights.per_layer_projection_offset,
         weights.post_per_layer_input_norm_offset,
     ) {
-        if dims.ple_dim > 0 {
+        if has_per_layer_input_branch {
             if let Some(trace) = trace {
                 if let Some(per_layer_input) = trace.per_layer_input {
                     encode_trace_copy_ple_layer(
@@ -1442,7 +2072,7 @@ pub unsafe fn metal_encode_forward_layer(
                     )?;
                 }
             }
-            encode_gemm(
+            encode_gemm_with_output(
                 &cmd_buf,
                 pipelines,
                 buf,
@@ -1454,6 +2084,8 @@ pub unsafe fn metal_encode_forward_layer(
                 hidden,
                 1.0,
                 0.0,
+                false,
+                allow_prefill_mma,
             )?;
             if let Some(trace) = trace {
                 if let Some(per_layer_input_gate) = trace.per_layer_input_gate {
@@ -1481,7 +2113,7 @@ pub unsafe fn metal_encode_forward_layer(
             )?;
             if let Some(trace) = trace {
                 if let Some(per_layer_projection) = trace.per_layer_projection {
-                    encode_gemm(
+                    encode_gemm_with_output(
                         &cmd_buf,
                         pipelines,
                         buf,
@@ -1493,6 +2125,8 @@ pub unsafe fn metal_encode_forward_layer(
                         dims.ple_dim,
                         1.0,
                         0.0,
+                        false,
+                        allow_prefill_mma,
                     )?;
                 }
             }
@@ -1509,6 +2143,7 @@ pub unsafe fn metal_encode_forward_layer(
                 dims.ple_dim,
                 dims.rms_eps,
                 "post_per_layer_input_norm",
+                allow_prefill_mma,
             )?;
             if let Some(trace) = trace {
                 if let Some(post_per_layer_input_norm) = trace.post_per_layer_input_norm {
@@ -1523,30 +2158,47 @@ pub unsafe fn metal_encode_forward_layer(
                     )?;
                 }
             }
-            encode_residual_add(
-                &cmd_buf,
-                pipelines,
-                buf,
-                residual_offset,
-                scratch.normed_hidden,
-                num_tokens * hidden,
-                hidden,
-                None,
-                0,
-            )?;
+            if let Some(layer_scalar_offset) = weights.layer_scalar_offset {
+                encode_residual_add_then_scale(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    residual_offset,
+                    scratch.normed_hidden,
+                    num_tokens * hidden,
+                    hidden,
+                    layer_scalar_offset,
+                    weights.layer_scalar_dim,
+                )?;
+                layer_scale_fused = true;
+            } else {
+                encode_residual_add(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    residual_offset,
+                    scratch.normed_hidden,
+                    num_tokens * hidden,
+                    hidden,
+                    None,
+                    0,
+                )?;
+            }
         }
     }
 
-    encode_layer_scale(
-        &cmd_buf,
-        pipelines,
-        buf,
-        residual_offset,
-        num_tokens * hidden,
-        hidden,
-        weights.layer_scalar_offset,
-        weights.layer_scalar_dim,
-    )?;
+    if !layer_scale_fused {
+        encode_layer_scale(
+            &cmd_buf,
+            pipelines,
+            buf,
+            residual_offset,
+            num_tokens * hidden,
+            hidden,
+            weights.layer_scalar_offset,
+            weights.layer_scalar_dim,
+        )?;
+    }
 
     Ok(())
 }
@@ -1656,6 +2308,329 @@ unsafe fn encode_trace_copy_ple_layer(
     Ok(())
 }
 
+fn missing_moe_scratch(name: &'static str) -> rvllm_core::RvllmError {
+    rvllm_core::RvllmError::apple(
+        rvllm_core::AppleError::FeatureNotAvailable {
+            backend: "metal",
+            op: name,
+        },
+        rvllm_core::AppleCtx {
+            backend: "metal",
+            op: "moe_scratch",
+            device: "apple-silicon",
+        },
+    )
+}
+
+fn validate_down_projection_sources(
+    native_offset: Option<usize>,
+    has_low_bit: bool,
+) -> Result<Option<usize>> {
+    match (native_offset, has_low_bit) {
+        (Some(offset), false) => Ok(Some(offset)),
+        (None, true) => Ok(None),
+        (Some(_), true) => Err(rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::InvalidWeightBlob {
+                reason: "layer has both native and low-bit down projection execution sources",
+            },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "down_projection_source",
+                device: "apple-silicon",
+            },
+        )),
+        (None, false) => Err(rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::InvalidWeightBlob {
+                reason: "layer has no down projection execution source",
+            },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "down_projection_source",
+                device: "apple-silicon",
+            },
+        )),
+    }
+}
+
+unsafe fn encode_gelu_mul(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    gate_up_offset: usize,
+    output_offset: usize,
+    num_tokens: u32,
+    intermediate: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("gelu_mul_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), gate_up_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&intermediate as *const _ as *mut _),
+        4,
+        3,
+    );
+    let groups = MTLSize {
+        width: num_tokens as usize,
+        height: intermediate as usize,
+        depth: 1,
+    };
+    // Each thread owns one independent element. Pack contiguous dimensions
+    // into full groups without changing arithmetic, indexing or rounding.
+    let tpg = MTLSize {
+        width: 1,
+        height: 256,
+        depth: 1,
+    };
+    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_moe_router_topk(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    hidden_offset: usize,
+    router_proj_offset: usize,
+    router_scale_offset: usize,
+    router_per_expert_scale_offset: usize,
+    topk_indices_offset: usize,
+    topk_weights_offset: usize,
+    num_tokens: u32,
+    hidden: u32,
+    num_experts: u32,
+    top_k: u32,
+    rms_eps: f32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "moe_router_topk",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let scalar_root_size = 1.0f32 / (hidden as f32).sqrt();
+    let pso = pipelines.get("moe_router_topk_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), hidden_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), router_proj_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), router_scale_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), router_per_expert_scale_offset, 3);
+    encoder.setBuffer_offset_atIndex(Some(buf), topk_indices_offset, 4);
+    encoder.setBuffer_offset_atIndex(Some(buf), topk_weights_offset, 5);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        7,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_experts as *const _ as *mut _),
+        4,
+        8,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&top_k as *const _ as *mut _),
+        4,
+        9,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&rms_eps as *const _ as *mut _),
+        4,
+        10,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&scalar_root_size as *const _ as *mut _),
+        4,
+        11,
+    );
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_moe_expert_gate_up(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    hidden_offset: usize,
+    expert_gate_up_offset: usize,
+    topk_indices_offset: usize,
+    topk_weights_offset: usize,
+    activated_offset: usize,
+    num_tokens: u32,
+    hidden: u32,
+    num_experts: u32,
+    top_k: u32,
+    intermediate: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "moe_expert_gate_up",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("moe_expert_gate_up_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), hidden_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), expert_gate_up_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), topk_indices_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), topk_weights_offset, 3);
+    encoder.setBuffer_offset_atIndex(Some(buf), activated_offset, 4);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_experts as *const _ as *mut _),
+        4,
+        7,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&top_k as *const _ as *mut _),
+        4,
+        8,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&intermediate as *const _ as *mut _),
+        4,
+        9,
+    );
+    encoder.dispatchThreads_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens as usize,
+            height: top_k as usize,
+            depth: intermediate as usize,
+        },
+        MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_moe_expert_down(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    activated_offset: usize,
+    expert_down_offset: usize,
+    topk_indices_offset: usize,
+    output_offset: usize,
+    num_tokens: u32,
+    hidden: u32,
+    num_experts: u32,
+    top_k: u32,
+    intermediate: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "moe_expert_down",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("moe_expert_down_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), activated_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), expert_down_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), topk_indices_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 3);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_experts as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&top_k as *const _ as *mut _),
+        4,
+        7,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&intermediate as *const _ as *mut _),
+        4,
+        8,
+    );
+    encoder.dispatchThreads_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens as usize,
+            height: hidden as usize,
+            depth: 1,
+        },
+        MTLSize {
+            width: 1,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    Ok(())
+}
+
 unsafe fn encode_rmsnorm(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
@@ -1692,56 +2667,6 @@ unsafe fn encode_rmsnorm(
         std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
         4,
         4,
-    );
-    let tpg = MTLSize {
-        width: 256,
-        height: 1,
-        depth: 1,
-    };
-    let groups = MTLSize {
-        width: num_tokens as usize,
-        height: 1,
-        depth: 1,
-    };
-    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
-    encoder.endEncoding();
-    Ok(())
-}
-
-unsafe fn encode_rmsnorm_unit(
-    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
-    pipelines: &PipelineCache,
-    buf: &ProtocolObject<dyn MTLBuffer>,
-    input_offset: usize,
-    output_offset: usize,
-    hidden: u32,
-    eps: f32,
-    num_tokens: u32,
-    op: &'static str,
-) -> Result<()> {
-    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-        rvllm_core::RvllmError::apple(
-            rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx {
-                backend: "metal",
-                op,
-                device: "apple-silicon",
-            },
-        )
-    })?;
-    let pso = pipelines.get("rmsnorm_unit_f16")?;
-    encoder.setComputePipelineState(pso);
-    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
-    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
-        4,
-        2,
-    );
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
-        4,
-        3,
     );
     let tpg = MTLSize {
         width: 256,
@@ -1816,62 +2741,6 @@ unsafe fn encode_headwise_rmsnorm(
     Ok(())
 }
 
-unsafe fn encode_headwise_rmsnorm_unit(
-    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
-    pipelines: &PipelineCache,
-    buf: &ProtocolObject<dyn MTLBuffer>,
-    input_offset: usize,
-    output_offset: usize,
-    head_dim: u32,
-    num_heads: u32,
-    eps: f32,
-    num_tokens: u32,
-    op: &'static str,
-) -> Result<()> {
-    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-        rvllm_core::RvllmError::apple(
-            rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx {
-                backend: "metal",
-                op,
-                device: "apple-silicon",
-            },
-        )
-    })?;
-    let pso = pipelines.get("rmsnorm_headwise_unit_f16")?;
-    encoder.setComputePipelineState(pso);
-    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
-    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&head_dim as *const _ as *mut _),
-        4,
-        2,
-    );
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
-        4,
-        3,
-    );
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&num_heads as *const _ as *mut _),
-        4,
-        4,
-    );
-    let groups = MTLSize {
-        width: num_tokens.saturating_mul(num_heads) as usize,
-        height: 1,
-        depth: 1,
-    };
-    let tpg = MTLSize {
-        width: 256,
-        height: 1,
-        depth: 1,
-    };
-    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
-    encoder.endEncoding();
-    Ok(())
-}
-
 unsafe fn encode_gemm_rmsnorm(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
@@ -1885,7 +2754,42 @@ unsafe fn encode_gemm_rmsnorm(
     k: u32,
     eps: f32,
     op: &'static str,
+    allow_prefill_mma: bool,
 ) -> Result<()> {
+    if metal_gemm_rmsnorm_encoder_count(m, n, k, allow_prefill_mma) == 2 {
+        // The fused kernel has one threadgroup per token. That is useful for
+        // large-prefill locality, but severely under-occupies decode-sized
+        // projections. Materializing the dtype-rounded projection, from GEMV
+        // or native matrix instructions, preserves the two-op model boundary.
+        encode_gemm_with_output(
+            cmd_buf,
+            pipelines,
+            buf,
+            a_offset,
+            b_offset,
+            c_offset,
+            m,
+            n,
+            k,
+            1.0,
+            0.0,
+            false,
+            allow_prefill_mma,
+        )?;
+        return encode_rmsnorm(
+            cmd_buf,
+            pipelines,
+            buf,
+            c_offset,
+            c_offset,
+            gamma_offset,
+            n,
+            eps,
+            m,
+            op,
+        );
+    }
+
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,
@@ -2089,6 +2993,250 @@ unsafe fn encode_gemm_headwise_rmsnorm_unit(
     Ok(())
 }
 
+unsafe fn encode_qkv_headwise_rmsnorm(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    a_offset: usize,
+    b_offset: usize,
+    q_gamma_offset: usize,
+    k_gamma_offset: usize,
+    v_gamma_offset: usize,
+    q_offset: usize,
+    k_offset: usize,
+    v_offset: usize,
+    m: u32,
+    hidden_k: u32,
+    head_dim: u32,
+    num_q_heads: u32,
+    num_kv_heads: u32,
+    q_row_offset: u32,
+    k_row_offset: u32,
+    v_row_offset: u32,
+    eps: f32,
+    v_has_gamma: bool,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("qkv_headwise_rmsnorm_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), q_gamma_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), k_gamma_offset, 3);
+    encoder.setBuffer_offset_atIndex(Some(buf), v_gamma_offset, 4);
+    encoder.setBuffer_offset_atIndex(Some(buf), q_offset, 5);
+    encoder.setBuffer_offset_atIndex(Some(buf), k_offset, 6);
+    encoder.setBuffer_offset_atIndex(Some(buf), v_offset, 7);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
+        4,
+        8,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden_k as *const _ as *mut _),
+        4,
+        9,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&head_dim as *const _ as *mut _),
+        4,
+        10,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_q_heads as *const _ as *mut _),
+        4,
+        11,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_kv_heads as *const _ as *mut _),
+        4,
+        12,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&q_row_offset as *const _ as *mut _),
+        4,
+        13,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&k_row_offset as *const _ as *mut _),
+        4,
+        14,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&v_row_offset as *const _ as *mut _),
+        4,
+        15,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        16,
+    );
+    let v_has_gamma_u32 = u32::from(v_has_gamma);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&v_has_gamma_u32 as *const _ as *mut _),
+        4,
+        17,
+    );
+    let groups = MTLSize {
+        width: m.saturating_mul(num_q_heads + 2 * num_kv_heads) as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_qkv_headwise_rmsnorm_rope_cache(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    a_offset: usize,
+    b_offset: usize,
+    q_gamma_offset: usize,
+    k_gamma_offset: usize,
+    v_gamma_offset: usize,
+    q_offset: usize,
+    k_offset: usize,
+    v_offset: usize,
+    cos_offset: usize,
+    sin_offset: usize,
+    positions_offset: usize,
+    slot_mapping_offset: usize,
+    kv_cache_k_offset: usize,
+    kv_cache_v_offset: usize,
+    m: u32,
+    hidden_k: u32,
+    head_dim: u32,
+    num_q_heads: u32,
+    num_kv_heads: u32,
+    q_row_offset: u32,
+    k_row_offset: u32,
+    v_row_offset: u32,
+    eps: f32,
+    v_has_gamma: bool,
+    rope_dim: u32,
+    op: &'static str,
+    projected_f32: bool,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get(if projected_f32 {
+        "qkv_projected_rmsnorm_rope_cache_f16"
+    } else {
+        "qkv_headwise_rmsnorm_rope_cache_f16"
+    })?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), q_gamma_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), k_gamma_offset, 3);
+    encoder.setBuffer_offset_atIndex(Some(buf), v_gamma_offset, 4);
+    encoder.setBuffer_offset_atIndex(Some(buf), q_offset, 5);
+    encoder.setBuffer_offset_atIndex(Some(buf), k_offset, 6);
+    encoder.setBuffer_offset_atIndex(Some(buf), v_offset, 7);
+    encoder.setBuffer_offset_atIndex(Some(buf), cos_offset, 8);
+    encoder.setBuffer_offset_atIndex(Some(buf), sin_offset, 9);
+    encoder.setBuffer_offset_atIndex(Some(buf), positions_offset, 10);
+    encoder.setBuffer_offset_atIndex(Some(buf), slot_mapping_offset, 11);
+    encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_k_offset, 12);
+    encoder.setBuffer_offset_atIndex(Some(buf), kv_cache_v_offset, 13);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
+        4,
+        14,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden_k as *const _ as *mut _),
+        4,
+        15,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&head_dim as *const _ as *mut _),
+        4,
+        16,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_q_heads as *const _ as *mut _),
+        4,
+        17,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_kv_heads as *const _ as *mut _),
+        4,
+        18,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&q_row_offset as *const _ as *mut _),
+        4,
+        19,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&k_row_offset as *const _ as *mut _),
+        4,
+        20,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&v_row_offset as *const _ as *mut _),
+        4,
+        21,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&eps as *const _ as *mut _),
+        4,
+        22,
+    );
+    let v_has_gamma_u32 = u32::from(v_has_gamma);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&v_has_gamma_u32 as *const _ as *mut _),
+        4,
+        23,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&rope_dim as *const _ as *mut _),
+        4,
+        24,
+    );
+    let groups = MTLSize {
+        width: m.saturating_mul(num_q_heads + 2 * num_kv_heads) as usize,
+        height: 1,
+        depth: 1,
+    };
+    let tpg = MTLSize {
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
 unsafe fn encode_residual_add(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
@@ -2140,8 +3288,68 @@ unsafe fn encode_residual_add(
         height: 1,
         depth: 1,
     };
+    // Each thread owns one independent element. Pack contiguous dimensions
+    // into full groups without changing arithmetic, indexing or rounding.
     let tpg = MTLSize {
-        width: 1,
+        width: 256,
+        height: 1,
+        depth: 1,
+    };
+    encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+unsafe fn encode_residual_add_then_scale(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    residual_offset: usize,
+    addition_offset: usize,
+    count: u32,
+    hidden: u32,
+    layer_scalar_offset: usize,
+    layer_scalar_dim: u32,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "residual_add_then_scale",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("residual_add_then_scale_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), addition_offset, 1);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&count as *const _ as *mut _),
+        4,
+        2,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBuffer_offset_atIndex(Some(buf), layer_scalar_offset, 4);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&layer_scalar_dim as *const _ as *mut _),
+        4,
+        5,
+    );
+    let groups = MTLSize {
+        width: count as usize,
+        height: 1,
+        depth: 1,
+    };
+    // Each thread owns one independent element. Pack contiguous dimensions
+    // into full groups without changing arithmetic, indexing or rounding.
+    let tpg = MTLSize {
+        width: 256,
         height: 1,
         depth: 1,
     };
@@ -2263,8 +3471,10 @@ unsafe fn encode_layer_scale(
         height: 1,
         depth: 1,
     };
+    // Each thread owns one independent element. Pack contiguous dimensions
+    // into full groups without changing arithmetic, indexing or rounding.
     let tpg = MTLSize {
-        width: 1,
+        width: 256,
         height: 1,
         depth: 1,
     };
@@ -2545,6 +3755,274 @@ unsafe fn encode_logits_head(
     Ok(())
 }
 
+unsafe fn encode_final_rmsnorm(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    num_tokens: u32,
+    hidden: u32,
+    rms_eps: f32,
+    residual_offset: usize,
+    final_norm_offset: usize,
+    normed_hidden_offset: usize,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "final_sample_rmsnorm_encoder",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("rmsnorm_f16")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), normed_hidden_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), final_norm_offset, 2);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&rms_eps as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_final_lm_head_argmax_tiles(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+    softcap: f32,
+    normed_hidden_offset: usize,
+    lm_head_offset: usize,
+    partial_max_offset: usize,
+    partial_idx_offset: usize,
+) -> Result<u32> {
+    let tile_count = vocab.div_ceil(8);
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "final_lm_head_argmax_tiles_encoder",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let use_batch8 =
+        supports_batch8_final_sample(pipelines.gpu_family(), num_tokens, hidden, vocab);
+    let use_batch4 =
+        supports_batch4_final_sample(pipelines.gpu_family(), num_tokens, hidden, vocab);
+    let pso = pipelines.get(if use_batch8 {
+        "final_lm_head_argmax_tiles_batch8_f16"
+    } else if use_batch4 {
+        "final_lm_head_argmax_tiles_batch4_f16"
+    } else {
+        "final_lm_head_argmax_tiles_f16"
+    })?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), normed_hidden_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), lm_head_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), partial_max_offset, 2);
+    encoder.setBuffer_offset_atIndex(Some(buf), partial_idx_offset, 3);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&vocab as *const _ as *mut _),
+        4,
+        5,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&hidden as *const _ as *mut _),
+        4,
+        6,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&tile_count as *const _ as *mut _),
+        4,
+        7,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&softcap as *const _ as *mut _),
+        4,
+        8,
+    );
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        if use_batch8 || use_batch4 {
+            MTLSize {
+                width: tile_count as usize,
+                height: 1,
+                depth: 1,
+            }
+        } else {
+            MTLSize {
+                width: num_tokens as usize,
+                height: tile_count as usize,
+                depth: 1,
+            }
+        },
+        MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    Ok(tile_count)
+}
+
+unsafe fn encode_final_argmax_reduce(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    num_tokens: u32,
+    tile_count: u32,
+    partial_max_offset: usize,
+    partial_idx_offset: usize,
+    sampled_tokens_offset: usize,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "final_argmax_reduce_encoder",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    let pso = pipelines.get("final_argmax_reduce_f32")?;
+    encoder.setComputePipelineState(pso);
+    encoder.setBuffer_offset_atIndex(Some(buf), partial_max_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), partial_idx_offset, 1);
+    encoder.setBuffer_offset_atIndex(Some(buf), sampled_tokens_offset, 2);
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+        4,
+        3,
+    );
+    encoder.setBytes_length_atIndex(
+        std::ptr::NonNull::new_unchecked(&tile_count as *const _ as *mut _),
+        4,
+        4,
+    );
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens as usize,
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn metal_encode_finalize_sample(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    arena: &MetalBufferArena,
+    num_tokens: u32,
+    hidden: u32,
+    vocab: u32,
+    rms_eps: f32,
+    softcap: f32,
+    residual_offset: usize,
+    final_norm_offset: usize,
+    lm_head_offset: usize,
+    logits_offset: usize,
+    normed_hidden_offset: usize,
+    sampled_tokens_offset: usize,
+    partial_max_offset: usize,
+    partial_idx_offset: usize,
+) -> Result<()> {
+    if !supports_final_sample_tiles(num_tokens, hidden, vocab) {
+        return encode_logits_head(
+            cmd_buf,
+            pipelines,
+            arena,
+            num_tokens,
+            hidden,
+            vocab,
+            rms_eps,
+            softcap,
+            residual_offset,
+            final_norm_offset,
+            lm_head_offset,
+            logits_offset,
+            normed_hidden_offset,
+            sampled_tokens_offset,
+        );
+    }
+
+    let buf = arena.buffer_retained();
+    encode_final_rmsnorm(
+        cmd_buf,
+        pipelines,
+        buf,
+        num_tokens,
+        hidden,
+        rms_eps,
+        residual_offset,
+        final_norm_offset,
+        normed_hidden_offset,
+    )?;
+    let tile_count = encode_final_lm_head_argmax_tiles(
+        cmd_buf,
+        pipelines,
+        buf,
+        num_tokens,
+        hidden,
+        vocab,
+        softcap,
+        normed_hidden_offset,
+        lm_head_offset,
+        partial_max_offset,
+        partial_idx_offset,
+    )?;
+    encode_final_argmax_reduce(
+        cmd_buf,
+        pipelines,
+        buf,
+        num_tokens,
+        tile_count,
+        partial_max_offset,
+        partial_idx_offset,
+        sampled_tokens_offset,
+    )
+}
+
 /// Run final normalization + LM head projection + optional softcap + argmax.
 ///
 /// This path is intentionally non-allocating in the hot path; all buffers
@@ -2751,6 +4229,70 @@ unsafe fn encode_split_qkv(
 mod tests {
     use super::*;
 
+    #[test]
+    fn down_projection_execution_source_is_exactly_one() {
+        assert_eq!(
+            validate_down_projection_sources(Some(64), false).expect("native source"),
+            Some(64)
+        );
+        assert_eq!(
+            validate_down_projection_sources(None, true).expect("low-bit source"),
+            None
+        );
+        assert!(validate_down_projection_sources(Some(64), true).is_err());
+        assert!(validate_down_projection_sources(None, false).is_err());
+    }
+
+    #[test]
+    fn attention_window_start_preserves_full_attention_and_restored_prefixes() {
+        assert_eq!(attention_window_start(0, 0), 0);
+        assert_eq!(attention_window_start(4097, 0), 0);
+        assert_eq!(attention_window_start(17, 32), 0);
+        assert_eq!(attention_window_start(33, 32), 1);
+        // A chunk beginning at absolute position 96 still attends 65..=96;
+        // the lower bound must not be derived from its chunk-local offset.
+        assert_eq!(attention_window_start(97, 32), 65);
+    }
+
+    #[test]
+    fn decode_online_shape_gate_fails_closed_to_scalar_fallback() {
+        let supported = MetalLayerDims {
+            layer_idx: 0,
+            attention_window: 0,
+            num_tokens: 1,
+            hidden: 128,
+            num_layers: 1,
+            intermediate: 256,
+            num_heads: 4,
+            num_kv_heads: 2,
+            head_dim: 32,
+            moe_num_experts: 0,
+            moe_top_k: 0,
+            moe_intermediate: 0,
+            ple_dim: 0,
+            block_size: 32,
+            max_blocks_per_seq: 2,
+            num_blocks_total: 4,
+            rope_dim: 32,
+            rms_eps: 1e-6,
+            attn_scale: 1.0,
+            softcap: 0.0,
+        };
+        assert!(supports_attention_decode_online(&supported));
+
+        let mut oversized_head = supported;
+        oversized_head.head_dim = 257;
+        assert!(!supports_attention_decode_online(&oversized_head));
+
+        let mut invalid_gqa = supported;
+        invalid_gqa.num_heads = 3;
+        assert!(!supports_attention_decode_online(&invalid_gqa));
+
+        let mut missing_page_layout = supported;
+        missing_page_layout.max_blocks_per_seq = 0;
+        assert!(!supports_attention_decode_online(&missing_page_layout));
+    }
+
     fn attention_decode_reference(
         q: &[half::f16],
         k_cache: &[half::f16],
@@ -2764,6 +4306,7 @@ mod tests {
         block_size: u32,
         max_blocks: u32,
         scale: f32,
+        attention_window: u32,
     ) -> Vec<f32> {
         let num_seqs = num_seqs as usize;
         let num_heads = num_heads as usize;
@@ -2787,7 +4330,8 @@ mod tests {
                 }
 
                 let mut scores = vec![f32::NEG_INFINITY; ctx_len];
-                for t in 0..ctx_len {
+                let attention_start = attention_window_start(ctx_len as u32, attention_window);
+                for t in attention_start as usize..ctx_len {
                     let block_idx = t / block_size as usize;
                     let block_offset = t % block_size as usize;
                     let block_id = block_tables[seq * max_blocks as usize + block_idx];
@@ -2849,8 +4393,12 @@ mod tests {
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
+            moe_topk_indices: None,
+            moe_topk_weights: None,
+            moe_activated: None,
+            moe_out: None,
         };
-        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4).is_err());
+        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4, false).is_err());
     }
 
     #[test]
@@ -2865,8 +4413,12 @@ mod tests {
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
+            moe_topk_indices: None,
+            moe_topk_weights: None,
+            moe_activated: None,
+            moe_out: None,
         };
-        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4).is_err());
+        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4, false).is_err());
     }
 
     #[test]
@@ -2881,11 +4433,68 @@ mod tests {
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
+            moe_topk_indices: None,
+            moe_topk_weights: None,
+            moe_activated: None,
+            moe_out: None,
         };
         assert!(
-            validate_qkv_scratch_planar(&scratch, 1, 8, 4).is_ok(),
+            validate_qkv_scratch_planar(&scratch, 1, 8, 4, false).is_ok(),
             "non-overlapping planar scratch regions should be accepted"
         );
+    }
+
+    #[test]
+    fn qkv_scratch_planar_checks_the_fp32_projection_extent() {
+        let mut scratch = MetalScratch {
+            normed_hidden: 0,
+            qkv_out: 0,
+            q_offset: 32,
+            k_offset: 128,
+            v_offset: 160,
+            attn_out: 0,
+            gate_up_out: 0,
+            activated: 0,
+            mlp_out: 0,
+            moe_topk_indices: None,
+            moe_topk_weights: None,
+            moe_activated: None,
+            moe_out: None,
+        };
+        // Sixteen projection elements occupy 32 bytes in FP16, 64 in FP32.
+        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4, false).is_ok());
+        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4, true).is_err());
+        scratch.q_offset = 64;
+        assert!(validate_qkv_scratch_planar(&scratch, 1, 8, 4, true).is_ok());
+    }
+
+    #[test]
+    fn prefill_mma_limits_projection_shapes_and_output_storage() {
+        for m in [6, 8, 19, 20, 21, 28, 32, 63, 84, 230, 650, 1024] {
+            assert!(is_prefill_mma_shape(m, 8192, 3840, true));
+            assert!(is_prefill_mma_shape(m, 9216, 3840, true));
+            assert!(is_prefill_mma_shape(m, 30720, 3840, false));
+            for k in [4096, 8192, 15360] {
+                assert!(is_prefill_mma_shape(m, 3840, k, false));
+            }
+            // A QKV FP32 buffer and ordinary BF16 projection buffers cannot
+            // select each other's entry points based on dimensions alone.
+            assert!(!is_prefill_mma_shape(m, 8192, 3840, false));
+            assert!(!is_prefill_mma_shape(m, 30720, 3840, true));
+        }
+        for m in [0, 1, 5, 1025, u32::MAX] {
+            assert!(!is_prefill_mma_shape(m, 8192, 3840, true));
+            assert!(!is_prefill_mma_shape(m, 3840, 15360, false));
+        }
+        assert!(!is_prefill_mma_shape(21, 30719, 3840, false));
+        assert!(!is_prefill_mma_shape(21, 8192, 3839, true));
+        for m in [84, 230, 652, 1024] {
+            for k in [4096, 8192, 15360] {
+                assert_eq!(metal_gemm_rmsnorm_encoder_count(m, 3840, k, true), 2);
+                assert_eq!(metal_gemm_rmsnorm_encoder_count(m, 3840, k, false), 1);
+            }
+            assert_eq!(metal_gemm_rmsnorm_encoder_count(m, 2304, 9216, true), 1);
+        }
     }
 
     fn split_qkv_ref(
@@ -3093,6 +4702,132 @@ mod tests {
         assert_eq!(metal_finalize_logits_encoder_count(2, 4, 3, 30.0), 1);
         assert_eq!(metal_finalize_logits_encoder_count(2, 4, 257, 30.0), 3);
         assert_eq!(metal_finalize_logits_encoder_count(2, 4, 257, 0.0), 3);
+        assert_eq!(metal_finalize_sample_encoder_count(2, 4, 3), 1);
+        assert_eq!(metal_finalize_sample_encoder_count(2, 4, 257), 3);
+    }
+
+    #[test]
+    fn gemm_rmsnorm_policy_prefers_parallel_microbatch_path() {
+        assert_eq!(metal_gemm_rmsnorm_encoder_count(1, 2304, 9216, false), 2);
+        assert_eq!(metal_gemm_rmsnorm_encoder_count(19, 2304, 9216, false), 2);
+        assert_eq!(metal_gemm_rmsnorm_encoder_count(20, 2304, 9216, false), 1);
+        assert_eq!(metal_gemm_rmsnorm_encoder_count(1, 2304, 65_537, false), 1);
+    }
+
+    #[test]
+    fn batch8_projection_policy_is_shape_and_gpu_family_gated() {
+        assert!(!supports_batch8_gemm(
+            AppleGpuFamily::Apple9,
+            4,
+            2_304,
+            9_216
+        ));
+        assert!(supports_batch8_gemm(
+            AppleGpuFamily::Apple10,
+            8,
+            9_216,
+            2_304
+        ));
+        assert!(!supports_batch8_gemm(
+            AppleGpuFamily::Apple9,
+            1,
+            2_304,
+            9_216
+        ));
+        assert!(!supports_batch8_gemm(
+            AppleGpuFamily::Apple8,
+            8,
+            2_304,
+            9_216
+        ));
+        assert!(!supports_batch8_gemm(
+            AppleGpuFamily::Apple9,
+            8,
+            2_304,
+            9_215
+        ));
+        assert!(!supports_batch8_gemm(
+            AppleGpuFamily::Unknown,
+            8,
+            2_304,
+            9_216
+        ));
+        assert!(!supports_batch8_gemm(
+            AppleGpuFamily::Apple9,
+            8,
+            2_305,
+            9_216
+        ));
+    }
+
+    #[test]
+    fn batch8_lm_head_policy_is_shape_and_gpu_family_gated() {
+        assert!(supports_batch8_final_sample(
+            AppleGpuFamily::Apple9,
+            8,
+            2_304,
+            262_144
+        ));
+        assert!(!supports_batch8_final_sample(
+            AppleGpuFamily::Apple9,
+            1,
+            2_304,
+            262_144
+        ));
+        assert!(!supports_batch8_final_sample(
+            AppleGpuFamily::Apple9,
+            4,
+            2_304,
+            262_144
+        ));
+        assert!(!supports_batch8_final_sample(
+            AppleGpuFamily::Apple8,
+            8,
+            2_304,
+            262_144
+        ));
+        assert!(!supports_batch8_final_sample(
+            AppleGpuFamily::Apple9,
+            8,
+            2_303,
+            262_144
+        ));
+    }
+
+    #[test]
+    fn batch4_lm_head_policy_is_shape_and_gpu_family_gated() {
+        assert!(supports_batch4_final_sample(
+            AppleGpuFamily::Apple9,
+            4,
+            2_304,
+            262_144
+        ));
+        assert!(supports_batch4_final_sample(
+            AppleGpuFamily::Apple10,
+            4,
+            2_304,
+            262_144
+        ));
+        assert!(!supports_batch4_final_sample(
+            AppleGpuFamily::Apple9,
+            8,
+            2_304,
+            262_144
+        ));
+        for num_tokens in 1..4 {
+            assert!(!supports_batch4_final_sample(
+                AppleGpuFamily::Apple9,
+                num_tokens,
+                2_304,
+                262_144
+            ));
+        }
+        assert!(!supports_batch4_final_sample(
+            AppleGpuFamily::Apple8,
+            4,
+            2_304,
+            262_144
+        ));
     }
 
     #[test]
@@ -3320,28 +5055,32 @@ mod tests {
         pipelines.compile_all(&ctx)?;
         let mut arena = MetalBufferArena::new(ctx.device(), 64 * 1024)?;
 
-        const NUM_TOKENS: u32 = 1;
+        const NUM_TOKENS: u32 = 2;
         const NUM_HEADS: u32 = 2;
         const NUM_KV_HEADS: u32 = 1;
         const HEAD_DIM: u32 = 8;
         const BLOCK_SIZE: u32 = 4;
-        const MAX_BLOCKS_PER_SEQ: u32 = 1;
+        const MAX_BLOCKS_PER_SEQ: u32 = 2;
+        const PHYSICAL_BLOCKS: u32 = 3;
         let attn_scale = 1.0 / (HEAD_DIM as f32).sqrt();
+        let attention_window = 5u32;
 
         let q_dim = NUM_HEADS * HEAD_DIM;
         let kv_dim = NUM_KV_HEADS * HEAD_DIM;
 
-        let q: Vec<half::f16> = (0..q_dim)
+        let q: Vec<half::f16> = (0..NUM_TOKENS * q_dim)
             .map(|i| half::f16::from_f32(((i as f32) + 1.0) * 0.03))
             .collect();
-        let k_cache: Vec<half::f16> = (0..(BLOCK_SIZE * kv_dim) as usize)
+        let k_cache: Vec<half::f16> = (0..(PHYSICAL_BLOCKS * BLOCK_SIZE * kv_dim) as usize)
             .map(|i| half::f16::from_f32(((i as f32) + 1.0) * 0.01))
             .collect();
-        let v_cache: Vec<half::f16> = (0..(BLOCK_SIZE * kv_dim) as usize)
+        let v_cache: Vec<half::f16> = (0..(PHYSICAL_BLOCKS * BLOCK_SIZE * kv_dim) as usize)
             .map(|i| half::f16::from_f32(((i as f32) + 1.0) * 0.02))
             .collect();
-        let block_tables = vec![0_i32];
-        let context_lens = vec![4_i32];
+        // Both requests share physical block 2 as their immutable prefix.
+        // Their logical tails live in different and non-contiguous pages.
+        let block_tables = vec![2_i32, 0, 2, 1];
+        let context_lens = vec![7_i32, 8_i32];
 
         let half_bytes = std::mem::size_of::<half::f16>();
         let i32_bytes = std::mem::size_of::<i32>();
@@ -3407,7 +5146,7 @@ mod tests {
                 },
             )
         })?;
-        let pso = pipelines.get("attention_decode_reduction_f16")?;
+        let pso = pipelines.get("attention_decode_online_f16")?;
         unsafe {
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), q_region.offset, 0);
@@ -3451,6 +5190,11 @@ mod tests {
                 4,
                 12,
             );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::new_unchecked(&attention_window as *const _ as *mut _),
+                4,
+                13,
+            );
 
             let groups = MTLSize {
                 width: (NUM_TOKENS * NUM_HEADS) as usize,
@@ -3458,7 +5202,7 @@ mod tests {
                 depth: 1,
             };
             let tpg = MTLSize {
-                width: 256,
+                width: 32,
                 height: 1,
                 depth: 1,
             };
@@ -3481,6 +5225,7 @@ mod tests {
             BLOCK_SIZE,
             MAX_BLOCKS_PER_SEQ,
             attn_scale,
+            attention_window,
         );
 
         let got = unsafe {
@@ -3491,6 +5236,38 @@ mod tests {
         }
         Ok(())
     }
+}
+
+unsafe fn encode_low_bit_down_projection(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    projection: MetalLowBitProjectionOffsets,
+    activation_offset: usize,
+    output_offset: usize,
+    num_tokens: u32,
+) -> Result<()> {
+    projection
+        .encode(
+            cmd_buf,
+            pipelines,
+            buf,
+            activation_offset,
+            output_offset,
+            num_tokens as usize,
+        )
+        .map_err(|_| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit down projection encoding failed",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_down_projection",
+                    device: "apple-silicon",
+                },
+            )
+        })
 }
 
 /// Encode a GEMM operation into the command buffer.
@@ -3507,6 +5284,28 @@ unsafe fn encode_gemm(
     alpha: f32,
     beta: f32,
 ) -> Result<()> {
+    encode_gemm_with_output(
+        cmd_buf, pipelines, buf, a_offset, b_offset, c_offset, m, n, k, alpha, beta, false, false,
+    )
+}
+
+/// The FP32 output mode is used only for the bounded QKV prefill projection.
+/// Its caller reserves four-byte scratch and checks separation from planar QKV.
+unsafe fn encode_gemm_with_output(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    a_offset: usize,
+    b_offset: usize,
+    c_offset: usize,
+    m: u32,
+    n: u32,
+    k: u32,
+    alpha: f32,
+    beta: f32,
+    output_f32: bool,
+    allow_prefill_mma: bool,
+) -> Result<()> {
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,
@@ -3517,8 +5316,22 @@ unsafe fn encode_gemm(
             },
         )
     })?;
-    let use_tiled = supports_tiled_gemm(m, n, k);
-    let pso = pipelines.get(if use_tiled {
+    let use_mma = allow_prefill_mma && is_prefill_mma_shape(m, n, k, output_f32);
+    let use_batch8 =
+        !use_mma && (output_f32 || supports_batch8_gemm(pipelines.gpu_family(), m, n, k));
+    let use_vec = !use_mma && !use_batch8 && supports_vec_gemm(m, n, k);
+    let use_tiled = !use_mma && !use_batch8 && !use_vec && supports_tiled_gemm(m, n, k);
+    let pso = pipelines.get(if use_mma && output_f32 {
+        "qkv_project_f32_mma32"
+    } else if use_mma {
+        "gemm_f16_mma32"
+    } else if output_f32 {
+        "qkv_project_f32_batch8"
+    } else if use_batch8 {
+        "gemm_f16_batch8"
+    } else if use_vec {
+        "gemm_f16_vec8"
+    } else if use_tiled {
         "gemm_f16_tiled16"
     } else {
         "gemm_f16"
@@ -3553,96 +5366,60 @@ unsafe fn encode_gemm(
         7,
     );
 
-    let tile_m: usize = if use_tiled { 16 } else { 8 };
-    let tile_n: usize = if use_tiled { 16 } else { 8 };
-    let groups_x = (m as usize + tile_m - 1) / tile_m;
-    let groups_y = (n as usize + tile_n - 1) / tile_n;
-    let groups = MTLSize {
-        width: groups_x,
-        height: groups_y,
-        depth: 1,
-    };
-    let tpg = MTLSize {
-        width: tile_m,
-        height: tile_n,
-        depth: 1,
-    };
-    encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
-    encoder.endEncoding();
-    Ok(())
-}
-
-/// Encode a GEMM + residual add operation.
-unsafe fn encode_gemm_residual(
-    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
-    pipelines: &PipelineCache,
-    buf: &ProtocolObject<dyn MTLBuffer>,
-    a_offset: usize,
-    b_offset: usize,
-    c_offset: usize,
-    residual_offset: usize,
-    m: u32,
-    n: u32,
-    k: u32,
-    layer_scalar_offset: Option<usize>,
-    layer_scalar_dim: u32,
-) -> Result<()> {
-    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-        rvllm_core::RvllmError::apple(
-            rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx {
-                backend: "metal",
-                op: "gemm_res_encode",
-                device: "apple-silicon",
+    let (groups, tpg) = if use_mma {
+        (
+            MTLSize {
+                width: (m as usize).div_ceil(32),
+                height: (n as usize).div_ceil(32),
+                depth: 1,
+            },
+            MTLSize {
+                width: 128,
+                height: 1,
+                depth: 1,
             },
         )
-    })?;
-    let pso = pipelines.get("gemm_residual_f16")?;
-    encoder.setComputePipelineState(pso);
-    encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
-    encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
-    encoder.setBuffer_offset_atIndex(Some(buf), c_offset, 2);
-    encoder.setBuffer_offset_atIndex(Some(buf), residual_offset, 3);
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&m as *const _ as *mut _),
-        4,
-        4,
-    );
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&n as *const _ as *mut _),
-        4,
-        5,
-    );
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&k as *const _ as *mut _),
-        4,
-        6,
-    );
-    let layer_scalar_dim = if layer_scalar_offset.is_some() {
-        layer_scalar_dim
+    } else if use_batch8 {
+        (
+            MTLSize {
+                width: (m as usize).div_ceil(8),
+                height: (n as usize).div_ceil(8),
+                depth: 1,
+            },
+            MTLSize {
+                width: 256,
+                height: 1,
+                depth: 1,
+            },
+        )
+    } else if use_vec {
+        (
+            MTLSize {
+                width: m as usize,
+                height: (n as usize).div_ceil(8),
+                depth: 1,
+            },
+            MTLSize {
+                width: 256,
+                height: 1,
+                depth: 1,
+            },
+        )
     } else {
-        0
-    };
-    encoder.setBuffer_offset_atIndex(Some(buf), layer_scalar_offset.unwrap_or(residual_offset), 7);
-    encoder.setBytes_length_atIndex(
-        std::ptr::NonNull::new_unchecked(&layer_scalar_dim as *const _ as *mut _),
-        4,
-        8,
-    );
-
-    let tile_m: usize = 8;
-    let tile_n: usize = 8;
-    let groups_x = (m as usize + tile_m - 1) / tile_m;
-    let groups_y = (n as usize + tile_n - 1) / tile_n;
-    let groups = MTLSize {
-        width: groups_x,
-        height: groups_y,
-        depth: 1,
-    };
-    let tpg = MTLSize {
-        width: tile_m,
-        height: tile_n,
-        depth: 1,
+        let tile_m: usize = if use_tiled { 16 } else { 8 };
+        let tile_n: usize = if use_tiled { 16 } else { 8 };
+        (
+            MTLSize {
+                width: (m as usize).div_ceil(tile_m),
+                height: (n as usize).div_ceil(tile_n),
+                depth: 1,
+            },
+            MTLSize {
+                width: tile_m,
+                height: tile_n,
+                depth: 1,
+            },
+        )
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();

@@ -1,0 +1,47 @@
+{
+  "schema": "rvllm.native_ane_comparison_plan.v1",
+  "state": "predeclared-no-results",
+  "queue": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-fair",
+  "qualification_then_bounded_cache_repair": true,
+  "repair_reason": "ANE cache purge handling observed; obsolete archives reclaimed and disk headroom improved from 11 to31GiB. One explicit repair, no automatic retries.",
+  "order": [
+    "10-A-ane",
+    "11-B-native",
+    "12-B-native",
+    "13-A-ane"
+  ],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": 1,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_experiment_queue-v3"
+    ],
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ]
+  },
+  "warmups": 2,
+  "measured_requests": 7,
+  "prompt_tokens": 84,
+  "output_tokens": 10,
+  "decode_steps": 9,
+  "phase_metrics": "Per-process medians after two warmups. Decode includes host sampling in both paths; ANE prefill plus KV import separately. Phase sums exclude some frontend/report I/O.",
+  "acceptance": "Same actual prompt/output IDs and work counts, stable complete sampled stratum, strict zero-compile ANE, all GPU offload logs reviewed for native path. Outer A median decode drift over5percent makes ABBA inconclusive. Two adjacent pairs remain exploratory, not universal performance.",
+  "precision_note": "ANE uses ordinary Google BF16 checkpoint with INT8 FFNs and FP16 other ANE matrices; native-kit backend uses Google's official native-QAT Q4_0 GGUF with Q6_K embeddings. Different coefficients/precision, not an isolated hardware comparison. No four-bit ANE implementation is involved.",
+  "baseline_scope": "Native-kit current pinned llama.cpp backend through safe Rust wrappers, not full native-kit frontend request layer."
+}

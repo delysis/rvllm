@@ -1,0 +1,127 @@
+{
+  "all_programs_available_at_visit": true,
+  "claim": "Serial, bounded, fresh-process cache visits; availability can change. Does not prove simultaneous residency or numerical inference.",
+  "error": null,
+  "expected_programs": 162,
+  "global_context_capacity": 1024,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "operation": "prepare",
+  "parts": [
+    {
+      "part": "qkv",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-fair-v2/results/01-cache-preparation/backend/qkv/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 8,
+        "journal_events": {
+          "cache_hit": 40,
+          "cache_miss": 8,
+          "cached_source_staged": 40,
+          "compile_begin": 8,
+          "compile_completed": 8,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "output",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-fair-v2/results/01-cache-preparation/backend/output/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 6,
+        "journal_events": {
+          "cache_hit": 42,
+          "cache_miss": 6,
+          "cached_source_staged": 42,
+          "compile_begin": 6,
+          "compile_completed": 6,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "ffn-int8",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-fair-v2/results/01-cache-preparation/backend/ffn-int8/report.json",
+      "validated": {
+        "available": 48,
+        "compiler_calls": 2,
+        "journal_events": {
+          "cache_hit": 46,
+          "cache_miss": 2,
+          "cached_source_staged": 46,
+          "compile_begin": 2,
+          "compile_completed": 2,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 48,
+          "load_completed": 48,
+          "request_created": 48,
+          "source_data_removed": 48,
+          "source_weights_removed": 48,
+          "surfaces_created": 48,
+          "unload_begin": 48,
+          "unload_completed": 48,
+          "unload_returned": 48
+        },
+        "missing": [],
+        "successful_unloads": 48
+      }
+    },
+    {
+      "part": "head-attention",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-fair-v2/results/01-cache-preparation/backend/head-attention/report.json",
+      "validated": {
+        "available": 18,
+        "compiler_calls": 1,
+        "journal_events": {
+          "cache_hit": 17,
+          "cache_miss": 1,
+          "cached_source_staged": 17,
+          "compile_begin": 1,
+          "compile_completed": 1,
+          "compile_requested": 18,
+          "descriptor_created": 18,
+          "load_begin": 18,
+          "load_completed": 18,
+          "request_created": 16,
+          "source_data_removed": 18,
+          "source_weights_removed": 16,
+          "surfaces_created": 16,
+          "unload_begin": 18,
+          "unload_completed": 18,
+          "unload_returned": 18
+        },
+        "missing": [],
+        "successful_unloads": 18
+      }
+    }
+  ],
+  "schema": "rvllm.ane_cache_batch.v1",
+  "status": "complete",
+  "verified_available_programs": 162,
+  "verified_compiler_calls": 17
+}

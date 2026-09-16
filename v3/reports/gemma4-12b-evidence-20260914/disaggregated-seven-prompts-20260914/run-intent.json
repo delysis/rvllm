@@ -1,0 +1,51 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/disaggregated-seven-prompts-20260914/inference",
+    "--capture-layer-states",
+    "false",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-capital-steps16.json",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-arithmetic.json",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-addition.json",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-opposite.json",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-gold.json",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-cpu.json"
+  ],
+  "binary_sha256": "4a14f14c2276781c4f075960c696c17acc588b34550d95f39a990dcec91906e1",
+  "metallib_sha256": "24086ed59b6e079a5e5ac219036c90eb81db1d489a72fdd356d4c79433a4a762",
+  "reference_sha256": {
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-capital-steps16.json": "195d79a60539d125c879db41f00d9b9ded9deb0c643f5ba0e217e7a8a5e98ce7",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json": "57a3fee12427f25c35f62fead004130ee56e3c30994b7e9196335964a2b249cd",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-arithmetic.json": "561c8e7470a3e4414c56a2290017cafbbf18ff7e04b40bda05f26ab5a07bc378",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-addition.json": "68c296bafe8bb03b153dfce9cceb34ad6bcdae637cebf9712beb463d715a1de5",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-opposite.json": "14ca2afa299c3e0d7755a7047288c0fae7d2110b6573094b0b9ec272d19a7fb9",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-gold.json": "e8ffac634ceaac3660502449efe6c959e5f69ed31f7be924b173affdae3e8c33",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-cpu.json": "729e9db8e0d96f3281e2d4e8c13c81b9fcf359cc6b17164b42dd2e9026f9ca93"
+  },
+  "source_sha256": {
+    "crates/rvllm-runtime/src/bin/rvllm_disaggregated_infer.rs": "a195e2544df41b7ed43c38dc24aa9fef37534348fb22afbf1c22a57b4c566ae3",
+    "crates/rvllm-runtime/src/gemma_ane_decode.rs": "35c50064d11192a01479918c4121a9dba0cde37f3b4b9474bb815995a2a71775",
+    "crates/rvllm-runtime/src/ane_prefill.rs": "db28725678c814458fdecea5284c601d059c13d80cbbcf814fda4a66719366a5",
+    "crates/rvllm-apple/src/ane_attention.rs": "c2c1221f52f3243156f4c4a276837a82d46d0b8ad2694a0367c0970608ed7ee5",
+    "crates/rvllm-apple/src/ane_attention_layout.rs": "5c4833b49a066c5d7bfe8dfb641fbb6b20d064a161388f72d7c06bafb010154e",
+    "crates/rvllm-apple/src/ane_dynamic_ffn.rs": "9d1e12f46112c4351df2b060486984e5e4d4509b6c6ab016cbf7d02f0e1bd5b0",
+    "crates/rvllm-apple/src/ane_ffn_layout.rs": "32bcccff82806656d6c12b46b2b62576e753a20e084811b869cda51fb1ad6337",
+    "crates/rvllm-apple/src/ane_linear.rs": "916ee6d3e1024e29d606f0397086aa173d58a3f2936fadb2a35923e80b04d913",
+    "crates/rvllm-apple/src/gemma_decode_math.rs": "aaac1585c9215fe82982fe184c33aba9c75f41a477e457e5151489f14f0069b2",
+    "crates/rvllm-apple-ane-sys/src/in_memory.rs": "ac7f2335bb7db28be213a1e23bd23a6f5ce12d05f37fa39d6de68d8aa85c852e"
+  },
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "load_before": "13:22  up  5:03, 1 user, load averages: 12.79 44.34 64.53\n",
+  "scope": "Seven fresh Metal prefills and up to 24 actual 48-layer ANE continuation steps, comparing all 31 output IDs. One 115-program initialization reused across cases. Journaling and layer-state capture disabled. Timings remain contended application timings with machine load recorded. Stop on first error or complete-case mismatch."
+}

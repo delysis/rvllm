@@ -1,0 +1,59 @@
+{
+  "after": [],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--inspect-ane-cache",
+      "all-int8",
+      "--context-capacity",
+      "1024",
+      "--ane-compile-budget",
+      "0",
+      "--output-dir",
+      "{output}/backend"
+    ],
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/rvllm_disaggregated_infer",
+      "sha256": "aa015ca92c735e36c1da17d258031a4c743823a4b29feacb5ba46cbbc9f3c605"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": false,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 0,
+    "power_source": "battery",
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ],
+    "thermal_state": null
+  },
+  "id": "46-frozen-baseline-cache-inspection",
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    }
+  ],
+  "max_run_seconds": 600,
+  "max_wait_seconds": 86400,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 10,
+  "validator": null
+}

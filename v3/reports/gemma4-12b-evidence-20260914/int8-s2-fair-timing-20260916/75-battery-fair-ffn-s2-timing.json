@@ -1,0 +1,91 @@
+{
+  "after": [
+    "34-battery-fair-analysis",
+    "73-s2-fair-build"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--report",
+      "{output}/probe.json",
+      "--layer",
+      "0",
+      "--mode",
+      "int8",
+      "--compare",
+      "true",
+      "--int8-batch",
+      "2",
+      "--ane-compile-budget",
+      "0",
+      "--cache",
+      "require",
+      "--input-fp16",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16",
+      "--exploratory-fair",
+      "true"
+    ],
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-s2-fair-timing-20260916/rvllm_ane_int8_probe-fair",
+      "sha256": "112ad00a44aa860b37846f2bebfc6ff6bd09a5a20bc52dbc243039be506e2ba0"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": false,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 0,
+    "power_source": "battery",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_experiment_queue-v3",
+      "rvllm_ane_int8_probe"
+    ],
+    "thermal_state": 1
+  },
+  "id": "75-battery-fair-ffn-s2-timing",
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16",
+      "sha256": "17f5439b339ba2e5c17ea8d2241bbae1824c61ae05728597cf9d88d48ff6883d"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/30-batch-ffn-qualification/probe.json",
+      "sha256": "344ed6c6b029be94f2d031084362bcf9827c7ee7d72e5a6fbbc3e9331d5429f4"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/batch-recovery-v8/results/66-batch-output-capture-after-s2-recovery/probe.json",
+      "sha256": "b7bcafbe8476dd51ed17d6e006f6419a32c0b1246aeadc77ad174a9014a83ec3"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-s2-fair-timing-20260916/frozen-build-receipt.json",
+      "sha256": "880a4c54a545156ac661eeb05ca1d8064be4db948b912ecc012302435ed5c3b1"
+    }
+  ],
+  "max_run_seconds": 300,
+  "max_wait_seconds": 86400,
+  "purpose": "timing",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 120,
+  "validator": null
+}

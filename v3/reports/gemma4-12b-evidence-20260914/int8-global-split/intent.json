@@ -1,0 +1,17 @@
+{
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "layer": 5,
+  "inputs": [
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-04.fp16",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-04.fp16",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-04.fp16"
+  ],
+  "binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-global-split/rvllm_runtime-split-probe",
+  "binary_sha256": "0b1741140318c7b91db5f9e03d1331b1c626f9c0726cdedbfb2b42d279140592",
+  "test": "gemma_ane_decode::int8_projection_tests::global_split::checkpoint_global_split_int8_query",
+  "candidate": "INT8 Q8192 followed by original FP16 shared K/V512; two existing single I/O requests",
+  "baseline": "original packed FP16 QKV8704; one existing single I/O request",
+  "qualification_compiler_limit": 2,
+  "qualification_evaluations": 9,
+  "timing_policy": "strict cache; sampled eligible matched controls only"
+}

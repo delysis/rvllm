@@ -1,0 +1,70 @@
+{
+  "after": [
+    "15-ac-int8-head",
+    "40-metal-bk64-qualification"
+  ],
+  "command": {
+    "args": [
+      "layer_forward::prefill_mma_tile_tests::native_bf16_bk64_checks_precision_and_m84_ffn",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "env": {
+      "RVLLM_METAL_MMA_TILE_REPORT": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-only-v5/results/16-ac-metal-bk64/metal.json",
+      "RVLLM_METAL_QKV_MODEL_DIR": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
+    },
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-next-controls-20260916/rvllm_metal-bk64-probe",
+      "sha256": "ac41de10b18a68164934c3f569c63c4c742538caf472e3870c00654284ea5711"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_experiment_queue-v3"
+    ],
+    "thermal_state": 0
+  },
+  "id": "16-ac-metal-bk64",
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-next-controls-20260916/source/prefill_mma_tile_tests.rs",
+      "sha256": "22e0bed84a81e7b29fa5a445057bba36e964d41a5674527593633caa7f037ccb"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-next-controls-20260916/source/kernels.rs",
+      "sha256": "7c09f0095e96a57651374379d8031c1880d2ada564fa05096d68b3bb84d250cc"
+    }
+  ],
+  "max_run_seconds": 600,
+  "max_wait_seconds": 86400,
+  "purpose": "timing",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 120,
+  "validator": null
+}

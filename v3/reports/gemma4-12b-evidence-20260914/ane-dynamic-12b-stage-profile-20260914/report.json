@@ -1,0 +1,90 @@
+{
+  "ane_execution_verified": true,
+  "claim": "Direct ANE projection with CPU numerical reference; not full-model decode or Metal-to-ANE handoff",
+  "compile_load_ms": 286.3125,
+  "cpu_or_gpu_fallback": false,
+  "diagnostic_journal_enabled": false,
+  "effective_weight_gb_per_s": 18.18125772934023,
+  "ffn_mode": "dynamic_resident_weights_explicit_gelu",
+  "ffn_prefix": "model.language_model.layers.0.mlp",
+  "input_channels": 3840,
+  "iterations": 12,
+  "logical_spatial": 1,
+  "max_abs_error": 0.0038565718568861485,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "numerical_inputs_checked": 3,
+  "operation": "gemma_gated_ffn",
+  "output_channels": 3840,
+  "prepare_includes_weight_packing": true,
+  "projection_including_io_median_ms": 19.464792000000003,
+  "projection_including_io_min_ms": 17.324042000000002,
+  "projection_including_io_p95_ms": 42.79175,
+  "relative_l2_error": 0.0027558858937981085,
+  "schema": "rvllm.ane_projection_probe.v1",
+  "stage_samples": [
+    {
+      "evaluate_ms": 30.785333,
+      "input_ms": 0.042125,
+      "output_ms": 0.011042
+    },
+    {
+      "evaluate_ms": 17.336042,
+      "input_ms": 0.041291999999999995,
+      "output_ms": 0.010916
+    },
+    {
+      "evaluate_ms": 17.284750000000003,
+      "input_ms": 0.033791999999999996,
+      "output_ms": 0.011291
+    },
+    {
+      "evaluate_ms": 17.317791,
+      "input_ms": 0.039792,
+      "output_ms": 0.011667
+    },
+    {
+      "evaluate_ms": 42.754708,
+      "input_ms": 0.024375,
+      "output_ms": 0.011667
+    },
+    {
+      "evaluate_ms": 17.287917,
+      "input_ms": 0.043958000000000004,
+      "output_ms": 0.010416
+    },
+    {
+      "evaluate_ms": 19.909667,
+      "input_ms": 0.020458,
+      "output_ms": 0.011291
+    },
+    {
+      "evaluate_ms": 20.180667,
+      "input_ms": 0.043833,
+      "output_ms": 0.011916000000000001
+    },
+    {
+      "evaluate_ms": 17.303875,
+      "input_ms": 0.029625,
+      "output_ms": 0.010541
+    },
+    {
+      "evaluate_ms": 17.282625,
+      "input_ms": 0.024083999999999998,
+      "output_ms": 0.016
+    },
+    {
+      "evaluate_ms": 20.569750000000003,
+      "input_ms": 0.046542,
+      "output_ms": 0.011375
+    },
+    {
+      "evaluate_ms": 19.411333,
+      "input_ms": 0.039916999999999994,
+      "output_ms": 0.012583
+    }
+  ],
+  "tensor": "model.language_model.layers.0.mlp.gate_proj.weight",
+  "weight_bytes": 353894400,
+  "weight_f16_sha256": "2def7d665d86b519f8c50369914aa30c07f7d73282fa0633b1a47f15a17ffdd3",
+  "weight_source": "checkpoint"
+}

@@ -1,0 +1,111 @@
+{
+  "affine_source_bytes": 177016768,
+  "candidate_layout": "stacked",
+  "candidate_outputs_bit_identical_to_affine": true,
+  "candidate_outputs_bit_identical_to_dense": false,
+  "candidate_source_bytes": 177016640,
+  "claim": "One FFN with identical reconstructed INT8 weights and FP16 activations. No full-model speedup or physical bandwidth claim. Timing pairs require eligible identical sampled controls; CPU cycles exclude ANE.",
+  "compiler_calls": 1,
+  "driver_journal_enabled": true,
+  "exact_weight_parity": true,
+  "input_sources": [
+    {
+      "synthetic_pattern": 0
+    },
+    {
+      "synthetic_pattern": 1
+    },
+    {
+      "synthetic_pattern": 2
+    },
+    {
+      "file": "reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16",
+      "sha256": "17f5439b339ba2e5c17ea8d2241bbae1824c61ae05728597cf9d88d48ff6883d"
+    }
+  ],
+  "layer": 0,
+  "models_dropped": 3,
+  "pairs": [],
+  "per_input_backend_errors": [
+    {
+      "affine_candidate_dense": [
+        {
+          "elements": 3840,
+          "max_abs_error": 0.0020513534545898438,
+          "relative_l2_error": 0.000729895151807726
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.0020513534545898438,
+          "relative_l2_error": 0.000729895151807726
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.0029597878456115723,
+          "relative_l2_error": 0.0025245532988407513
+        }
+      ]
+    },
+    {
+      "affine_candidate_dense": [
+        {
+          "elements": 3840,
+          "max_abs_error": 0.002964019775390625,
+          "relative_l2_error": 0.0007264463537267231
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.002964019775390625,
+          "relative_l2_error": 0.0007264463537267231
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.003445670008659363,
+          "relative_l2_error": 0.0025893192889822796
+        }
+      ]
+    },
+    {
+      "affine_candidate_dense": [
+        {
+          "elements": 3840,
+          "max_abs_error": 0.0021917223930358887,
+          "relative_l2_error": 0.0008624094196506917
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.0021917223930358887,
+          "relative_l2_error": 0.0008624094196506917
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.0030853338539600372,
+          "relative_l2_error": 0.0030736261801774796
+        }
+      ]
+    },
+    {
+      "affine_candidate_dense": [
+        {
+          "elements": 3840,
+          "max_abs_error": 0.038753509521484375,
+          "relative_l2_error": 0.0005147550571750353
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.038753509521484375,
+          "relative_l2_error": 0.0005147550571750353
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.016994476318359375,
+          "relative_l2_error": 0.00031796362852685165
+        }
+      ]
+    }
+  ],
+  "reconstructed_fp16_sha256": "9ec1b72edfad27068add34669a960d971f6a52cf982db9170e451cafe158bfe5",
+  "schema": "rvllm.exact_int8_layout_ane.v1",
+  "timing_preflight": null,
+  "trials": []
+}

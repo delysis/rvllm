@@ -1,0 +1,38 @@
+{
+  "schema": "rvllm.stacked_int8_full_model_replay.v1",
+  "binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/rvllm_disaggregated_infer",
+  "binary_sha256": "aa015ca92c735e36c1da17d258031a4c743823a4b29feacb5ba46cbbc9f3c605",
+  "signing_identifier": "rvllm_disaggregated_infer-9d1f7275eb5937c9",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "context_capacity": 1024,
+  "prepare_part": "ffn-int8-stacked",
+  "prepare_maximum_compiler_calls": 48,
+  "check_plan": "static-int8-stacked-ffn-checked",
+  "check_requires_journal": true,
+  "check_compile_budget": 0,
+  "expected_resident_programs": 210,
+  "expected_comparisons_per_layer": 13,
+  "expected_total_ffn_comparisons": 624,
+  "expected_evaluations": 3328,
+  "reference_sequence": [
+    "crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+    "reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/copy96.json",
+    "reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/recall768.json",
+    "crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json"
+  ],
+  "execution_order": "--interleave true",
+  "metallib": "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+  "metallib_sha256": "6efa8fbed39f6d36fb83fe823da1a5d0733c22970b96b431439be27a07617705",
+  "precision": "Original per-output INT8 integers/scales and FP16 activations; no four-bit work",
+  "candidate_only_run": {
+    "plan": "static-int8-stacked-ffn-cached",
+    "reference": "reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/copy96.json",
+    "journal_required_for_this_receipt": true,
+    "compile_budget": 0,
+    "expected_programs": 162,
+    "expected_ane_steps": 9,
+    "expected_evaluations": 1872,
+    "expected_output_token_count": 10
+  },
+  "claim": "Expected qualification work; completion is established by the separate reports and audited journals. Default runtime/HTTP plan unchanged. Journaled execution is not a timing benchmark."
+}

@@ -1,0 +1,37 @@
+{
+  "model_revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "derivation": "Tensor shapes read from local official safetensors header; bytes assume FP16 once per token and exclude compiled expansion, KV, activation and dispatch costs. No timing measured.",
+  "groups": {
+    "embedding_and_tied_head": {
+      "parameters": 1006632960,
+      "tensors": 1,
+      "fp16_bytes": 2013265920
+    },
+    "other": {
+      "parameters": 769840,
+      "tensors": 337,
+      "fp16_bytes": 1539680
+    },
+    "ffn": {
+      "parameters": 8493465600,
+      "tensors": 144,
+      "fp16_bytes": 16986931200
+    },
+    "attention_projections": {
+      "parameters": 2406481920,
+      "tensors": 184,
+      "fp16_bytes": 4812963840
+    }
+  },
+  "projection_and_head_bytes_per_token": 23813160960,
+  "hypothetical_bandwidth_only_ms_at_115GB_s": 207.07096486956522,
+  "historical_l0_ffn_ms_times_48": 147.686016,
+  "historical_ffn_only_tokens_per_second_ceiling": 6.771121783121295,
+  "packed_attention_capacity_budget": {
+    "derivation": "Host PackedAttentionLayout byte formula; max global capacity limited by 32-token alignment and spatial=32+2*capacity<=65536. Sliding ring host implementation and quarantined wrapper integration passed host tests; no ANE validation.",
+    "max_supported_capacity": 32736,
+    "all_48_layers_at_max_capacity_input_bytes": 11275072512,
+    "sliding_40_layers_at_1024_plus_global_8_at_max_input_bytes": 878610432,
+    "saved_input_bytes_if_sliding_ring_is_implemented": 10396462080
+  }
+}

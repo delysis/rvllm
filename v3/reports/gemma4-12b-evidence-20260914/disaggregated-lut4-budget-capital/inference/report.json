@@ -1,0 +1,345 @@
+{
+  "all_references_match": true,
+  "ane_cache_policy": "reuse-with-compile-budget",
+  "ane_compile_budget": 16,
+  "ane_compile_budget_used": 9,
+  "ane_execution_verified": true,
+  "ane_prepare_ms": 79552.499625,
+  "ane_weight_plan": "static-lut4-ffn-cached",
+  "cases": [
+    {
+      "ane_cache_import_ms": 14.875542000000001,
+      "ane_decode_steps": 1,
+      "generated_text": "Paris",
+      "generated_tokens": [
+        50429,
+        106
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 2281.978417,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        40654,
+        607,
+        1164,
+        506,
+        5279,
+        529,
+        7001,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+      "steps": [
+        {
+          "attention_ms": 635.2704560000002,
+          "ffn_ms": 723.863751,
+          "host_ms": 41.895256999999475,
+          "input_token": 50429,
+          "layer_states": [
+            {
+              "file": "ane-position-21-layer-00.fp16",
+              "layer": 0,
+              "sha256": "5533960c88647900c6bfffe2eaf6fd4b49d1f50b702b01ae01993375624d7ae6"
+            },
+            {
+              "file": "ane-position-21-layer-01.fp16",
+              "layer": 1,
+              "sha256": "d4462581e9f0635b4298ed7256f3506423884a7c7c47ac072c6c7d68663474c9"
+            },
+            {
+              "file": "ane-position-21-layer-02.fp16",
+              "layer": 2,
+              "sha256": "76a29526c14a756520246f6ea44b92e5ed41e9fbe6f83800e861154e91e3dc09"
+            },
+            {
+              "file": "ane-position-21-layer-03.fp16",
+              "layer": 3,
+              "sha256": "0bd939a8fd234a9c9a386848af6b76cc2704f64cab8cff479eda16521dfe8b1e"
+            },
+            {
+              "file": "ane-position-21-layer-04.fp16",
+              "layer": 4,
+              "sha256": "84902bf970b3c47f287e5514ff2eb03a546d9f8b79051bc4655cf1b2d795166a"
+            },
+            {
+              "file": "ane-position-21-layer-05.fp16",
+              "layer": 5,
+              "sha256": "506440b5b42bdda733b5624d0ea07ab1329bf949d635bb4aafb2cf962ba7daaf"
+            },
+            {
+              "file": "ane-position-21-layer-06.fp16",
+              "layer": 6,
+              "sha256": "fd3d6f9b8b8690601eab609e77787cac7466b6d847feac4785ddbe49389c0434"
+            },
+            {
+              "file": "ane-position-21-layer-07.fp16",
+              "layer": 7,
+              "sha256": "dda4c603482ab6e87bd14f50fe553496953261a718372537f2f56fd87ea846a0"
+            },
+            {
+              "file": "ane-position-21-layer-08.fp16",
+              "layer": 8,
+              "sha256": "1447c7d3d3a3d3f80545e843cd490309f79fcd9b92a18eefd198d6e6d3d52dd6"
+            },
+            {
+              "file": "ane-position-21-layer-09.fp16",
+              "layer": 9,
+              "sha256": "7fb7ca8cb8390d50a3dde16461e9f0646c5b8789e49e9748eb82639d03f09418"
+            },
+            {
+              "file": "ane-position-21-layer-10.fp16",
+              "layer": 10,
+              "sha256": "59458957b4167bccdb02cd945175c3f0c3325e76e4f3eaa0bff42262ccb8e1f0"
+            },
+            {
+              "file": "ane-position-21-layer-11.fp16",
+              "layer": 11,
+              "sha256": "da7eeeaff288ed92d9105554f0b00ee5cc81ef6991dd1bb251c8f0f6036ebcca"
+            },
+            {
+              "file": "ane-position-21-layer-12.fp16",
+              "layer": 12,
+              "sha256": "f2311fe82840abf5a5b82e45a2541d95e12c2006cebc6c66a57d2c8a5779bc8e"
+            },
+            {
+              "file": "ane-position-21-layer-13.fp16",
+              "layer": 13,
+              "sha256": "90299c948c5d6a3ff21e758046484791782789a6522656f087d488e4751889d7"
+            },
+            {
+              "file": "ane-position-21-layer-14.fp16",
+              "layer": 14,
+              "sha256": "5650084edc8f7f25eea8dcb30ccecc8a3d7e9c7c333510a8ca6f0a50f6094953"
+            },
+            {
+              "file": "ane-position-21-layer-15.fp16",
+              "layer": 15,
+              "sha256": "8e25a50d132f2229c5573ad35993e8c1484ae605ab1cc62c433a05d1266341e4"
+            },
+            {
+              "file": "ane-position-21-layer-16.fp16",
+              "layer": 16,
+              "sha256": "121465058c1cf7af961e96d41b1dbbeec1216af646d5c113d0be606696536979"
+            },
+            {
+              "file": "ane-position-21-layer-17.fp16",
+              "layer": 17,
+              "sha256": "55d889ef8593914a7aff7cfa81bc0828d2c38f0f809efe9d142832e913998b19"
+            },
+            {
+              "file": "ane-position-21-layer-18.fp16",
+              "layer": 18,
+              "sha256": "7de579f1c1550d05e1634c077d2a78b17a047bb18cd82da7dcb44d103bc08c56"
+            },
+            {
+              "file": "ane-position-21-layer-19.fp16",
+              "layer": 19,
+              "sha256": "0aba21ddfc77dcdcd49bebd1bd7c098ec7f39779b2481afc70fd341a145ecd42"
+            },
+            {
+              "file": "ane-position-21-layer-20.fp16",
+              "layer": 20,
+              "sha256": "44e3d15be7e7866b94e6266ee7f185b26bdfb2d738130514cf07db817306b75f"
+            },
+            {
+              "file": "ane-position-21-layer-21.fp16",
+              "layer": 21,
+              "sha256": "299dfae2ac042d2553bffa9cf94f7b9e3f4f6de7b2909a6c1cad05dab4d731ff"
+            },
+            {
+              "file": "ane-position-21-layer-22.fp16",
+              "layer": 22,
+              "sha256": "85c4a80ae36aab4019a4757479ce606cf4b7a2520f08e6f7ab79a752919d5ac3"
+            },
+            {
+              "file": "ane-position-21-layer-23.fp16",
+              "layer": 23,
+              "sha256": "85e6927ef6d11088771b4ad7f1e14000f2d8bed66729278435c581b1e28d8b05"
+            },
+            {
+              "file": "ane-position-21-layer-24.fp16",
+              "layer": 24,
+              "sha256": "09fe8983c88a86932881af022be30e4c46fccf2d2f8b5b3a60c0540f16ed3041"
+            },
+            {
+              "file": "ane-position-21-layer-25.fp16",
+              "layer": 25,
+              "sha256": "08c16dfd4ccb5b5f5466413abe88744dea24e57f27fe72b8c9a51be6317b36ea"
+            },
+            {
+              "file": "ane-position-21-layer-26.fp16",
+              "layer": 26,
+              "sha256": "724b9c32affb2230cdd062fd67fbdc81fe9a52775f77e97343ff430728d343f0"
+            },
+            {
+              "file": "ane-position-21-layer-27.fp16",
+              "layer": 27,
+              "sha256": "4904806717c215f1c9a7cff6cf7410ec167937a6ddc8e13608506c720c90d6f1"
+            },
+            {
+              "file": "ane-position-21-layer-28.fp16",
+              "layer": 28,
+              "sha256": "62c15fed24c60c691c92a125ab84b4b08cb17a73477809d905402d523f78bc90"
+            },
+            {
+              "file": "ane-position-21-layer-29.fp16",
+              "layer": 29,
+              "sha256": "6d1e47bffed0b3b3af4f6c15f9f797f9a5b1041476c3baea9fb6e609ef97130c"
+            },
+            {
+              "file": "ane-position-21-layer-30.fp16",
+              "layer": 30,
+              "sha256": "38670d7d7686bb6abe0fc43e1e1435c6c7cbedeff861902f661f2330d5430403"
+            },
+            {
+              "file": "ane-position-21-layer-31.fp16",
+              "layer": 31,
+              "sha256": "ce17b94c693a4dd38fa30c5e3fd83c2b4d7b03cac1d80a7d2bab1294ca32bbbc"
+            },
+            {
+              "file": "ane-position-21-layer-32.fp16",
+              "layer": 32,
+              "sha256": "35caca20dc46c8b2e583a74ff78894f8a0affe56512a2ce11f8917b752ca0240"
+            },
+            {
+              "file": "ane-position-21-layer-33.fp16",
+              "layer": 33,
+              "sha256": "96f739a71144e85a7e09d83b7a0d28333d6c0e9fe7fbb7545e4d391a44e8c0e9"
+            },
+            {
+              "file": "ane-position-21-layer-34.fp16",
+              "layer": 34,
+              "sha256": "28d4302052959312f5fc9f78bef5f1a0a56903999484116d585574d01151eaa5"
+            },
+            {
+              "file": "ane-position-21-layer-35.fp16",
+              "layer": 35,
+              "sha256": "d862ef6fefce09db3c939423637173ad9645c51195b8aa64043dbfbb0366dcb0"
+            },
+            {
+              "file": "ane-position-21-layer-36.fp16",
+              "layer": 36,
+              "sha256": "da4e87e6236891ac84077d2bcd29403ae860d270a76942c7497f896f5229a242"
+            },
+            {
+              "file": "ane-position-21-layer-37.fp16",
+              "layer": 37,
+              "sha256": "163df1e974b66462e89f33eb75e4ce8be3a460be53d6410bc919ad8255012511"
+            },
+            {
+              "file": "ane-position-21-layer-38.fp16",
+              "layer": 38,
+              "sha256": "9206c6aa25d4e59b9b06b56ed0f96e8e744abfbb2c62eb0b0e59b24601114598"
+            },
+            {
+              "file": "ane-position-21-layer-39.fp16",
+              "layer": 39,
+              "sha256": "dc39704734f78d75eb51835bd0f35721bef8f51328e8e4be5dc83ce26489b874"
+            },
+            {
+              "file": "ane-position-21-layer-40.fp16",
+              "layer": 40,
+              "sha256": "75281fb21988469207a42c440d83535bf696559e02665a2c7433ba4c5bb9e1f8"
+            },
+            {
+              "file": "ane-position-21-layer-41.fp16",
+              "layer": 41,
+              "sha256": "c51789b527207fac34e3021db784a6c73e176b93094e304c90dcf9d12df41042"
+            },
+            {
+              "file": "ane-position-21-layer-42.fp16",
+              "layer": 42,
+              "sha256": "5de58f96169d7e58a8aa36756bde8dc8aa2a162072de08b7cbe38444d10dd7bb"
+            },
+            {
+              "file": "ane-position-21-layer-43.fp16",
+              "layer": 43,
+              "sha256": "3e640a6dfe0fbd4a3adf147aaf029cd1e4885ee8f784f92ea7fd2bbc69b75375"
+            },
+            {
+              "file": "ane-position-21-layer-44.fp16",
+              "layer": 44,
+              "sha256": "531b533a5f0d772a468e17fb26107634404da97b9885f268b7affbefc6ee7970"
+            },
+            {
+              "file": "ane-position-21-layer-45.fp16",
+              "layer": 45,
+              "sha256": "c7cb8e5c2f7b2240e1cf6879af6dcde30344a9ff663b06908fb18d07a4a13fe2"
+            },
+            {
+              "file": "ane-position-21-layer-46.fp16",
+              "layer": 46,
+              "sha256": "f379f4995ac9f857707d209f792be4d32385188e887dc3ad4f4c2f9abd4306a7"
+            },
+            {
+              "file": "ane-position-21-layer-47.fp16",
+              "layer": 47,
+              "sha256": "3cb88f962f92c96f2e591e64b7f7baf725bb380baf64a6a9fbcebe9a7ab02ea5"
+            }
+          ],
+          "next_token": 106,
+          "output_ms": 608.2192470000002,
+          "position": 21,
+          "qkv_ms": 792.1393320000001,
+          "top_five": [
+            [
+              106,
+              21.59375
+            ],
+            [
+              101,
+              10.421875
+            ],
+            [
+              236748,
+              8.359375
+            ],
+            [
+              236743,
+              7.9453125
+            ],
+            [
+              655,
+              7.8515625
+            ]
+          ],
+          "total_ms": 3021.09825,
+          "vocabulary_ms": 219.71020699999994
+        }
+      ]
+    }
+  ],
+  "claim": "Metal prefill and first-token sampling, actual converted KV imported into all 48 ANE decode layers. Small norms, RoPE, residuals and sampling use CPU Rust. Timings include application scheduling; initialization is reported separately.",
+  "config_sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9",
+  "cpu_or_gpu_decode_fallback": false,
+  "diagnostic_journal_enabled": true,
+  "global_context_capacity": 64,
+  "layer_state_capture_enabled": true,
+  "loaded_ane_programs": 162,
+  "metal_arena_before_release": {
+    "allocated_bytes": 23932795828,
+    "capacity_bytes": 23933356760,
+    "regions": 1487
+  },
+  "metal_prepare_ms": 9362.992625,
+  "metal_residency": "released-after-all-prefills-before-ane-load",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "qualification_complete": true,
+  "references_completed": 1,
+  "references_requested": 1,
+  "schema": "rvllm.metal_prefill_ane_decode.v1"
+}

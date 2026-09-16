@@ -1,0 +1,30 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "01-failure",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/usr/bin/false",
+      "sha256": "6a4f95b0ffe7c6216b8a31e6b8a31a9b8d6bad91b2469443290fb29aba0cc7fb"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [],
+    "env": {}
+  },
+  "inputs": [],
+  "after": [
+    "00-success"
+  ],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": 0,
+    "minimum_free_bytes": 1073741824,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": []
+  },
+  "stable_seconds": 2,
+  "max_wait_seconds": 120,
+  "max_run_seconds": 15
+}

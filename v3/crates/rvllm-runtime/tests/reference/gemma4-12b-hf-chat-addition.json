@@ -1,0 +1,50 @@
+{
+  "model_revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "transformers_revision": "3384908511545a9c146de65f01f3d29b90b2add6",
+  "load_policy": "Fresh BF16 CPU from_pretrained; no model.to(dtype); eager attention",
+  "prompt": "<bos><|turn>user\nReply with only the result: 25 plus 17.<turn|>\n<|turn>model\n<|channel>thought\n<channel|>",
+  "prompt_token_ids": [
+    2,
+    105,
+    2364,
+    107,
+    40654,
+    607,
+    1186,
+    506,
+    1354,
+    236787,
+    236743,
+    236778,
+    236810,
+    2915,
+    236743,
+    236770,
+    236832,
+    236761,
+    106,
+    107,
+    105,
+    4368,
+    107,
+    100,
+    45518,
+    107,
+    101
+  ],
+  "decode_steps": 8,
+  "generated_tokens": [
+    236812,
+    236778,
+    106
+  ],
+  "generated_text": "42",
+  "buffers": {
+    "model.language_model.embed_tokens.embed_scale": "torch.bfloat16",
+    "model.language_model.rotary_emb.full_attention_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.full_attention_original_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.sliding_attention_inv_freq": "torch.float32",
+    "model.language_model.rotary_emb.sliding_attention_original_inv_freq": "torch.float32"
+  },
+  "cpu_elapsed_seconds": 16.051951417000964
+}

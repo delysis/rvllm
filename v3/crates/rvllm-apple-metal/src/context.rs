@@ -4,10 +4,15 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
 use objc2_metal::{
-    MTLCommandQueue, MTLComputePipelineState, MTLCreateSystemDefaultDevice, MTLDevice, MTLLibrary,
+    MTLCommandQueue, MTLComputePipelineState, MTLCreateSystemDefaultDevice, MTLDevice,
+    MTLGPUFamily, MTLLibrary,
 };
 use rvllm_apple::device::{AppleAcceleratorTarget, AppleGpuFamily};
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
+
+use crate::memory_budget::{
+    AppleMemoryBudget, AppleMemoryBudgetError, AppleMemoryBudgetInput, AppleMemoryPlatform,
+};
 
 /// Metal device context. Owns the device, command queue, and compiled
 /// shader library. Created once at engine init; shared (immutably) by
@@ -17,6 +22,49 @@ pub struct MetalContext {
     queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
     library: Option<Retained<ProtocolObject<dyn MTLLibrary>>>,
     target: AppleAcceleratorTarget,
+    capabilities: MetalDeviceCapabilities,
+}
+
+/// Capabilities queried from the live `MTLDevice` rather than inferred from a
+/// marketing name. These values drive portable macOS/iOS memory and launch
+/// policy without pretending that a particular product string is exhaustive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MetalDeviceCapabilities {
+    pub gpu_family: AppleGpuFamily,
+    pub has_unified_memory: bool,
+    pub recommended_max_working_set_size: u64,
+    pub max_threadgroup_memory_length: usize,
+}
+
+impl MetalDeviceCapabilities {
+    /// Metal bytes available to inference after platform-default headroom.
+    #[must_use]
+    pub const fn default_inference_budget_bytes(self) -> u64 {
+        let reserve_percent = if cfg!(target_os = "ios") {
+            AppleMemoryPlatform::Ios.default_reserve_percent()
+        } else {
+            AppleMemoryPlatform::MacOs.default_reserve_percent()
+        };
+        self.recommended_max_working_set_size
+            .saturating_mul((100 - reserve_percent) as u64)
+            / 100
+    }
+}
+
+fn highest_supported_apple_gpu_family(
+    mut supports: impl FnMut(MTLGPUFamily) -> bool,
+) -> AppleGpuFamily {
+    if supports(MTLGPUFamily::Apple10) {
+        AppleGpuFamily::Apple10
+    } else if supports(MTLGPUFamily::Apple9) {
+        AppleGpuFamily::Apple9
+    } else if supports(MTLGPUFamily::Apple8) {
+        AppleGpuFamily::Apple8
+    } else if supports(MTLGPUFamily::Apple7) {
+        AppleGpuFamily::Apple7
+    } else {
+        AppleGpuFamily::Unknown
+    }
 }
 
 fn ctx(op: &'static str) -> AppleCtx {
@@ -37,14 +85,27 @@ impl MetalContext {
             .ok_or_else(|| RvllmError::apple(AppleError::MetalUnavailable, ctx("init")))?;
 
         let name = device.name().to_string();
-        let target = AppleAcceleratorTarget::from_device_name(&name, 1);
+        let gpu_family = highest_supported_apple_gpu_family(|family| device.supportsFamily(family));
+        let mut target = AppleAcceleratorTarget::from_device_name(&name, 1);
+        target.gpu_family = gpu_family;
+        target.architecture_gen = gpu_family.architecture_gen();
+        target.has_nax = gpu_family.has_nax();
 
-        if target.gpu_family == AppleGpuFamily::Unknown {
+        if gpu_family == AppleGpuFamily::Unknown {
             return Err(RvllmError::apple(
-                AppleError::UnsupportedDevice { name: "unknown" },
+                AppleError::UnsupportedDevice {
+                    name: "metal_gpu_family_below_apple7",
+                },
                 ctx("init"),
             ));
         }
+
+        let capabilities = MetalDeviceCapabilities {
+            gpu_family,
+            has_unified_memory: device.hasUnifiedMemory(),
+            recommended_max_working_set_size: device.recommendedMaxWorkingSetSize(),
+            max_threadgroup_memory_length: device.maxThreadgroupMemoryLength(),
+        };
 
         let queue = device
             .newCommandQueue()
@@ -63,6 +124,7 @@ impl MetalContext {
             queue,
             library: None,
             target,
+            capabilities,
         })
     }
 
@@ -88,7 +150,7 @@ impl MetalContext {
     /// Load a pre-compiled .metallib file.
     pub fn load_metallib(&mut self, path: &std::path::Path) -> Result<()> {
         let ns_path = NSString::from_str(&path.to_string_lossy());
-        let url = unsafe { objc2_foundation::NSURL::fileURLWithPath(&ns_path) };
+        let url = objc2_foundation::NSURL::fileURLWithPath(&ns_path);
         let lib = self.device.newLibraryWithURL_error(&url).map_err(|_| {
             RvllmError::apple(
                 AppleError::MetallibMissing {
@@ -161,13 +223,79 @@ impl MetalContext {
         &self.target
     }
 
+    #[inline]
+    pub fn capabilities(&self) -> MetalDeviceCapabilities {
+        self.capabilities
+    }
+
+    #[inline]
+    pub fn recommended_max_working_set_size(&self) -> u64 {
+        self.capabilities.recommended_max_working_set_size
+    }
+
+    /// Derive independent weight, three-slot scratch, metadata, and paged-KV
+    /// accounts from the live device working-set recommendation.
+    pub fn memory_budget(
+        &self,
+        weights_bytes: u64,
+        scratch_slot_bytes: u64,
+        metadata_bytes: u64,
+    ) -> std::result::Result<AppleMemoryBudget, AppleMemoryBudgetError> {
+        let platform =
+            AppleMemoryPlatform::current().ok_or(AppleMemoryBudgetError::MissingWorkingSetLimit)?;
+        AppleMemoryBudget::derive(AppleMemoryBudgetInput::with_platform_defaults(
+            platform,
+            self.recommended_max_working_set_size(),
+            weights_bytes,
+            scratch_slot_bytes,
+            metadata_bytes,
+        ))
+    }
+
+    #[inline]
+    pub fn default_inference_budget_bytes(&self) -> u64 {
+        self.capabilities.default_inference_budget_bytes()
+    }
+
     /// Maximum threadgroup memory in bytes (Apple9: 32KB, Apple10+: 64KB).
     pub fn max_threadgroup_memory(&self) -> usize {
-        if self.target.has_nax {
-            65536
-        } else {
-            32768
-        }
+        self.capabilities.max_threadgroup_memory_length
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_family_selection_uses_highest_supported_live_family() {
+        assert_eq!(
+            highest_supported_apple_gpu_family(|family| family <= MTLGPUFamily::Apple9),
+            AppleGpuFamily::Apple9
+        );
+        assert_eq!(
+            highest_supported_apple_gpu_family(|_| false),
+            AppleGpuFamily::Unknown
+        );
+    }
+
+    #[test]
+    fn working_set_budget_preserves_platform_headroom() {
+        let capabilities = MetalDeviceCapabilities {
+            gpu_family: AppleGpuFamily::Apple9,
+            has_unified_memory: true,
+            recommended_max_working_set_size: 1_000,
+            max_threadgroup_memory_length: 32_768,
+        };
+        assert_eq!(
+            capabilities.default_inference_budget_bytes(),
+            1_000
+                * (100
+                    - AppleMemoryPlatform::current()
+                        .expect("Apple-only context test")
+                        .default_reserve_percent() as u64)
+                / 100
+        );
     }
 }
 

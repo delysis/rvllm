@@ -1,0 +1,17 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_ane_probe",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--ffn-prefix",
+    "model.language_model.layers.0.mlp",
+    "--ffn-mode",
+    "dynamic",
+    "--iterations",
+    "1",
+    "--report",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/ane-dynamic-12b-layer0-20260914/report.json"
+  ],
+  "scope": "One real Gemma4 12B FFN layer; three numerical inputs, five warmups, one timed invocation. Journal timings are not speed evidence.",
+  "binary_sha256": "4f496e2aaf6569a3598eef373ad0e62bca58be3f1aede7525574d2c8c865111d"
+}

@@ -1,0 +1,39 @@
+{
+  "binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-head-device/rvllm_runtime-head-device-probe",
+  "binary_sha256": "63f6859d8a42f94082370464815462629817465b84ce60ecd3d4c41da4b0ba00",
+  "tile": 0,
+  "rows": 16384,
+  "cases": 4,
+  "backend_tolerance_violations": 0,
+  "recorded_logits_checked": 11,
+  "recorded_logits_tolerance_violations": 0,
+  "compiler_calls": 2,
+  "qualification_evaluations": 12,
+  "successful_unloads": 3,
+  "same_boot": true,
+  "remaining_owned_staging": [],
+  "int8_backend_relative_l2_range": [
+    0.0002965750717232296,
+    0.00031138486731253337
+  ],
+  "host_tests": {
+    "passed": 3,
+    "ignored_full_checkpoint_audit": 1
+  },
+  "post_build_source_change": "rustfmt whitespace only; frozen source retained and rustfmt stdout checked against live source",
+  "power_checks": [
+    {
+      "receipt": "power-after-qualification.json",
+      "thermal_state": 1,
+      "eligible": false
+    },
+    {
+      "receipt": "power-after-45-seconds.json",
+      "thermal_state": 1,
+      "eligible": false
+    }
+  ],
+  "timing_pairs": 0,
+  "production_head": "unchanged FP16",
+  "remaining": "Eligible repeated component timing, full-vocabulary ANE ranking, representative full-generation quality and end-to-end timing before promotion."
+}

@@ -1,0 +1,70 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "purpose": "timing",
+  "command": {
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/rvllm-native-kit-baseline",
+      "sha256": "91fcfde541135113652c62dd696fd8a560071d505e50784470901b10a9cff8fe"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "--model",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it-qat-q4_0-gguf/snapshots/29d097773436b69ff9feafd636ab4cf873786537/gemma-4-12b-it-qat-q4_0.gguf",
+      "--prompt-reference",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/checked/case-1/report.json",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--threads",
+      "8",
+      "--output-json",
+      "{output}/backend.json"
+    ],
+    "env": {}
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it-qat-q4_0-gguf/snapshots/29d097773436b69ff9feafd636ab4cf873786537/gemma-4-12b-it-qat-q4_0.gguf",
+      "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/checked/case-1/report.json",
+      "sha256": "0b096c565cc841ee625081d23b1752af0590c25c8f48554451e97e1fb7140ee8"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "sha256": "9269f2ca629b55246f417545e5a4f3acde6d28bf790d7552b63fefd4c875ea8a"
+    }
+  ],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": 0,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_experiment_queue-v3"
+    ],
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ]
+  },
+  "stable_seconds": 120,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 600,
+  "id": "12-ac-B-native",
+  "after": [
+    "11-ac-B-native"
+  ]
+}

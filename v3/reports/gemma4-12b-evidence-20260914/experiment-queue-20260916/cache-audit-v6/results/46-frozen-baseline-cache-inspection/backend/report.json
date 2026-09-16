@@ -1,0 +1,167 @@
+{
+  "all_programs_available_at_visit": false,
+  "claim": "Serial, bounded, fresh-process cache visits; availability can change. Does not prove simultaneous residency or numerical inference.",
+  "error": null,
+  "expected_programs": 162,
+  "global_context_capacity": 1024,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "operation": "inspect",
+  "parts": [
+    {
+      "part": "qkv",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/46-frozen-baseline-cache-inspection/backend/qkv/report.json",
+      "validated": {
+        "available": 29,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 29,
+          "cache_miss": 19,
+          "cached_source_staged": 29,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 29,
+          "load_completed": 29,
+          "request_created": 29,
+          "source_data_removed": 29,
+          "source_weights_removed": 29,
+          "surfaces_created": 29,
+          "unload_begin": 29,
+          "unload_completed": 29,
+          "unload_returned": 29
+        },
+        "missing": [
+          "QueryKeyValue/layer/1",
+          "QueryKeyValue/layer/2",
+          "QueryKeyValue/layer/6",
+          "QueryKeyValue/layer/7",
+          "QueryKeyValue/layer/9",
+          "QueryKeyValue/layer/10",
+          "QueryKeyValue/layer/12",
+          "QueryKeyValue/layer/17",
+          "QueryKeyValue/layer/22",
+          "QueryKeyValue/layer/28",
+          "QueryKeyValue/layer/30",
+          "QueryKeyValue/layer/32",
+          "QueryKeyValue/layer/33",
+          "QueryKeyValue/layer/37",
+          "QueryKeyValue/layer/38",
+          "QueryKeyValue/layer/39",
+          "QueryKeyValue/layer/41",
+          "QueryKeyValue/layer/42",
+          "QueryKeyValue/layer/46"
+        ],
+        "successful_unloads": 29
+      }
+    },
+    {
+      "part": "output",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/46-frozen-baseline-cache-inspection/backend/output/report.json",
+      "validated": {
+        "available": 36,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 36,
+          "cache_miss": 12,
+          "cached_source_staged": 36,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 36,
+          "load_completed": 36,
+          "request_created": 36,
+          "source_data_removed": 36,
+          "source_weights_removed": 36,
+          "surfaces_created": 36,
+          "unload_begin": 36,
+          "unload_completed": 36,
+          "unload_returned": 36
+        },
+        "missing": [
+          "Output/layer/3",
+          "Output/layer/4",
+          "Output/layer/8",
+          "Output/layer/9",
+          "Output/layer/17",
+          "Output/layer/23",
+          "Output/layer/24",
+          "Output/layer/27",
+          "Output/layer/33",
+          "Output/layer/37",
+          "Output/layer/41",
+          "Output/layer/47"
+        ],
+        "successful_unloads": 36
+      }
+    },
+    {
+      "part": "ffn-int8",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/46-frozen-baseline-cache-inspection/backend/ffn-int8/report.json",
+      "validated": {
+        "available": 40,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 40,
+          "cache_miss": 8,
+          "cached_source_staged": 40,
+          "compile_requested": 48,
+          "descriptor_created": 48,
+          "load_begin": 40,
+          "load_completed": 40,
+          "request_created": 40,
+          "source_data_removed": 40,
+          "source_weights_removed": 40,
+          "surfaces_created": 40,
+          "unload_begin": 40,
+          "unload_completed": 40,
+          "unload_returned": 40
+        },
+        "missing": [
+          "FeedForwardInt8/layer/0",
+          "FeedForwardInt8/layer/7",
+          "FeedForwardInt8/layer/10",
+          "FeedForwardInt8/layer/21",
+          "FeedForwardInt8/layer/24",
+          "FeedForwardInt8/layer/37",
+          "FeedForwardInt8/layer/39",
+          "FeedForwardInt8/layer/47"
+        ],
+        "successful_unloads": 40
+      }
+    },
+    {
+      "part": "head-attention",
+      "report": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/46-frozen-baseline-cache-inspection/backend/head-attention/report.json",
+      "validated": {
+        "available": 13,
+        "compiler_calls": 0,
+        "journal_events": {
+          "cache_hit": 13,
+          "cache_miss": 5,
+          "cached_source_staged": 13,
+          "compile_requested": 18,
+          "descriptor_created": 18,
+          "load_begin": 13,
+          "load_completed": 13,
+          "request_created": 11,
+          "source_data_removed": 13,
+          "source_weights_removed": 11,
+          "surfaces_created": 11,
+          "unload_begin": 13,
+          "unload_completed": 13,
+          "unload_returned": 13
+        },
+        "missing": [
+          "vocabulary/65536",
+          "vocabulary/131072",
+          "vocabulary/147456",
+          "vocabulary/163840",
+          "vocabulary/196608"
+        ],
+        "successful_unloads": 13
+      }
+    }
+  ],
+  "schema": "rvllm.ane_cache_batch.v1",
+  "status": "complete",
+  "verified_available_programs": 118,
+  "verified_compiler_calls": 0
+}

@@ -14,6 +14,7 @@ pub mod gemma4_arch;
 pub mod gemma4_load;
 pub mod gemma4_validate;
 pub mod gemma4_weights;
+pub mod generation;
 pub mod load;
 pub mod load_multiformat;
 pub mod safetensors;

@@ -54,17 +54,25 @@ fn allowed_deps() -> HashMap<&'static str, HashSet<&'static str>> {
         ]),
     );
     m.insert("rvllm-apple-coreml-sys", s(&[]));
+    m.insert("rvllm-apple-coreml-runtime", s(&[]));
     m.insert("rvllm-apple-ane-sys", s(&["rvllm-core"]));
     m.insert(
         "rvllm-apple",
         s(&[
             "rvllm-core",
             "rvllm-apple-coreml-sys",
+            "rvllm-apple-coreml-runtime",
             "rvllm-apple-ane-sys",
         ]),
     );
-    m.insert("rvllm-apple-metal", s(&["rvllm-core", "rvllm-apple"]));
-    m.insert("rvllm-serve", s(&["rvllm-core", "rvllm-runtime"]));
+    m.insert(
+        "rvllm-apple-metal",
+        s(&["rvllm-core", "rvllm-apple", "rvllm-loader"]),
+    );
+    m.insert(
+        "rvllm-serve",
+        s(&["rvllm-core", "rvllm-runtime", "rvllm-loader", "rvllm-apple"]),
+    );
     m.insert(
         "rvllm-bench",
         s(&[
@@ -74,7 +82,14 @@ fn allowed_deps() -> HashMap<&'static str, HashSet<&'static str>> {
             "rvllm-fused",
             "rvllm-kernels",
             "rvllm-cutlass",
+            "rvllm-loader",
+            "rvllm-apple",
+            "rvllm-serve",
         ]),
+    );
+    m.insert(
+        "rvllm-apple-ffi",
+        s(&["rvllm-core", "rvllm-runtime", "rvllm-apple"]),
     );
     m.insert("rvllm-deploy", s(&["rvllm-core"]));
     m.insert("rvllm-invariants", s(&[]));

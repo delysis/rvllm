@@ -1,0 +1,14 @@
+{
+  "schema": "rvllm.native_ane_comparison_amendment.v1",
+  "state": "predeclared-before-new-trials",
+  "queue": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet",
+  "previous_ineligible_attempt": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-nominal/results/10-A-ane",
+  "reason": "All 9 ANE requests completed correctly with zero compiles. External cargo/rustc appeared during the process; no paired ratio accepted. New attempt requires 120 quiet seconds before each launch, rather than10.",
+  "changes": [
+    "Two independent ABBA chains: AC/LPtrue/mode1/nominal0 and battery/LPfalse/mode0/nominal0. Results analyzed separately; no pooling or CPU-cycle normalization.",
+    "Ready independent chain may progress when the other power source is unavailable.",
+    "Same frozen inference/native binaries, prompts, weights, counts, warmups and metric-specific 5% drift gates.",
+    "No cache preparation repeated. Any missing graph or trial/eligibility failure halts the queue without automatic retry.",
+    "Wait bounded at24h per dependency-ready job; same cooperative hardware lock; each subprocess bounded at600seconds with safe joining, no forced termination."
+  ]
+}

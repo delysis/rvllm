@@ -1,0 +1,42 @@
+{
+  "schema": "rvllm.independent_s2_pilot_audit.v1",
+  "source": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/04-ac-fair-ffn-s2-short-pilot/probe.json",
+  "protocol_quiet_seconds": 30,
+  "compiler_calls": 0,
+  "driver_journal_enabled": false,
+  "work_passed": true,
+  "phase_controls_passed": true,
+  "controls": {
+    "available_cpus": null,
+    "cpu_speed_limit_percent": null,
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "scheduler_limit_percent": null,
+    "thermal_state": 1
+  },
+  "blocks": [
+    {
+      "block": 0,
+      "baseline_over_candidate": 1.8312503437456493,
+      "serial_drift": 0.0487175913531841,
+      "batch_drift": 0.1901349490310258,
+      "drift_passed": false
+    },
+    {
+      "block": 1,
+      "baseline_over_candidate": 1.7889128245322499,
+      "serial_drift": 0.1269010675650346,
+      "batch_drift": 0.5102548297425282,
+      "drift_passed": false
+    },
+    {
+      "block": 2,
+      "baseline_over_candidate": 1.7786056740974605,
+      "serial_drift": 0.16516533979002124,
+      "batch_drift": 0.02896249616014357,
+      "drift_passed": false
+    }
+  ],
+  "decision": "inconclusive_repeat_drift"
+}

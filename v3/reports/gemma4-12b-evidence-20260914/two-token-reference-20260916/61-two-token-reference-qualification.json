@@ -1,0 +1,65 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "61-two-token-reference-qualification",
+  "purpose": "preparation",
+  "command": {
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/two-token-reference-20260916/rvllm_runtime-two-token-reference",
+      "sha256": "fad1ff59d073794974676dcdfdd1d7321cf24d7886fd01faddd5b4ec87b038ca"
+    },
+    "args": [
+      "gemma_ane_decode::two_token_reference::live_tests::two_token_reference_accept_reject_and_poisoning",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RVLLM_GEMMA4_MODEL_DIR": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "RVLLM_TWO_TOKEN_SNAPSHOT": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/checked/case-1/report.json",
+      "RVLLM_TWO_TOKEN_RECEIPT": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/61-two-token-reference-qualification/transaction.jsonl",
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/cache-audit-v6/results/61-two-token-reference-qualification/driver-phases.jsonl"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/checked/case-1/report.json",
+      "sha256": "0b096c565cc841ee625081d23b1752af0590c25c8f48554451e97e1fb7140ee8"
+    }
+  ],
+  "after": [
+    "60-two-token-reference-host-tests"
+  ],
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": false,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 0,
+    "power_source": "battery",
+    "thermal_state": null,
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ]
+  },
+  "stable_seconds": 10,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 900,
+  "validator": null
+}

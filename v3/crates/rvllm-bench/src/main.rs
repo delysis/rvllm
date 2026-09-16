@@ -11,6 +11,8 @@
 //!   RVLLM_BATCH                 = batch size (default 128)
 //!   RVLLM_ITERS                 = decode-step iterations (default 100)
 //!   RVLLM_WARMUP                = warmup iterations (default 10)
+//!   RVLLM_BENCH_PROMPT_CACHE    = 1 enables production T1/T2 prompt reuse during Apple bench
+//!   RVLLM_APPLE_CACHE_GATE      = 1 runs the exact cold/T1/T2 512-token promotion gate
 //!   RVLLM_SWEEP                 = if 1, sample a policy parameter sweep
 //!   RVLLM_BACKEND_PROFILE       = cuda|apple|xla|unknown (default: cuda)
 //!   RVLLM_APPLE_MODE            = disabled|metal-only|metal-prefill-metal-decode|ane-fn|ane-exp
@@ -33,20 +35,27 @@
 //! Prints JSON records with enriched metadata:
 //!   {batch,iters,tok_per_sec,ms_per_step,[ttft],backend,backend_profile,side_by_side}
 
-mod ane_meta;
-
+#[cfg(any(feature = "apple", feature = "cuda"))]
 use std::fs::OpenOptions;
+#[cfg(any(feature = "apple", feature = "cuda"))]
 use std::io::Write;
+#[cfg(any(feature = "apple", feature = "cuda"))]
 use std::path::PathBuf;
+#[cfg(feature = "cuda")]
 use std::time::Instant;
 
+#[cfg(feature = "cuda")]
 use rvllm_core::{AneFallbackPolicy, ModelArch as HfModelArch, ModelConfig};
+#[cfg(feature = "cuda")]
 use rvllm_runtime::gemma4_bring_up::{Gemma4Bringup, Gemma4EnginePaths};
+#[cfg(feature = "cuda")]
 use rvllm_runtime::{Bringup, EnginePaths};
+#[cfg(any(feature = "apple", feature = "cuda"))]
 use serde_json::{json, Value};
 
-use ane_meta::{AppleCliProfile, BackendProfile};
+use rvllm_bench::ane_meta::{AppleCliProfile, BackendProfile};
 
+#[cfg(any(feature = "apple", feature = "cuda"))]
 fn env_path(k: &str) -> Result<PathBuf, String> {
     std::env::var(k)
         .map_err(|_| format!("missing env var: {k}"))
@@ -56,12 +65,14 @@ fn env_path(k: &str) -> Result<PathBuf, String> {
 /// Optional env var: returns `/dev/null` when missing. Used for paths
 /// that the sm_121 backend never opens. On SM90 an unset value will
 /// surface as a clean dlopen error for `/dev/null`.
+#[cfg(feature = "cuda")]
 fn env_path_or_placeholder(k: &str) -> PathBuf {
     std::env::var(k)
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/dev/null"))
 }
 
+#[cfg(any(feature = "apple", feature = "cuda"))]
 fn env_u32(k: &str, default: u32) -> u32 {
     std::env::var(k)
         .ok()
@@ -69,6 +80,7 @@ fn env_u32(k: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
+#[cfg(feature = "cuda")]
 fn is_gemma4_model_dir(model_dir: &std::path::Path) -> Result<bool, String> {
     Ok(matches!(
         ModelConfig::load_hf(model_dir)
@@ -78,6 +90,7 @@ fn is_gemma4_model_dir(model_dir: &std::path::Path) -> Result<bool, String> {
     ))
 }
 
+#[cfg(feature = "cuda")]
 fn ane_policy_label(policy: AneFallbackPolicy) -> &'static str {
     match policy {
         AneFallbackPolicy::FailFast => "failfast",
@@ -100,6 +113,86 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let profile = AppleCliProfile::from_env();
+    if matches!(profile.backend(), BackendProfile::Apple) {
+        return run_apple_bench(&profile);
+    }
+
+    run_cuda_bench(profile)
+}
+
+#[cfg(feature = "apple")]
+fn run_apple_bench(profile: &AppleCliProfile) -> Result<(), String> {
+    let model_dir = env_path("RVLLM_MODEL_DIR")?;
+    let prompt = std::env::var("RVLLM_PROMPT").unwrap_or_else(|_| "Hello".to_owned());
+    let cache_gate = rvllm_bench::apple_metal_text::env_bool("RVLLM_APPLE_CACHE_GATE");
+    let max_new_tokens = env_u32("RVLLM_MAX_TOKENS", if cache_gate { 32 } else { 1 }) as usize;
+    let max_total_tokens = rvllm_bench::apple_metal_text::env_usize(
+        "RVLLM_METAL_MAX_TOTAL_TOKENS",
+        rvllm_bench::apple_metal_text::env_usize("RVLLM_METAL_MAX_PROBE_TOKENS", 2048),
+    );
+    let batch = env_u32("RVLLM_BATCH", 1);
+    let iters = env_u32("RVLLM_ITERS", 1);
+    let warmup = env_u32("RVLLM_WARMUP", 0);
+    let text_options = rvllm_bench::apple_metal_text::MetalTextOptions {
+        model_dir,
+        prompt,
+        max_new_tokens,
+        max_total_tokens,
+        max_batch_tokens: 0,
+        no_bos: rvllm_bench::apple_metal_text::env_bool("RVLLM_NO_BOS"),
+        eos_token_ids: vec![1, 2, 107],
+        large_model_opt_in: rvllm_bench::apple_metal_text::env_bool(
+            "RVLLM_APPLE_LARGE_MODEL_OPT_IN",
+        ),
+    };
+    let mut record = if cache_gate {
+        rvllm_bench::apple_metal_text::run_cache_gate(
+            rvllm_bench::apple_metal_text::MetalCacheGateOptions { text: text_options },
+        )?
+    } else {
+        let options = rvllm_bench::apple_metal_text::MetalBenchOptions {
+            text: text_options,
+            batch,
+            iters,
+            warmup,
+        };
+        rvllm_bench::apple_metal_text::run_bench(options)?
+    };
+    if !cache_gate {
+        let apple_current = record.clone();
+        if let Some(object) = record.as_object_mut() {
+            object.insert(
+                "side_by_side".to_owned(),
+                json!({
+                    "cuda": profile.peer_cuda.clone().unwrap_or(Value::Null),
+                    "apple": apple_current,
+                    "xla": profile.peer_xla.clone().unwrap_or(Value::Null),
+                }),
+            );
+        }
+    }
+    if let Some(log_dir) = profile.log_dir.clone() {
+        let mut log = log_dir;
+        log.push("rvllm_bench_records.jsonl");
+        append_record_to_file(log, &record)?;
+    }
+    println!(
+        "{}",
+        serde_json::to_string(&record).map_err(|e| format!("serialize json: {e}"))?
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "apple"))]
+fn run_apple_bench(_profile: &AppleCliProfile) -> Result<(), String> {
+    Err(
+        "RVLLM_BACKEND_PROFILE=apple requires building rvllm-bench with --features apple on macOS"
+            .to_owned(),
+    )
+}
+
+#[cfg(feature = "cuda")]
+fn run_cuda_bench(profile: AppleCliProfile) -> Result<(), String> {
     let paths = EnginePaths {
         model_dir: env_path("RVLLM_MODEL_DIR")?,
         kernels_dir: env_path("RVLLM_KERNELS_DIR")?,
@@ -177,6 +270,15 @@ fn run() -> Result<(), String> {
     print_result(&profile, result, load_ms, false)
 }
 
+#[cfg(not(feature = "cuda"))]
+fn run_cuda_bench(_profile: AppleCliProfile) -> Result<(), String> {
+    Err(
+        "rvllm-bench CUDA path requires --features cuda; set RVLLM_BACKEND_PROFILE=apple and build with --features apple for Metal"
+            .to_owned(),
+    )
+}
+
+#[cfg(feature = "cuda")]
 fn print_result(
     profile: &AppleCliProfile,
     r: rvllm_runtime::bring_up::BenchResult,
@@ -267,6 +369,7 @@ fn print_result(
     Ok(())
 }
 
+#[cfg(feature = "cuda")]
 fn backend_entry(
     backend: BackendProfile,
     tok_per_sec: f64,
@@ -289,6 +392,7 @@ fn backend_entry(
     })
 }
 
+#[cfg(any(feature = "apple", feature = "cuda"))]
 fn append_record_to_file(path: PathBuf, record: &Value) -> Result<(), String> {
     let dir = path
         .parent()
@@ -305,6 +409,7 @@ fn append_record_to_file(path: PathBuf, record: &Value) -> Result<(), String> {
         .map_err(|e| format!("write log file {}: {e}", path.display()))
 }
 
+#[cfg(feature = "cuda")]
 fn run_sweep(br: &Bringup, batch: u32, iters: u32, warmup: u32) -> Result<(), String> {
     // Variant grid. Policy knows 40 non-residual + 10 residual (per the
     // autotune .so). Sample a promising subset.

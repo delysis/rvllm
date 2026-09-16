@@ -1,0 +1,1169 @@
+{
+  "all_references_match": true,
+  "ane_cache_policy": "reuse-with-compile-budget",
+  "ane_compile_budget": 16,
+  "ane_compile_budget_used": 1,
+  "ane_execution_verified": true,
+  "ane_prepare_ms": 63251.323874999995,
+  "ane_weight_plan": "static-int8-ffn-cached",
+  "cases": [
+    {
+      "ane_cache_import_ms": 20.843625,
+      "ane_decode_steps": 15,
+      "generated_text": " Paris.\nthought\nThat is correct. Paris is the capital and",
+      "generated_tokens": [
+        9079,
+        236761,
+        107,
+        100,
+        45518,
+        107,
+        101,
+        6372,
+        563,
+        4338,
+        236761,
+        9079,
+        563,
+        506,
+        5279,
+        532
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 1371.410333,
+      "prompt_token_ids": [
+        2,
+        818,
+        5279,
+        529,
+        7001,
+        563
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-capital-steps16.json",
+      "steps": [
+        {
+          "attention_ms": 32.931248,
+          "ffn_ms": 224.02349900000002,
+          "host_ms": 11.075709999999987,
+          "input_token": 9079,
+          "layer_states": [],
+          "next_token": 236761,
+          "output_ms": 49.68587399999999,
+          "position": 6,
+          "qkv_ms": 76.82183700000002,
+          "top_five": [
+            [
+              236761,
+              14.9453125
+            ],
+            [
+              532,
+              11.3515625
+            ],
+            [
+              236764,
+              10.65625
+            ],
+            [
+              107,
+              9.9375
+            ],
+            [
+              236793,
+              9.421875
+            ]
+          ],
+          "total_ms": 465.643792,
+          "vocabulary_ms": 71.105624
+        },
+        {
+          "attention_ms": 29.491459,
+          "ffn_ms": 154.56828800000008,
+          "host_ms": 16.240131999999996,
+          "input_token": 236761,
+          "layer_states": [],
+          "next_token": 107,
+          "output_ms": 34.77379,
+          "position": 7,
+          "qkv_ms": 49.66111999999999,
+          "top_five": [
+            [
+              107,
+              15.1640625
+            ],
+            [
+              106,
+              11.546875
+            ],
+            [
+              108,
+              10.578125
+            ],
+            [
+              669,
+              8.6484375
+            ],
+            [
+              101,
+              8.15625
+            ]
+          ],
+          "total_ms": 319.66870800000004,
+          "vocabulary_ms": 34.933918999999996
+        },
+        {
+          "attention_ms": 32.963788000000015,
+          "ffn_ms": 173.06266199999996,
+          "host_ms": 17.975588000000066,
+          "input_token": 107,
+          "layer_states": [],
+          "next_token": 100,
+          "output_ms": 37.508457,
+          "position": 8,
+          "qkv_ms": 54.764835,
+          "top_five": [
+            [
+              100,
+              20.171875
+            ],
+            [
+              818,
+              13.421875
+            ],
+            [
+              1437,
+              10.8671875
+            ],
+            [
+              45518,
+              10.765625
+            ],
+            [
+              101,
+              9.3515625
+            ]
+          ],
+          "total_ms": 349.01500000000004,
+          "vocabulary_ms": 32.73967
+        },
+        {
+          "attention_ms": 24.307199999999998,
+          "ffn_ms": 138.902586,
+          "host_ms": 9.010210999999945,
+          "input_token": 100,
+          "layer_states": [],
+          "next_token": 45518,
+          "output_ms": 28.39237500000001,
+          "position": 9,
+          "qkv_ms": 45.778296,
+          "top_five": [
+            [
+              45518,
+              20.84375
+            ],
+            [
+              3305,
+              9.46875
+            ],
+            [
+              107,
+              7.078125
+            ],
+            [
+              44027,
+              6.796875
+            ],
+            [
+              1751,
+              6.484375
+            ]
+          ],
+          "total_ms": 267.7315,
+          "vocabulary_ms": 21.340832000000002
+        },
+        {
+          "attention_ms": 24.068331999999998,
+          "ffn_ms": 138.24512699999997,
+          "host_ms": 7.703836000000031,
+          "input_token": 45518,
+          "layer_states": [],
+          "next_token": 107,
+          "output_ms": 32.271164,
+          "position": 10,
+          "qkv_ms": 47.906417000000005,
+          "top_five": [
+            [
+              107,
+              19.28125
+            ],
+            [
+              31035,
+              6.7890625
+            ],
+            [
+              100,
+              5.8671875
+            ],
+            [
+              594,
+              5.67578125
+            ],
+            [
+              1275,
+              5.609375
+            ]
+          ],
+          "total_ms": 271.937208,
+          "vocabulary_ms": 21.742331999999998
+        },
+        {
+          "attention_ms": 20.591454000000006,
+          "ffn_ms": 120.298543,
+          "host_ms": 8.04241600000001,
+          "input_token": 107,
+          "layer_states": [],
+          "next_token": 101,
+          "output_ms": 24.427041,
+          "position": 11,
+          "qkv_ms": 42.82400099999999,
+          "top_five": [
+            [
+              101,
+              22.890625
+            ],
+            [
+              45518,
+              12.859375
+            ],
+            [
+              8291,
+              9.1953125
+            ],
+            [
+              818,
+              8.8671875
+            ],
+            [
+              1018,
+              8.796875
+            ]
+          ],
+          "total_ms": 238.683541,
+          "vocabulary_ms": 22.500086000000003
+        },
+        {
+          "attention_ms": 21.570794000000006,
+          "ffn_ms": 126.92583199999997,
+          "host_ms": 19.25558000000006,
+          "input_token": 101,
+          "layer_states": [],
+          "next_token": 6372,
+          "output_ms": 36.36470599999999,
+          "position": 12,
+          "qkv_ms": 40.29250399999999,
+          "top_five": [
+            [
+              6372,
+              24.15625
+            ],
+            [
+              34318,
+              20.828125
+            ],
+            [
+              818,
+              19.1875
+            ],
+            [
+              50429,
+              17.1875
+            ],
+            [
+              10784,
+              17.0
+            ]
+          ],
+          "total_ms": 289.700042,
+          "vocabulary_ms": 45.290625999999996
+        },
+        {
+          "attention_ms": 53.11229300000001,
+          "ffn_ms": 151.73328999999998,
+          "host_ms": 13.55350099999999,
+          "input_token": 6372,
+          "layer_states": [],
+          "next_token": 563,
+          "output_ms": 68.104623,
+          "position": 13,
+          "qkv_ms": 57.04987599999999,
+          "top_five": [
+            [
+              563,
+              22.390625
+            ],
+            [
+              236789,
+              17.140625
+            ],
+            [
+              236858,
+              12.921875
+            ],
+            [
+              4338,
+              11.109375
+            ],
+            [
+              5456,
+              10.9140625
+            ]
+          ],
+          "total_ms": 366.128,
+          "vocabulary_ms": 22.574417000000004
+        },
+        {
+          "attention_ms": 22.328585000000007,
+          "ffn_ms": 135.23287699999997,
+          "host_ms": 32.13258100000004,
+          "input_token": 563,
+          "layer_states": [],
+          "next_token": 4338,
+          "output_ms": 40.434914,
+          "position": 14,
+          "qkv_ms": 39.923044000000004,
+          "top_five": [
+            [
+              4338,
+              22.171875
+            ],
+            [
+              496,
+              17.375
+            ],
+            [
+              506,
+              10.8203125
+            ],
+            [
+              15195,
+              9.4375
+            ],
+            [
+              21648,
+              8.9921875
+            ]
+          ],
+          "total_ms": 292.177792,
+          "vocabulary_ms": 22.125791
+        },
+        {
+          "attention_ms": 55.94162400000002,
+          "ffn_ms": 149.272663,
+          "host_ms": 18.99700299999999,
+          "input_token": 4338,
+          "layer_states": [],
+          "next_token": 236761,
+          "output_ms": 24.861416,
+          "position": 15,
+          "qkv_ms": 38.18916700000001,
+          "top_five": [
+            [
+              236761,
+              24.25
+            ],
+            [
+              236888,
+              22.109375
+            ],
+            [
+              236764,
+              14.1484375
+            ],
+            [
+              236787,
+              12.390625
+            ],
+            [
+              236793,
+              12.0390625
+            ]
+          ],
+          "total_ms": 309.261666,
+          "vocabulary_ms": 21.999793
+        },
+        {
+          "attention_ms": 35.287084,
+          "ffn_ms": 134.06683400000003,
+          "host_ms": 15.177757999999987,
+          "input_token": 236761,
+          "layer_states": [],
+          "next_token": 9079,
+          "output_ms": 24.795951000000006,
+          "position": 16,
+          "qkv_ms": 44.655747999999996,
+          "top_five": [
+            [
+              9079,
+              26.09375
+            ],
+            [
+              5213,
+              20.765625
+            ],
+            [
+              106,
+              20.171875
+            ],
+            [
+              236743,
+              17.484375
+            ],
+            [
+              7001,
+              16.265625
+            ]
+          ],
+          "total_ms": 276.843167,
+          "vocabulary_ms": 22.859791999999995
+        },
+        {
+          "attention_ms": 24.416660999999987,
+          "ffn_ms": 140.44366599999998,
+          "host_ms": 14.085220000000064,
+          "input_token": 9079,
+          "layer_states": [],
+          "next_token": 563,
+          "output_ms": 43.381288000000005,
+          "position": 17,
+          "qkv_ms": 44.624959,
+          "top_five": [
+            [
+              563,
+              19.8125
+            ],
+            [
+              815,
+              13.7890625
+            ],
+            [
+              14736,
+              13.0859375
+            ],
+            [
+              236764,
+              8.8359375
+            ],
+            [
+              5151,
+              7.8515625
+            ]
+          ],
+          "total_ms": 291.0855,
+          "vocabulary_ms": 24.133706000000004
+        },
+        {
+          "attention_ms": 63.09004500000002,
+          "ffn_ms": 159.370914,
+          "host_ms": 7.180207999999958,
+          "input_token": 563,
+          "layer_states": [],
+          "next_token": 506,
+          "output_ms": 25.656249999999996,
+          "position": 18,
+          "qkv_ms": 51.585958999999995,
+          "top_five": [
+            [
+              506,
+              22.265625
+            ],
+            [
+              711,
+              19.09375
+            ],
+            [
+              1800,
+              16.296875
+            ],
+            [
+              886,
+              16.171875
+            ],
+            [
+              3224,
+              15.8203125
+            ]
+          ],
+          "total_ms": 329.068875,
+          "vocabulary_ms": 22.185499
+        },
+        {
+          "attention_ms": 21.141041000000012,
+          "ffn_ms": 129.44633299999998,
+          "host_ms": 10.106038999999978,
+          "input_token": 506,
+          "layer_states": [],
+          "next_token": 5279,
+          "output_ms": 24.759376999999997,
+          "position": 19,
+          "qkv_ms": 37.333961,
+          "top_five": [
+            [
+              5279,
+              17.46875
+            ],
+            [
+              7488,
+              12.9921875
+            ],
+            [
+              1346,
+              12.8671875
+            ],
+            [
+              2891,
+              7.4453125
+            ],
+            [
+              5125,
+              6.08203125
+            ]
+          ],
+          "total_ms": 244.98524999999998,
+          "vocabulary_ms": 22.198499
+        },
+        {
+          "attention_ms": 35.206708,
+          "ffn_ms": 128.46337499999998,
+          "host_ms": 15.392040999999974,
+          "input_token": 5279,
+          "layer_states": [],
+          "next_token": 532,
+          "output_ms": 31.532295000000005,
+          "position": 20,
+          "qkv_ms": 51.003624,
+          "top_five": [
+            [
+              532,
+              25.34375
+            ],
+            [
+              3207,
+              17.71875
+            ],
+            [
+              529,
+              15.953125
+            ],
+            [
+              236764,
+              13.4765625
+            ],
+            [
+              618,
+              10.953125
+            ]
+          ],
+          "total_ms": 283.56395899999995,
+          "vocabulary_ms": 21.965915999999996
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 40.503249999999994,
+      "ane_decode_steps": 1,
+      "generated_text": "Paris",
+      "generated_tokens": [
+        50429,
+        106
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 988.31675,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        40654,
+        607,
+        1164,
+        506,
+        5279,
+        529,
+        7001,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+      "steps": [
+        {
+          "attention_ms": 27.450540999999998,
+          "ffn_ms": 128.397995,
+          "host_ms": 14.564929000000014,
+          "input_token": 50429,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 41.702248,
+          "position": 21,
+          "qkv_ms": 37.994369999999996,
+          "top_five": [
+            [
+              106,
+              18.15625
+            ],
+            [
+              1340,
+              1.3125
+            ],
+            [
+              236748,
+              1.091796875
+            ],
+            [
+              869,
+              0.8173828125
+            ],
+            [
+              11989,
+              0.58154296875
+            ]
+          ],
+          "total_ms": 299.287167,
+          "vocabulary_ms": 49.177084
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 25.781417,
+      "ane_decode_steps": 3,
+      "generated_text": "323",
+      "generated_tokens": [
+        236800,
+        236778,
+        236800,
+        106
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 1113.064458,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        55822,
+        236743,
+        236770,
+        236832,
+        15666,
+        236743,
+        236770,
+        236819,
+        236761,
+        24181,
+        607,
+        1186,
+        506,
+        11995,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-arithmetic.json",
+      "steps": [
+        {
+          "attention_ms": 20.770416000000004,
+          "ffn_ms": 127.87912500000004,
+          "host_ms": 7.489997999999961,
+          "input_token": 236800,
+          "layer_states": [],
+          "next_token": 236778,
+          "output_ms": 24.109750999999996,
+          "position": 28,
+          "qkv_ms": 36.850709,
+          "top_five": [
+            [
+              236778,
+              25.890625
+            ],
+            [
+              236770,
+              10.21875
+            ],
+            [
+              236800,
+              9.359375
+            ],
+            [
+              236771,
+              8.703125
+            ],
+            [
+              236812,
+              7.484375
+            ]
+          ],
+          "total_ms": 238.885042,
+          "vocabulary_ms": 21.785042999999998
+        },
+        {
+          "attention_ms": 20.197583999999996,
+          "ffn_ms": 122.80270400000002,
+          "host_ms": 6.033037999999998,
+          "input_token": 236778,
+          "layer_states": [],
+          "next_token": 236800,
+          "output_ms": 23.854878999999993,
+          "position": 29,
+          "qkv_ms": 35.986044,
+          "top_five": [
+            [
+              236800,
+              23.3125
+            ],
+            [
+              236770,
+              9.0625
+            ],
+            [
+              236778,
+              8.3359375
+            ],
+            [
+              236812,
+              7.31640625
+            ],
+            [
+              236771,
+              5.26953125
+            ]
+          ],
+          "total_ms": 229.641583,
+          "vocabulary_ms": 20.767333999999998
+        },
+        {
+          "attention_ms": 17.534122000000004,
+          "ffn_ms": 91.96391599999998,
+          "host_ms": 4.737504000000005,
+          "input_token": 236800,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 22.852542,
+          "position": 30,
+          "qkv_ms": 33.447041,
+          "top_five": [
+            [
+              106,
+              17.21875
+            ],
+            [
+              1340,
+              0.61083984375
+            ],
+            [
+              954,
+              0.352783203125
+            ],
+            [
+              236760,
+              0.086181640625
+            ],
+            [
+              236779,
+              -0.003997802734375
+            ]
+          ],
+          "total_ms": 190.809416,
+          "vocabulary_ms": 20.274291
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 18.5205,
+      "ane_decode_steps": 2,
+      "generated_text": "42",
+      "generated_tokens": [
+        236812,
+        236778,
+        106
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 1092.640292,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        40654,
+        607,
+        1186,
+        506,
+        1354,
+        236787,
+        236743,
+        236778,
+        236810,
+        2915,
+        236743,
+        236770,
+        236832,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-addition.json",
+      "steps": [
+        {
+          "attention_ms": 27.456620999999995,
+          "ffn_ms": 154.773915,
+          "host_ms": 15.477301000000026,
+          "input_token": 236812,
+          "layer_states": [],
+          "next_token": 236778,
+          "output_ms": 34.122958999999994,
+          "position": 27,
+          "qkv_ms": 48.97687,
+          "top_five": [
+            [
+              236778,
+              23.46875
+            ],
+            [
+              236800,
+              8.640625
+            ],
+            [
+              236770,
+              8.6328125
+            ],
+            [
+              236812,
+              8.0234375
+            ],
+            [
+              236771,
+              4.796875
+            ]
+          ],
+          "total_ms": 314.926084,
+          "vocabulary_ms": 34.118418000000005
+        },
+        {
+          "attention_ms": 30.543789999999994,
+          "ffn_ms": 171.49983599999996,
+          "host_ms": 8.051124000000012,
+          "input_token": 236778,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 37.847373000000005,
+          "position": 28,
+          "qkv_ms": 54.174252,
+          "top_five": [
+            [
+              106,
+              17.75
+            ],
+            [
+              236761,
+              3.951171875
+            ],
+            [
+              236779,
+              3.640625
+            ],
+            [
+              11989,
+              3.4921875
+            ],
+            [
+              236751,
+              3.4609375
+            ]
+          ],
+          "total_ms": 327.101833,
+          "vocabulary_ms": 24.985457999999998
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 31.911666999999998,
+      "ane_decode_steps": 1,
+      "generated_text": "Cold",
+      "generated_tokens": [
+        66020,
+        106
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 1093.842333,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        40654,
+        607,
+        886,
+        3658,
+        236787,
+        506,
+        11688,
+        529,
+        3425,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-opposite.json",
+      "steps": [
+        {
+          "attention_ms": 23.918753,
+          "ffn_ms": 146.87124999999997,
+          "host_ms": 7.488447000000047,
+          "input_token": 66020,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 28.337796000000008,
+          "position": 23,
+          "qkv_ms": 45.78746199999999,
+          "top_five": [
+            [
+              106,
+              16.90625
+            ],
+            [
+              101,
+              6.26953125
+            ],
+            [
+              236760,
+              5.28515625
+            ],
+            [
+              236761,
+              4.0546875
+            ],
+            [
+              236779,
+              3.943359375
+            ]
+          ],
+          "total_ms": 278.26104200000003,
+          "vocabulary_ms": 25.857333999999998
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 34.936542,
+      "ane_decode_steps": 1,
+      "generated_text": "Au",
+      "generated_tokens": [
+        36928,
+        106
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 1221.768,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        3689,
+        563,
+        506,
+        7395,
+        5404,
+        573,
+        5122,
+        236881,
+        24181,
+        607,
+        1186,
+        1061,
+        1156,
+        11739,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-gold.json",
+      "steps": [
+        {
+          "attention_ms": 23.323122999999995,
+          "ffn_ms": 145.136208,
+          "host_ms": 7.654832000000045,
+          "input_token": 36928,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 37.384667999999984,
+          "position": 28,
+          "qkv_ms": 44.355335,
+          "top_five": [
+            [
+              106,
+              15.53125
+            ],
+            [
+              107,
+              1.9443359375
+            ],
+            [
+              236760,
+              1.6455078125
+            ],
+            [
+              101,
+              1.1533203125
+            ],
+            [
+              236779,
+              0.67333984375
+            ]
+          ],
+          "total_ms": 283.18475,
+          "vocabulary_ms": 25.330583999999998
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 34.238792,
+      "ane_decode_steps": 1,
+      "generated_text": "CPU",
+      "generated_tokens": [
+        32936,
+        106
+      ],
+      "matches_reference": true,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 1062.9305,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        13293,
+        1164,
+        506,
+        82135,
+        573,
+        8870,
+        39244,
+        15610,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-cpu.json",
+      "steps": [
+        {
+          "attention_ms": 20.729164999999995,
+          "ffn_ms": 131.11978799999994,
+          "host_ms": 7.10845500000006,
+          "input_token": 32936,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 24.589585999999994,
+          "position": 22,
+          "qkv_ms": 42.355589,
+          "top_five": [
+            [
+              106,
+              14.359375
+            ],
+            [
+              236760,
+              -0.173095703125
+            ],
+            [
+              107,
+              -0.188720703125
+            ],
+            [
+              236779,
+              -0.28759765625
+            ],
+            [
+              101,
+              -0.75732421875
+            ]
+          ],
+          "total_ms": 248.0225,
+          "vocabulary_ms": 22.119917000000004
+        }
+      ]
+    }
+  ],
+  "claim": "Metal prefill and first-token sampling, actual converted KV imported into all 48 ANE decode layers. Small norms, RoPE, residuals and sampling use CPU Rust. Timings include application scheduling; initialization is reported separately.",
+  "config_sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9",
+  "cpu_or_gpu_decode_fallback": false,
+  "diagnostic_journal_enabled": false,
+  "global_context_capacity": 1024,
+  "inference_complete": true,
+  "layer_state_capture_enabled": false,
+  "loaded_ane_programs": 162,
+  "metal_arena_before_release": {
+    "allocated_bytes": 24326945056,
+    "capacity_bytes": 24327667328,
+    "regions": 1487
+  },
+  "metal_prepare_ms": 10368.390249999999,
+  "metal_residency": "released-after-all-prefills-before-ane-load",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "qualification_complete": true,
+  "references_completed": 7,
+  "references_requested": 7,
+  "schema": "rvllm.metal_prefill_ane_decode.v1"
+}

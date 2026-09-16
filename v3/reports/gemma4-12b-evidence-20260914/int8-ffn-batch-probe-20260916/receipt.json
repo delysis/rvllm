@@ -1,0 +1,45 @@
+{
+  "schema": "rvllm.int8_ffn_batch_qualification_receipt.v1",
+  "base_commit": "144cdd01dd51bb7d0c2c9d942e50cefc25d3ba5f",
+  "working_tree": "Dirty; source and executable hashes identify this experiment.",
+  "binary_sha256": "b89c68308f5e10b636e606ab2315225a3be42bee2379d46737809a1c7a0c5bf0",
+  "codesign_identifier": "rvllm_disaggregated_infer-9d1f7275eb5937c9",
+  "source_sha256": {
+    "ane_linear.rs": "20c146bcdb55f7dbfdc85f1fb5a2e6b5bee58d7282b2861947bfcf30fced81e6",
+    "int8_batch.rs": "fe72cfc86fe48b12e070a83e3912e56559b188122c8cfd782c1f01d7a60d19af",
+    "probe.rs": "a988dab84fd3c6f3f07920e014446f5f4bf1f9cb05e07cc9c2f100f19a733a4b"
+  },
+  "host_checks": {
+    "tests_passed": 2,
+    "release_build": "passed"
+  },
+  "device": {
+    "queue": "../experiment-queue-20260916/native-comparison-quiet",
+    "job": "30-batch-ffn-qualification",
+    "pid": 52298,
+    "status": "succeeded",
+    "compiler_calls": 1,
+    "baseline_cache_hits": 1,
+    "evaluations": 16,
+    "serial_evaluations": 5,
+    "batch_evaluations": 11,
+    "loads": 2,
+    "unloads": 2,
+    "batched_values_bit_identical_to_serial": 84480,
+    "cpu_tolerance": "0.01 + 0.02 * abs(reference)",
+    "synthetic_inputs": 3,
+    "captured_inputs": 1,
+    "zero_isolation": true,
+    "lane_swap_bit_parity": true,
+    "repeated_use_bit_parity": true,
+    "timing_phases": 0,
+    "activity_violation": "An unrelated transient llama-server appeared after launch; preparation timing eligibility was false.",
+    "boot_time_sec": 1789488066
+  },
+  "remaining": [
+    "Strict zero-compile timing under the quiet matched-power gate",
+    "Broader captured-input qualification",
+    "Full-model batched verification and draft-token acceptance remain unimplemented"
+  ],
+  "claim": "INT8 component correctness only; no full-model throughput improvement or slowdown ratio established."
+}

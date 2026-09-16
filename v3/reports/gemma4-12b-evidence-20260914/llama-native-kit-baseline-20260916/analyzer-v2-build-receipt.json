@@ -1,0 +1,60 @@
+{
+  "schema": 2,
+  "recorded_at_utc": "2026-09-16T11:15:57.086328+00:00",
+  "policy": "Predeclared before timing: outer ANE decode median drift <=5% is the primary gate. Decode, prefill+import and phase-sum latency ratios are gated independently by their own outer ANE median drift <=5%. Stable decode remains eligible when PP drifts. Two-process pairs do not assess or pass a drift gate.",
+  "output_schema": "rvllm.paired_native_ane_analysis.v2",
+  "abba_order": [
+    "metal_ane",
+    "native_kit",
+    "native_kit",
+    "metal_ane"
+  ],
+  "build_command": "CARGO_TARGET_DIR=/Users/george/Documents/llama-native-kit/target cargo build --offline --locked --release -j 2 --manifest-path /Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer/Cargo.toml",
+  "test_command": "CARGO_TARGET_DIR=/Users/george/Documents/llama-native-kit/target cargo test --offline --locked --release -j 2 --manifest-path /Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer/Cargo.toml",
+  "build_exit_code": 0,
+  "tests_passed": 10,
+  "tests_failed": 0,
+  "model_or_accelerator_execution": false,
+  "prior_binary_preserved": {
+    "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/rvllm-native-kit-paired-analyzer",
+    "sha256": "1158096441fb95f13e81585350604627d15e9ce281821afc65d424901ae98298"
+  },
+  "prior_source_preserved_and_hash_matched": true,
+  "files": [
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/rvllm-native-kit-paired-analyzer-v2",
+      "bytes": 640080,
+      "sha256": "97270984ecaa8e47a41c89c47a511a9bb68b7b90466fd191146d4d47145178e8"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer/Cargo.toml",
+      "bytes": 178,
+      "sha256": "1ead8d06c72e410b33b192cefcb23feb98cf80f5541ad0bf759a5f625f15d14a"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer/Cargo.lock",
+      "bytes": 2662,
+      "sha256": "1799a9f765043b4ae1f17ff848b61ddab70230aff8f6acb9c497ae0e252d4bf3"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer/src/main.rs",
+      "bytes": 37766,
+      "sha256": "469c938aa21aa8f9326cc6c74f1372b3f55197bc504e508f20b5eb68aeed1d86"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer/policy-v1-main.rs.txt",
+      "bytes": 34203,
+      "sha256": "72823c59fdbe67e685a1205b3dfe599918ef811a88e6acfa3322d3c56bca6a63"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer-v2-tests.log",
+      "bytes": 1181,
+      "sha256": "66fe6dabd9821790cca6e32ef5a98fbaf774e50277faf4a9ae9d7dd9558d38b6"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/analyzer-v2-build.log",
+      "bytes": 231,
+      "sha256": "7f24909b9804edce849a045cb613ca75509874ca2d582610f278dd0bfa0ff9de"
+    }
+  ]
+}

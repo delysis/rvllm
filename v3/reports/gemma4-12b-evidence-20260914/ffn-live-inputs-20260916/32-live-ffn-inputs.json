@@ -1,0 +1,89 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "32-live-ffn-inputs",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/ffn-live-inputs-20260916/rvllm_disaggregated_infer",
+      "sha256": "498d842ceffb17dced94ff4887ab4284bbfe777bb9c9a220a503c8b9708220b4"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--output-dir",
+      "{output}/backend",
+      "--metallib-bf16",
+      "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+      "--context-capacity",
+      "1024",
+      "--interleave",
+      "true",
+      "--ane-weights",
+      "static-int8-ffn-cached",
+      "--ane-compile-budget",
+      "0",
+      "--capture-ffn-inputs",
+      "true",
+      "--hf-reference",
+      "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+      "--hf-reference",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/copy96.json",
+      "--hf-reference",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/recall768.json"
+    ],
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/native-comparison-quiet/results/32-live-ffn-inputs/driver.jsonl"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+      "sha256": "6efa8fbed39f6d36fb83fe823da1a5d0733c22970b96b431439be27a07617705"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json",
+      "sha256": "57a3fee12427f25c35f62fead004130ee56e3c30994b7e9196335964a2b249cd"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/copy96.json",
+      "sha256": "fbb7f516813a1c2977fd011a3f81f91e67fe7d30b0edb16e780f37f81fbec16a"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/recall768.json",
+      "sha256": "2e6b03500d25a1ce087429a2718a4a3ffd34e94f711dd7a9dc27dc8385d739d4"
+    }
+  ],
+  "after": [],
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "thermal_state": null,
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ]
+  },
+  "stable_seconds": 10,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 600,
+  "validator": null
+}

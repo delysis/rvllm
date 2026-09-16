@@ -6,7 +6,9 @@ rust-version = "1.80"
 license.workspace = true
 authors.workspace = true
 
-# Generated CoreML protobuf bindings
+# Public, platform-neutral Core ML model-format protobuf bindings. This crate
+# does not claim runtime execution or ANE placement; those require a separate
+# public platform adapter plus measured device evidence.
 [dependencies]
 prost = "0.14"
 

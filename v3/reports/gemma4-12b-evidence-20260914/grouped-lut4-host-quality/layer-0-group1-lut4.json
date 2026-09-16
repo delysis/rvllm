@@ -1,0 +1,149 @@
+{
+  "accelerator_calls": 0,
+  "claim": "CPU quality rejection gate only. No accelerator execution, speedup, compiled residency or full-model quality claim. Grouped palettes retain the global fit whenever its stored-weight squared error is lower.",
+  "compiler_calls": 0,
+  "dense_reconstruction_fp16_sha256": "560e26df9b9c34268a0172c54bd71320b14965701ba5d94e609a6d337ab353a9",
+  "input_sources": [
+    {
+      "synthetic_pattern": 0
+    },
+    {
+      "synthetic_pattern": 1
+    },
+    {
+      "synthetic_pattern": 2
+    },
+    {
+      "file": "reports/gemma4-12b-evidence-20260914/cpu-ffn-inputs-capital/inputs/layer-00-ffn-input.fp16",
+      "sha256": "17f5439b339ba2e5c17ea8d2241bbae1824c61ae05728597cf9d88d48ff6883d"
+    }
+  ],
+  "layer": 0,
+  "lut4_group_rows": 1,
+  "mode": "lut4",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "original_fp16_sha256": "2def7d665d86b519f8c50369914aa30c07f7d73282fa0633b1a47f15a17ffdd3",
+  "per_input_errors": [
+    {
+      "gate_up_gated_down": [
+        {
+          "elements": 15360,
+          "max_abs_error": 0.28118896484375,
+          "relative_l2_error": 0.12137593905124242
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 0.408203125,
+          "relative_l2_error": 0.11033785177106782
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 0.34375,
+          "relative_l2_error": 0.15255185686662545
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.27082908153533936,
+          "relative_l2_error": 0.11322101119202724
+        }
+      ],
+      "input_max_abs": 0.75
+    },
+    {
+      "gate_up_gated_down": [
+        {
+          "elements": 15360,
+          "max_abs_error": 0.2891845703125,
+          "relative_l2_error": 0.12540494716319897
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 0.412109375,
+          "relative_l2_error": 0.11617144744713555
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 0.3824310302734375,
+          "relative_l2_error": 0.1574376849650198
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.3087364435195923,
+          "relative_l2_error": 0.11240334548281035
+        }
+      ],
+      "input_max_abs": 0.75
+    },
+    {
+      "gate_up_gated_down": [
+        {
+          "elements": 15360,
+          "max_abs_error": 0.2705078125,
+          "relative_l2_error": 0.12808708770770305
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 0.388427734375,
+          "relative_l2_error": 0.11680030669700404
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 0.250244140625,
+          "relative_l2_error": 0.1747251622806353
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 0.2132110595703125,
+          "relative_l2_error": 0.10342379329297739
+        }
+      ],
+      "input_max_abs": 0.75
+    },
+    {
+      "gate_up_gated_down": [
+        {
+          "elements": 15360,
+          "max_abs_error": 10.09375,
+          "relative_l2_error": 0.10930375787756946
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 8.9375,
+          "relative_l2_error": 0.11881871816097331
+        },
+        {
+          "elements": 15360,
+          "max_abs_error": 18.75,
+          "relative_l2_error": 0.1281204223196205
+        },
+        {
+          "elements": 3840,
+          "max_abs_error": 9.881583213806152,
+          "relative_l2_error": 0.15331657327584805
+        }
+      ],
+      "input_max_abs": 171.5
+    }
+  ],
+  "quantize_and_reconstruct_ms": 12771.191875,
+  "quantized_source_blob_bytes": 89579968,
+  "schema": "rvllm.ane_ffn_host_quality.v1",
+  "weight_load_ms": 193.111542,
+  "weight_reconstruction_errors_gate_up_down": [
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.12872314453125,
+      "relative_l2_error": 0.12620771694129268
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.1075439453125,
+      "relative_l2_error": 0.11971379135672866
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.1102294921875,
+      "relative_l2_error": 0.12482739838486653
+    }
+  ]
+}

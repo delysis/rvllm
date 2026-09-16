@@ -1,0 +1,60 @@
+{
+  "schema": "rvllm.frozen_probe_build.v1",
+  "binary": {
+    "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-s2-fair-timing-20260916/rvllm_ane_int8_probe-fair",
+    "sha256": "112ad00a44aa860b37846f2bebfc6ff6bd09a5a20bc52dbc243039be506e2ba0"
+  },
+  "codesign_identifier": "rvllm_disaggregated_infer-9d1f7275eb5937c9",
+  "parser_checks": [
+    {
+      "name": "valid-fair-reaches-model-path",
+      "passed": true
+    },
+    {
+      "name": "fair-without-batch",
+      "passed": true
+    },
+    {
+      "name": "fair-with-capture",
+      "passed": true
+    },
+    {
+      "name": "fair-with-restore",
+      "passed": true
+    },
+    {
+      "name": "fair-with-compilation",
+      "passed": true
+    },
+    {
+      "name": "fair-with-journal",
+      "passed": true
+    },
+    {
+      "name": "fair-with-cpu-only",
+      "passed": true
+    }
+  ],
+  "jobs": [
+    {
+      "id": "72-s2-fair-host-tests",
+      "report": {
+        "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/72-s2-fair-host-tests/report.json",
+        "sha256": "f99bb64384e4446710fab4a60e438d5b2780aeb0d57882cf8e8ac14a9c30fc05"
+      },
+      "status": "succeeded",
+      "files_unchanged": true,
+      "overdue": false
+    },
+    {
+      "id": "73-s2-fair-build",
+      "report": {
+        "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/73-s2-fair-build/report.json",
+        "sha256": "e6fc42f576b0bf493dae8bb163ebb60c79c22b36a79c9a586d192dd9bc740d14"
+      },
+      "status": "succeeded",
+      "files_unchanged": true,
+      "overdue": false
+    }
+  ]
+}

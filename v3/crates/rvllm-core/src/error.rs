@@ -254,6 +254,9 @@ pub enum SchedulerError {
         num_seqs: u32,
     },
     QueueFull,
+    InvalidTransition {
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug)]

@@ -1,0 +1,41 @@
+{
+  "binary": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-ffn/rvllm_ane_int8_probe-v2",
+  "binary_sha256": "52bfad56fe6517839833c57f67085951e2bc78b5fd42c74ac13fe1e8bd683931",
+  "layer": 0,
+  "reconstructed_fp16_sha256": "9ec1b72edfad27068add34669a960d971f6a52cf982db9170e451cafe158bfe5",
+  "real_coefficient_count": 176947200,
+  "reconstructed_coefficients_bit_identical": true,
+  "candidate_outputs_bit_identical_to_affine_on_all_four_inputs": true,
+  "affine_source_bytes": 177016768,
+  "candidate_source_bytes": 177016640,
+  "actual_layer_backend_relative_l2_range": [
+    0.0005147550571750353,
+    0.0008624094196506917
+  ],
+  "qualification": {
+    "new_compiles": 1,
+    "evaluations": 12,
+    "successful_unloads": 3
+  },
+  "journaled_smoke_restore_qualification_totals": {
+    "compiles": 4,
+    "evaluations": 18,
+    "successful_unloads": 6
+  },
+  "timing": {
+    "run": "time-layer-0-1",
+    "compiler_calls": 0,
+    "candidate_outputs_bit_identical_to_affine": true,
+    "preflight_eligible": false,
+    "stratum": null,
+    "trial_count": 0,
+    "eligible_pairs": 0
+  },
+  "host_tests": {
+    "passed": 107,
+    "ignored": 25,
+    "separately_gated_hardware_test_excluded": 1
+  },
+  "production_ffn": "unchanged separate gate/up INT8",
+  "remaining": "Repeated eligible component timing, then full-model correctness and end-to-end timing if beneficial."
+}

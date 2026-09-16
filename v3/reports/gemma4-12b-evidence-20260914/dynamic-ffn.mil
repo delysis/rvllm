@@ -1,0 +1,32 @@
+program(1.3)
+[buildInfo = dict<string, string>({{"coremlc-component-MIL", "3510.2.1"}, {"coremlc-version", "3505.4.1"}, {"coremltools-version", "9.0"}})]
+{
+    func main<ios18>(tensor<fp16, [1, 3840, 1, 46112]> x) {
+        tensor<int32, [4]> bx = const()[name = string("bx"), val = tensor<int32, [4]>([0, 0, 0, 0])];
+        tensor<int32, [4]> bg = const()[name = string("bg"), val = tensor<int32, [4]>([0, 0, 0, 32])];
+        tensor<int32, [4]> bu = const()[name = string("bu"), val = tensor<int32, [4]>([0, 0, 0, 15392])];
+        tensor<int32, [4]> bd = const()[name = string("bd"), val = tensor<int32, [4]>([0, 0, 0, 30752])];
+        tensor<int32, [4]> sx = const()[name = string("sx"), val = tensor<int32, [4]>([1, 3840, 1, 1])];
+        tensor<int32, [4]> sw = const()[name = string("sw"), val = tensor<int32, [4]>([1, 3840, 1, 15360])];
+        tensor<int32, [4]> rx = const()[name = string("rx"), val = tensor<int32, [4]>([1, 1, 1, 3840])];
+        tensor<int32, [4]> rw = const()[name = string("rw"), val = tensor<int32, [4]>([1, 1, 3840, 15360])];
+        tensor<int32, [4]> ro = const()[name = string("ro"), val = tensor<int32, [4]>([1, 3840, 1, 1])];
+        bool no = const()[name = string("no"), val = bool(false)];
+        bool yes = const()[name = string("yes"), val = bool(true)];
+        string mode = const()[name = string("mode"), val = string("TANH_APPROXIMATION")];
+        tensor<fp16, [1, 3840, 1, 1]> xf = slice_by_size(x = x, begin = bx, size = sx)[name = string("xf")];
+        tensor<fp16, [1, 3840, 1, 15360]> gf = slice_by_size(x = x, begin = bg, size = sw)[name = string("gf")];
+        tensor<fp16, [1, 3840, 1, 15360]> uf = slice_by_size(x = x, begin = bu, size = sw)[name = string("uf")];
+        tensor<fp16, [1, 3840, 1, 15360]> df = slice_by_size(x = x, begin = bd, size = sw)[name = string("df")];
+        tensor<fp16, [1, 1, 1, 3840]> xr = reshape(x = xf, shape = rx)[name = string("xr")];
+        tensor<fp16, [1, 1, 3840, 15360]> wg = reshape(x = gf, shape = rw)[name = string("wg")];
+        tensor<fp16, [1, 1, 3840, 15360]> wu = reshape(x = uf, shape = rw)[name = string("wu")];
+        tensor<fp16, [1, 1, 3840, 15360]> wd = reshape(x = df, shape = rw)[name = string("wd")];
+        tensor<fp16, [1, 1, 1, 15360]> gate = matmul(x = xr, y = wg, transpose_x = no, transpose_y = no)[name = string("gate")];
+        tensor<fp16, [1, 1, 1, 15360]> up = matmul(x = xr, y = wu, transpose_x = no, transpose_y = no)[name = string("up")];
+        tensor<fp16, [1, 1, 1, 15360]> activated = gelu(x = gate, mode = mode)[name = string("activated")];
+        tensor<fp16, [1, 1, 1, 15360]> gated = mul(x = activated, y = up)[name = string("gated")];
+        tensor<fp16, [1, 1, 1, 3840]> result = matmul(x = gated, y = wd, transpose_x = no, transpose_y = yes)[name = string("result")];
+        tensor<fp16, [1, 3840, 1, 1]> y = reshape(x = result, shape = ro)[name = string("y")];
+    } -> (y);
+}

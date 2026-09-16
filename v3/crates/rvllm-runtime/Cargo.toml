@@ -27,6 +27,37 @@ cuda = [
 # the live device is a Blackwell consumer part. Implies `cuda`.
 gb10 = ["cuda", "rvllm-mem/gb10"]
 apple = ["dep:rvllm-apple", "dep:rvllm-apple-metal"]
+macos-private-ane-research = ["apple", "rvllm-apple/macos-private-ane-research", "dep:ctrlc", "dep:fs4"]
+
+[[bin]]
+name = "rvllm_experiment_queue"
+path = "src/bin/rvllm_experiment_queue.rs"
+required-features = ["macos-private-ane-research"]
+
+[[bin]]
+name = "rvllm_ane_probe"
+path = "src/bin/rvllm_ane_probe.rs"
+required-features = ["macos-private-ane-research"]
+
+[[bin]]
+name = "rvllm_ane_int8_probe"
+path = "src/bin/rvllm_ane_int8_probe.rs"
+required-features = ["macos-private-ane-research"]
+
+[[bin]]
+name = "rvllm_disaggregated_infer"
+path = "src/bin/rvllm_disaggregated_infer.rs"
+required-features = ["macos-private-ane-research"]
+
+[[bin]]
+name = "rvllm_int8_source_bench"
+path = "src/bin/rvllm_int8_source_bench.rs"
+required-features = ["macos-private-ane-research"]
+
+[[bin]]
+name = "rvllm_prefill_handoff"
+path = "src/bin/rvllm_prefill_handoff.rs"
+required-features = ["apple"]
 
 # `probe_gemma4_load --dry-run` is available with `--features apple` and
 # only scans config/safetensor metadata. The full load path still requires
@@ -44,6 +75,8 @@ name = "rvllm_metal_infer"
 path = "src/bin/rvllm_metal_infer.rs"
 
 [dependencies]
+ctrlc = { version = "3.5", features = ["termination"], optional = true }
+fs4 = { version = "0.13.1", optional = true }
 rvllm-core = { workspace = true }
 rvllm-mem = { workspace = true }
 rvllm-kernels = { workspace = true }
@@ -59,9 +92,28 @@ rvllm-apple-metal = { workspace = true, optional = true }
 half = { workspace = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
+sha2 = "0.10"
+aes-gcm = { version = "0.10", features = ["std", "zeroize"] }
+aes = { version = "0.8", features = ["zeroize"] }
+ghash = { version = "0.5", features = ["zeroize"] }
+polyval = { version = "0.6", features = ["zeroize"] }
+hkdf = "0.12"
+hmac = "0.12"
+libc = "0.2"
+blake3 = "1.5"
+zeroize = "1.8"
 tokenizers = "0.20"
 cudarc = { version = "0.19", features = ["driver", "cuda-version-from-build-system"], optional = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2-metal = { version = "0.3", features = ["MTLTypes", "MTLCommandQueue"] }
 objc2 = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libproc = "0.14.11"
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo"] }
+
+[dev-dependencies]
+tempfile = "3"
+rvllm-apple = { workspace = true, features = ["package-builder"] }

@@ -1,0 +1,37 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "24-battery-analysis",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/llama-native-kit-baseline-20260916/rvllm-native-kit-paired-analyzer-v3",
+      "sha256": "68d3b64f899dc4cf0e5dea8f08fdb517e3841d24dfe28b8fa41840ef9c67cd67"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/20-battery-A-ane",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/21-battery-B-native",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/22-battery-B-native",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/23-battery-A-ane"
+    ],
+    "env": {}
+  },
+  "conditions": {
+    "power_source": "battery",
+    "low_power_mode": false,
+    "pmset_power_mode": 0,
+    "thermal_state": null,
+    "minimum_free_bytes": 0,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": [],
+    "idle_llama_servers": []
+  },
+  "inputs": [],
+  "after": [
+    "23-battery-A-ane"
+  ],
+  "stable_seconds": 1,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 60,
+  "validator": null
+}

@@ -1,0 +1,106 @@
+{
+  "ane_cache_import_ms": 0.0,
+  "ane_decode_steps": 0,
+  "ane_import_measurement": null,
+  "generated_text": "Paris",
+  "generated_tokens": [
+    50429
+  ],
+  "kv_capture_ms": 6.50125,
+  "matches_reference": null,
+  "metal_command_buffer_wait_ms": 1154.441208,
+  "metal_decode_steps": 0,
+  "metal_gpu_execution_ms": 821.822375,
+  "metal_host_non_wait_ms": 4.66625,
+  "metal_prefill_complete_ms": 1159.108709,
+  "prefill_command_buffers": 1,
+  "prefill_measurement": {
+    "ane_cycles": null,
+    "comparison_stratum": null,
+    "cpu_counter_error": null,
+    "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+    "cpu_cycles_per_instruction": 0.17431011728714743,
+    "cpu_cycles_per_unit": 60072731.952380955,
+    "cpu_frequency_hz": null,
+    "cpu_instructions_per_unit": 344631355.2380952,
+    "end_host": {
+      "low_power_mode": false,
+      "thermal_state": 1
+    },
+    "end_ms": 8708.273333,
+    "gpu_cycles": null,
+    "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+    "observer_journal_error": null,
+    "power_samples": [
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": false,
+          "pmset_power_mode": 0,
+          "power_source": "battery",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 7209.195083,
+        "pmset_battery": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=20840547)\t19%; discharging; 0:13 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                1 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         1\n tcpkeepalive         1\n powermode            0\n womp                 0\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 7186.906333
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": false,
+          "pmset_power_mode": 0,
+          "power_source": "battery",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 8232.791083,
+        "pmset_battery": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=20840547)\t19%; discharging; 0:13 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                1 (sleep prevented by runningboardd, powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         1\n tcpkeepalive         1\n powermode            0\n womp                 0\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 8210.992083000001
+      }
+    ],
+    "process_cpu_cycles": 1261527371,
+    "process_cpu_instructions": 7237258460,
+    "sampled_controls_eligible": false,
+    "schema": "rvllm.apple_phase_measurement.v1",
+    "start_host": {
+      "low_power_mode": false,
+      "thermal_state": 1
+    },
+    "start_ms": 7542.660166,
+    "units": 21,
+    "wall_ms": 1165.613167
+  },
+  "prefill_sample_capture_ms": 1165.613042,
+  "prompt_token_ids": [
+    2,
+    105,
+    2364,
+    107,
+    40654,
+    607,
+    1164,
+    506,
+    5279,
+    529,
+    7001,
+    236761,
+    106,
+    107,
+    105,
+    4368,
+    107,
+    100,
+    45518,
+    107,
+    101
+  ],
+  "reference": null,
+  "steps": []
+}

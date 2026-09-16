@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/disaggregated-all-static-capital/inference",
+    "--ane-weights",
+    "static-all-cached",
+    "--capture-layer-states",
+    "true",
+    "--hf-reference",
+    "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/tests/reference/gemma4-12b-hf-chat-capital.json"
+  ],
+  "binary_sha256": "3cdfff290d14e274bc32b2196f09f2f5ae0fe882817b054da4c964f764501b6b",
+  "metallib_sha256": "24086ed59b6e079a5e5ac219036c90eb81db1d489a72fdd356d4c79433a4a762",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "load_before": "14:48  up  6:29, 1 user, load averages: 30.15 40.88 34.93\n",
+  "disk_free_before": 27795685376,
+  "scope": "162 cached programs, zero explicit compiler calls or fallback; all existing qualified graph shapes. One captured Metal-prefill/ANE continuation; 208 evaluations. Journaling excludes a speed claim."
+}

@@ -9,31 +9,30 @@ authors.workspace = true
 # rvllm-bench: deterministic prompts, per-bucket tok/s + p50/p99 latency,
 # JSON output consumed by tools/bench-gate. See v3/specs/{15,16}.md.
 
-# All three binaries drive `Gemma4Bringup::run_{bench,ppl,generate}`,
-# which are `#[cfg(feature = "cuda")]` in the impl. Without
-# `required-features` here, a default `cargo check --workspace` would
-# try to compile the bins with `cuda` off and fail with E0599 on the
-# three missing methods. Gating them on the cuda feature is the right
-# semantics anyway — they all require a GPU to run.
+# The binaries dispatch by `RVLLM_BACKEND_PROFILE`. CUDA paths require
+# `--features cuda`; Apple Metal paths require `--features apple` on macOS.
 
 [[bin]]
 name = "rvllm-bench"
 path = "src/main.rs"
-required-features = ["cuda"]
 
 [[bin]]
 name = "rvllm-eval"
 path = "src/bin/rvllm_eval.rs"
-required-features = ["cuda"]
 
 [[bin]]
 name = "rvllm-ppl"
 path = "src/bin/rvllm_ppl.rs"
-required-features = ["cuda"]
 
 [features]
 default = []
 cuda = ["rvllm-runtime/cuda", "rvllm-fused/cuda", "rvllm-mem/cuda", "dep:cudarc"]
+apple = [
+    "rvllm-runtime/apple",
+    "dep:rvllm-apple",
+    "dep:rvllm-serve",
+    "rvllm-serve/apple-bench",
+]
 # Forward the runtime's `gb10` feature so GB10-only bringup paths (FA2
 # PTX attention, sm_121 CUTLASS .so resolution) are enabled when the
 # bench is built for DGX Spark / consumer Blackwell.
@@ -46,6 +45,9 @@ rvllm-fused = { workspace = true }
 rvllm-mem = { workspace = true }
 rvllm-kernels = { workspace = true }
 rvllm-cutlass = { workspace = true }
+rvllm-loader = { workspace = true }
+rvllm-apple = { workspace = true, optional = true }
+rvllm-serve = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokenizers = "0.20"

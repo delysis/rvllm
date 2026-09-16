@@ -1,0 +1,23 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_ane_probe",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--spatial",
+    "1",
+    "--iterations",
+    "12",
+    "--tensor",
+    "model.language_model.layers.0.self_attn.o_proj.weight",
+    "--linear-mode",
+    "constant",
+    "--report",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/ane-real-static-ffn-dynamic-o/sliding-o-constant/probe.json"
+  ],
+  "binary_sha256": "e44b25fd1d0d6e4af36d353a1adb36d26e66041d86b03ab5eee35872a46d3aad",
+  "journal_enabled": false,
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "load_before": "13:43  up  5:24, 1 user, load averages: 94.67 79.07 68.63\n",
+  "disk_free_before": 30214688768,
+  "scope": "One ANE program; three CPU numerical inputs, five warmups, twelve measured evaluations. Stop on first failure."
+}

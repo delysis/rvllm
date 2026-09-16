@@ -1,0 +1,254 @@
+{
+  "schema": "rvllm.int8_qkv_timing_repetitions.v1",
+  "runs": [
+    {
+      "layer": 1,
+      "compiler_calls": 0,
+      "backend_violations": 0,
+      "preflight_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": true,
+        "pmset_power_mode": 1,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      },
+      "trial_count": 24,
+      "comparisons": [
+        {
+          "baseline_program": 0,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 1.1304257264482143,
+          "min_ratio": 0.8180271557748754,
+          "max_ratio": 2.2045938909313025,
+          "median_baseline_ms": 0.9242994765625,
+          "median_candidate_ms": 0.8861048164062499,
+          "median_baseline_over_candidate_cpu_cycles": 0.9582853931467139,
+          "median_baseline_over_candidate_cpu_instructions": 0.9953742398903174
+        },
+        {
+          "baseline_program": 2,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 0.8954798220229674,
+          "min_ratio": 0.7589593230099139,
+          "max_ratio": 2.443368960749403,
+          "median_baseline_ms": 1.00447476953125,
+          "median_candidate_ms": 1.21758512109375,
+          "median_baseline_over_candidate_cpu_cycles": 1.0137761964000096,
+          "median_baseline_over_candidate_cpu_instructions": 1.000722616948082
+        }
+      ],
+      "name": "time-layer-1-nominal-retry"
+    },
+    {
+      "layer": 1,
+      "compiler_calls": 0,
+      "backend_violations": 0,
+      "preflight_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": true,
+        "pmset_power_mode": 1,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      },
+      "trial_count": 24,
+      "comparisons": [
+        {
+          "baseline_program": 0,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 1.1123564880185208,
+          "min_ratio": 0.6425020420458912,
+          "max_ratio": 1.8497015146305502,
+          "median_baseline_ms": 0.9172425117187499,
+          "median_candidate_ms": 0.847223796875,
+          "median_baseline_over_candidate_cpu_cycles": 0.9438162745553375,
+          "median_baseline_over_candidate_cpu_instructions": 0.9995545001397633
+        },
+        {
+          "baseline_program": 2,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 1.2698502356694852,
+          "min_ratio": 0.907807988487985,
+          "max_ratio": 2.0720297438244035,
+          "median_baseline_ms": 0.8059108085937501,
+          "median_candidate_ms": 0.678365234375,
+          "median_baseline_over_candidate_cpu_cycles": 0.9880559445732919,
+          "median_baseline_over_candidate_cpu_instructions": 1.0205710118052722
+        }
+      ],
+      "name": "time-layer-1-nominal-repeat-2"
+    },
+    {
+      "layer": 1,
+      "compiler_calls": 0,
+      "backend_violations": 0,
+      "preflight_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": true,
+        "pmset_power_mode": 1,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      },
+      "trial_count": 24,
+      "comparisons": [
+        {
+          "baseline_program": 0,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 1.185715858483624,
+          "min_ratio": 0.8281417952533953,
+          "max_ratio": 1.3265143332517402,
+          "median_baseline_ms": 0.77418359375,
+          "median_candidate_ms": 0.6726017265625,
+          "median_baseline_over_candidate_cpu_cycles": 0.7067868947569411,
+          "median_baseline_over_candidate_cpu_instructions": 0.9721243950394092
+        },
+        {
+          "baseline_program": 2,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 1.365238688059669,
+          "min_ratio": 1.184369238131987,
+          "max_ratio": 1.4902943028093578,
+          "median_baseline_ms": 0.7566316757812499,
+          "median_candidate_ms": 0.55787923046875,
+          "median_baseline_over_candidate_cpu_cycles": 0.9624307907448939,
+          "median_baseline_over_candidate_cpu_instructions": 1.0026241932078719
+        }
+      ],
+      "name": "time-layer-1-nominal-repeat-3"
+    },
+    {
+      "layer": 5,
+      "compiler_calls": 0,
+      "backend_violations": 0,
+      "preflight_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": true,
+        "pmset_power_mode": 1,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      },
+      "trial_count": 24,
+      "comparisons": [
+        {
+          "baseline_program": 0,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 1.1029401649634236,
+          "min_ratio": 0.674951039808741,
+          "max_ratio": 1.1885249815781005,
+          "median_baseline_ms": 1.32319270703125,
+          "median_candidate_ms": 1.2610667343750002,
+          "median_baseline_over_candidate_cpu_cycles": 1.0067049732845579,
+          "median_baseline_over_candidate_cpu_instructions": 1.0020463368014112
+        },
+        {
+          "baseline_program": 2,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 1.0568386012733442,
+          "min_ratio": 0.41587542840254804,
+          "max_ratio": 1.2942271005645183,
+          "median_baseline_ms": 1.3616648750000002,
+          "median_candidate_ms": 1.28450439453125,
+          "median_baseline_over_candidate_cpu_cycles": 0.9923456323873909,
+          "median_baseline_over_candidate_cpu_instructions": 1.0035482156127813
+        }
+      ],
+      "name": "time-layer-5-nominal-retry"
+    },
+    {
+      "layer": 5,
+      "compiler_calls": 0,
+      "backend_violations": 0,
+      "preflight_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": true,
+        "pmset_power_mode": 1,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      },
+      "trial_count": 24,
+      "comparisons": [
+        {
+          "baseline_program": 0,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 0.6393477431697262,
+          "min_ratio": 0.522585124377001,
+          "max_ratio": 0.8659751226104829,
+          "median_baseline_ms": 0.944529296875,
+          "median_candidate_ms": 1.629394859375,
+          "median_baseline_over_candidate_cpu_cycles": 0.7980096163029347,
+          "median_baseline_over_candidate_cpu_instructions": 0.9881468268561368
+        },
+        {
+          "baseline_program": 2,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 0.5718557049572872,
+          "min_ratio": 0.4750781039926157,
+          "max_ratio": 0.78029257977041,
+          "median_baseline_ms": 0.79040885546875,
+          "median_candidate_ms": 1.38590316015625,
+          "median_baseline_over_candidate_cpu_cycles": 0.7163034679673068,
+          "median_baseline_over_candidate_cpu_instructions": 1.00107781824584
+        }
+      ],
+      "name": "time-layer-5-nominal-repeat-2"
+    },
+    {
+      "layer": 5,
+      "compiler_calls": 0,
+      "backend_violations": 0,
+      "preflight_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": true,
+        "pmset_power_mode": 1,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      },
+      "trial_count": 24,
+      "comparisons": [
+        {
+          "baseline_program": 0,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 0.5482661638416884,
+          "min_ratio": 0.4937551460251131,
+          "max_ratio": 0.7204808732382202,
+          "median_baseline_ms": 0.79318896484375,
+          "median_candidate_ms": 1.48458056640625,
+          "median_baseline_over_candidate_cpu_cycles": 0.6434857426477903,
+          "median_baseline_over_candidate_cpu_instructions": 0.9954058614048532
+        },
+        {
+          "baseline_program": 2,
+          "eligible_pairs": 6,
+          "median_baseline_over_candidate_wall": 0.6078452038261994,
+          "min_ratio": 0.48509306340999697,
+          "max_ratio": 0.6446808623952013,
+          "median_baseline_ms": 0.74084716796875,
+          "median_candidate_ms": 1.2040585937500001,
+          "median_baseline_over_candidate_cpu_cycles": 0.7273033590369831,
+          "median_baseline_over_candidate_cpu_instructions": 0.9828771442407067
+        }
+      ],
+      "name": "time-layer-5-nominal-repeat-3"
+    }
+  ],
+  "interpretation": "All sampled power controls match, but wall-time variance is large. Do not infer a full-model gain. Packed global INT8 is not a promotion candidate; sliding-only remains under investigation.",
+  "total_trials": 144,
+  "total_eligible_pairs": 72
+}

@@ -1,0 +1,23 @@
+{
+  "schema": "rvllm.queue_revision_receipt.v1",
+  "binary_sha256": "cdb3b76059d5dfbea47d270a2210a4bac8d94878c16fbb360c351c24d25e736b",
+  "source_sha256": "4622fa3968701ad7742138c3c71b41ac69b563ec8933164aa88991a18d36d4ad",
+  "host_tests_passed": 11,
+  "build": "passed",
+  "live_smoke": {
+    "queue": "quiet-reset-smoke-v4",
+    "jobs_succeeded": 2,
+    "long_gate_seconds": 5,
+    "observed_quiet_after_short_trial_ms": 5394.3635,
+    "accelerator_calls": 0
+  },
+  "fix": "Reset quiet windows after every successful trial and observation gaps over 2500 ms. Preserve waiting deadlines within the worker.",
+  "previous_worker": {
+    "session": 47857,
+    "pid": 32822,
+    "terminal_exit": 0,
+    "stop_reason": "Verified quiet-window continuity bug; no timing trial started.",
+    "completed_job": "30-batch-ffn-qualification"
+  },
+  "resume": "Same immutable jobs and successful result; completed qualification is skipped, no replay."
+}

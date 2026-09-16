@@ -1,0 +1,116 @@
+{
+  "after": [
+    "63-s2-restoration-host-tests"
+  ],
+  "command": {
+    "args": [
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-j",
+      "2",
+      "-p",
+      "rvllm-runtime",
+      "--features",
+      "macos-private-ane-research",
+      "--bin",
+      "rvllm_ane_int8_probe"
+    ],
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "env": {
+      "CARGO_HOME": "/Users/george/.cargo",
+      "CARGO_TARGET_DIR": "/Users/george/Downloads/rvllm/v3/target",
+      "RUSTC": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "RUSTDOC": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustdoc"
+    },
+    "executable": {
+      "path": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+      "sha256": "03e381389f5b7b8e695a744362f3866478f99034b2cf2df6afd4d42cfdab6f67"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ],
+    "thermal_state": null
+  },
+  "id": "64-s2-restoration-build",
+  "inputs": [
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/Cargo.toml",
+      "sha256": "2ecaed1c38ee1ad04418558651ee268234e75517b0039abdca3eac7480b53f96"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/Cargo.lock",
+      "sha256": "96d6c5a7c5ad992c54d2222614d37fd2c101353c140eeac75d7b337455df268e"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/Cargo.toml",
+      "sha256": "e03764467d25a4b1753aa91480958a016b436b6a6c47bd05d0faee4a9cec3ab7"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/bin/rvllm_ane_int8_probe.rs",
+      "sha256": "f3aaec85157ae29e1de166fe5709c2e2e42b655218c47755cb8eccf0789b858d"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/bin/rvllm_ane_int8_probe/ffn_batch_capture.rs",
+      "sha256": "383e7a2c5125d9bedfd07d19a6bcbf11d9a8d7a2d516fa59ffce38ab680097ac"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/bin/rvllm_ane_int8_probe/ffn_capture.rs",
+      "sha256": "39b16ece080e145a57b82c9a0b5aacef18aafa5dd55be786f68a8840d16eff8b"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/bin/rvllm_ane_int8_probe/ffn_oracle.rs",
+      "sha256": "65238f4d7ccc2e98f3bcb00bcea25facd80101977a2f2a42acd8b052a688a32b"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/bin/rvllm_ane_int8_probe/int8_batch.rs",
+      "sha256": "fe72cfc86fe48b12e070a83e3912e56559b188122c8cfd782c1f01d7a60d19af"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/bin/rvllm_ane_int8_probe/int8_palette.rs",
+      "sha256": "34c908eccdde432d965618e2e2d3884eb9b8dff276ac9ecb9161a6867618c100"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/src/ane_int8_ffn_weights.rs",
+      "sha256": "039569be220c74bbc1cc8cbccc315fcf4164c58ca901651c86248ed9b8092c5d"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/src/ane_linear.rs",
+      "sha256": "c8f691526a1b42e5bb65b79a97aed1559d057bca604cedae9b61eb3f795eb2a5"
+    },
+    {
+      "path": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "sha256": "12cab30aa9890d54445e29149a1e82d18fbe457de12801bd11bbe7e5e7fe33a0"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/bin/rvllm_ane_int8_probe/capture_journal.rs",
+      "sha256": "86ccf0d08adc29cdac01267448473ffecc963af0c4ee70dd199a759efb2d37a3"
+    }
+  ],
+  "max_run_seconds": 1200,
+  "max_wait_seconds": 86400,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 10,
+  "validator": null
+}

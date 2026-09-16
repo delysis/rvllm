@@ -1,0 +1,2518 @@
+{
+  "all_references_match": false,
+  "ane_cache_policy": "reuse-with-compile-budget",
+  "ane_compile_budget": 16,
+  "ane_compile_budget_used": 0,
+  "ane_execution_verified": true,
+  "ane_prepare_ms": 57978.036833,
+  "ane_weight_plan": "static-int8-ffn-cached",
+  "cases": [
+    {
+      "ane_cache_import_ms": 21.094292,
+      "ane_decode_steps": 1,
+      "generated_text": "Paris",
+      "generated_tokens": [
+        50429,
+        106
+      ],
+      "matches_reference": null,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 1722.153291,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        40654,
+        607,
+        1164,
+        506,
+        5279,
+        529,
+        7001,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": null,
+      "steps": [
+        {
+          "attention_ms": 27.336041,
+          "ffn_ms": 205.308084,
+          "host_ms": 23.997041999999986,
+          "input_token": 50429,
+          "layer_states": [
+            {
+              "file": "ane-position-21-layer-00.fp16",
+              "layer": 0,
+              "sha256": "97a65dc47179e99b62234f9fc3d551e25e15992ddd53f748a815dc2d933d435b"
+            },
+            {
+              "file": "ane-position-21-layer-01.fp16",
+              "layer": 1,
+              "sha256": "9c993ba43460725d20fcc8f197a9af2677e8fc4af900e4b0839f6afee06a6860"
+            },
+            {
+              "file": "ane-position-21-layer-02.fp16",
+              "layer": 2,
+              "sha256": "53a0c475bf1dac60ede4c410f06bda3c4a5acbc061a860c848d0f464cab82ae7"
+            },
+            {
+              "file": "ane-position-21-layer-03.fp16",
+              "layer": 3,
+              "sha256": "01912aa0d3edc226858b39fd096c9cf573220ab0906a856880c32e2f57d62160"
+            },
+            {
+              "file": "ane-position-21-layer-04.fp16",
+              "layer": 4,
+              "sha256": "aa043d84f69c40093d969c1c12dcd08a929809fcbcc8a2330bd9968c0f2f8704"
+            },
+            {
+              "file": "ane-position-21-layer-05.fp16",
+              "layer": 5,
+              "sha256": "75695719ef57d46dc58e40c79455f40a901e63ad2f45f4626330ac5134e9a353"
+            },
+            {
+              "file": "ane-position-21-layer-06.fp16",
+              "layer": 6,
+              "sha256": "02f4eb890309ab8b375e95ace7f3f5abaabf49054d04fb289599ce434158ba63"
+            },
+            {
+              "file": "ane-position-21-layer-07.fp16",
+              "layer": 7,
+              "sha256": "e48412169dd466df5619c3ff51b7279ba903572ec32d92a3c6a95df86fd869f9"
+            },
+            {
+              "file": "ane-position-21-layer-08.fp16",
+              "layer": 8,
+              "sha256": "07bf5bfe6a4c4221a32d214ac807770d3f960f8334af29da5de2f05f8d284778"
+            },
+            {
+              "file": "ane-position-21-layer-09.fp16",
+              "layer": 9,
+              "sha256": "7b5d0a8e3184ec4258fa63252d825bd8ba2f0664f73c77977b516e97c39adb2a"
+            },
+            {
+              "file": "ane-position-21-layer-10.fp16",
+              "layer": 10,
+              "sha256": "a4fb9a07b479e8825b459c7f8d6591571eeff09c5598f59b940250f7daf33dfb"
+            },
+            {
+              "file": "ane-position-21-layer-11.fp16",
+              "layer": 11,
+              "sha256": "1895dbdf55d9f817625d6cba4e84fb0e053ec53335b948360f664d618d16872f"
+            },
+            {
+              "file": "ane-position-21-layer-12.fp16",
+              "layer": 12,
+              "sha256": "c64486d76e4934c7ed9689330cf05a0fae431145158c5ca23a75db868efb742a"
+            },
+            {
+              "file": "ane-position-21-layer-13.fp16",
+              "layer": 13,
+              "sha256": "499d805fc078f1bdbc0c53533d679ecd6ac69314540b9863b21e6ef076582dd3"
+            },
+            {
+              "file": "ane-position-21-layer-14.fp16",
+              "layer": 14,
+              "sha256": "a253c98866962783d74fe3531b5ff355fc727fdd11b198a35685be2e3475ae15"
+            },
+            {
+              "file": "ane-position-21-layer-15.fp16",
+              "layer": 15,
+              "sha256": "01a82e7562edfa6c955dfb07960d45e80644a7fbf79056627711f296fbc358c5"
+            },
+            {
+              "file": "ane-position-21-layer-16.fp16",
+              "layer": 16,
+              "sha256": "275fa4c8aef1b7e90e22ed6571b113e3b1866c6cc078516c3270defa85dbc6bd"
+            },
+            {
+              "file": "ane-position-21-layer-17.fp16",
+              "layer": 17,
+              "sha256": "603995580f3278011c3c8ea219e55b70fe21d5658da1d362532cdbbfa916bd42"
+            },
+            {
+              "file": "ane-position-21-layer-18.fp16",
+              "layer": 18,
+              "sha256": "b36b9da90507c3f2c40c88666b8a29ab22f55b6a7deba6bc059813549ca0c070"
+            },
+            {
+              "file": "ane-position-21-layer-19.fp16",
+              "layer": 19,
+              "sha256": "a238532a61263f8d481f93acd757263b09362ac9423903a51a85d850138ec631"
+            },
+            {
+              "file": "ane-position-21-layer-20.fp16",
+              "layer": 20,
+              "sha256": "c40b827182e6aff48374b0bfbdd5b1b8079705e4b7eddd7c2751c09275cf3538"
+            },
+            {
+              "file": "ane-position-21-layer-21.fp16",
+              "layer": 21,
+              "sha256": "471f5db5e567c498cf379e5e3a4646fd404cda67d0737436625f416697dd43a8"
+            },
+            {
+              "file": "ane-position-21-layer-22.fp16",
+              "layer": 22,
+              "sha256": "0af9b7323f1ba4bf9a9ac7b92cc4fcea14d6061777d5d870e728c448be2cc38f"
+            },
+            {
+              "file": "ane-position-21-layer-23.fp16",
+              "layer": 23,
+              "sha256": "450b32eae692539b0e9fb49a4ff584a90d9b0c91b77722808d72fe8eba8a8333"
+            },
+            {
+              "file": "ane-position-21-layer-24.fp16",
+              "layer": 24,
+              "sha256": "b6a379ffb85f5ba34beb7778a0af86fd0a77c19839d0802c209209c4c4e724da"
+            },
+            {
+              "file": "ane-position-21-layer-25.fp16",
+              "layer": 25,
+              "sha256": "716fbd2352e27941000af9925e83bef46a29673ba188b1593a7505a25a9cef76"
+            },
+            {
+              "file": "ane-position-21-layer-26.fp16",
+              "layer": 26,
+              "sha256": "93b116d645c8ab5f28c7d10f74b6e5fd3a1e0461c7a2bd64186dcc9d23c9fe6c"
+            },
+            {
+              "file": "ane-position-21-layer-27.fp16",
+              "layer": 27,
+              "sha256": "784092f669e529d058df2613ec9d0dec11c5b35f99a941c6d2aa2fc4c72c2261"
+            },
+            {
+              "file": "ane-position-21-layer-28.fp16",
+              "layer": 28,
+              "sha256": "42f23ff4fd2558df5e1ecdf9e42e88546750af7dc01740f2c1877119b80e84ba"
+            },
+            {
+              "file": "ane-position-21-layer-29.fp16",
+              "layer": 29,
+              "sha256": "1afdaf16bacf90050e9b39172fd3919d843dd97d875cc4e274c62cde1d554b1c"
+            },
+            {
+              "file": "ane-position-21-layer-30.fp16",
+              "layer": 30,
+              "sha256": "adb73a61fd06cbc77e4cb881c6b8178969cd8886df069be5946f3189617b4cf9"
+            },
+            {
+              "file": "ane-position-21-layer-31.fp16",
+              "layer": 31,
+              "sha256": "8638f5a0a3e35654c86a5f1df9fba898336a3d1009fbde40567d40fe12739302"
+            },
+            {
+              "file": "ane-position-21-layer-32.fp16",
+              "layer": 32,
+              "sha256": "34ef092d39a019dec49a73b501cb56dc2b0eadcacb1c2089af0a78e39eee017e"
+            },
+            {
+              "file": "ane-position-21-layer-33.fp16",
+              "layer": 33,
+              "sha256": "0949a2dad84859d15f0a04f41a9d3dc42abd3353dc5a11fc5508dc988d4ca67f"
+            },
+            {
+              "file": "ane-position-21-layer-34.fp16",
+              "layer": 34,
+              "sha256": "5cd0f826fe7455739cbddaaaafa32c0fa550210af06399dc9f27cdaaae323edf"
+            },
+            {
+              "file": "ane-position-21-layer-35.fp16",
+              "layer": 35,
+              "sha256": "211581c2542bfbd62e0fe7d6f7f4bec258d73311ae371ecd82786f4ae5aab144"
+            },
+            {
+              "file": "ane-position-21-layer-36.fp16",
+              "layer": 36,
+              "sha256": "6a3fa00d06eb04b94e74f838e3a40b96caa1da04cb67ccbce406b73bb39de840"
+            },
+            {
+              "file": "ane-position-21-layer-37.fp16",
+              "layer": 37,
+              "sha256": "c4b26dae9864d177408826f8deb980cf84f6c27743d919cd01d202a0facbf057"
+            },
+            {
+              "file": "ane-position-21-layer-38.fp16",
+              "layer": 38,
+              "sha256": "d9573c5370a5969875c99af01750fea752d087363b5218eefaf8d93a03749f51"
+            },
+            {
+              "file": "ane-position-21-layer-39.fp16",
+              "layer": 39,
+              "sha256": "5199beb684881f19cdf5fcc06fb10147a21fcd37d09a8c797a46e23473e0960c"
+            },
+            {
+              "file": "ane-position-21-layer-40.fp16",
+              "layer": 40,
+              "sha256": "ef14a3ee9ad57d2b4212080006e9393614a3f16ffb6a023f1da126c0c4113328"
+            },
+            {
+              "file": "ane-position-21-layer-41.fp16",
+              "layer": 41,
+              "sha256": "4eab22b0e247defdfc6dcfb1173b21ccc4233d4ad0a627abb8f0d23ff6fae774"
+            },
+            {
+              "file": "ane-position-21-layer-42.fp16",
+              "layer": 42,
+              "sha256": "20e39760c6eaee136cd4fe227689838fdd5c6478e22295650db457eeab320760"
+            },
+            {
+              "file": "ane-position-21-layer-43.fp16",
+              "layer": 43,
+              "sha256": "d6949dfa2cd5339fae648075ca34462824b7eca99c2b242c34a9f074f00c7ae7"
+            },
+            {
+              "file": "ane-position-21-layer-44.fp16",
+              "layer": 44,
+              "sha256": "b81098d9ba193ed476472243f2f14523022b4897e00f1cff8eac92f64084b265"
+            },
+            {
+              "file": "ane-position-21-layer-45.fp16",
+              "layer": 45,
+              "sha256": "fe3a80cee7bcfe17a994742c5e8a6cd43422922543b5081a1b27e576f738cac1"
+            },
+            {
+              "file": "ane-position-21-layer-46.fp16",
+              "layer": 46,
+              "sha256": "a8b81a7b8cd20b428a0b566f52031d8a1ae67ba5e8d067d7eeead98cb296d01b"
+            },
+            {
+              "file": "ane-position-21-layer-47.fp16",
+              "layer": 47,
+              "sha256": "bd9de2703e60bc37877cfab7d4e50f6c6edc3e92c1f88c537a2b922d6e540099"
+            }
+          ],
+          "next_token": 106,
+          "output_ms": 45.558413,
+          "position": 21,
+          "qkv_ms": 74.444169,
+          "top_five": [
+            [
+              106,
+              18.15625
+            ],
+            [
+              1340,
+              1.3125
+            ],
+            [
+              236748,
+              1.091796875
+            ],
+            [
+              869,
+              0.8173828125
+            ],
+            [
+              11989,
+              0.58154296875
+            ]
+          ],
+          "total_ms": 427.007708,
+          "vocabulary_ms": 50.363959
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 45.257667,
+      "ane_decode_steps": 9,
+      "generated_text": "The blue fox jumps over the quiet river.",
+      "generated_tokens": [
+        818,
+        3730,
+        37423,
+        38167,
+        1024,
+        506,
+        12010,
+        8858,
+        236761,
+        106
+      ],
+      "matches_reference": null,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 2168.626417,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        2094,
+        563,
+        614,
+        56124,
+        13315,
+        1003,
+        496,
+        7972,
+        236761,
+        1174,
+        563,
+        614,
+        56124,
+        13315,
+        1003,
+        496,
+        7972,
+        236761,
+        1174,
+        563,
+        614,
+        56124,
+        13315,
+        1003,
+        496,
+        7972,
+        236761,
+        1174,
+        563,
+        614,
+        56124,
+        13315,
+        1003,
+        496,
+        7972,
+        236761,
+        1174,
+        563,
+        614,
+        56124,
+        13315,
+        1003,
+        496,
+        7972,
+        236761,
+        1174,
+        563,
+        614,
+        56124,
+        13315,
+        1003,
+        496,
+        7972,
+        236761,
+        11371,
+        7121,
+        672,
+        13315,
+        532,
+        5017,
+        1663,
+        236787,
+        669,
+        3730,
+        37423,
+        38167,
+        1024,
+        506,
+        12010,
+        8858,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": null,
+      "steps": [
+        {
+          "attention_ms": 20.401413000000005,
+          "ffn_ms": 119.301751,
+          "host_ms": 19.56920899999999,
+          "input_token": 818,
+          "layer_states": [
+            {
+              "file": "ane-position-84-layer-00.fp16",
+              "layer": 0,
+              "sha256": "478c8a61436a8e80737b85a5f4bb000f6663af944d0874a3332e04e5bfbf9ff7"
+            },
+            {
+              "file": "ane-position-84-layer-01.fp16",
+              "layer": 1,
+              "sha256": "0d45dca6b8a0aaa7408abb190b0d415bae46694b7aa38c880facfad81ca94a7e"
+            },
+            {
+              "file": "ane-position-84-layer-02.fp16",
+              "layer": 2,
+              "sha256": "deab5a7dd28cb279f9c89d09d86899468d10fb60189047de9f2cc81958af7db3"
+            },
+            {
+              "file": "ane-position-84-layer-03.fp16",
+              "layer": 3,
+              "sha256": "0032dfa1968305c4fb6170afa302c8b4bd45f000ab2800c1963b1f1fdc15cafd"
+            },
+            {
+              "file": "ane-position-84-layer-04.fp16",
+              "layer": 4,
+              "sha256": "ae52cb75d7735da720fe19b6a206a67ebb07c623b1a8934bbbaf8ac77d1b150c"
+            },
+            {
+              "file": "ane-position-84-layer-05.fp16",
+              "layer": 5,
+              "sha256": "f569a1c7cb7153e22f089eab5e2573412e110751b804f67828b79a96765528e3"
+            },
+            {
+              "file": "ane-position-84-layer-06.fp16",
+              "layer": 6,
+              "sha256": "370623d1384a8faab06cc31571ab79ba7ac3322543910b92c11dab5fd908a392"
+            },
+            {
+              "file": "ane-position-84-layer-07.fp16",
+              "layer": 7,
+              "sha256": "5ff1266606469ee5a7647a14978743431d6510772993f0e22f5aa995bbac42ec"
+            },
+            {
+              "file": "ane-position-84-layer-08.fp16",
+              "layer": 8,
+              "sha256": "f600bfc3d1234ebc89b6857e61038640d9afdc47377e5307f75221ce43853f94"
+            },
+            {
+              "file": "ane-position-84-layer-09.fp16",
+              "layer": 9,
+              "sha256": "82eb94c30db78afc64bdacb0e032e77d93876e2fdb20ea7a7ade41dda11c96d0"
+            },
+            {
+              "file": "ane-position-84-layer-10.fp16",
+              "layer": 10,
+              "sha256": "a6da56a63fc2945a76d60926c39ed66f840d9dd95aa8c0bfb7de89d2e2099fc9"
+            },
+            {
+              "file": "ane-position-84-layer-11.fp16",
+              "layer": 11,
+              "sha256": "25291c694765fc3514f335c5c240df72e0c94d5061e7d5f34f45b286d99a7623"
+            },
+            {
+              "file": "ane-position-84-layer-12.fp16",
+              "layer": 12,
+              "sha256": "2e4123081530dfd071f49ff6c74e57fd6f735bda6560d178db911c4c20aa8c9a"
+            },
+            {
+              "file": "ane-position-84-layer-13.fp16",
+              "layer": 13,
+              "sha256": "525afeaa3a51e15c50257872e25a956b26dbfa2d7133c66cb381e5dcc46da3a3"
+            },
+            {
+              "file": "ane-position-84-layer-14.fp16",
+              "layer": 14,
+              "sha256": "bc8b9f30c71b7b554b1f1d8ae33b7a9cb0cacdac5269ccc27abc83108684c3e7"
+            },
+            {
+              "file": "ane-position-84-layer-15.fp16",
+              "layer": 15,
+              "sha256": "b621f0c74c9ecec0d22dea78b2f4672f2f10c168edd6482c83123ac81dee7e6f"
+            },
+            {
+              "file": "ane-position-84-layer-16.fp16",
+              "layer": 16,
+              "sha256": "a302117ee7307dc600632973b03057e61a7d92b463a6bf7231bc4e23a0ed121a"
+            },
+            {
+              "file": "ane-position-84-layer-17.fp16",
+              "layer": 17,
+              "sha256": "445a81add808d68143af91f0e676cd6e56fd88c45db1f57de09043c094a7453f"
+            },
+            {
+              "file": "ane-position-84-layer-18.fp16",
+              "layer": 18,
+              "sha256": "045645200a92d494bc8ae85cb1f48428610ee68f1235158b93c11865a1d8c92f"
+            },
+            {
+              "file": "ane-position-84-layer-19.fp16",
+              "layer": 19,
+              "sha256": "40cdb502681e22267e5020f596b5aeb22d7080fa42c432c641f06095e972faf5"
+            },
+            {
+              "file": "ane-position-84-layer-20.fp16",
+              "layer": 20,
+              "sha256": "d239ed286c3665b15b8e4bfe4b00637fbec9e92d8840fbc6c224bea7d3e6fea1"
+            },
+            {
+              "file": "ane-position-84-layer-21.fp16",
+              "layer": 21,
+              "sha256": "a66f48b55980935ad5f6c30e9c8517c84a30884a1b759c6c63324f700498af35"
+            },
+            {
+              "file": "ane-position-84-layer-22.fp16",
+              "layer": 22,
+              "sha256": "218a3c04f470f39cf56efee1719b9620481a10b8e8f77d9e51c21ee946613bd2"
+            },
+            {
+              "file": "ane-position-84-layer-23.fp16",
+              "layer": 23,
+              "sha256": "554b7fe2e56702877840fe35e5c7df56669f8443bb1c9fe4185f6e4ebb83f726"
+            },
+            {
+              "file": "ane-position-84-layer-24.fp16",
+              "layer": 24,
+              "sha256": "5774655a991a9cdf62ebf9d08c3a05f94079b0eaeafe86ba77ba8b0725499491"
+            },
+            {
+              "file": "ane-position-84-layer-25.fp16",
+              "layer": 25,
+              "sha256": "a1cd79575ac9065e0a188baba5bfbb62102c021d155fc7ae751dbf6a812f4a69"
+            },
+            {
+              "file": "ane-position-84-layer-26.fp16",
+              "layer": 26,
+              "sha256": "fd7189fd5a105ee44974967a0976fbe7ede1ca014772a642ec4795ab6142f7d8"
+            },
+            {
+              "file": "ane-position-84-layer-27.fp16",
+              "layer": 27,
+              "sha256": "8137147b630c98c61a08a3759e441af1fe6b257f60741b9228ff27aca1d7aba4"
+            },
+            {
+              "file": "ane-position-84-layer-28.fp16",
+              "layer": 28,
+              "sha256": "63584804cc5fb406e8760a85785a60829007396379ac0e69a1502073cd170229"
+            },
+            {
+              "file": "ane-position-84-layer-29.fp16",
+              "layer": 29,
+              "sha256": "8714a8b0b2f155b7dbf1021b1b3fac14aead2aa24947a2cb8e4362b4c00f4af2"
+            },
+            {
+              "file": "ane-position-84-layer-30.fp16",
+              "layer": 30,
+              "sha256": "23fc42f046e4cfbbcacd45a279f764e0391be58995157e2862147f4e3bf6fd1f"
+            },
+            {
+              "file": "ane-position-84-layer-31.fp16",
+              "layer": 31,
+              "sha256": "eea73c81f68bd4c522ff016d04b0babc60a86b58780351164cc9586565bc4447"
+            },
+            {
+              "file": "ane-position-84-layer-32.fp16",
+              "layer": 32,
+              "sha256": "f78057e0200d84d3c7913ff20b83829a94c36d8a22c087fb3a5449af6aca90c0"
+            },
+            {
+              "file": "ane-position-84-layer-33.fp16",
+              "layer": 33,
+              "sha256": "5ddd1f24aa9f5cd0edc7eed7f86db85901530f5a254169f3240139a1d4337bbe"
+            },
+            {
+              "file": "ane-position-84-layer-34.fp16",
+              "layer": 34,
+              "sha256": "e09026db093b59e92da4a64bdca44e21e4eb1a597ae860112c91405ced35e801"
+            },
+            {
+              "file": "ane-position-84-layer-35.fp16",
+              "layer": 35,
+              "sha256": "ccfd4541fa741516c04e6152be4563bbac42c19f14eb3316085fcbd79e994575"
+            },
+            {
+              "file": "ane-position-84-layer-36.fp16",
+              "layer": 36,
+              "sha256": "b5c5d3395e6f2c8b0fa88b73a1b0207da2d9e5daedbba375e310b67bf0911bdb"
+            },
+            {
+              "file": "ane-position-84-layer-37.fp16",
+              "layer": 37,
+              "sha256": "a1e4c51fc8d982147b9c02ac8baed8badec714e51299351d45997bbff6c28a80"
+            },
+            {
+              "file": "ane-position-84-layer-38.fp16",
+              "layer": 38,
+              "sha256": "caf6f62a1c5390203129375416a12fda055b98e319a42f1ddebf0c1286c1ab4c"
+            },
+            {
+              "file": "ane-position-84-layer-39.fp16",
+              "layer": 39,
+              "sha256": "f607b72df360a8847fb50aba5ebf04fa851828c5cc0baf5ce2a51f373a0dc02e"
+            },
+            {
+              "file": "ane-position-84-layer-40.fp16",
+              "layer": 40,
+              "sha256": "e9b5feed079fa5183806630fa9d665a1f0ef0417890a014c936346ac8af2e6cb"
+            },
+            {
+              "file": "ane-position-84-layer-41.fp16",
+              "layer": 41,
+              "sha256": "cca30fe7401842c8810757aff83e5be4b7468183f143752d6a9cd23b433744d1"
+            },
+            {
+              "file": "ane-position-84-layer-42.fp16",
+              "layer": 42,
+              "sha256": "e61fcdde601df7728b4fe438f4aeb9a2913af7654026ebb33228289c96c44a6a"
+            },
+            {
+              "file": "ane-position-84-layer-43.fp16",
+              "layer": 43,
+              "sha256": "af08b418b2de12ec394da2b423659ab29d960bb502b7f346bbec2fca54d258bb"
+            },
+            {
+              "file": "ane-position-84-layer-44.fp16",
+              "layer": 44,
+              "sha256": "69871e23003efdca45f93079a7766b8aff5cdf497d789a5a5346adb57ba39e1a"
+            },
+            {
+              "file": "ane-position-84-layer-45.fp16",
+              "layer": 45,
+              "sha256": "42444a736b020f31788674a6f84dca85e9694fc252778a92cf88ebf1301939f4"
+            },
+            {
+              "file": "ane-position-84-layer-46.fp16",
+              "layer": 46,
+              "sha256": "43d429a14a709c5ec877c6435cbeb4df070910c98e16934d6b2fdbf504e834a1"
+            },
+            {
+              "file": "ane-position-84-layer-47.fp16",
+              "layer": 47,
+              "sha256": "790511ea698285c15ea20aa25679a3dd1e932bb7ad450c6bb1740d38d9592f0b"
+            }
+          ],
+          "next_token": 3730,
+          "output_ms": 24.018750999999995,
+          "position": 84,
+          "qkv_ms": 37.015541,
+          "top_five": [
+            [
+              3730,
+              10.8203125
+            ],
+            [
+              37423,
+              -12.828125
+            ],
+            [
+              9595,
+              -13.3046875
+            ],
+            [
+              861,
+              -13.5
+            ],
+            [
+              16045,
+              -14.0
+            ]
+          ],
+          "total_ms": 241.09975,
+          "vocabulary_ms": 20.793085
+        },
+        {
+          "attention_ms": 21.220128999999996,
+          "ffn_ms": 126.24307999999998,
+          "host_ms": 7.474157000000041,
+          "input_token": 3730,
+          "layer_states": [],
+          "next_token": 37423,
+          "output_ms": 25.683379000000002,
+          "position": 85,
+          "qkv_ms": 40.24621199999999,
+          "top_five": [
+            [
+              37423,
+              15.734375
+            ],
+            [
+              7184,
+              -7.18359375
+            ],
+            [
+              3673,
+              -8.21875
+            ],
+            [
+              17615,
+              -8.59375
+            ],
+            [
+              6938,
+              -9.5078125
+            ]
+          ],
+          "total_ms": 243.62525,
+          "vocabulary_ms": 22.758293000000002
+        },
+        {
+          "attention_ms": 21.401289000000006,
+          "ffn_ms": 121.635499,
+          "host_ms": 7.135008999999982,
+          "input_token": 37423,
+          "layer_states": [],
+          "next_token": 38167,
+          "output_ms": 30.140910000000012,
+          "position": 86,
+          "qkv_ms": 43.14095700000001,
+          "top_five": [
+            [
+              38167,
+              11.625
+            ],
+            [
+              32694,
+              -8.671875
+            ],
+            [
+              532,
+              -8.75
+            ],
+            [
+              1164,
+              -9.203125
+            ],
+            [
+              9212,
+              -9.4921875
+            ]
+          ],
+          "total_ms": 244.469458,
+          "vocabulary_ms": 21.015794
+        },
+        {
+          "attention_ms": 20.154627,
+          "ffn_ms": 118.985087,
+          "host_ms": 7.0564120000000266,
+          "input_token": 38167,
+          "layer_states": [],
+          "next_token": 1024,
+          "output_ms": 23.327413999999997,
+          "position": 87,
+          "qkv_ms": 39.073334,
+          "top_five": [
+            [
+              1024,
+              17.265625
+            ],
+            [
+              855,
+              -4.1875
+            ],
+            [
+              41970,
+              -8.2421875
+            ],
+            [
+              49081,
+              -8.4765625
+            ],
+            [
+              237464,
+              -8.6796875
+            ]
+          ],
+          "total_ms": 229.09270800000002,
+          "vocabulary_ms": 20.495834
+        },
+        {
+          "attention_ms": 22.924205999999998,
+          "ffn_ms": 138.79308400000002,
+          "host_ms": 8.354294,
+          "input_token": 1024,
+          "layer_states": [],
+          "next_token": 506,
+          "output_ms": 26.587877,
+          "position": 88,
+          "qkv_ms": 42.539370999999996,
+          "top_five": [
+            [
+              506,
+              21.921875
+            ],
+            [
+              1027,
+              4.8984375
+            ],
+            [
+              1437,
+              3.5859375
+            ],
+            [
+              4455,
+              2.927734375
+            ],
+            [
+              1061,
+              1.8720703125
+            ]
+          ],
+          "total_ms": 267.8125,
+          "vocabulary_ms": 28.613668
+        },
+        {
+          "attention_ms": 23.044999,
+          "ffn_ms": 133.47532999999999,
+          "host_ms": 7.537756000000023,
+          "input_token": 506,
+          "layer_states": [],
+          "next_token": 12010,
+          "output_ms": 26.797788000000004,
+          "position": 89,
+          "qkv_ms": 44.550126000000006,
+          "top_five": [
+            [
+              12010,
+              11.375
+            ],
+            [
+              2947,
+              -8.078125
+            ],
+            [
+              8858,
+              -8.703125
+            ],
+            [
+              36574,
+              -9.140625
+            ],
+            [
+              91638,
+              -9.15625
+            ]
+          ],
+          "total_ms": 256.8845,
+          "vocabulary_ms": 21.478501
+        },
+        {
+          "attention_ms": 20.640080999999995,
+          "ffn_ms": 119.65232999999995,
+          "host_ms": 7.148422000000011,
+          "input_token": 12010,
+          "layer_states": [],
+          "next_token": 8858,
+          "output_ms": 24.819998000000005,
+          "position": 90,
+          "qkv_ms": 40.198628,
+          "top_five": [
+            [
+              8858,
+              15.8359375
+            ],
+            [
+              7940,
+              -8.203125
+            ],
+            [
+              9744,
+              -8.53125
+            ],
+            [
+              236761,
+              -8.859375
+            ],
+            [
+              15961,
+              -8.8984375
+            ]
+          ],
+          "total_ms": 233.17974999999998,
+          "vocabulary_ms": 20.720291000000003
+        },
+        {
+          "attention_ms": 22.468995,
+          "ffn_ms": 133.09158499999998,
+          "host_ms": 8.242004999999985,
+          "input_token": 8858,
+          "layer_states": [],
+          "next_token": 236761,
+          "output_ms": 26.626165,
+          "position": 91,
+          "qkv_ms": 42.446334,
+          "top_five": [
+            [
+              236761,
+              18.359375
+            ],
+            [
+              106,
+              2.021484375
+            ],
+            [
+              236779,
+              1.990234375
+            ],
+            [
+              578,
+              1.638671875
+            ],
+            [
+              9603,
+              1.5029296875
+            ]
+          ],
+          "total_ms": 261.35166599999997,
+          "vocabulary_ms": 28.476582
+        },
+        {
+          "attention_ms": 24.413000999999998,
+          "ffn_ms": 146.991623,
+          "host_ms": 7.258043000000008,
+          "input_token": 236761,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 28.966587,
+          "position": 92,
+          "qkv_ms": 45.837121,
+          "top_five": [
+            [
+              106,
+              19.84375
+            ],
+            [
+              1340,
+              4.25
+            ],
+            [
+              236779,
+              3.62109375
+            ],
+            [
+              236760,
+              2.806640625
+            ],
+            [
+              40616,
+              2.478515625
+            ]
+          ],
+          "total_ms": 275.176708,
+          "vocabulary_ms": 21.710333
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 96.66129099999999,
+      "ane_decode_steps": 1,
+      "generated_text": "violet",
+      "generated_tokens": [
+        68002,
+        106
+      ],
+      "matches_reference": null,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 5134.298375,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        818,
+        6789,
+        3658,
+        563,
+        39261,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        24181,
+        607,
+        1186,
+        506,
+        6789,
+        3658,
+        8249,
+        657,
+        506,
+        6534,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": null,
+      "steps": [
+        {
+          "attention_ms": 25.672213,
+          "ffn_ms": 148.87978600000002,
+          "host_ms": 31.494374000000015,
+          "input_token": 68002,
+          "layer_states": [
+            {
+              "file": "ane-position-230-layer-00.fp16",
+              "layer": 0,
+              "sha256": "4ba088b0118a7537c57c7e4323f05d2fe56a46eaf22a329763249726ae2283fa"
+            },
+            {
+              "file": "ane-position-230-layer-01.fp16",
+              "layer": 1,
+              "sha256": "a05e8c5cacb057bf8cab1871090bc403c386a0a7bdac9c153816449c1f2ea801"
+            },
+            {
+              "file": "ane-position-230-layer-02.fp16",
+              "layer": 2,
+              "sha256": "dc44277124708ecf54dc46a09402fc9257e91ef0809d1bfa66c8b6fb4599a9ff"
+            },
+            {
+              "file": "ane-position-230-layer-03.fp16",
+              "layer": 3,
+              "sha256": "5cb983d1dd2bf85827a25f951c43ca6bff9ef0b27a69150ffd83a4a237f42134"
+            },
+            {
+              "file": "ane-position-230-layer-04.fp16",
+              "layer": 4,
+              "sha256": "b139270503ce9fabc6535e02014f86b2cdf692877ba953c71ba0a977fb1303e5"
+            },
+            {
+              "file": "ane-position-230-layer-05.fp16",
+              "layer": 5,
+              "sha256": "2f11d529416aa1e768ba23d6f08e5c1fca4d642e7cdd50c7d4b5c4c94ed0a126"
+            },
+            {
+              "file": "ane-position-230-layer-06.fp16",
+              "layer": 6,
+              "sha256": "20e5a3f0eb935aad7d11d3fd3450b978ca7426469901fa5d275bb8392a48a00b"
+            },
+            {
+              "file": "ane-position-230-layer-07.fp16",
+              "layer": 7,
+              "sha256": "5345178901ab0548eb6a6b6cedb8b821ddc712504bd9ff4481f3e77df5ca87e2"
+            },
+            {
+              "file": "ane-position-230-layer-08.fp16",
+              "layer": 8,
+              "sha256": "a76050eb8de7cb1daafe6e719a2c12b7e7dc5d639a04e81709b3d3c05087e927"
+            },
+            {
+              "file": "ane-position-230-layer-09.fp16",
+              "layer": 9,
+              "sha256": "2c4cefb3e0e2b362d7ddd037f13e848236844dc2e165ca3d50f79f553c6c51ae"
+            },
+            {
+              "file": "ane-position-230-layer-10.fp16",
+              "layer": 10,
+              "sha256": "46829ded8c1cfb48ea51c91f02e9cc65cb58cf8bc75dc957d8612220417a85d3"
+            },
+            {
+              "file": "ane-position-230-layer-11.fp16",
+              "layer": 11,
+              "sha256": "34d65e1afb17ce8f3abc9207fd39ea1fddadf89cf14804de6d9ee69a6a4ae23b"
+            },
+            {
+              "file": "ane-position-230-layer-12.fp16",
+              "layer": 12,
+              "sha256": "417ac2ed541e7c515233065fdcbd3ee7673cf2ba9fa94c071e72c52805f949a2"
+            },
+            {
+              "file": "ane-position-230-layer-13.fp16",
+              "layer": 13,
+              "sha256": "a9fa426b1a42a507656125b7dad907da28097727720a4883bb32d8302eb2c589"
+            },
+            {
+              "file": "ane-position-230-layer-14.fp16",
+              "layer": 14,
+              "sha256": "e1ea0bf29251ab818a9519d7950a2eb3f3f87494d53f452a187d36e85d2e854d"
+            },
+            {
+              "file": "ane-position-230-layer-15.fp16",
+              "layer": 15,
+              "sha256": "7d548d68a5f62e608de7f729d27766dee0b7c8544e7e1d07b85a8ea0001283ca"
+            },
+            {
+              "file": "ane-position-230-layer-16.fp16",
+              "layer": 16,
+              "sha256": "61dae191e276c6db772fa50016f8cc240b7e2e2283755dc5f58b199c6ae2f303"
+            },
+            {
+              "file": "ane-position-230-layer-17.fp16",
+              "layer": 17,
+              "sha256": "94cbb7445631178385a19778832d988f82e3089805c802113aa0fc3fad7e3104"
+            },
+            {
+              "file": "ane-position-230-layer-18.fp16",
+              "layer": 18,
+              "sha256": "f7231ccc61fbe8412ed2d77b700a7252728741f0511bf25c6ee4f59e068e05e3"
+            },
+            {
+              "file": "ane-position-230-layer-19.fp16",
+              "layer": 19,
+              "sha256": "1307d11a4fe8e37adc761feb2fa01b55abf939cbd75f64a26a2f299b0c4f61ab"
+            },
+            {
+              "file": "ane-position-230-layer-20.fp16",
+              "layer": 20,
+              "sha256": "9945a3b49c0eec63489b2cbb5adece28b21561d5bb7deee0a866ca18e7802533"
+            },
+            {
+              "file": "ane-position-230-layer-21.fp16",
+              "layer": 21,
+              "sha256": "f084c08d562feb5d5888236fdb7d49fdff94900e8fc238bf2fb726794f2b5df4"
+            },
+            {
+              "file": "ane-position-230-layer-22.fp16",
+              "layer": 22,
+              "sha256": "327c25419d75f6ca11bc6dea9473dfbfe6c4d16e1ad8577dd8f78ba5489b5107"
+            },
+            {
+              "file": "ane-position-230-layer-23.fp16",
+              "layer": 23,
+              "sha256": "0fa1a39ee8df219c218be3f0803ee76b913cceb6965dcffdd2cf2acca505c716"
+            },
+            {
+              "file": "ane-position-230-layer-24.fp16",
+              "layer": 24,
+              "sha256": "77776b4db2ed6cb4057a575f2048be75a116a30bb83fd611d92c5c9467a16847"
+            },
+            {
+              "file": "ane-position-230-layer-25.fp16",
+              "layer": 25,
+              "sha256": "2ca99d5f4543f0b69badd208003646a040bf699290537630df705d5a4cb23ac4"
+            },
+            {
+              "file": "ane-position-230-layer-26.fp16",
+              "layer": 26,
+              "sha256": "4fb2fcc9581d73c07a9a478ab4d6223418a4894bb3f21036ea316cfb651c8284"
+            },
+            {
+              "file": "ane-position-230-layer-27.fp16",
+              "layer": 27,
+              "sha256": "bebbc94041352537b20288d1b8cb4f00acea23c958e9b600bfbbe879a4560702"
+            },
+            {
+              "file": "ane-position-230-layer-28.fp16",
+              "layer": 28,
+              "sha256": "f196cc2f4aeb82fd47c870e62cc0c2cf24d6374e7ffe2710eb49311689cc6b67"
+            },
+            {
+              "file": "ane-position-230-layer-29.fp16",
+              "layer": 29,
+              "sha256": "2bad27f12de6e97acc72aa1c5deb773ccee35a12980efa51545e41723a97717c"
+            },
+            {
+              "file": "ane-position-230-layer-30.fp16",
+              "layer": 30,
+              "sha256": "9e9b00578f00ff67b1d2657013e194b07255474d2efbb79e445f82fac8d5d9b6"
+            },
+            {
+              "file": "ane-position-230-layer-31.fp16",
+              "layer": 31,
+              "sha256": "9803639fa9e17dcc9e4dc92322a2792bbb6eaf5b32d2ed38d7eeb72037d1e813"
+            },
+            {
+              "file": "ane-position-230-layer-32.fp16",
+              "layer": 32,
+              "sha256": "05359916df6be35adfabfa767160361bcfa49ab1943ff37e3c20d42a03f9fa6e"
+            },
+            {
+              "file": "ane-position-230-layer-33.fp16",
+              "layer": 33,
+              "sha256": "09947ae3bfdfce3ec609285a77c04d6d554777f662c28657d25a75fd03a44897"
+            },
+            {
+              "file": "ane-position-230-layer-34.fp16",
+              "layer": 34,
+              "sha256": "0c40b6242ae1a18692d38503590564f513d47c4e5170251f5a883137eff5a525"
+            },
+            {
+              "file": "ane-position-230-layer-35.fp16",
+              "layer": 35,
+              "sha256": "86059b3603d8b96e4eabcb45c7643abf58943805811e59011a509851c56008e5"
+            },
+            {
+              "file": "ane-position-230-layer-36.fp16",
+              "layer": 36,
+              "sha256": "7103481499143b989719a567fa3fcb27ea42de6191dab2488b1d254fc917cc0f"
+            },
+            {
+              "file": "ane-position-230-layer-37.fp16",
+              "layer": 37,
+              "sha256": "e15ccdfe916e53e717e3128668a5424b1ac056344de7258aecf2f7c9c196025d"
+            },
+            {
+              "file": "ane-position-230-layer-38.fp16",
+              "layer": 38,
+              "sha256": "1a83256c86a6159241f8ae09044213e50899358a994c30fe91a5fbb3175875c8"
+            },
+            {
+              "file": "ane-position-230-layer-39.fp16",
+              "layer": 39,
+              "sha256": "7cc08e78a3e5f00555c52f1eb14ad77babb1b4c6b1144d873188d3dc3724fc7d"
+            },
+            {
+              "file": "ane-position-230-layer-40.fp16",
+              "layer": 40,
+              "sha256": "0699bf48efa127c615bd17413b5ca321ffbac0581c465d1b3faa595c9f3f659c"
+            },
+            {
+              "file": "ane-position-230-layer-41.fp16",
+              "layer": 41,
+              "sha256": "b3b43c025bf19ad77d4231e59ebaccf3e6b261dc7d2127902549550e05597942"
+            },
+            {
+              "file": "ane-position-230-layer-42.fp16",
+              "layer": 42,
+              "sha256": "38e14275fc1e2b226c3cf400c7c4c9eb5662636a9c6a0282b8fbfd1d6be2f678"
+            },
+            {
+              "file": "ane-position-230-layer-43.fp16",
+              "layer": 43,
+              "sha256": "9eb1fab0d5cea4425cdd2beb084117f8e2d84c6ae091c647282b6502866a07db"
+            },
+            {
+              "file": "ane-position-230-layer-44.fp16",
+              "layer": 44,
+              "sha256": "03d684844b003a7d2c65fa5193462eb9ac7eb8feea86f41f060b405e7798ec5d"
+            },
+            {
+              "file": "ane-position-230-layer-45.fp16",
+              "layer": 45,
+              "sha256": "b431d1f41aacb35fcb5dc2389848398187b426bf2f4690b49c18dbbc98dbde5e"
+            },
+            {
+              "file": "ane-position-230-layer-46.fp16",
+              "layer": 46,
+              "sha256": "257e128991ec9f9eaf169f23b9a302742478911d25838b008b9f0a8ec6ce05df"
+            },
+            {
+              "file": "ane-position-230-layer-47.fp16",
+              "layer": 47,
+              "sha256": "414d3321dd15733789bb0f36989df381f85e85f086432307958004f4a42249b7"
+            }
+          ],
+          "next_token": 106,
+          "output_ms": 29.964706999999994,
+          "position": 230,
+          "qkv_ms": 54.23933600000001,
+          "top_five": [
+            [
+              106,
+              17.0625
+            ],
+            [
+              236779,
+              1.548828125
+            ],
+            [
+              1340,
+              0.71142578125
+            ],
+            [
+              236748,
+              0.066162109375
+            ],
+            [
+              954,
+              0.060760498046875
+            ]
+          ],
+          "total_ms": 318.562084,
+          "vocabulary_ms": 28.311668000000004
+        }
+      ]
+    },
+    {
+      "ane_cache_import_ms": 257.210583,
+      "ane_decode_steps": 2,
+      "generated_text": "42",
+      "generated_tokens": [
+        236812,
+        236778,
+        106
+      ],
+      "matches_reference": null,
+      "metal_decode_steps": 0,
+      "prefill_command_buffers": 1,
+      "prefill_sample_capture_ms": 14270.858457999999,
+      "prompt_token_ids": [
+        2,
+        105,
+        2364,
+        107,
+        818,
+        6789,
+        1548,
+        563,
+        236743,
+        236812,
+        236778,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        1174,
+        15649,
+        6097,
+        1695,
+        4889,
+        1003,
+        7146,
+        532,
+        7983,
+        236761,
+        24181,
+        607,
+        1186,
+        506,
+        6789,
+        1548,
+        8249,
+        657,
+        506,
+        6534,
+        236761,
+        106,
+        107,
+        105,
+        4368,
+        107,
+        100,
+        45518,
+        107,
+        101
+      ],
+      "reference": null,
+      "steps": [
+        {
+          "attention_ms": 23.942999,
+          "ffn_ms": 148.07750499999997,
+          "host_ms": 27.70861899999998,
+          "input_token": 236812,
+          "layer_states": [
+            {
+              "file": "ane-position-652-layer-00.fp16",
+              "layer": 0,
+              "sha256": "5c2238d3d65823b9941c667fa492892475c91c31d0e6bb733f8bd9a73cc9e36b"
+            },
+            {
+              "file": "ane-position-652-layer-01.fp16",
+              "layer": 1,
+              "sha256": "f8849b23e7b1783b8e3aa2347a62f67ebc8eaac2a18bdd1c9dcb70dd171285e8"
+            },
+            {
+              "file": "ane-position-652-layer-02.fp16",
+              "layer": 2,
+              "sha256": "f2b6cb9f3b99d3de2e7c26d69b53460eff4ca79bc342fec5a1533160b906de97"
+            },
+            {
+              "file": "ane-position-652-layer-03.fp16",
+              "layer": 3,
+              "sha256": "a3669efad75836b45e58c28033a05bdb56102560b838ed37f0f3e77b41b40cd3"
+            },
+            {
+              "file": "ane-position-652-layer-04.fp16",
+              "layer": 4,
+              "sha256": "28b6901125f9552d175b471450b1a1fe341bdb0f73f6e773ad6aa945e645f3c4"
+            },
+            {
+              "file": "ane-position-652-layer-05.fp16",
+              "layer": 5,
+              "sha256": "c98eb8cb3d332d824115e8b1dcb0d57fa74a6b9d41f1dd7581afa08f3aba7413"
+            },
+            {
+              "file": "ane-position-652-layer-06.fp16",
+              "layer": 6,
+              "sha256": "5d3b22d7d7760980b87a116e8c8814a8a00bbd61ea6d2c70186f78c450af4eba"
+            },
+            {
+              "file": "ane-position-652-layer-07.fp16",
+              "layer": 7,
+              "sha256": "e2f7d2038c6bd7adb09103f8a517e40957d85dc0abd624e35da8f3058e062026"
+            },
+            {
+              "file": "ane-position-652-layer-08.fp16",
+              "layer": 8,
+              "sha256": "e57e3d8bfd27eeb9c228e1651c37472d4a411a12ff4d945419a2f177f34bb42d"
+            },
+            {
+              "file": "ane-position-652-layer-09.fp16",
+              "layer": 9,
+              "sha256": "8d75acadae363c683dace13fe8a0edc8feb5491c73fc5b328dc398b3671b9ab6"
+            },
+            {
+              "file": "ane-position-652-layer-10.fp16",
+              "layer": 10,
+              "sha256": "a62ec0f6d97ac4349e41d185ac859b41e6ade9a9c92aeb7912280e0a8b4ab0af"
+            },
+            {
+              "file": "ane-position-652-layer-11.fp16",
+              "layer": 11,
+              "sha256": "57d220a00114f54f22618bb2f2a54fcd24de3af8d5ea4108b12fcf2b854e00d2"
+            },
+            {
+              "file": "ane-position-652-layer-12.fp16",
+              "layer": 12,
+              "sha256": "172b1f81bd727bc95f8bfdc9d67a09860b46e7668bc99822a9b14c11d90fe63f"
+            },
+            {
+              "file": "ane-position-652-layer-13.fp16",
+              "layer": 13,
+              "sha256": "ab7d6e21cbc70d005d1a186a860b126ea622dfb357cc3c06271c19bd651fb839"
+            },
+            {
+              "file": "ane-position-652-layer-14.fp16",
+              "layer": 14,
+              "sha256": "31e55a986ef0094798d4a26dfa7bb1740daffdce4fc0c632c8381109761c5a8e"
+            },
+            {
+              "file": "ane-position-652-layer-15.fp16",
+              "layer": 15,
+              "sha256": "ac9ad35f40ed62d2b4c2f2ba30dfad718ec82ae5a42be4369b73613a4cf6938b"
+            },
+            {
+              "file": "ane-position-652-layer-16.fp16",
+              "layer": 16,
+              "sha256": "80155057d199182d857250515d7a0f099510b4d6bad713102c77ea233d5c3182"
+            },
+            {
+              "file": "ane-position-652-layer-17.fp16",
+              "layer": 17,
+              "sha256": "6266f00d350a54f1daa2dfd715cd1d39672679bdb438d2211fbc64be1cc00830"
+            },
+            {
+              "file": "ane-position-652-layer-18.fp16",
+              "layer": 18,
+              "sha256": "18b869e5bd6d9a5003523d4cedcceef91a3c760b4224cc39230561bdbaddb4f4"
+            },
+            {
+              "file": "ane-position-652-layer-19.fp16",
+              "layer": 19,
+              "sha256": "20e1910d03e30c695469b33036cdcad8e3e92e1d3ac3002d2d572c26eed992e3"
+            },
+            {
+              "file": "ane-position-652-layer-20.fp16",
+              "layer": 20,
+              "sha256": "b49d71a0c0a0652a613ad6d874e0d10703fc263c76d2f1fbc450267d525c98ce"
+            },
+            {
+              "file": "ane-position-652-layer-21.fp16",
+              "layer": 21,
+              "sha256": "205d0d18ae4bd0b448daed8f4b0024663fb2979b3bb32cc523304951522aae0f"
+            },
+            {
+              "file": "ane-position-652-layer-22.fp16",
+              "layer": 22,
+              "sha256": "b7a26aec7b8a0e8372516e81789253058b5de4c8e74c16fca2da7e6d3f16d9cf"
+            },
+            {
+              "file": "ane-position-652-layer-23.fp16",
+              "layer": 23,
+              "sha256": "babd8352a59f693ff0c11d8363f89cdb16756a523e8ea2861e0588a995e87466"
+            },
+            {
+              "file": "ane-position-652-layer-24.fp16",
+              "layer": 24,
+              "sha256": "d09a72d5d22ac8109c1db849e06081d639a7e6b93d238e5a044823138ef1835c"
+            },
+            {
+              "file": "ane-position-652-layer-25.fp16",
+              "layer": 25,
+              "sha256": "2e95f972f40e2d75f630f3fb5d135f869f48ac8fadefb0ef29cb2491831b7421"
+            },
+            {
+              "file": "ane-position-652-layer-26.fp16",
+              "layer": 26,
+              "sha256": "c6283f82b5a9011c81b79ab5de41e9a6f1b5a00935896072556881c714c2df4e"
+            },
+            {
+              "file": "ane-position-652-layer-27.fp16",
+              "layer": 27,
+              "sha256": "3aab9e4eda3763c995d5d0736aa7726039b4fb48b44809f67ccc19780e42aff8"
+            },
+            {
+              "file": "ane-position-652-layer-28.fp16",
+              "layer": 28,
+              "sha256": "af5235faa0e39f9669066ef47ef184bb790bb9af2479fcd4f0e9c36d67b3682f"
+            },
+            {
+              "file": "ane-position-652-layer-29.fp16",
+              "layer": 29,
+              "sha256": "ee39cb13df58ca6e2c862075187594f8a0df8f02ab99b6aaa7f93bd52fe88972"
+            },
+            {
+              "file": "ane-position-652-layer-30.fp16",
+              "layer": 30,
+              "sha256": "bb841916816e7f1bef9ddb2f2cf4d2c8d745510f155ff4c58e658fb394acda84"
+            },
+            {
+              "file": "ane-position-652-layer-31.fp16",
+              "layer": 31,
+              "sha256": "eb690b442d527474a0ee53c6def27dcf23b28327e42ebeef356d2fdd42208bf5"
+            },
+            {
+              "file": "ane-position-652-layer-32.fp16",
+              "layer": 32,
+              "sha256": "b7478548793a60485568d39bb1d81a0fd3c98284e0ac6399beb82a3c6612deaf"
+            },
+            {
+              "file": "ane-position-652-layer-33.fp16",
+              "layer": 33,
+              "sha256": "99259ff8559f708ea0d9a245e52a76084c758c63e0b5de760bf0c423e2538a1c"
+            },
+            {
+              "file": "ane-position-652-layer-34.fp16",
+              "layer": 34,
+              "sha256": "aafb9f62e92ba8273cb3a381a64d498309e401abb6fae7ec59c9731bf49486e9"
+            },
+            {
+              "file": "ane-position-652-layer-35.fp16",
+              "layer": 35,
+              "sha256": "2dcb03edbdbad623fb53406264433021d4c3f31ada757d0bcba58683ee7362ca"
+            },
+            {
+              "file": "ane-position-652-layer-36.fp16",
+              "layer": 36,
+              "sha256": "86acd2a30b84b85b9facf1f909d7dacf383dbfd7fad56e7772db75a0becf6907"
+            },
+            {
+              "file": "ane-position-652-layer-37.fp16",
+              "layer": 37,
+              "sha256": "1956d322ff1e70f317ffbb2c6f59ce95364a3da3dbbdfb9d9948182075e79fa9"
+            },
+            {
+              "file": "ane-position-652-layer-38.fp16",
+              "layer": 38,
+              "sha256": "356c988ad4d78afe1910e7f2d4262859106c3f1479664bdd57315310c52ff823"
+            },
+            {
+              "file": "ane-position-652-layer-39.fp16",
+              "layer": 39,
+              "sha256": "9e169e04e5c3f51291221a217769288206de626605706fb4010fa01ead531ae3"
+            },
+            {
+              "file": "ane-position-652-layer-40.fp16",
+              "layer": 40,
+              "sha256": "54f99c1aa8ddcd44ac6406753e817e311b95e02ecda16078cc8b288d4d54873c"
+            },
+            {
+              "file": "ane-position-652-layer-41.fp16",
+              "layer": 41,
+              "sha256": "ce1490536ada0fda27237acff43a5b552c9d764255ef87794a6739ca4f3eef9e"
+            },
+            {
+              "file": "ane-position-652-layer-42.fp16",
+              "layer": 42,
+              "sha256": "319290aedb9e3af9a2a5667b3ff8538fd3636621cb10889a674c059b88dfb838"
+            },
+            {
+              "file": "ane-position-652-layer-43.fp16",
+              "layer": 43,
+              "sha256": "67a8691fad8b83bafc6c13dc9da9741bd5edce6a56645aa4d1eab3f4e132079a"
+            },
+            {
+              "file": "ane-position-652-layer-44.fp16",
+              "layer": 44,
+              "sha256": "4e10582c719b22c0437390847c0cf05e25e8068c8c4e92a15b3bd57d691ebff9"
+            },
+            {
+              "file": "ane-position-652-layer-45.fp16",
+              "layer": 45,
+              "sha256": "057f63858900059576de3ccfbd6aaf8dd92e2d13ca18139ce91f64485db5b570"
+            },
+            {
+              "file": "ane-position-652-layer-46.fp16",
+              "layer": 46,
+              "sha256": "b7aff9347921c0b850d819e8d35a58456db9984de290add6ef9a2380e9af0f2e"
+            },
+            {
+              "file": "ane-position-652-layer-47.fp16",
+              "layer": 47,
+              "sha256": "495334b42f6f9603f7e7e3c88df602476a9b595f109acf8bea2d020e593c2d73"
+            }
+          ],
+          "next_token": 236778,
+          "output_ms": 29.066291999999994,
+          "position": 652,
+          "qkv_ms": 50.696833,
+          "top_five": [
+            [
+              236778,
+              24.546875
+            ],
+            [
+              236770,
+              9.8984375
+            ],
+            [
+              236812,
+              7.54296875
+            ],
+            [
+              236800,
+              6.73828125
+            ],
+            [
+              236771,
+              6.08203125
+            ]
+          ],
+          "total_ms": 308.07212499999997,
+          "vocabulary_ms": 28.579877
+        },
+        {
+          "attention_ms": 27.476586000000005,
+          "ffn_ms": 164.216169,
+          "host_ms": 7.53941300000001,
+          "input_token": 236778,
+          "layer_states": [],
+          "next_token": 106,
+          "output_ms": 31.839622,
+          "position": 653,
+          "qkv_ms": 51.594001000000006,
+          "top_five": [
+            [
+              106,
+              16.046875
+            ],
+            [
+              1340,
+              1.1748046875
+            ],
+            [
+              522,
+              0.59228515625
+            ],
+            [
+              954,
+              0.221435546875
+            ],
+            [
+              236779,
+              0.08447265625
+            ]
+          ],
+          "total_ms": 304.83175,
+          "vocabulary_ms": 22.165959
+        }
+      ]
+    }
+  ],
+  "claim": "Metal prefill and first-token sampling, actual converted KV imported into all 48 ANE decode layers. Small norms, RoPE, residuals and sampling use CPU Rust. Timings include application scheduling; initialization is reported separately.",
+  "config_sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9",
+  "cpu_or_gpu_decode_fallback": false,
+  "diagnostic_journal_enabled": false,
+  "global_context_capacity": 1024,
+  "inference_complete": true,
+  "layer_state_capture_enabled": true,
+  "loaded_ane_programs": 162,
+  "metal_arena_before_release": {
+    "allocated_bytes": 26161220512,
+    "capacity_bytes": 26176319744,
+    "regions": 1487
+  },
+  "metal_prepare_ms": 8818.928041,
+  "metal_residency": "released-after-all-prefills-before-ane-load",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "qualification_complete": false,
+  "references_completed": 0,
+  "references_requested": 0,
+  "schema": "rvllm.metal_prefill_ane_decode.v1"
+}

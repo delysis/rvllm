@@ -1,0 +1,75 @@
+[
+  {
+    "test": "cache_different_weights_miss",
+    "exit_code": 0,
+    "seconds": 1.0986559391021729,
+    "stages": {
+      "cache_miss": 1,
+      "compile_requested": 1,
+      "descriptor_created": 1
+    }
+  },
+  {
+    "test": "cache_compile_and_reload",
+    "exit_code": 0,
+    "seconds": 6.113295316696167,
+    "stages": {
+      "cache_hit": 1,
+      "cache_miss": 1,
+      "cached_source_staged": 1,
+      "compile_begin": 1,
+      "compile_completed": 1,
+      "compile_requested": 2,
+      "descriptor_created": 2,
+      "evaluate_begin": 6,
+      "evaluate_completed": 6,
+      "load_begin": 2,
+      "load_completed": 2,
+      "request_created": 2,
+      "source_weights_removed": 2,
+      "surfaces_created": 2,
+      "unload_begin": 2,
+      "unload_returned": 2
+    }
+  },
+  {
+    "test": "cache_require_existing",
+    "exit_code": 0,
+    "seconds": 2.1110599040985107,
+    "stages": {
+      "cache_hit": 1,
+      "cached_source_staged": 1,
+      "compile_requested": 1,
+      "descriptor_created": 1,
+      "evaluate_begin": 3,
+      "evaluate_completed": 3,
+      "load_begin": 1,
+      "load_completed": 1,
+      "request_created": 1,
+      "source_weights_removed": 1,
+      "surfaces_created": 1,
+      "unload_begin": 1,
+      "unload_returned": 1
+    }
+  },
+  {
+    "test": "cache_purge_owned_fixture",
+    "exit_code": 0,
+    "seconds": 2.6048402786254883,
+    "stages": {
+      "cache_hit": 1,
+      "cached_source_staged": 1,
+      "compile_requested": 1,
+      "descriptor_created": 1,
+      "evaluate_begin": 3,
+      "evaluate_completed": 3,
+      "load_begin": 1,
+      "load_completed": 1,
+      "request_created": 1,
+      "source_weights_removed": 1,
+      "surfaces_created": 1,
+      "unload_begin": 1,
+      "unload_returned": 1
+    }
+  }
+]

@@ -1,0 +1,78 @@
+{
+  "layers": [
+    {
+      "layer": 1,
+      "shape": [
+        8192,
+        3840
+      ],
+      "source_bytes": 31473856,
+      "quantization_relative_l2_ranges": {
+        "query": [
+          0.007540935950513838,
+          0.008638372415705075
+        ],
+        "key": [
+          0.00499153129454569,
+          0.005950310726382545
+        ],
+        "value": [
+          0.01365863070823511,
+          0.01469051613600577
+        ]
+      },
+      "backend_relative_l2_ranges": {
+        "original": [
+          0.00021471014335494633,
+          0.00022201972854713487
+        ],
+        "int8": [
+          0.0003022865759644,
+          0.00033570593902539574
+        ],
+        "reconstructed_dense": [
+          0.00021102883343823692,
+          0.00022667744985206808
+        ]
+      },
+      "backend_violations": 0,
+      "host_hardware_source_identity_verified": true
+    },
+    {
+      "layer": 5,
+      "shape": [
+        8704,
+        3840
+      ],
+      "source_bytes": 33440960,
+      "quantization_relative_l2_ranges": {
+        "query": [
+          0.0072999013516216495,
+          0.008486012465913713
+        ],
+        "key": [
+          0.007886888243608264,
+          0.010945890398296345
+        ]
+      },
+      "backend_relative_l2_ranges": {
+        "original": [
+          0.0002031634476412255,
+          0.00021106494713381044
+        ],
+        "int8": [
+          0.00033227573099227787,
+          0.0003441172418830938
+        ],
+        "reconstructed_dense": [
+          0.00020656517092660485,
+          0.00021755641361476217
+        ]
+      },
+      "backend_violations": 0,
+      "host_hardware_source_identity_verified": true
+    }
+  ],
+  "timing": "Both preflights rejected Fair thermal state; no warmup or timing trials performed.",
+  "candidate_status": "Experimental; actual QKV backend checks pass, whole-model quality and performance remain unqualified."
+}

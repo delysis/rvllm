@@ -1,7 +1,9 @@
+#[cfg(all(target_os = "macos", feature = "macos-private-ane-research"))]
 use rvllm_core::error::AneRuntimeError;
 use rvllm_core::{AppleCtx, AppleError, ReqId, Result, RvllmError, TokenId};
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(target_os = "macos", feature = "macos-private-ane-research"))]
 use crate::ane::{compile_private_ane_program, AneProgramPlan, AneRolloutConfig};
 use crate::handoff::{HandoffCapsule, HandoffKind};
 use crate::plan::{AppleRuntimePlan, RolloutBucket};
@@ -45,7 +47,7 @@ pub struct ProductionAppleBackend {
     next_step_id: u64,
     last_ticket: Option<u64>,
     pending: Option<Vec<StepToken>>,
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "macos-private-ane-research"))]
     handle: Option<rvllm_apple_ane_sys::AneModelHandle>,
 }
 
@@ -118,6 +120,11 @@ impl ProductionAppleBackend {
             ));
         }
 
+        self.compile_private_ane_research(plan)
+    }
+
+    #[cfg(all(target_os = "macos", feature = "macos-private-ane-research"))]
+    fn compile_private_ane_research(&mut self, plan: &AppleRuntimePlan) -> Result<()> {
         let bucket = plan
             .rollout_bucket
             .unwrap_or(RolloutBucket { seqs: 1, tokens: 1 });
@@ -136,40 +143,33 @@ impl ProductionAppleBackend {
             )
         })?;
 
-        #[cfg(not(target_os = "macos"))]
-        {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "production-apple",
-                    op: "macos_or_ane_required",
-                },
-                Self::ctx("compile_if_needed"),
-            ));
-        }
-
         let compiled_model = compile_private_ane_program(&ane_plan, weights_path)?;
         let cache_key = ane_plan.cache_key();
-
-        #[cfg(target_os = "macos")]
-        {
-            let compiled_path = compiled_model.to_string_lossy();
-            if let Some(h) = rvllm_apple_ane_sys::AneModelHandle::load(compiled_path.as_ref()) {
-                self.handle = Some(h);
-                self.compiled = true;
-                return Ok(());
-            }
-            return Err(RvllmError::apple(
-                AppleError::RuntimeAneModel {
-                    err: AneRuntimeError::CacheMissOrCorrupt {
-                        cache_key: cache_key.clone(),
-                    },
-                },
-                Self::ctx("load_ane_model"),
-            ));
+        let compiled_path = compiled_model.to_string_lossy();
+        if let Some(h) = rvllm_apple_ane_sys::AneModelHandle::load(compiled_path.as_ref()) {
+            self.handle = Some(h);
+            self.compiled = true;
+            return Ok(());
         }
+        Err(RvllmError::apple(
+            AppleError::RuntimeAneModel {
+                err: AneRuntimeError::CacheMissOrCorrupt {
+                    cache_key: cache_key.clone(),
+                },
+            },
+            Self::ctx("load_ane_model"),
+        ))
+    }
 
-        #[cfg(not(target_os = "macos"))]
-        unreachable!("compile branch is only reachable on non-macos due early return above")
+    #[cfg(not(all(target_os = "macos", feature = "macos-private-ane-research")))]
+    fn compile_private_ane_research(&mut self, _plan: &AppleRuntimePlan) -> Result<()> {
+        Err(RvllmError::apple(
+            AppleError::FeatureNotAvailable {
+                backend: "macos-private-ane-research",
+                op: "research_feature_unavailable",
+            },
+            Self::ctx("compile_if_needed"),
+        ))
     }
 }
 
@@ -210,7 +210,7 @@ impl AppleBackend for ProductionAppleBackend {
             ));
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "macos-private-ane-research"))]
         if let Some(ref handle) = self.handle {
             // Resolve IOSurfaces from handoff
             let in_id = handoff
@@ -330,6 +330,12 @@ impl AppleBackend for ProductionAppleBackend {
     }
 }
 
+/// Deterministic token fixture for unit tests.
+///
+/// This backend intentionally does not exist in normal library builds: using a
+/// synthetic token generator as a platform fallback would make an unsupported
+/// production target appear to execute inference successfully.
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub struct StubAppleBackend {
     prepared: bool,
@@ -338,6 +344,7 @@ pub struct StubAppleBackend {
     pending: Vec<StepToken>,
 }
 
+#[cfg(test)]
 impl StubAppleBackend {
     #[must_use]
     pub fn new() -> Self {
@@ -381,6 +388,7 @@ impl StubAppleBackend {
     }
 }
 
+#[cfg(test)]
 impl AppleBackend for StubAppleBackend {
     fn prepare(&mut self, plan: &AppleRuntimePlan) -> Result<()> {
         plan.validate()?;

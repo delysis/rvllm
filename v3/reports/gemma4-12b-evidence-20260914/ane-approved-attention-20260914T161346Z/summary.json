@@ -1,0 +1,36 @@
+{
+  "schema": "rvllm.ane_single_input_attention_validation.v1",
+  "passed": true,
+  "retry_count": 0,
+  "compiled_programs": 2,
+  "completed_evaluations": 6,
+  "shapes": [
+    {
+      "query_heads": 16,
+      "kv_heads": 8,
+      "head_dim": 256,
+      "capacity": 32,
+      "sliding_window": 3
+    },
+    {
+      "query_heads": 16,
+      "kv_heads": 1,
+      "head_dim": 512,
+      "capacity": 64,
+      "sliding_window": null
+    }
+  ],
+  "imported_positions": 5,
+  "append_positions": [
+    5,
+    6,
+    7
+  ],
+  "absolute_error_limit": 0.003,
+  "compared_output_elements": 36864,
+  "boot_time_unchanged": true,
+  "source_quarantine_restored_before_execution": true,
+  "executable_sha256": "edbddc86c5c65d2dbf9508876f865844f5e454932103d1fa837c8e5bce56b81f",
+  "journal_sha256": "1e0a53d7b06901c9214018bb08f6af31bebb54ac2414f79d69e676752ba09728",
+  "claim": "Bounded synthetic attention import/append numerical validation. Does not establish the 1024-token sliding shape, long-context wrap, model decode, repeated stability, or performance. Journal fsync is enabled, so elapsed times are not benchmark evidence."
+}

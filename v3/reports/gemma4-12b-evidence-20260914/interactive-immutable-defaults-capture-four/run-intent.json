@@ -1,0 +1,28 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--metallib-bf16",
+    "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-immutable-defaults-capture-four/inference",
+    "--interactive",
+    "true",
+    "--ane-compile-budget",
+    "16",
+    "--max-new-tokens",
+    "24",
+    "--capture-layer-states",
+    "true"
+  ],
+  "binary_sha256": "d98f9d0ba15d4964b094c074256549c68c7184f1e3f64182d016ad2203449725",
+  "metallib_sha256": "6efa8fbed39f6d36fb83fe823da1a5d0733c22970b96b431439be27a07617705",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 931078 } Mon Sep 14 08:19:23 2026\n",
+  "disk_free_before": 11891679232,
+  "load_before": "22:22  up 14:03, 1 user, load averages: 22.57 11.83 7.77\n",
+  "scope": "Late-arriving stdin prompts, sent only after prior completion; no reference tokens passed to inference. Journal/capture only if RVLLM_INTERACTIVE_CAPTURE=1.",
+  "journal_enabled": false,
+  "attention_override": null,
+  "mma_override": null
+}

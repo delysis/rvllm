@@ -1,0 +1,110 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "77-two-token-layer-major-host-tests",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+      "sha256": "03e381389f5b7b8e695a744362f3866478f99034b2cf2df6afd4d42cfdab6f67"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-j",
+      "2",
+      "-p",
+      "rvllm-apple",
+      "-p",
+      "rvllm-runtime",
+      "--features",
+      "macos-private-ane-research",
+      "--lib",
+      "two_token_reference",
+      "--",
+      "--nocapture"
+    ],
+    "env": {
+      "CARGO_HOME": "/Users/george/.cargo",
+      "RUSTC": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "RUSTDOC": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustdoc",
+      "CARGO_TARGET_DIR": "/Users/george/Downloads/rvllm/v3/target"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/Cargo.toml",
+      "sha256": "2ecaed1c38ee1ad04418558651ee268234e75517b0039abdca3eac7480b53f96"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/Cargo.lock",
+      "sha256": "96d6c5a7c5ad992c54d2222614d37fd2c101353c140eeac75d7b337455df268e"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/Cargo.toml",
+      "sha256": "e03764467d25a4b1753aa91480958a016b436b6a6c47bd05d0faee4a9cec3ab7"
+    },
+    {
+      "path": "/Users/george/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "sha256": "12cab30aa9890d54445e29149a1e82d18fbe457de12801bd11bbe7e5e7fe33a0"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/ane_two_token_reference.rs",
+      "sha256": "335431afbcf4f504103ae530defa4937befb44015583183e562fc42e180d01fe"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/ane_two_token_reference_live_tests.rs",
+      "sha256": "93b34f6cc53de1d1d3fd699b5373e6cf9b4eee9e4d0e58ad7f09098712108dd4"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/gemma_ane_decode.rs",
+      "sha256": "8131dcfbdc11eb1b779b10637329c5a21cb489bb02408247d9e70fbdad2884a6"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/src/ane_attention.rs",
+      "sha256": "bed24c972a345f531b1c1e035068050aa5fddf1437cb94d2e24e004df5532ad9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/src/ane_attention_layout.rs",
+      "sha256": "fafbdd4e2eb690ffed0ae00222f795e31de1ae0df52ca45f9d7b1a3986f62f49"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-apple/Cargo.toml",
+      "sha256": "e954dd89fa4eac6d650363f6c4f06a206f68a6b0d2e51fe153b2842b3280f390"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/crates/rvllm-runtime/src/ane_two_token_layer_major.rs",
+      "sha256": "300614365b38fa1b5a956224a6667af31970166f846325e41fad19496b3da8d1"
+    }
+  ],
+  "after": [],
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "thermal_state": null,
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ]
+  },
+  "stable_seconds": 10,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 1200,
+  "validator": null
+}

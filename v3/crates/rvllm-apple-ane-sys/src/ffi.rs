@@ -4,7 +4,7 @@ use objc2::{class, msg_send, sel};
 use std::ffi::c_void;
 use std::ffi::CString;
 
-// Load the frameworks into the process.
+// Load the private research framework into the process.
 pub fn load_frameworks() -> Result<(), String> {
     let ane_path = CString::new(
         "/System/Library/PrivateFrameworks/AppleNeuralEngine.framework/AppleNeuralEngine",
@@ -13,11 +13,6 @@ pub fn load_frameworks() -> Result<(), String> {
     let ane_handle = unsafe { libc::dlopen(ane_path.as_ptr(), libc::RTLD_LAZY) };
     if ane_handle.is_null() {
         return Err("Failed to dlopen AppleNeuralEngine.framework".to_string());
-    }
-    let coreml_path = CString::new("/System/Library/Frameworks/CoreML.framework/CoreML").unwrap();
-    let coreml_handle = unsafe { libc::dlopen(coreml_path.as_ptr(), libc::RTLD_LAZY) };
-    if coreml_handle.is_null() {
-        return Err("Failed to dlopen CoreML.framework".to_string());
     }
     Ok(())
 }
@@ -58,43 +53,6 @@ pub fn get_ane_client_with_connection(
             unsafe { msg_send![cls, sharedPrivateConnection] }
         }
     }
-}
-
-pub fn coreml_compile_model(model_url_path: &str) -> Result<String, String> {
-    let cls_model = class!(MLModel);
-    let cls_url = class!(NSURL);
-    let cls_nsstring = class!(NSString);
-
-    let path_str = std::ffi::CString::new(model_url_path).unwrap();
-    let ns_path: *mut AnyObject =
-        unsafe { msg_send![cls_nsstring, stringWithUTF8String: path_str.as_ptr()] };
-    let url: *mut AnyObject = unsafe { msg_send![cls_url, fileURLWithPath: ns_path] };
-
-    let mut error: *mut AnyObject = std::ptr::null_mut();
-    let compiled_url: *mut AnyObject =
-        unsafe { msg_send![cls_model, compileModelAtURL: url, error: &mut error] };
-
-    if compiled_url.is_null() {
-        if !error.is_null() {
-            let desc: *mut AnyObject = unsafe { msg_send![error, localizedDescription] };
-            if !desc.is_null() {
-                let utf8: *const std::ffi::c_char = unsafe { msg_send![desc, UTF8String] };
-                if !utf8.is_null() {
-                    let s = unsafe { std::ffi::CStr::from_ptr(utf8) }.to_string_lossy();
-                    return Err(format!("MLModel compileModelAtURL failed: {}", s));
-                }
-            }
-        }
-        return Err("MLModel compileModelAtURL failed with unknown error".to_string());
-    }
-
-    let path_ns: *mut AnyObject = unsafe { msg_send![compiled_url, path] };
-    let path_utf8: *const std::ffi::c_char = unsafe { msg_send![path_ns, UTF8String] };
-    let path = unsafe { std::ffi::CStr::from_ptr(path_utf8) }
-        .to_string_lossy()
-        .into_owned();
-
-    Ok(path)
 }
 
 pub fn compile_model_with_ane_client(
@@ -454,40 +412,5 @@ mod tests {
         dump_class("_ANEProgramForEvaluation");
         dump_class("_ANERequest");
         dump_class("_ANEIOSurfaceObject");
-    }
-
-    #[test]
-    fn test_public_compile() {
-        load_frameworks().unwrap();
-        let mil_path = "/tmp/rvllm_debug_workspace/model.mlmodel";
-        if !std::path::Path::new(mil_path).exists() {
-            println!("MIL file not found, skipping test");
-            return;
-        }
-        let compiled_path = coreml_compile_model(mil_path).unwrap();
-        println!("Public compiled path: {}", compiled_path);
-
-        // Try loading it with MLModel
-        let cls_model = class!(MLModel);
-        let cls_url = class!(NSURL);
-        let ns_path = std::ffi::CString::new(compiled_path.clone()).unwrap();
-        let ns_path_obj: *mut AnyObject =
-            unsafe { msg_send![class!(NSString), stringWithUTF8String: ns_path.as_ptr()] };
-        let url: *mut AnyObject = unsafe { msg_send![cls_url, fileURLWithPath: ns_path_obj] };
-
-        let mut error: *mut AnyObject = std::ptr::null_mut();
-        let model: *mut AnyObject =
-            unsafe { msg_send![cls_model, modelWithContentsOfURL: url, error: &mut error] };
-
-        if model.is_null() {
-            let desc: *mut AnyObject = unsafe { msg_send![error, localizedDescription] };
-            let utf8: *const std::ffi::c_char = unsafe { msg_send![desc, UTF8String] };
-            println!(
-                "MLModel load failed: {}",
-                unsafe { std::ffi::CStr::from_ptr(utf8) }.to_string_lossy()
-            );
-        } else {
-            println!("MLModel load SUCCESS!");
-        }
     }
 }

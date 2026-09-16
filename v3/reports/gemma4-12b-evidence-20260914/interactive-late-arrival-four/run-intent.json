@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_disaggregated_infer",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--metallib-bf16",
+    "/Users/george/Downloads/rvllm/v3/target/mma-prefill-bf16.metallib",
+    "--output-dir",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-late-arrival-four/inference",
+    "--interactive",
+    "true",
+    "--ane-compile-budget",
+    "16",
+    "--max-new-tokens",
+    "24",
+    "--capture-layer-states",
+    "true"
+  ],
+  "binary_sha256": "63ab8bf7cfc9edbe53175439cd97bed6c7558cc0ea7067896836501e418d1ffc",
+  "metallib_sha256": "ac9b9a2e1adf3359a3aa5e06d6da1c613466143bc6593ece864ba6b9b3def1e2",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 869693 } Mon Sep 14 08:19:23 2026\n",
+  "disk_free_before": 11075756032,
+  "load_before": "17:46  up  9:27, 1 user, load averages: 7.65 5.58 5.75\n",
+  "scope": "Late-arriving stdin prompts. Each sent only after prior completion; no reference tokens given to inference. Journal/layer capture enabled; lifecycle qualification, not uninstrumented throughput."
+}

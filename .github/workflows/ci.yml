@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 env:
@@ -10,19 +13,29 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v3
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3
       - run: cargo check --workspace
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v3
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3
       - run: cargo test --workspace
 
   gb10-check:
@@ -53,3 +66,30 @@ jobs:
           cargo test -p rvllm-core --lib
           cargo test -p rvllm-mem --features gb10 --lib
           cargo test -p rvllm-kernels --lib
+
+  apple-release-safety:
+    name: Apple shipping release safety
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: v3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3
+      - name: Install iOS Rust targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Cross-check iPhone device and simulator libraries
+        env:
+          RVLLM_REQUIRE_IOS_TARGETS: "1"
+        run: scripts/check_apple_ios.sh
+      - name: Build Swift package
+        run: swift build --package-path apple/AppleInference
+      - name: Package and scan Apple XCFramework
+        run: scripts/build_apple_xcframework.sh "$RUNNER_TEMP/RvllmApple.xcframework"
+      - name: Compile platform metallibs and manifests
+        run: scripts/build_apple_metallibs.sh "$RUNNER_TEMP/rvllm-metallib"
+      - name: Build and reject private Apple API references
+        run: scripts/check_apple_shipping_release.sh

@@ -1,0 +1,69 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "78-two-token-layer-major-qualification",
+  "purpose": "preparation",
+  "command": {
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/two-token-layer-major-20260916/rvllm_runtime-layer-major",
+      "sha256": "51345c991caab7bf939f800496bcae07a67cbecd633276469ad9275753a0c574"
+    },
+    "args": [
+      "gemma_ane_decode::two_token_reference::layer_major::tests::layer_major_matches_serial_layers_and_transaction_continuations",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RVLLM_GEMMA4_MODEL_DIR": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "RVLLM_TWO_TOKEN_SNAPSHOT": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/checked/case-1/report.json",
+      "RVLLM_TWO_TOKEN_RECEIPT": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/78-two-token-layer-major-qualification/transaction.jsonl",
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/experiment-queue-20260916/baseline-isolated-v7/results/78-two-token-layer-major-qualification/driver.jsonl"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/checked/case-1/report.json",
+      "sha256": "0b096c565cc841ee625081d23b1752af0590c25c8f48554451e97e1fb7140ee8"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/two-token-layer-major-20260916/frozen-build-receipt.json",
+      "sha256": "f7915f49b8c5a6a01fc1b182cde4bf982c1ee3934fe1afc01fec0c0577d61b9b"
+    }
+  ],
+  "after": [
+    "77-two-token-layer-major-host-tests"
+  ],
+  "conditions": {
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ],
+    "low_power_mode": true,
+    "minimum_free_bytes": 17179869184,
+    "pmset_power_mode": 1,
+    "power_source": "ac",
+    "thermal_state": null,
+    "quiet_process_names": [
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_ane_int8_probe"
+    ]
+  },
+  "stable_seconds": 10,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 900,
+  "validator": null
+}

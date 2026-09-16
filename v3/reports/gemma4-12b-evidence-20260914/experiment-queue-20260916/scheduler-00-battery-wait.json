@@ -1,0 +1,36 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "00-battery-wait",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/usr/bin/true",
+      "sha256": "ccb5264afd44f9c8539ef99ac96aec86d07bff579cabf1be3c0b57b1ed99afc5"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [],
+    "env": {}
+  },
+  "inputs": [],
+  "after": [],
+  "conditions": {
+    "power_source": "battery",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": 0,
+    "minimum_free_bytes": 1073741824,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": [
+      "llama-server"
+    ],
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ]
+  },
+  "stable_seconds": 2,
+  "max_wait_seconds": 120,
+  "max_run_seconds": 10
+}

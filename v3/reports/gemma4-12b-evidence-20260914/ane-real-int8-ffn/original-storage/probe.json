@@ -1,0 +1,140 @@
+{
+  "ane_execution_verified": true,
+  "ane_vs_original_cpu_reference": {
+    "elements": 11520,
+    "max_abs_error": 0.0038565718568861485,
+    "relative_l2_error": 0.0027558858937981085
+  },
+  "ane_vs_selected_cpu_reference": {
+    "elements": 11520,
+    "max_abs_error": 0.0038565718568861485,
+    "relative_l2_error": 0.0027558858937981085
+  },
+  "claim": "One real FFN numerical/latency experiment. Source blob size is not compiled/resident size or proof of compressed runtime bandwidth. Quantization errors are observed, not full-model quality acceptance.",
+  "compile_load_ms": 3635.4247499999997,
+  "cpu_or_gpu_fallback": false,
+  "cpu_quantization_errors_gate_up_gated_down": [
+    {
+      "elements": 46080,
+      "max_abs_error": 0.03564453125,
+      "relative_l2_error": 0.014331582565337113
+    },
+    {
+      "elements": 46080,
+      "max_abs_error": 0.037109375,
+      "relative_l2_error": 0.012748126902281878
+    },
+    {
+      "elements": 46080,
+      "max_abs_error": 0.0400390625,
+      "relative_l2_error": 0.018014428115253035
+    },
+    {
+      "elements": 11520,
+      "max_abs_error": 0.02561497688293457,
+      "relative_l2_error": 0.011840043722445334
+    }
+  ],
+  "dense_reconstruction_fp16_sha256": "9ec1b72edfad27068add34669a960d971f6a52cf982db9170e451cafe158bfe5",
+  "diagnostic_journal_enabled": true,
+  "full_model_quality_qualified": false,
+  "int8_source_blob_bytes": 177016768,
+  "iterations": 64,
+  "layer": 0,
+  "median_ms": 38.215916,
+  "minimum_ms": 26.904332999999998,
+  "mode": "original",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "numerical_inputs_checked": 3,
+  "original_fp16_sha256": "2def7d665d86b519f8c50369914aa30c07f7d73282fa0633b1a47f15a17ffdd3",
+  "original_weight_payload_bytes": 353894400,
+  "p95_ms": 43.011791,
+  "quantization": "One stored FP16 scale per output row; scale=max_abs/127 rounded to FP16; integer=ties_even(weight/stored_scale), clamped to [-127,127]; zero rows use scale one",
+  "quantize_and_reconstruct_ms": 778.532833,
+  "samples_ms": [
+    26.904332999999998,
+    31.409291999999997,
+    32.045584000000005,
+    32.158291,
+    32.199833,
+    32.2645,
+    32.696709,
+    32.853583,
+    33.014250000000004,
+    33.239791999999994,
+    33.951625,
+    34.1785,
+    34.248625,
+    34.439541999999996,
+    35.221833000000004,
+    35.279375,
+    35.941874999999996,
+    36.360041,
+    36.545833,
+    36.77975,
+    36.81325,
+    37.045958,
+    37.397958,
+    37.596833000000004,
+    37.8065,
+    37.889292,
+    37.946458,
+    37.989667,
+    38.014542,
+    38.023624999999996,
+    38.030167,
+    38.181,
+    38.215916,
+    38.291417,
+    38.371334,
+    38.657125,
+    38.731083999999996,
+    38.746875,
+    39.014,
+    39.050917,
+    39.072250000000004,
+    39.178667,
+    39.209583,
+    39.251625,
+    39.395125,
+    39.399667,
+    39.942416,
+    39.993042,
+    40.190375,
+    40.226625,
+    40.336083,
+    40.539291999999996,
+    40.57433399999999,
+    41.339584,
+    41.357417,
+    41.419916,
+    41.694709,
+    42.438375,
+    42.670291999999996,
+    42.703083,
+    43.011791,
+    49.386874999999996,
+    51.787583,
+    101.31400000000001
+  ],
+  "schema": "rvllm.ane_int8_ffn_probe.v1",
+  "warmups": 5,
+  "weight_load_ms": 254.825083,
+  "weight_reconstruction_errors_gate_up_down": [
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.00098419189453125,
+      "relative_l2_error": 0.014583848754015173
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.0010986328125,
+      "relative_l2_error": 0.013198931012173636
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.0008544921875,
+      "relative_l2_error": 0.01672246309603721
+    }
+  ]
+}

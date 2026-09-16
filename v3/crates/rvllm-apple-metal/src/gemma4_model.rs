@@ -1,11 +1,11 @@
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use std::{cmp::max, collections::BTreeMap, path::Path, ptr};
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use half::f16;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use rvllm_loader::{
     gemma4_validate::{
         Gemma4DryRunAttentionKind as HostGemma4DryRunAttentionKind,
@@ -17,39 +17,105 @@ use rvllm_loader::{
     load::{LayerAttnType, ModelArch},
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use crate::{
     arena::{MetalBufferArena, MetalRegion},
     context::MetalContext,
+    memory_budget::AppleMemoryBudgetError,
     weight_loader::{
-        load_safetensor_f16, map_safetensor_to_arena, scan_safetensor_tensors, SafetensorTensorInfo,
+        load_safetensor_entry_f32, load_safetensor_entry_for_float_type,
+        map_safetensor_to_arena_with_float_type, scan_safetensor_tensors, SafetensorTensorInfo,
     },
+    MetalFloatType,
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 const PROBE_METAL_ARENA_BYTES: usize = 1024 * 1024;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 const PROBE_METAL_SOFTCAP: f32 = 0.0;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+const METAL_DEFAULT_MAX_TOTAL_TOKENS: usize = 2048;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+const METAL_DEFAULT_MAX_BATCH_SEQUENCES: usize = 1;
+/// Version-1 Apple KV ABI page size. Kept local to the Metal crate so the
+/// embedded backend does not depend on the host scheduler crate.
+pub const APPLE_KV_PAGE_TOKENS: usize = 32;
 #[cfg(target_os = "macos")]
-const PROBE_METAL_MAX_DEFAULT_LAYERS: usize = 8;
-#[cfg(target_os = "macos")]
-const PROBE_METAL_DEFAULT_MAX_PROBE_TOKENS: usize = 16;
-#[cfg(target_os = "macos")]
-const PROBE_METAL_MAX_CONFIGURABLE_PROBE_TOKENS: usize = 64;
-#[cfg(target_os = "macos")]
-const RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV: &str = "RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE";
+const RVLLM_METAL_MAX_TOTAL_TOKENS_ENV: &str = "RVLLM_METAL_MAX_TOTAL_TOKENS";
 #[cfg(target_os = "macos")]
 const RVLLM_METAL_MAX_PROBE_TOKENS_ENV: &str = "RVLLM_METAL_MAX_PROBE_TOKENS";
 #[cfg(target_os = "macos")]
+const RVLLM_METAL_MAX_BATCH_TOKENS_ENV: &str = "RVLLM_METAL_MAX_BATCH_TOKENS";
+#[cfg(target_os = "macos")]
+const RVLLM_METAL_MAX_BATCH_SEQUENCES_ENV: &str = "RVLLM_METAL_MAX_BATCH_SEQUENCES";
+#[cfg(target_os = "macos")]
 const RVLLM_METAL_DEBUG_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_LAYER";
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn probe_ctx(op: &'static str) -> AppleCtx {
     AppleCtx {
         backend: "model-metal-backend",
         op,
         device: "apple-silicon",
     }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn model_arena_overflow() -> RvllmError {
+    RvllmError::apple(
+        AppleError::InvalidWeightBlob {
+            reason: "model arena byte overflow",
+        },
+        probe_ctx("prepare"),
+    )
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn invalid_low_bit_replacement(reason: &'static str) -> RvllmError {
+    RvllmError::apple(
+        AppleError::InvalidWeightBlob { reason },
+        probe_ctx("low_bit_replacement"),
+    )
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn align_up_checked(value: usize, alignment: usize) -> Result<usize> {
+    value
+        .checked_add(alignment - 1)
+        .map(|value| value & !(alignment - 1))
+        .ok_or_else(model_arena_overflow)
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn low_bit_packed_values_bytes(
+    format: rvllm_apple::AppleLowBitWeightFormat,
+    n: usize,
+    k: usize,
+) -> Result<usize> {
+    if n == 0 || k == 0 {
+        return Err(invalid_low_bit_replacement(
+            "low-bit replacement shape has a zero dimension",
+        ));
+    }
+    let row_bytes = match format {
+        rvllm_apple::AppleLowBitWeightFormat::W4A16 => k
+            .checked_add(1)
+            .map(|value| value / 2)
+            .ok_or_else(model_arena_overflow)?,
+        rvllm_apple::AppleLowBitWeightFormat::W8A16 => k,
+    };
+    n.checked_mul(row_bytes).ok_or_else(model_arena_overflow)
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn low_bit_scales_bytes(n: usize, k: usize) -> Result<usize> {
+    let groups = k
+        .checked_add(rvllm_apple::APPLE_LOW_BIT_GROUP_SIZE - 1)
+        .map(|value| value / rvllm_apple::APPLE_LOW_BIT_GROUP_SIZE)
+        .ok_or_else(model_arena_overflow)?;
+    n.checked_mul(groups)
+        .and_then(|count| count.checked_mul(std::mem::size_of::<f16>()))
+        .ok_or_else(model_arena_overflow)
 }
 
 #[cfg(target_os = "macos")]
@@ -64,14 +130,20 @@ fn debug_trace_layers_from_env() -> Vec<usize> {
         .unwrap_or_default()
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
+fn debug_trace_layers_from_env() -> Vec<usize> {
+    Vec::new()
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn debug_trace_layer_enabled(layers: &[usize], layer_idx: usize) -> bool {
     layers.contains(&layer_idx)
 }
 
 #[derive(Debug, Clone)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct Gemma4MetalState {
+    pub float_type: MetalFloatType,
     pub hidden_size: usize,
     pub vocab_size: usize,
     pub num_layers: usize,
@@ -79,6 +151,9 @@ pub struct Gemma4MetalState {
     pub final_logit_softcap: f32,
     pub embedding_scale: f32,
     pub max_probe_tokens: usize,
+    pub max_batch_tokens: usize,
+    pub max_batch_sequences: usize,
+    pub memory_budget: Gemma4MetalMemoryReport,
     pub embedding: MetalRegion,
     pub final_norm: MetalRegion,
     pub lm_head: MetalRegion,
@@ -86,14 +161,98 @@ pub struct Gemma4MetalState {
     pub logits: MetalRegion,
     pub normed_hidden: MetalRegion,
     pub sampled: MetalRegion,
+    pub final_argmax_partial_max: MetalRegion,
+    pub final_argmax_partial_idx: MetalRegion,
     pub token_ids: MetalRegion,
     pub ple: Option<MetalPleState>,
 
     pub layers: Vec<MetalOneLayerState>,
+    /// Three independently allocated execution slots. Weights, immutable RoPE
+    /// tables, and physical KV pages remain shared; every region written by a
+    /// launch is private to its slot.
+    pub execution_slots: Vec<Gemma4MetalExecutionSlot>,
+}
+
+/// Mutable buffers owned by one committed Metal step.
+#[derive(Debug, Clone)]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub struct Gemma4MetalExecutionSlot {
+    pub residual: MetalRegion,
+    pub logits: MetalRegion,
+    pub normed_hidden: MetalRegion,
+    pub sampled: MetalRegion,
+    pub final_argmax_partial_max: MetalRegion,
+    pub final_argmax_partial_idx: MetalRegion,
+    pub token_ids: MetalRegion,
+    pub ple_token_inputs: Option<MetalRegion>,
+    pub ple_context_inputs: Option<MetalRegion>,
+    pub layers: Vec<MetalLayerExecutionSlot>,
 }
 
 #[derive(Debug, Clone)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub struct MetalLayerExecutionSlot {
+    pub qkv_out: MetalRegion,
+    pub q: MetalRegion,
+    pub k: MetalRegion,
+    pub v: MetalRegion,
+    pub attn_out: MetalRegion,
+    pub gate_up_out: MetalRegion,
+    pub activated: MetalRegion,
+    pub mlp_out: MetalRegion,
+    pub moe_topk_indices: Option<MetalRegion>,
+    pub moe_topk_weights: Option<MetalRegion>,
+    pub moe_activated: Option<MetalRegion>,
+    pub moe_out: Option<MetalRegion>,
+    pub trace: Option<MetalLayerTraceState>,
+    pub positions: MetalRegion,
+    pub slot_mapping: MetalRegion,
+    pub block_tables: MetalRegion,
+    pub context_lens: MetalRegion,
+    pub cu_seqlens: MetalRegion,
+}
+
+/// Honest live-device accounts used to size the prepared Metal arena and its
+/// physical paged-KV pool. Scratch is both charged and physically allocated as
+/// three independent in-flight execution slots.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub struct Gemma4MetalMemoryReport {
+    pub recommended_working_set_bytes: u64,
+    pub reserve_bytes: u64,
+    pub usable_bytes: u64,
+    pub weights_bytes: u64,
+    pub scratch_slot_bytes: u64,
+    pub scratch_budget_bytes: u64,
+    pub metadata_bytes: u64,
+    pub kv_budget_bytes: u64,
+    pub kv_page_bytes: u64,
+    pub allocated_kv_bytes: u64,
+    pub prepared_arena_bytes: u64,
+    pub max_useful_kv_pages: u32,
+    pub admission_required_kv_pages: u32,
+    pub physical_kv_pages: u32,
+}
+
+/// An authenticated low-bit tensor that will replace one native dense
+/// `down_proj` allocation in the prepared Metal model.
+///
+/// The descriptor contains the complete storage identity needed by the
+/// planner. Callers must load the two payload regions in the same
+/// lexicographic tensor-name order used by the planner.
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub struct MetalLowBitWeightReplacement {
+    pub tensor_name: String,
+    pub format: rvllm_apple::AppleLowBitWeightFormat,
+    /// `[N, K]`, matching the native `[hidden, intermediate]` weight.
+    pub shape: [usize; 2],
+    pub packed_values_bytes: usize,
+    pub scales_bytes: usize,
+}
+
+#[derive(Debug, Clone)]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct MetalPleState {
     pub ple_dim: usize,
     pub ple_vocab_size: usize,
@@ -105,9 +264,13 @@ pub struct MetalPleState {
 }
 
 #[derive(Debug, Clone)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct MetalOneLayerState {
     pub layer_idx: usize,
+    /// Exact authenticated checkpoint tensor selected for this layer.
+    pub down_proj_name: String,
+    /// Optional authenticated low-bit sidecar stored in the model arena.
+    pub low_bit_down_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
     pub dims: MetalProbeLayerDims,
     pub shared_kv_source_layer: Option<usize>,
 
@@ -124,7 +287,10 @@ pub struct MetalOneLayerState {
     pub layer_scalar: Option<MetalRegion>,
     pub layer_scalar_dim: u32,
     pub gate_up: MetalRegion,
-    pub down_proj: MetalRegion,
+    /// Native dense source. Absent only when the planner authenticated an
+    /// explicit low-bit replacement for this exact tensor.
+    pub down_proj: Option<MetalRegion>,
+    pub moe: Option<MetalMoeState>,
     pub per_layer_input_gate: Option<MetalRegion>,
     pub per_layer_projection: Option<MetalRegion>,
     pub post_per_layer_input_norm: Option<MetalRegion>,
@@ -137,6 +303,10 @@ pub struct MetalOneLayerState {
     pub gate_up_out: MetalRegion,
     pub activated: MetalRegion,
     pub mlp_out: MetalRegion,
+    pub moe_topk_indices: Option<MetalRegion>,
+    pub moe_topk_weights: Option<MetalRegion>,
+    pub moe_activated: Option<MetalRegion>,
+    pub moe_out: Option<MetalRegion>,
     pub trace: Option<MetalLayerTraceState>,
 
     pub positions: MetalRegion,
@@ -156,7 +326,23 @@ pub struct MetalOneLayerState {
 }
 
 #[derive(Debug, Clone)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub struct MetalMoeState {
+    pub num_experts: usize,
+    pub top_k: usize,
+    pub intermediate_size: usize,
+    pub router_proj: MetalRegion,
+    pub router_scale: MetalRegion,
+    pub router_per_expert_scale: MetalRegion,
+    pub pre_ff2_norm: MetalRegion,
+    pub post_ff1_norm: MetalRegion,
+    pub post_ff2_norm: MetalRegion,
+    pub expert_gate_up: MetalRegion,
+    pub expert_down: MetalRegion,
+}
+
+#[derive(Debug, Clone)]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct MetalLayerTraceState {
     pub input_to_layer: MetalRegion,
     pub after_input_layernorm: MetalRegion,
@@ -182,17 +368,252 @@ pub struct MetalLayerTraceState {
     pub post_per_layer_input_norm: Option<MetalRegion>,
 }
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+impl Gemma4MetalState {
+    /// Materialize a descriptor-only view for one preallocated execution
+    /// slot. This is intended to run during backend preparation, never in the
+    /// launch path.
+    pub fn state_for_execution_slot(&self, slot_index: usize) -> Result<Self> {
+        let slot = self.execution_slots.get(slot_index).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "execution_slot_out_of_range",
+                },
+                probe_ctx("prepare"),
+            )
+        })?;
+        if slot.layers.len() != self.layers.len() {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "Metal execution slot layer count mismatch",
+                },
+                probe_ctx("prepare"),
+            ));
+        }
+
+        let mut state = self.clone();
+        state.residual = slot.residual.clone();
+        state.logits = slot.logits.clone();
+        state.normed_hidden = slot.normed_hidden.clone();
+        state.sampled = slot.sampled.clone();
+        state.final_argmax_partial_max = slot.final_argmax_partial_max.clone();
+        state.final_argmax_partial_idx = slot.final_argmax_partial_idx.clone();
+        state.token_ids = slot.token_ids.clone();
+        if let Some(ple) = state.ple.as_mut() {
+            ple.token_inputs = slot.ple_token_inputs.clone().ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "Metal execution slot is missing PLE token inputs",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
+            ple.context_inputs = slot.ple_context_inputs.clone().ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "Metal execution slot is missing PLE context inputs",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
+        }
+        for (layer, execution) in state.layers.iter_mut().zip(&slot.layers) {
+            layer.qkv_out = execution.qkv_out.clone();
+            layer.q = execution.q.clone();
+            layer.k = execution.k.clone();
+            layer.v = execution.v.clone();
+            layer.attn_out = execution.attn_out.clone();
+            layer.gate_up_out = execution.gate_up_out.clone();
+            layer.activated = execution.activated.clone();
+            layer.mlp_out = execution.mlp_out.clone();
+            layer.moe_topk_indices = execution.moe_topk_indices.clone();
+            layer.moe_topk_weights = execution.moe_topk_weights.clone();
+            layer.moe_activated = execution.moe_activated.clone();
+            layer.moe_out = execution.moe_out.clone();
+            layer.trace = execution.trace.clone();
+            layer.positions = execution.positions.clone();
+            layer.slot_mapping = execution.slot_mapping.clone();
+            layer.block_tables = execution.block_tables.clone();
+            layer.context_lens = execution.context_lens.clone();
+            layer.cu_seqlens = execution.cu_seqlens.clone();
+        }
+        // Execution views are terminal descriptors and do not need to retain
+        // the preparation-only slot table.
+        state.execution_slots.clear();
+        Ok(state)
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+struct SharedLayerScratch {
+    qkv_out: MetalRegion,
+    q: MetalRegion,
+    k: MetalRegion,
+    v: MetalRegion,
+    attn_out: MetalRegion,
+    gate_up_out: MetalRegion,
+    activated: MetalRegion,
+    mlp_out: MetalRegion,
+    moe_topk_indices: Option<MetalRegion>,
+    moe_topk_weights: Option<MetalRegion>,
+    moe_activated: Option<MetalRegion>,
+    moe_out: Option<MetalRegion>,
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn execution_layer_from_state(layer: &MetalOneLayerState) -> MetalLayerExecutionSlot {
+    MetalLayerExecutionSlot {
+        qkv_out: layer.qkv_out.clone(),
+        q: layer.q.clone(),
+        k: layer.k.clone(),
+        v: layer.v.clone(),
+        attn_out: layer.attn_out.clone(),
+        gate_up_out: layer.gate_up_out.clone(),
+        activated: layer.activated.clone(),
+        mlp_out: layer.mlp_out.clone(),
+        moe_topk_indices: layer.moe_topk_indices.clone(),
+        moe_topk_weights: layer.moe_topk_weights.clone(),
+        moe_activated: layer.moe_activated.clone(),
+        moe_out: layer.moe_out.clone(),
+        trace: layer.trace.clone(),
+        positions: layer.positions.clone(),
+        slot_mapping: layer.slot_mapping.clone(),
+        block_tables: layer.block_tables.clone(),
+        context_lens: layer.context_lens.clone(),
+        cu_seqlens: layer.cu_seqlens.clone(),
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn allocate_region_like(
+    arena: &mut MetalBufferArena,
+    name: &str,
+    source: &MetalRegion,
+    alignment: usize,
+) -> Result<MetalRegion> {
+    arena.region(name, source.size, alignment)
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn allocate_optional_region_like(
+    arena: &mut MetalBufferArena,
+    name: &str,
+    source: Option<&MetalRegion>,
+    alignment: usize,
+) -> Result<Option<MetalRegion>> {
+    source
+        .map(|source| allocate_region_like(arena, name, source, alignment))
+        .transpose()
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn allocate_trace_like(
+    arena: &mut MetalBufferArena,
+    slot_index: usize,
+    layer_idx: usize,
+    source: Option<&MetalLayerTraceState>,
+) -> Result<Option<MetalLayerTraceState>> {
+    let Some(source) = source else {
+        return Ok(None);
+    };
+    let name = |field: &str| format!("metal_slot_{slot_index}_layer_{layer_idx}_trace_{field}");
+    Ok(Some(MetalLayerTraceState {
+        input_to_layer: allocate_region_like(arena, &name("input"), &source.input_to_layer, 16)?,
+        after_input_layernorm: allocate_region_like(
+            arena,
+            &name("input_norm"),
+            &source.after_input_layernorm,
+            16,
+        )?,
+        q_projection: allocate_region_like(arena, &name("q"), &source.q_projection, 16)?,
+        k_projection: allocate_region_like(arena, &name("k"), &source.k_projection, 16)?,
+        v_projection: allocate_region_like(arena, &name("v"), &source.v_projection, 16)?,
+        after_q_norm: allocate_region_like(arena, &name("q_norm"), &source.after_q_norm, 16)?,
+        after_k_norm: allocate_region_like(arena, &name("k_norm"), &source.after_k_norm, 16)?,
+        after_v_norm: allocate_region_like(arena, &name("v_norm"), &source.after_v_norm, 16)?,
+        after_rope_q: allocate_region_like(arena, &name("rope_q"), &source.after_rope_q, 16)?,
+        after_rope_k: allocate_region_like(arena, &name("rope_k"), &source.after_rope_k, 16)?,
+        attention_output: allocate_region_like(
+            arena,
+            &name("attention"),
+            &source.attention_output,
+            16,
+        )?,
+        after_o_proj: allocate_region_like(arena, &name("o_proj"), &source.after_o_proj, 16)?,
+        after_post_attention_layernorm: allocate_region_like(
+            arena,
+            &name("post_attention_norm"),
+            &source.after_post_attention_layernorm,
+            16,
+        )?,
+        after_pre_feedforward_layernorm: allocate_region_like(
+            arena,
+            &name("pre_ff_norm"),
+            &source.after_pre_feedforward_layernorm,
+            16,
+        )?,
+        gate_up_out: allocate_region_like(arena, &name("gate_up"), &source.gate_up_out, 16)?,
+        ffn_activation: allocate_region_like(
+            arena,
+            &name("ffn_activation"),
+            &source.ffn_activation,
+            16,
+        )?,
+        after_ffn_branch: allocate_region_like(
+            arena,
+            &name("ffn_branch"),
+            &source.after_ffn_branch,
+            16,
+        )?,
+        after_post_feedforward_layernorm: allocate_region_like(
+            arena,
+            &name("post_ff_norm"),
+            &source.after_post_feedforward_layernorm,
+            16,
+        )?,
+        per_layer_input: allocate_optional_region_like(
+            arena,
+            &name("ple_input"),
+            source.per_layer_input.as_ref(),
+            16,
+        )?,
+        per_layer_input_gate: allocate_optional_region_like(
+            arena,
+            &name("ple_gate"),
+            source.per_layer_input_gate.as_ref(),
+            16,
+        )?,
+        per_layer_projection: allocate_optional_region_like(
+            arena,
+            &name("ple_projection"),
+            source.per_layer_projection.as_ref(),
+            16,
+        )?,
+        post_per_layer_input_norm: allocate_optional_region_like(
+            arena,
+            &name("ple_post_norm"),
+            source.post_per_layer_input_norm.as_ref(),
+            16,
+        )?,
+    }))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub enum MetalProbeLayerAttentionKind {
     Sliding,
     Full,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct MetalProbeLayerDims {
     pub attention_kind: MetalProbeLayerAttentionKind,
+    /// Exact causal attention width for sliding layers. Zero denotes full
+    /// attention and is never inferred from the head shape.
+    pub attention_window: u32,
     pub num_heads: usize,
     pub num_kv_heads: usize,
     pub head_dim: usize,
@@ -205,7 +626,7 @@ pub struct MetalProbeLayerDims {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct Gemma4DryRunValidation {
     pub weight_prefix: String,
     pub num_layers: usize,
@@ -225,7 +646,7 @@ pub struct Gemma4DryRunValidation {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct Gemma4DryRunLayerValidation {
     pub layer_idx: usize,
     pub attention_kind: MetalProbeLayerAttentionKind,
@@ -246,7 +667,7 @@ pub struct Gemma4DryRunLayerValidation {
     pub sliding_window: Option<usize>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 impl Gemma4DryRunValidation {
     pub fn from_model_dir(model_dir: &Path) -> Result<Self> {
         HostGemma4DryRunValidation::from_model_dir(model_dir).map(Self::from_host)
@@ -277,7 +698,7 @@ impl Gemma4DryRunValidation {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 impl Gemma4DryRunLayerValidation {
     fn from_host(host: HostGemma4DryRunLayerValidation) -> Self {
         Self {
@@ -305,7 +726,7 @@ impl Gemma4DryRunLayerValidation {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 impl MetalProbeLayerDims {
     fn from_arch_layer(arch: &ModelArch, layer_idx: usize) -> Result<Self> {
         let layer_type = arch
@@ -313,20 +734,40 @@ impl MetalProbeLayerDims {
             .get(layer_idx)
             .copied()
             .unwrap_or(LayerAttnType::Full);
-        let (attention_kind, head_dim, num_kv_heads, rope_dim, rope_theta) = match layer_type {
-            LayerAttnType::SlidingAttention => (
-                MetalProbeLayerAttentionKind::Sliding,
-                arch.head_dim,
-                arch.num_key_value_heads,
-                arch.head_dim,
-                arch.rope_theta,
-            ),
+        let (attention_kind, attention_window, head_dim, num_kv_heads, rope_dim, rope_theta) =
+            match layer_type {
+                LayerAttnType::SlidingAttention => (
+                    MetalProbeLayerAttentionKind::Sliding,
+                    u32::try_from(arch.sliding_window.filter(|&window| window > 0).ok_or_else(
+                        || {
+                            RvllmError::apple(
+                                AppleError::InvalidWeightBlob {
+                                    reason: "sliding attention layer requires a positive sliding_window",
+                                },
+                                probe_ctx("prepare"),
+                            )
+                        },
+                    )?)
+                    .map_err(|_| {
+                        RvllmError::apple(
+                            AppleError::InvalidWeightBlob {
+                                reason: "sliding_window must fit in the Apple attention ABI",
+                            },
+                            probe_ctx("prepare"),
+                        )
+                    })?,
+                    arch.head_dim,
+                    arch.num_key_value_heads,
+                    arch.head_dim,
+                    arch.rope_theta,
+                ),
             LayerAttnType::Full => {
                 let head_dim = arch.global_head_dim.unwrap_or(arch.head_dim);
                 let rotary_factor = arch.partial_rotary_factor.unwrap_or(1.0);
                 let rope_dim = ((head_dim as f32 * rotary_factor) as usize / 2) * 2;
                 (
                     MetalProbeLayerAttentionKind::Full,
+                    0,
                     head_dim,
                     arch.num_global_key_value_heads
                         .unwrap_or(arch.num_key_value_heads),
@@ -367,6 +808,7 @@ impl MetalProbeLayerDims {
         let kv_dim = num_kv_heads * head_dim;
         Ok(Self {
             attention_kind,
+            attention_window,
             num_heads,
             num_kv_heads,
             head_dim,
@@ -382,23 +824,87 @@ impl MetalProbeLayerDims {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 struct ProbeModelPlan {
+    debug_trace_layers: Vec<usize>,
+    explicit_batch_sequences: bool,
     arch: ModelArch,
     tensors: BTreeMap<String, SafetensorTensorInfo>,
-    weight_prefix: String,
     embed_name: String,
     final_norm_name: String,
     lm_head_name: String,
     tie_embeddings: bool,
     ple_names: Option<ProbePleNames>,
     layer_names: Vec<ProbeLayerNames>,
+    low_bit_replacements: BTreeMap<String, MetalLowBitWeightReplacement>,
     names: Vec<String>,
     arena_bytes: usize,
+    unfloored_arena_bytes: usize,
+    weights_bytes: usize,
+    scratch_slot_bytes: usize,
+    metadata_bytes: usize,
+    kv_page_bytes: usize,
+    physical_kv_pages: u32,
+    memory_budget: Option<Gemma4MetalMemoryReport>,
     max_probe_tokens: usize,
+    max_batch_tokens: usize,
+    max_batch_sequences: usize,
 }
 
-#[cfg(target_os = "macos")]
+/// A validated, device-budgeted native model plan. Build once, allocate its
+/// reported arena size, then consume the same plan to load the model.
+pub struct MetalModelLoadPlan {
+    model_dir: std::path::PathBuf,
+    plan: ProbeModelPlan,
+    memory_report: Gemma4MetalMemoryReport,
+}
+
+impl MetalModelLoadPlan {
+    pub fn new(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        limits: crate::MetalModelLimits,
+    ) -> Result<Self> {
+        let plan =
+            ProbeModelPlan::with_limits(model_dir, Some(limits))?.apply_working_set_budget(ctx)?;
+        let memory_report = plan
+            .memory_budget
+            .clone()
+            .ok_or_else(model_arena_overflow)?;
+        Ok(Self {
+            model_dir: model_dir.to_owned(),
+            plan,
+            memory_report,
+        })
+    }
+
+    #[must_use]
+    pub fn arena_bytes(&self) -> usize {
+        self.plan.arena_bytes
+    }
+
+    #[must_use]
+    pub fn memory_report(&self) -> &Gemma4MetalMemoryReport {
+        &self.memory_report
+    }
+
+    pub fn load(
+        self,
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        float_type: MetalFloatType,
+    ) -> Result<Gemma4MetalState> {
+        Gemma4MetalState::load_probe_model_from_plan(
+            ctx,
+            arena,
+            &self.model_dir,
+            float_type,
+            self.plan,
+        )
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 struct ProbePleNames {
     ple_dim: usize,
     ple_vocab_size: usize,
@@ -407,7 +913,7 @@ struct ProbePleNames {
     per_layer_projection_norm_name: String,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 struct ProbeLayerNames {
     dims: MetalProbeLayerDims,
     attn_norm_name: String,
@@ -431,26 +937,61 @@ struct ProbeLayerNames {
     prefused_gate_up_name: String,
     gate_name: String,
     up_name: String,
+    moe: Option<ProbeMoeNames>,
     per_layer_input_gate_name: Option<String>,
     per_layer_projection_name: Option<String>,
     post_per_layer_input_norm_name: Option<String>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+struct ProbeMoeNames {
+    num_experts: usize,
+    top_k: usize,
+    intermediate_size: usize,
+    router_proj_name: String,
+    router_scale_name: String,
+    router_per_expert_scale_name: String,
+    pre_ff2_norm_name: String,
+    post_ff1_norm_name: String,
+    post_ff2_norm_name: String,
+    expert_gate_up_name: String,
+    expert_down_name: String,
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 impl ProbeModelPlan {
     fn new(model_dir: &Path) -> Result<Self> {
+        Self::with_limits(model_dir, None)
+    }
+
+    fn with_limits(model_dir: &Path, limits: Option<crate::MetalModelLimits>) -> Result<Self> {
         let arch = ModelArch::from_dir(model_dir)?;
-        let max_probe_tokens = configured_probe_max_tokens()?;
-        if arch.num_hidden_layers > PROBE_METAL_MAX_DEFAULT_LAYERS && !large_gemma4_probe_opted_in()
-        {
-            return Err(RvllmError::apple(
-                AppleError::FeatureNotAvailable {
-                    backend: "model-metal-backend",
-                    op: "unsupported_probe_num_layers_without_large_model_opt_in",
-                },
-                probe_ctx("prepare"),
-            ));
-        }
+        let (
+            max_probe_tokens,
+            max_batch_sequences,
+            max_batch_tokens,
+            debug_trace_layers,
+            explicit_batch_sequences,
+        ) = if let Some(limits) = limits {
+            limits.validate(arch.max_position_embeddings)?;
+            (
+                limits.max_context_tokens,
+                limits.max_batch_sequences,
+                limits.max_batch_tokens,
+                Vec::new(),
+                true,
+            )
+        } else {
+            let context = configured_max_total_tokens(&arch)?;
+            let sequences = configured_max_batch_sequences()?;
+            (
+                context,
+                sequences,
+                configured_max_batch_tokens(context, sequences)?,
+                debug_trace_layers_from_env(),
+                batch_sequences_explicitly_configured(),
+            )
+        };
         if arch.hidden_size == 0 || arch.vocab_size == 0 {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -629,6 +1170,7 @@ impl ProbeModelPlan {
         };
 
         let mut layer_weight_bytes = 0;
+        let mut converted_router_weight_bytes = 0;
         let mut fused_qkv_bytes = 0;
         let mut fused_gate_up_bytes = 0;
         let mut layer_names = Vec::new();
@@ -826,11 +1368,6 @@ impl ProbeModelPlan {
                         &[kv_dim, hidden],
                         "v_proj weight shape mismatch",
                     )?;
-                    add_tensor_size(&q_name)?;
-                    add_tensor_size(&k_name)?;
-                    if !v_uses_k_proj {
-                        add_tensor_size(&v_name)?;
-                    }
                     fused_qkv_bytes += qkv_rows * hidden * std::mem::size_of::<f16>();
                 }
 
@@ -915,10 +1452,114 @@ impl ProbeModelPlan {
                         &[intermediate, hidden],
                         "up_proj weight shape mismatch",
                     )?;
-                    add_tensor_size(&gate_name)?;
-                    add_tensor_size(&up_name)?;
                     fused_gate_up_bytes += 2 * intermediate * hidden * std::mem::size_of::<f16>();
                 }
+
+                let moe = if plan_moe_enabled(&arch) {
+                    let num_experts = arch.num_experts.unwrap_or(0);
+                    let top_k = arch.top_k_experts.unwrap_or(0);
+                    let moe_intermediate = arch.moe_intermediate_size.unwrap_or(0);
+                    if num_experts == 0
+                        || top_k == 0
+                        || top_k > num_experts
+                        || num_experts > 256
+                        || top_k > 16
+                        || moe_intermediate == 0
+                    {
+                        return Err(RvllmError::apple(
+                            AppleError::FeatureNotAvailable {
+                                backend: "model-metal-backend",
+                                op: "unsupported_gemma4_moe_shape",
+                            },
+                            probe_ctx("prepare"),
+                        ));
+                    }
+                    let router_proj_name = format!("{lprefix}.router.proj.weight");
+                    let router_scale_name = format!("{lprefix}.router.scale");
+                    let router_per_expert_scale_name = format!("{lprefix}.router.per_expert_scale");
+                    let pre_ff2_norm_name = format!("{lprefix}.pre_feedforward_layernorm_2.weight");
+                    let post_ff1_norm_name =
+                        format!("{lprefix}.post_feedforward_layernorm_1.weight");
+                    let post_ff2_norm_name =
+                        format!("{lprefix}.post_feedforward_layernorm_2.weight");
+                    let expert_gate_up_name = format!("{lprefix}.experts.gate_up_proj");
+                    let expert_down_name = format!("{lprefix}.experts.down_proj");
+                    validate_tensor_shape(
+                        &tensors,
+                        &router_proj_name,
+                        &[num_experts, hidden],
+                        "router.proj weight shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &router_scale_name,
+                        &[hidden],
+                        "router.scale shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &router_per_expert_scale_name,
+                        &[num_experts],
+                        "router.per_expert_scale shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &pre_ff2_norm_name,
+                        &[hidden],
+                        "pre_feedforward_layernorm_2 shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &post_ff1_norm_name,
+                        &[hidden],
+                        "post_feedforward_layernorm_1 shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &post_ff2_norm_name,
+                        &[hidden],
+                        "post_feedforward_layernorm_2 shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &expert_gate_up_name,
+                        &[num_experts, 2 * moe_intermediate, hidden],
+                        "experts.gate_up_proj shape mismatch",
+                    )?;
+                    validate_tensor_shape(
+                        &tensors,
+                        &expert_down_name,
+                        &[num_experts, hidden, moe_intermediate],
+                        "experts.down_proj shape mismatch",
+                    )?;
+                    converted_router_weight_bytes +=
+                        (num_experts * hidden + hidden + num_experts) * std::mem::size_of::<f32>();
+                    for name in [
+                        &pre_ff2_norm_name,
+                        &post_ff1_norm_name,
+                        &post_ff2_norm_name,
+                        &expert_gate_up_name,
+                        &expert_down_name,
+                    ] {
+                        add_tensor_size(name)?;
+                        names.push(name.clone());
+                    }
+                    Some(ProbeMoeNames {
+                        num_experts,
+                        top_k,
+                        intermediate_size: moe_intermediate,
+                        router_proj_name,
+                        router_scale_name,
+                        router_per_expert_scale_name,
+                        pre_ff2_norm_name,
+                        post_ff1_norm_name,
+                        post_ff2_norm_name,
+                        expert_gate_up_name,
+                        expert_down_name,
+                    })
+                } else {
+                    None
+                };
 
                 layer_names.push(ProbeLayerNames {
                     dims,
@@ -943,6 +1584,7 @@ impl ProbeModelPlan {
                     prefused_gate_up_name,
                     gate_name,
                     up_name,
+                    moe,
                     per_layer_input_gate_name,
                     per_layer_projection_name,
                     post_per_layer_input_norm_name,
@@ -953,7 +1595,6 @@ impl ProbeModelPlan {
         let half_bytes = std::mem::size_of::<f16>();
         let i32_bytes = std::mem::size_of::<i32>();
         let f32_bytes = std::mem::size_of::<f32>();
-        let debug_trace_layers = debug_trace_layers_from_env();
         let embed_bytes = embed_info.nbytes;
         let final_norm_bytes = final_norm_info.nbytes;
         let lm_head_bytes = if tie_embeddings {
@@ -963,7 +1604,7 @@ impl ProbeModelPlan {
         };
         let residual_bytes = arch
             .hidden_size
-            .checked_mul(max_probe_tokens)
+            .checked_mul(max_batch_tokens)
             .and_then(|v| v.checked_mul(half_bytes))
             .ok_or_else(|| {
                 RvllmError::apple(
@@ -975,7 +1616,7 @@ impl ProbeModelPlan {
             })?;
         let logits_bytes = arch
             .vocab_size
-            .checked_mul(max_probe_tokens)
+            .checked_mul(max_batch_tokens)
             .and_then(|v| v.checked_mul(half_bytes))
             .ok_or_else(|| {
                 RvllmError::apple(
@@ -986,32 +1627,82 @@ impl ProbeModelPlan {
                 )
             })?;
         let normed_hidden_bytes = residual_bytes;
-        let sampled_bytes = max_probe_tokens * i32_bytes;
-        let token_ids_bytes = max_probe_tokens * 4;
+        let sampled_bytes = max_batch_tokens * i32_bytes;
+        let final_argmax_tile_count = arch.vocab_size.div_ceil(8);
+        let final_argmax_partial_max_bytes = max_batch_tokens * final_argmax_tile_count * f32_bytes;
+        let final_argmax_partial_idx_bytes = max_batch_tokens * final_argmax_tile_count * i32_bytes;
+        let token_ids_bytes = max_batch_tokens * 4;
         let ple_inputs_bytes = ple_names
             .as_ref()
             .map(|ple| {
-                max_probe_tokens
+                max_batch_tokens
                     * plan_num_layers_stride(arch.num_hidden_layers, ple.ple_dim)
                     * half_bytes
                     * 2
             })
             .unwrap_or(0);
 
-        let mut scratch_bytes = 0;
+        let mut shared_scratch_bytes = 0;
+        if arch.num_hidden_layers > 0 {
+            let max_qkv_rows = layer_names
+                .iter()
+                .map(|layer| layer.dims.qkv_rows)
+                .max()
+                .unwrap_or(0);
+            let max_q_dim = layer_names
+                .iter()
+                .map(|layer| layer.dims.q_dim)
+                .max()
+                .unwrap_or(0);
+            let max_kv_dim = layer_names
+                .iter()
+                .map(|layer| layer.dims.kv_dim)
+                .max()
+                .unwrap_or(0);
+            let max_intermediate = layer_names
+                .iter()
+                .map(|layer| layer.intermediate_size)
+                .max()
+                .unwrap_or(0);
+            let max_moe_top_k = layer_names
+                .iter()
+                .filter_map(|layer| layer.moe.as_ref().map(|moe| moe.top_k))
+                .max()
+                .unwrap_or(0);
+            let max_moe_intermediate = layer_names
+                .iter()
+                .filter_map(|layer| layer.moe.as_ref().map(|moe| moe.intermediate_size))
+                .max()
+                .unwrap_or(0);
+            let qkv_bytes = if arch.hidden_size == 3840 && arch.num_hidden_layers == 48 {
+                f32_bytes
+            } else {
+                half_bytes
+            };
+            shared_scratch_bytes = max_batch_tokens * max_qkv_rows * qkv_bytes
+                + max_batch_tokens * max_q_dim * half_bytes
+                + max_batch_tokens * max_kv_dim * half_bytes
+                + max_batch_tokens * max_kv_dim * half_bytes
+                + max_batch_tokens * max_q_dim * half_bytes
+                + max_batch_tokens * 2 * max_intermediate * half_bytes
+                + max_batch_tokens * max_intermediate * half_bytes
+                + max_batch_tokens * arch.hidden_size * half_bytes
+                + max_batch_tokens * max_moe_top_k * i32_bytes
+                + max_batch_tokens * max_moe_top_k * f32_bytes
+                + max_batch_tokens * max_moe_top_k * max_moe_intermediate * half_bytes
+                + max_batch_tokens * arch.hidden_size * half_bytes
+                + 64;
+        }
+
+        let mut per_layer_trace_bytes = 0usize;
+        let mut per_layer_mutable_metadata_bytes = 0usize;
+        let mut immutable_metadata_bytes = 0usize;
+        let mut kv_page_bytes = 0usize;
         if arch.num_hidden_layers > 0 {
             let hidden = arch.hidden_size;
             for (layer_idx, layer_names) in layer_names.iter().enumerate() {
                 let dims = layer_names.dims;
                 let intermediate = layer_names.intermediate_size;
-                let qkv_out_bytes = max_probe_tokens * dims.qkv_rows * half_bytes;
-                let q_bytes = max_probe_tokens * dims.q_dim * half_bytes;
-                let k_bytes = max_probe_tokens * dims.kv_dim * half_bytes;
-                let v_bytes = max_probe_tokens * dims.kv_dim * half_bytes;
-                let attn_out_bytes = max_probe_tokens * dims.q_dim * half_bytes;
-                let gate_up_out_bytes = max_probe_tokens * 2 * intermediate * half_bytes;
-                let activated_bytes = max_probe_tokens * intermediate * half_bytes;
-                let mlp_out_bytes = max_probe_tokens * hidden * half_bytes;
                 let trace_bytes = if debug_trace_layer_enabled(&debug_trace_layers, layer_idx) {
                     let ple_dim = ple_names.as_ref().map_or(0, |ple| ple.ple_dim);
                     let ple_trace_elems = if ple_dim > 0 {
@@ -1019,7 +1710,7 @@ impl ProbeModelPlan {
                     } else {
                         0
                     };
-                    max_probe_tokens
+                    max_batch_tokens
                         * (7 * hidden
                             + 4 * dims.q_dim
                             + 5 * dims.kv_dim
@@ -1030,116 +1721,364 @@ impl ProbeModelPlan {
                     0
                 };
 
-                let block_size = max_probe_tokens;
-                let num_blocks_total = max_probe_tokens;
-                let kv_cache_bytes = num_blocks_total * block_size * dims.kv_dim * half_bytes * 2;
-                let metadata_bytes = (5 * max_probe_tokens + 1) * i32_bytes;
+                let block_size = APPLE_KV_PAGE_TOKENS;
+                let max_blocks_per_seq = max_probe_tokens.div_ceil(block_size);
+                let layer_kv_page_bytes = block_size * dims.kv_dim * half_bytes * 2;
+                let layer_metadata_bytes = (2 * max_batch_tokens
+                    + 2 * max_batch_sequences
+                    + max_batch_sequences * max_blocks_per_seq
+                    + 1)
+                    * i32_bytes;
 
                 let half_rope = dims.rope_dim / 2;
                 let max_pos = max_probe_tokens;
                 let rope_table_bytes = max_pos * half_rope * f32_bytes;
 
-                scratch_bytes += qkv_out_bytes
-                    + q_bytes
-                    + k_bytes
-                    + v_bytes
-                    + attn_out_bytes
-                    + gate_up_out_bytes
-                    + activated_bytes
-                    + mlp_out_bytes
-                    + trace_bytes
-                    + kv_cache_bytes
-                    + rope_table_bytes * 2
-                    + metadata_bytes
-                    + 64;
+                per_layer_trace_bytes = per_layer_trace_bytes
+                    .checked_add(trace_bytes)
+                    .ok_or_else(model_arena_overflow)?;
+                kv_page_bytes = kv_page_bytes
+                    .checked_add(layer_kv_page_bytes)
+                    .ok_or_else(model_arena_overflow)?;
+                per_layer_mutable_metadata_bytes = per_layer_mutable_metadata_bytes
+                    .checked_add(layer_metadata_bytes)
+                    .and_then(|bytes| bytes.checked_add(64))
+                    .ok_or_else(model_arena_overflow)?;
+                immutable_metadata_bytes = immutable_metadata_bytes
+                    .checked_add(rope_table_bytes * 2)
+                    .and_then(|bytes| bytes.checked_add(64))
+                    .ok_or_else(model_arena_overflow)?;
             }
         }
 
-        let mut arena_bytes = embed_bytes
+        let weights_bytes = embed_bytes
             .checked_add(final_norm_bytes)
             .and_then(|v| v.checked_add(lm_head_bytes))
             .and_then(|v| v.checked_add(ple_weight_bytes))
             .and_then(|v| v.checked_add(layer_weight_bytes))
+            .and_then(|v| v.checked_add(converted_router_weight_bytes))
             .and_then(|v| v.checked_add(fused_qkv_bytes))
             .and_then(|v| v.checked_add(fused_gate_up_bytes))
-            .and_then(|v| v.checked_add(residual_bytes))
-            .and_then(|v| v.checked_add(logits_bytes))
+            .ok_or_else(model_arena_overflow)?;
+        let scratch_slot_bytes = residual_bytes
+            .checked_add(logits_bytes)
             .and_then(|v| v.checked_add(normed_hidden_bytes))
             .and_then(|v| v.checked_add(sampled_bytes))
+            .and_then(|v| v.checked_add(final_argmax_partial_max_bytes))
+            .and_then(|v| v.checked_add(final_argmax_partial_idx_bytes))
             .and_then(|v| v.checked_add(token_ids_bytes))
             .and_then(|v| v.checked_add(ple_inputs_bytes))
-            .and_then(|v| v.checked_add(scratch_bytes))
-            .ok_or_else(|| {
-                RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason: "model arena byte overflow",
-                    },
-                    probe_ctx("prepare"),
-                )
-            })?;
-        arena_bytes = arena_bytes.checked_add(64 * 1024).ok_or_else(|| {
-            RvllmError::apple(
-                AppleError::InvalidWeightBlob {
-                    reason: "model arena byte overflow",
-                },
-                probe_ctx("prepare"),
+            .and_then(|v| v.checked_add(shared_scratch_bytes))
+            .and_then(|v| v.checked_add(per_layer_trace_bytes))
+            .and_then(|v| v.checked_add(per_layer_mutable_metadata_bytes))
+            .ok_or_else(model_arena_overflow)?;
+        let metadata_bytes = immutable_metadata_bytes
+            .checked_add(64 * 1024)
+            .ok_or_else(model_arena_overflow)?;
+        let max_blocks_per_seq = max_probe_tokens.div_ceil(APPLE_KV_PAGE_TOKENS);
+        let physical_kv_pages = max_batch_sequences
+            .checked_mul(max_blocks_per_seq)
+            .and_then(|pages| u32::try_from(pages).ok())
+            .ok_or_else(model_arena_overflow)?;
+        let allocated_kv_bytes = kv_page_bytes
+            .checked_mul(physical_kv_pages as usize)
+            .ok_or_else(model_arena_overflow)?;
+        let unfloored_arena_bytes = weights_bytes
+            .checked_add(
+                scratch_slot_bytes
+                    .checked_mul(crate::memory_budget::IN_FLIGHT_SCRATCH_SLOTS)
+                    .ok_or_else(model_arena_overflow)?,
             )
-        })?;
-        arena_bytes = max(arena_bytes, PROBE_METAL_ARENA_BYTES);
+            .and_then(|v| v.checked_add(metadata_bytes))
+            .and_then(|v| v.checked_add(allocated_kv_bytes))
+            .ok_or_else(model_arena_overflow)?;
+        let arena_bytes = max(unfloored_arena_bytes, PROBE_METAL_ARENA_BYTES);
 
         Ok(Self {
+            debug_trace_layers,
+            explicit_batch_sequences,
             arch,
             tensors,
-            weight_prefix,
             embed_name,
             final_norm_name,
             lm_head_name,
             tie_embeddings,
             ple_names,
             layer_names,
+            low_bit_replacements: BTreeMap::new(),
             names,
             arena_bytes,
+            unfloored_arena_bytes,
+            weights_bytes,
+            scratch_slot_bytes,
+            metadata_bytes,
+            kv_page_bytes,
+            physical_kv_pages,
+            memory_budget: None,
             max_probe_tokens,
+            max_batch_tokens,
+            max_batch_sequences,
         })
+    }
+
+    fn with_low_bit_replacements(
+        mut self,
+        replacements: &[MetalLowBitWeightReplacement],
+    ) -> Result<Self> {
+        if replacements.is_empty() {
+            return Ok(self);
+        }
+
+        // Validate a sorted copy before changing names or accounting. This
+        // makes failure deterministic even when the package manifest order is
+        // not, and guarantees that no partial plan can escape.
+        let mut replacements = replacements.to_vec();
+        replacements.sort_by(|left, right| left.tensor_name.cmp(&right.tensor_name));
+
+        let mut validated = BTreeMap::new();
+        let mut displaced_native_bytes = 0usize;
+        let mut low_bit_arena_bytes = 0usize;
+        for replacement in replacements {
+            if replacement.tensor_name.is_empty() {
+                return Err(invalid_low_bit_replacement(
+                    "low-bit replacement tensor name is empty",
+                ));
+            }
+            if validated.contains_key(&replacement.tensor_name) {
+                return Err(invalid_low_bit_replacement(
+                    "duplicate low-bit replacement tensor name",
+                ));
+            }
+
+            let layer = self
+                .layer_names
+                .iter()
+                .find(|layer| layer.down_proj_name == replacement.tensor_name)
+                .ok_or_else(|| {
+                    invalid_low_bit_replacement(
+                        "low-bit replacement does not name a prepared dense down projection",
+                    )
+                })?;
+            if layer.moe.is_some() {
+                return Err(invalid_low_bit_replacement(
+                    "low-bit replacement of a mixture-of-experts layer is unsupported",
+                ));
+            }
+            let expected_shape = [self.arch.hidden_size, layer.intermediate_size];
+            if replacement.shape != expected_shape {
+                return Err(invalid_low_bit_replacement(
+                    "low-bit replacement shape does not match the prepared dense down projection",
+                ));
+            }
+
+            let expected_values = low_bit_packed_values_bytes(
+                replacement.format,
+                replacement.shape[0],
+                replacement.shape[1],
+            )?;
+            let expected_scales = low_bit_scales_bytes(replacement.shape[0], replacement.shape[1])?;
+            if replacement.packed_values_bytes != expected_values {
+                return Err(invalid_low_bit_replacement(
+                    "low-bit replacement packed-value byte length is invalid",
+                ));
+            }
+            if replacement.scales_bytes != expected_scales {
+                return Err(invalid_low_bit_replacement(
+                    "low-bit replacement scale byte length is invalid",
+                ));
+            }
+
+            let native = self.tensors.get(&replacement.tensor_name).ok_or_else(|| {
+                invalid_low_bit_replacement(
+                    "low-bit replacement native tensor is missing from the checkpoint",
+                )
+            })?;
+            displaced_native_bytes = displaced_native_bytes
+                .checked_add(native.nbytes)
+                .ok_or_else(model_arena_overflow)?;
+
+            // Sidecars are loaded into two 16-byte-aligned arena regions. The
+            // first starts from an aligned model-arena cursor; account the
+            // exact inter-region and inter-tensor padding in sorted load order.
+            low_bit_arena_bytes = align_up_checked(low_bit_arena_bytes, 16)?;
+            low_bit_arena_bytes = low_bit_arena_bytes
+                .checked_add(replacement.packed_values_bytes)
+                .ok_or_else(model_arena_overflow)?;
+            low_bit_arena_bytes = align_up_checked(low_bit_arena_bytes, 16)?;
+            low_bit_arena_bytes = low_bit_arena_bytes
+                .checked_add(replacement.scales_bytes)
+                .ok_or_else(model_arena_overflow)?;
+
+            validated.insert(replacement.tensor_name.clone(), replacement);
+        }
+
+        self.weights_bytes = self
+            .weights_bytes
+            .checked_sub(displaced_native_bytes)
+            .and_then(|bytes| bytes.checked_add(low_bit_arena_bytes))
+            .ok_or_else(model_arena_overflow)?;
+        self.unfloored_arena_bytes = self
+            .unfloored_arena_bytes
+            .checked_sub(displaced_native_bytes)
+            .and_then(|bytes| bytes.checked_add(low_bit_arena_bytes))
+            .ok_or_else(model_arena_overflow)?;
+        self.arena_bytes = max(self.unfloored_arena_bytes, PROBE_METAL_ARENA_BYTES);
+        self.names
+            .retain(|name| !validated.contains_key(name.as_str()));
+        self.low_bit_replacements = validated;
+        Ok(self)
+    }
+
+    fn with_additional_weight_bytes(mut self, additional_weight_bytes: usize) -> Result<Self> {
+        if additional_weight_bytes == 0 {
+            return Ok(self);
+        }
+        self.weights_bytes = self
+            .weights_bytes
+            .checked_add(additional_weight_bytes)
+            .ok_or_else(model_arena_overflow)?;
+        self.unfloored_arena_bytes = self
+            .unfloored_arena_bytes
+            .checked_add(additional_weight_bytes)
+            .ok_or_else(model_arena_overflow)?;
+        self.arena_bytes = self
+            .arena_bytes
+            .checked_add(additional_weight_bytes)
+            .ok_or_else(model_arena_overflow)?;
+        Ok(self)
+    }
+
+    fn apply_working_set_budget(mut self, ctx: &MetalContext) -> Result<Self> {
+        let weights_bytes = u64::try_from(self.weights_bytes)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let scratch_slot_bytes = u64::try_from(self.scratch_slot_bytes)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let metadata_bytes = u64::try_from(self.metadata_bytes)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let kv_page_bytes = u64::try_from(self.kv_page_bytes)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let max_blocks_per_seq = self.max_probe_tokens.div_ceil(APPLE_KV_PAGE_TOKENS);
+        let admission_sequences = if self.explicit_batch_sequences {
+            self.max_batch_sequences
+        } else {
+            1
+        };
+        let admission_required_pages = max_blocks_per_seq
+            .checked_mul(admission_sequences)
+            .and_then(|pages| u64::try_from(pages).ok())
+            .ok_or_else(|| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let max_useful_pages = u64::from(self.physical_kv_pages);
+        let budget = ctx
+            .memory_budget(weights_bytes, scratch_slot_bytes, metadata_bytes)
+            .map_err(memory_budget_error)?;
+        let capacity = budget
+            .plan_kv_pages(kv_page_bytes, max_useful_pages, admission_required_pages)
+            .map_err(memory_budget_error)?;
+        let physical_kv_pages = u32::try_from(capacity.physical_pages)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let max_useful_kv_pages = u32::try_from(capacity.max_useful_pages)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let admission_required_kv_pages = u32::try_from(admission_required_pages)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let allocated_kv_bytes = usize::try_from(capacity.allocated_kv_bytes)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        let arena_bytes = self
+            .weights_bytes
+            .checked_add(
+                self.scratch_slot_bytes
+                    .checked_mul(crate::memory_budget::IN_FLIGHT_SCRATCH_SLOTS)
+                    .ok_or_else(model_arena_overflow)?,
+            )
+            .and_then(|bytes| bytes.checked_add(self.metadata_bytes))
+            .and_then(|bytes| bytes.checked_add(allocated_kv_bytes))
+            .ok_or_else(model_arena_overflow)?;
+
+        self.physical_kv_pages = physical_kv_pages;
+        self.unfloored_arena_bytes = arena_bytes;
+        self.arena_bytes = max(arena_bytes, PROBE_METAL_ARENA_BYTES);
+        let arena_bytes_u64 = u64::try_from(self.arena_bytes)
+            .map_err(|_| memory_budget_error(AppleMemoryBudgetError::ArithmeticNarrowing))?;
+        if arena_bytes_u64 > capacity.budget.usable_bytes {
+            return Err(memory_budget_error(
+                AppleMemoryBudgetError::FixedResourcesExceedBudget {
+                    required: arena_bytes_u64,
+                    usable: capacity.budget.usable_bytes,
+                },
+            ));
+        }
+        self.memory_budget = Some(Gemma4MetalMemoryReport {
+            recommended_working_set_bytes: capacity.budget.working_set_bytes,
+            reserve_bytes: capacity.budget.reserve_bytes,
+            usable_bytes: capacity.budget.usable_bytes,
+            weights_bytes: capacity.budget.weights_bytes,
+            scratch_slot_bytes,
+            scratch_budget_bytes: capacity.budget.scratch_bytes,
+            metadata_bytes: capacity.budget.metadata_bytes,
+            kv_budget_bytes: capacity.budget.kv_pool_bytes,
+            kv_page_bytes: capacity.bytes_per_page,
+            allocated_kv_bytes: capacity.allocated_kv_bytes,
+            prepared_arena_bytes: arena_bytes_u64,
+            max_useful_kv_pages,
+            admission_required_kv_pages,
+            physical_kv_pages,
+        });
+        Ok(self)
     }
 }
 
-#[cfg(target_os = "macos")]
-fn large_gemma4_probe_opted_in() -> bool {
-    std::env::var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV)
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false)
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn memory_budget_error(error: AppleMemoryBudgetError) -> RvllmError {
+    let reason = match error {
+        AppleMemoryBudgetError::MissingWorkingSetLimit => {
+            "Metal device did not report a recommended working-set limit"
+        }
+        AppleMemoryBudgetError::InvalidReservePercent => "invalid Apple memory reserve percentage",
+        AppleMemoryBudgetError::ArithmeticOverflow
+        | AppleMemoryBudgetError::ArithmeticNarrowing => "Metal memory budget arithmetic overflow",
+        AppleMemoryBudgetError::FixedResourcesExceedBudget { .. } => {
+            "Metal fixed resources exceed recommended working-set budget"
+        }
+        AppleMemoryBudgetError::ZeroSizedKvPage => "Metal model has a zero-sized KV page",
+        AppleMemoryBudgetError::ZeroUsefulKvPages => "Metal model has no useful KV pages",
+        AppleMemoryBudgetError::InsufficientKvPages { .. } => {
+            "Metal KV budget cannot satisfy configured max-context admission"
+        }
+    };
+    RvllmError::apple(
+        AppleError::InvalidWeightBlob { reason },
+        probe_ctx("memory_budget"),
+    )
 }
 
 #[cfg(target_os = "macos")]
-fn configured_probe_max_tokens() -> Result<usize> {
-    match std::env::var(RVLLM_METAL_MAX_PROBE_TOKENS_ENV) {
+fn parse_positive_env_usize(name: &'static str, op: &'static str) -> Result<Option<usize>> {
+    match std::env::var(name) {
         Ok(raw) => {
             let value = raw.trim().parse::<usize>().map_err(|_| {
                 RvllmError::apple(
                     AppleError::FeatureNotAvailable {
                         backend: "model-metal-backend",
-                        op: "invalid_RVLLM_METAL_MAX_PROBE_TOKENS",
+                        op,
                     },
                     probe_ctx("prepare"),
                 )
             })?;
-            if !(1..=PROBE_METAL_MAX_CONFIGURABLE_PROBE_TOKENS).contains(&value) {
+            if value == 0 {
                 return Err(RvllmError::apple(
                     AppleError::FeatureNotAvailable {
                         backend: "model-metal-backend",
-                        op: "unsupported_RVLLM_METAL_MAX_PROBE_TOKENS",
+                        op,
                     },
                     probe_ctx("prepare"),
                 ));
             }
-            Ok(value)
+            Ok(Some(value))
         }
-        Err(std::env::VarError::NotPresent) => Ok(PROBE_METAL_DEFAULT_MAX_PROBE_TOKENS),
+        Err(std::env::VarError::NotPresent) => Ok(None),
         Err(std::env::VarError::NotUnicode(_)) => Err(RvllmError::apple(
             AppleError::FeatureNotAvailable {
                 backend: "model-metal-backend",
-                op: "invalid_RVLLM_METAL_MAX_PROBE_TOKENS",
+                op,
             },
             probe_ctx("prepare"),
         )),
@@ -1147,11 +2086,110 @@ fn configured_probe_max_tokens() -> Result<usize> {
 }
 
 #[cfg(target_os = "macos")]
+fn batch_sequences_explicitly_configured() -> bool {
+    std::env::var_os(RVLLM_METAL_MAX_BATCH_SEQUENCES_ENV).is_some()
+}
+
+#[cfg(target_os = "ios")]
+fn batch_sequences_explicitly_configured() -> bool {
+    false
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn configured_max_total_tokens(arch: &ModelArch) -> Result<usize> {
+    let configured = configured_max_total_tokens_override()?;
+    let value = configured
+        .unwrap_or_else(|| METAL_DEFAULT_MAX_TOTAL_TOKENS.min(arch.max_position_embeddings.max(1)));
+    if value > arch.max_position_embeddings {
+        return Err(RvllmError::apple(
+            AppleError::FeatureNotAvailable {
+                backend: "model-metal-backend",
+                op: "unsupported_context_length_exceeds_model_max_position",
+            },
+            probe_ctx("prepare"),
+        ));
+    }
+    Ok(value)
+}
+
+#[cfg(target_os = "macos")]
+fn configured_max_total_tokens_override() -> Result<Option<usize>> {
+    Ok(parse_positive_env_usize(
+        RVLLM_METAL_MAX_TOTAL_TOKENS_ENV,
+        "invalid_RVLLM_METAL_MAX_TOTAL_TOKENS",
+    )?
+    .or(parse_positive_env_usize(
+        RVLLM_METAL_MAX_PROBE_TOKENS_ENV,
+        "invalid_RVLLM_METAL_MAX_PROBE_TOKENS",
+    )?))
+}
+
+#[cfg(target_os = "ios")]
+fn configured_max_total_tokens_override() -> Result<Option<usize>> {
+    Ok(None)
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn configured_max_batch_sequences() -> Result<usize> {
+    configured_max_batch_sequences_override()
+        .map(|value| value.unwrap_or(METAL_DEFAULT_MAX_BATCH_SEQUENCES))
+}
+
+#[cfg(target_os = "macos")]
+fn configured_max_batch_sequences_override() -> Result<Option<usize>> {
+    parse_positive_env_usize(
+        RVLLM_METAL_MAX_BATCH_SEQUENCES_ENV,
+        "invalid_RVLLM_METAL_MAX_BATCH_SEQUENCES",
+    )
+}
+
+#[cfg(target_os = "ios")]
+fn configured_max_batch_sequences_override() -> Result<Option<usize>> {
+    Ok(None)
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn configured_max_batch_tokens(
+    max_total_tokens: usize,
+    max_batch_sequences: usize,
+) -> Result<usize> {
+    let default = max_total_tokens
+        .checked_mul(max_batch_sequences)
+        .ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "Metal batch token capacity overflow",
+                },
+                probe_ctx("prepare"),
+            )
+        })?;
+    configured_max_batch_tokens_override().map(|value| value.unwrap_or(default))
+}
+
+#[cfg(target_os = "macos")]
+fn configured_max_batch_tokens_override() -> Result<Option<usize>> {
+    parse_positive_env_usize(
+        RVLLM_METAL_MAX_BATCH_TOKENS_ENV,
+        "invalid_RVLLM_METAL_MAX_BATCH_TOKENS",
+    )
+}
+
+#[cfg(target_os = "ios")]
+fn configured_max_batch_tokens_override() -> Result<Option<usize>> {
+    Ok(None)
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn plan_num_layers_stride(num_layers: usize, ple_dim: usize) -> usize {
     num_layers.saturating_mul(ple_dim)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn plan_moe_enabled(arch: &ModelArch) -> bool {
+    arch.enable_moe_block
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 impl Gemma4MetalState {
     pub fn dry_run_validate_gemma4_model_dir(model_dir: &Path) -> Result<Gemma4DryRunValidation> {
         Gemma4DryRunValidation::from_model_dir(model_dir)
@@ -1161,15 +2199,145 @@ impl Gemma4MetalState {
         Ok(ProbeModelPlan::new(model_dir)?.arena_bytes)
     }
 
+    /// Arena requirement after replacing selected native dense down
+    /// projections with authenticated low-bit sidecars.
+    pub fn required_probe_model_arena_bytes_with_low_bit_replacements(
+        model_dir: &Path,
+        replacements: &[MetalLowBitWeightReplacement],
+    ) -> Result<usize> {
+        Ok(ProbeModelPlan::new(model_dir)?
+            .with_low_bit_replacements(replacements)?
+            .arena_bytes)
+    }
+
+    /// Device-budgeted arena requirement and its independently accounted
+    /// memory report. This is the production preparation path.
+    pub fn required_probe_model_arena_bytes_for_device(
+        ctx: &MetalContext,
+        model_dir: &Path,
+    ) -> Result<(usize, Gemma4MetalMemoryReport)> {
+        Self::required_probe_model_arena_bytes_for_device_with_additional_weights(ctx, model_dir, 0)
+    }
+
+    /// Device-budgeted arena requirement including immutable package sidecars.
+    ///
+    /// Extra bytes are accounted as weights before the physical KV page pool
+    /// is sized, so low-bit residency can never be hidden in unreported Metal
+    /// allocations.
+    pub fn required_probe_model_arena_bytes_for_device_with_additional_weights(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        additional_weight_bytes: usize,
+    ) -> Result<(usize, Gemma4MetalMemoryReport)> {
+        let plan = ProbeModelPlan::new(model_dir)?
+            .with_additional_weight_bytes(additional_weight_bytes)?
+            .apply_working_set_budget(ctx)?;
+        let report = plan.memory_budget.ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "missing Metal model memory budget",
+                },
+                probe_ctx("memory_budget"),
+            )
+        })?;
+        Ok((plan.arena_bytes, report))
+    }
+
+    /// Device-budgeted requirement for resident low-bit replacement weights.
+    ///
+    /// Validation and accounting complete before a caller creates or mutates
+    /// the destination arena.
+    pub fn required_probe_model_arena_bytes_for_device_with_low_bit_replacements(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        replacements: &[MetalLowBitWeightReplacement],
+    ) -> Result<(usize, Gemma4MetalMemoryReport)> {
+        let plan = ProbeModelPlan::new(model_dir)?
+            .with_low_bit_replacements(replacements)?
+            .apply_working_set_budget(ctx)?;
+        let report = plan.memory_budget.ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "missing Metal model memory budget",
+                },
+                probe_ctx("memory_budget"),
+            )
+        })?;
+        Ok((plan.arena_bytes, report))
+    }
+
+    pub fn preferred_probe_model_float_type(model_dir: &Path) -> Result<MetalFloatType> {
+        let tensors = scan_safetensor_tensors(model_dir)?;
+        if tensors
+            .values()
+            .any(|tensor| tensor.dtype == rvllm_core::DType::Bf16)
+        {
+            Ok(MetalFloatType::Bf16)
+        } else {
+            Ok(MetalFloatType::F16)
+        }
+    }
+
     pub fn load_probe_model(
         ctx: &MetalContext,
         arena: &mut MetalBufferArena,
         model_dir: &Path,
     ) -> Result<Self> {
+        let float_type = Self::preferred_probe_model_float_type(model_dir)?;
+        Self::load_probe_model_with_float_type(ctx, arena, model_dir, float_type)
+    }
+
+    pub fn load_probe_model_with_float_type(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+    ) -> Result<Self> {
+        Self::load_probe_model_with_float_type_and_additional_weights(
+            ctx, arena, model_dir, float_type, 0,
+        )
+    }
+
+    /// Load native checkpoint weights while reserving and accounting immutable
+    /// package sidecars in the same arena.
+    pub fn load_probe_model_with_float_type_and_additional_weights(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+        additional_weight_bytes: usize,
+    ) -> Result<Self> {
+        let plan = ProbeModelPlan::new(model_dir)?
+            .with_additional_weight_bytes(additional_weight_bytes)?
+            .apply_working_set_budget(ctx)?;
+        Self::load_probe_model_from_plan(ctx, arena, model_dir, float_type, plan)
+    }
+
+    /// Load a model whose selected native dense down projections have been
+    /// omitted so authenticated low-bit sidecars can occupy their residency.
+    pub fn load_probe_model_with_float_type_and_low_bit_replacements(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+        replacements: &[MetalLowBitWeightReplacement],
+    ) -> Result<Self> {
+        let plan = ProbeModelPlan::new(model_dir)?
+            .with_low_bit_replacements(replacements)?
+            .apply_working_set_budget(ctx)?;
+        Self::load_probe_model_from_plan(ctx, arena, model_dir, float_type, plan)
+    }
+
+    fn load_probe_model_from_plan(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+        plan: ProbeModelPlan,
+    ) -> Result<Self> {
         let _ = ctx;
-        let plan = ProbeModelPlan::new(model_dir)?;
-        let debug_trace_layers = debug_trace_layers_from_env();
-        let mut mapped_refs = map_safetensor_to_arena(
+        let debug_trace_layers = &plan.debug_trace_layers;
+        let mut mapped_refs = map_safetensor_to_arena_with_float_type(
             arena,
             model_dir,
             &plan
@@ -1177,6 +2345,7 @@ impl Gemma4MetalState {
                 .iter()
                 .map(|name| name.as_str())
                 .collect::<Vec<_>>(),
+            float_type,
         )?;
         let embedding = region_lookup(&mut mapped_refs, &plan.embed_name)?;
         let final_norm = region_lookup(&mut mapped_refs, &plan.final_norm_name)?;
@@ -1189,11 +2358,17 @@ impl Gemma4MetalState {
         let half_bytes = std::mem::size_of::<f16>();
         let f32_bytes = std::mem::size_of::<f32>();
         let max_probe_tokens = plan.max_probe_tokens;
-        let residual_bytes = max_probe_tokens * plan.arch.hidden_size * half_bytes;
-        let logits_bytes = max_probe_tokens * plan.arch.vocab_size * half_bytes;
+        let max_batch_tokens = plan.max_batch_tokens;
+        let max_batch_sequences = plan.max_batch_sequences;
+        let residual_bytes = max_batch_tokens * plan.arch.hidden_size * half_bytes;
+        let logits_bytes = max_batch_tokens * plan.arch.vocab_size * half_bytes;
         let normed_hidden_bytes = residual_bytes;
-        let sampled_bytes = max_probe_tokens * std::mem::size_of::<i32>();
-        let token_ids_bytes = max_probe_tokens * 4;
+        let sampled_bytes = max_batch_tokens * std::mem::size_of::<i32>();
+        let final_argmax_tile_count = plan.arch.vocab_size.div_ceil(8);
+        let final_argmax_partial_max_bytes = max_batch_tokens * final_argmax_tile_count * f32_bytes;
+        let final_argmax_partial_idx_bytes =
+            max_batch_tokens * final_argmax_tile_count * std::mem::size_of::<i32>();
+        let token_ids_bytes = max_batch_tokens * 4;
 
         let ple = if let Some(ple_names) = &plan.ple_names {
             let embed_tokens_per_layer =
@@ -1205,12 +2380,12 @@ impl Gemma4MetalState {
             let stride = plan_num_layers_stride(plan.arch.num_hidden_layers, ple_names.ple_dim);
             let token_inputs = arena.region(
                 "metal_model_ple_token_inputs",
-                max_probe_tokens * stride * half_bytes,
+                max_batch_tokens * stride * half_bytes,
                 16,
             )?;
             let context_inputs = arena.region(
                 "metal_model_ple_context_inputs",
-                max_probe_tokens * stride * half_bytes,
+                max_batch_tokens * stride * half_bytes,
                 16,
             )?;
             Some(MetalPleState {
@@ -1228,6 +2403,129 @@ impl Gemma4MetalState {
 
         let mut layers = Vec::new();
         let shared_kv_source_layers = plan.arch.shared_kv_source_layers();
+        let shared_scratch = if plan.arch.num_hidden_layers > 0 {
+            let max_qkv_rows = plan
+                .layer_names
+                .iter()
+                .map(|layer| layer.dims.qkv_rows)
+                .max()
+                .unwrap_or(0);
+            let max_q_dim = plan
+                .layer_names
+                .iter()
+                .map(|layer| layer.dims.q_dim)
+                .max()
+                .unwrap_or(0);
+            let max_kv_dim = plan
+                .layer_names
+                .iter()
+                .map(|layer| layer.dims.kv_dim)
+                .max()
+                .unwrap_or(0);
+            let max_intermediate = plan
+                .layer_names
+                .iter()
+                .map(|layer| layer.intermediate_size)
+                .max()
+                .unwrap_or(0);
+            let max_moe_top_k = plan
+                .layer_names
+                .iter()
+                .filter_map(|layer| layer.moe.as_ref().map(|moe| moe.top_k))
+                .max()
+                .unwrap_or(0);
+            let max_moe_intermediate = plan
+                .layer_names
+                .iter()
+                .filter_map(|layer| layer.moe.as_ref().map(|moe| moe.intermediate_size))
+                .max()
+                .unwrap_or(0);
+            let qkv_bytes = if plan.arch.hidden_size == 3840 && plan.arch.num_hidden_layers == 48 {
+                std::mem::size_of::<f32>()
+            } else {
+                half_bytes
+            };
+            Some(SharedLayerScratch {
+                qkv_out: arena.region(
+                    "metal_shared_layer_qkv_out",
+                    max_batch_tokens * max_qkv_rows * qkv_bytes,
+                    16,
+                )?,
+                q: arena.region(
+                    "metal_shared_layer_q",
+                    max_batch_tokens * max_q_dim * half_bytes,
+                    16,
+                )?,
+                k: arena.region(
+                    "metal_shared_layer_k",
+                    max_batch_tokens * max_kv_dim * half_bytes,
+                    16,
+                )?,
+                v: arena.region(
+                    "metal_shared_layer_v",
+                    max_batch_tokens * max_kv_dim * half_bytes,
+                    16,
+                )?,
+                attn_out: arena.region(
+                    "metal_shared_layer_attn_out",
+                    max_batch_tokens * max_q_dim * half_bytes,
+                    16,
+                )?,
+                gate_up_out: arena.region(
+                    "metal_shared_layer_gate_up_out",
+                    max_batch_tokens * 2 * max_intermediate * half_bytes,
+                    16,
+                )?,
+                activated: arena.region(
+                    "metal_shared_layer_activated",
+                    max_batch_tokens * max_intermediate * half_bytes,
+                    16,
+                )?,
+                mlp_out: arena.region(
+                    "metal_shared_layer_mlp_out",
+                    max_batch_tokens * plan.arch.hidden_size * half_bytes,
+                    16,
+                )?,
+                moe_topk_indices: (max_moe_top_k > 0)
+                    .then(|| {
+                        arena.region(
+                            "metal_shared_layer_moe_topk_indices",
+                            max_batch_tokens * max_moe_top_k * std::mem::size_of::<i32>(),
+                            4,
+                        )
+                    })
+                    .transpose()?,
+                moe_topk_weights: (max_moe_top_k > 0)
+                    .then(|| {
+                        arena.region(
+                            "metal_shared_layer_moe_topk_weights",
+                            max_batch_tokens * max_moe_top_k * f32_bytes,
+                            4,
+                        )
+                    })
+                    .transpose()?,
+                moe_activated: (max_moe_top_k > 0 && max_moe_intermediate > 0)
+                    .then(|| {
+                        arena.region(
+                            "metal_shared_layer_moe_activated",
+                            max_batch_tokens * max_moe_top_k * max_moe_intermediate * half_bytes,
+                            16,
+                        )
+                    })
+                    .transpose()?,
+                moe_out: (max_moe_top_k > 0)
+                    .then(|| {
+                        arena.region(
+                            "metal_shared_layer_moe_out",
+                            max_batch_tokens * plan.arch.hidden_size * half_bytes,
+                            16,
+                        )
+                    })
+                    .transpose()?,
+            })
+        } else {
+            None
+        };
 
         for layer_idx in 0..plan.arch.num_hidden_layers {
             let layer_names = plan.layer_names.get(layer_idx).ok_or_else(|| {
@@ -1243,12 +2541,21 @@ impl Gemma4MetalState {
             let dims = layer_names.dims;
             let q_dim = dims.q_dim;
             let kv_dim = dims.kv_dim;
-            let qkv_rows = dims.qkv_rows;
 
             let attn_norm = region_lookup(&mut mapped_refs, &layer_names.attn_norm_name)?;
             let o_proj = region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?;
             let mlp_norm = region_lookup(&mut mapped_refs, &layer_names.mlp_norm_name)?;
-            let down_proj = region_lookup(&mut mapped_refs, &layer_names.down_proj_name)?;
+            let down_proj = if plan
+                .low_bit_replacements
+                .contains_key(&layer_names.down_proj_name)
+            {
+                None
+            } else {
+                Some(region_lookup(
+                    &mut mapped_refs,
+                    &layer_names.down_proj_name,
+                )?)
+            };
             let q_norm =
                 optional_region_lookup(&mut mapped_refs, layer_names.q_norm_name.as_deref())?;
             let k_norm =
@@ -1290,7 +2597,6 @@ impl Gemma4MetalState {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
             } else {
                 let bytes = concat_f16_tensors(
-                    model_dir,
                     &plan.tensors,
                     &[
                         layer_names.q_name.clone(),
@@ -1307,6 +2613,7 @@ impl Gemma4MetalState {
                         vec![kv_dim, hidden],
                     ],
                     "fuse_qkv",
+                    float_type,
                 )?;
                 map_fused_bytes_to_arena(arena, &format!("metal_fused_qkv_{layer_idx}"), &bytes)?
             };
@@ -1318,11 +2625,11 @@ impl Gemma4MetalState {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_gate_up_name)?
             } else {
                 let bytes = concat_f16_tensors(
-                    model_dir,
                     &plan.tensors,
                     &[layer_names.gate_name.clone(), layer_names.up_name.clone()],
                     &[vec![intermediate, hidden], vec![intermediate, hidden]],
                     "fuse_gate_up",
+                    float_type,
                 )?;
                 map_fused_bytes_to_arena(
                     arena,
@@ -1331,46 +2638,76 @@ impl Gemma4MetalState {
                 )?
             };
 
-            let qkv_out = arena.region(
-                &format!("metal_layer_{layer_idx}_qkv_out"),
-                max_probe_tokens * qkv_rows * half_bytes,
-                16,
-            )?;
-            let q = arena.region(
-                &format!("metal_layer_{layer_idx}_q"),
-                max_probe_tokens * q_dim * half_bytes,
-                16,
-            )?;
-            let k = arena.region(
-                &format!("metal_layer_{layer_idx}_k"),
-                max_probe_tokens * kv_dim * half_bytes,
-                16,
-            )?;
-            let v = arena.region(
-                &format!("metal_layer_{layer_idx}_v"),
-                max_probe_tokens * kv_dim * half_bytes,
-                16,
-            )?;
-            let attn_out = arena.region(
-                &format!("metal_layer_{layer_idx}_attn_out"),
-                max_probe_tokens * q_dim * half_bytes,
-                16,
-            )?;
-            let gate_up_out = arena.region(
-                &format!("metal_layer_{layer_idx}_gate_up_out"),
-                max_probe_tokens * 2 * intermediate * half_bytes,
-                16,
-            )?;
-            let activated = arena.region(
-                &format!("metal_layer_{layer_idx}_activated"),
-                max_probe_tokens * intermediate * half_bytes,
-                16,
-            )?;
-            let mlp_out = arena.region(
-                &format!("metal_layer_{layer_idx}_mlp_out"),
-                max_probe_tokens * hidden * half_bytes,
-                16,
-            )?;
+            let moe = layer_names
+                .moe
+                .as_ref()
+                .map(|moe_names| -> Result<MetalMoeState> {
+                    Ok(MetalMoeState {
+                        num_experts: moe_names.num_experts,
+                        top_k: moe_names.top_k,
+                        intermediate_size: moe_names.intermediate_size,
+                        router_proj: map_router_tensor_to_arena(
+                            arena,
+                            &plan.tensors,
+                            &moe_names.router_proj_name,
+                            &format!("metal_moe_router_proj_f32_{layer_idx}"),
+                            float_type,
+                        )?,
+                        router_scale: map_router_tensor_to_arena(
+                            arena,
+                            &plan.tensors,
+                            &moe_names.router_scale_name,
+                            &format!("metal_moe_router_scale_f32_{layer_idx}"),
+                            float_type,
+                        )?,
+                        router_per_expert_scale: map_router_tensor_to_arena(
+                            arena,
+                            &plan.tensors,
+                            &moe_names.router_per_expert_scale_name,
+                            &format!("metal_moe_router_per_expert_scale_f32_{layer_idx}"),
+                            float_type,
+                        )?,
+                        pre_ff2_norm: region_lookup(
+                            &mut mapped_refs,
+                            &moe_names.pre_ff2_norm_name,
+                        )?,
+                        post_ff1_norm: region_lookup(
+                            &mut mapped_refs,
+                            &moe_names.post_ff1_norm_name,
+                        )?,
+                        post_ff2_norm: region_lookup(
+                            &mut mapped_refs,
+                            &moe_names.post_ff2_norm_name,
+                        )?,
+                        expert_gate_up: region_lookup(
+                            &mut mapped_refs,
+                            &moe_names.expert_gate_up_name,
+                        )?,
+                        expert_down: region_lookup(&mut mapped_refs, &moe_names.expert_down_name)?,
+                    })
+                })
+                .transpose()?;
+
+            let scratch = shared_scratch.as_ref().ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "missing shared layer scratch",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
+            let qkv_out = scratch.qkv_out.clone();
+            let q = scratch.q.clone();
+            let k = scratch.k.clone();
+            let v = scratch.v.clone();
+            let attn_out = scratch.attn_out.clone();
+            let gate_up_out = scratch.gate_up_out.clone();
+            let activated = scratch.activated.clone();
+            let mlp_out = scratch.mlp_out.clone();
+            let moe_topk_indices = scratch.moe_topk_indices.clone();
+            let moe_topk_weights = scratch.moe_topk_weights.clone();
+            let moe_activated = scratch.moe_activated.clone();
+            let moe_out = scratch.moe_out.clone();
             let trace = if debug_trace_layer_enabled(&debug_trace_layers, layer_idx) {
                 let trace_region = |arena: &mut MetalBufferArena,
                                     name: &str,
@@ -1378,7 +2715,7 @@ impl Gemma4MetalState {
                  -> Result<MetalRegion> {
                     arena.region(
                         &format!("metal_layer_{layer_idx}_trace_{name}"),
-                        max_probe_tokens * elems_per_token * half_bytes,
+                        max_batch_tokens * elems_per_token * half_bytes,
                         16,
                     )
                 };
@@ -1431,9 +2768,9 @@ impl Gemma4MetalState {
                 None
             };
 
-            let block_size = max_probe_tokens as u32;
-            let num_blocks_total = max_probe_tokens as u32;
-            let max_blocks_per_seq = 1u32;
+            let block_size = APPLE_KV_PAGE_TOKENS as u32;
+            let max_blocks_per_seq = max_probe_tokens.div_ceil(APPLE_KV_PAGE_TOKENS) as u32;
+            let num_blocks_total = plan.physical_kv_pages;
             let kv_cache_k = arena.region(
                 &format!("metal_layer_{layer_idx}_kv_cache_k"),
                 (num_blocks_total as usize) * (block_size as usize) * kv_dim * half_bytes,
@@ -1447,27 +2784,27 @@ impl Gemma4MetalState {
 
             let positions = arena.region(
                 &format!("metal_layer_{layer_idx}_positions"),
-                max_probe_tokens * 4,
+                max_batch_tokens * 4,
                 4,
             )?;
             let slot_mapping = arena.region(
                 &format!("metal_layer_{layer_idx}_slot_mapping"),
-                max_probe_tokens * 4,
+                max_batch_tokens * 4,
                 4,
             )?;
             let context_lens = arena.region(
                 &format!("metal_layer_{layer_idx}_context_lens"),
-                max_probe_tokens * 4,
+                max_batch_sequences * 4,
                 4,
             )?;
             let block_tables = arena.region(
                 &format!("metal_layer_{layer_idx}_block_tables"),
-                max_probe_tokens * (max_blocks_per_seq as usize) * 4,
+                max_batch_sequences * (max_blocks_per_seq as usize) * 4,
                 4,
             )?;
             let cu_seqlens = arena.region(
                 &format!("metal_layer_{layer_idx}_cu_seqlens"),
-                (max_probe_tokens + 1) * 4,
+                (max_batch_sequences + 1) * 4,
                 4,
             )?;
 
@@ -1484,11 +2821,15 @@ impl Gemma4MetalState {
                 16,
             )?;
 
-            write_i32_region(arena, &positions, &vec![0; max_probe_tokens])?;
-            write_i32_region(arena, &slot_mapping, &vec![0; max_probe_tokens])?;
-            write_i32_region(arena, &context_lens, &vec![0; max_probe_tokens])?;
-            write_i32_region(arena, &block_tables, &vec![0; max_probe_tokens])?;
-            write_i32_region(arena, &cu_seqlens, &vec![0; max_probe_tokens + 1])?;
+            write_i32_region(arena, &positions, &vec![0; max_batch_tokens])?;
+            write_i32_region(arena, &slot_mapping, &vec![0; max_batch_tokens])?;
+            write_i32_region(arena, &context_lens, &vec![0; max_batch_sequences])?;
+            write_i32_region(
+                arena,
+                &block_tables,
+                &vec![0; max_batch_sequences * max_blocks_per_seq as usize],
+            )?;
+            write_i32_region(arena, &cu_seqlens, &vec![0; max_batch_sequences + 1])?;
             let (cos_table, sin_table) =
                 build_rope_tables(max_pos, half_rope, dims.head_dim, dims.rope_theta);
             write_f32_region(arena, &cos, &cos_table)?;
@@ -1496,6 +2837,8 @@ impl Gemma4MetalState {
 
             layers.push(MetalOneLayerState {
                 layer_idx,
+                down_proj_name: layer_names.down_proj_name.clone(),
+                low_bit_down_proj: None,
                 dims,
                 shared_kv_source_layer: shared_kv_source_layers[layer_idx],
                 attn_norm,
@@ -1512,6 +2855,7 @@ impl Gemma4MetalState {
                 layer_scalar_dim: layer_names.layer_scalar_dim as u32,
                 gate_up,
                 down_proj,
+                moe,
                 per_layer_input_gate,
                 per_layer_projection,
                 post_per_layer_input_norm,
@@ -1523,6 +2867,10 @@ impl Gemma4MetalState {
                 gate_up_out,
                 activated,
                 mlp_out,
+                moe_topk_indices,
+                moe_topk_weights,
+                moe_activated,
+                moe_out,
                 trace,
                 positions,
                 slot_mapping,
@@ -1552,9 +2900,181 @@ impl Gemma4MetalState {
         let logits = arena.region("metal_model_logits", logits_bytes, 16)?;
         let normed_hidden = arena.region("metal_model_normed_hidden", normed_hidden_bytes, 16)?;
         let sampled = arena.region("metal_model_sampled", sampled_bytes, 4)?;
+        let final_argmax_partial_max = arena.region(
+            "metal_model_final_argmax_partial_max",
+            final_argmax_partial_max_bytes,
+            16,
+        )?;
+        let final_argmax_partial_idx = arena.region(
+            "metal_model_final_argmax_partial_idx",
+            final_argmax_partial_idx_bytes,
+            16,
+        )?;
         let token_ids = arena.region("metal_model_token_ids", token_ids_bytes, 4)?;
 
+        let mut execution_slots = Vec::with_capacity(crate::memory_budget::IN_FLIGHT_SCRATCH_SLOTS);
+        execution_slots.push(Gemma4MetalExecutionSlot {
+            residual: residual.clone(),
+            logits: logits.clone(),
+            normed_hidden: normed_hidden.clone(),
+            sampled: sampled.clone(),
+            final_argmax_partial_max: final_argmax_partial_max.clone(),
+            final_argmax_partial_idx: final_argmax_partial_idx.clone(),
+            token_ids: token_ids.clone(),
+            ple_token_inputs: ple.as_ref().map(|ple| ple.token_inputs.clone()),
+            ple_context_inputs: ple.as_ref().map(|ple| ple.context_inputs.clone()),
+            layers: layers.iter().map(execution_layer_from_state).collect(),
+        });
+
+        // Allocate every mutable launch region twice more. Layer weights,
+        // immutable RoPE tables, and physical KV pages intentionally remain
+        // shared. Shared layer scratch remains shared *within* one command
+        // buffer because layer encoders execute in order, but never across
+        // execution slots.
+        for slot_index in 1..crate::memory_budget::IN_FLIGHT_SCRATCH_SLOTS {
+            let base_layer = layers.first();
+            let shared = base_layer
+                .map(|layer| -> Result<MetalLayerExecutionSlot> {
+                    let name = |field: &str| format!("metal_slot_{slot_index}_shared_{field}");
+                    Ok(MetalLayerExecutionSlot {
+                        qkv_out: allocate_region_like(arena, &name("qkv_out"), &layer.qkv_out, 16)?,
+                        q: allocate_region_like(arena, &name("q"), &layer.q, 16)?,
+                        k: allocate_region_like(arena, &name("k"), &layer.k, 16)?,
+                        v: allocate_region_like(arena, &name("v"), &layer.v, 16)?,
+                        attn_out: allocate_region_like(
+                            arena,
+                            &name("attn_out"),
+                            &layer.attn_out,
+                            16,
+                        )?,
+                        gate_up_out: allocate_region_like(
+                            arena,
+                            &name("gate_up_out"),
+                            &layer.gate_up_out,
+                            16,
+                        )?,
+                        activated: allocate_region_like(
+                            arena,
+                            &name("activated"),
+                            &layer.activated,
+                            16,
+                        )?,
+                        mlp_out: allocate_region_like(arena, &name("mlp_out"), &layer.mlp_out, 16)?,
+                        moe_topk_indices: allocate_optional_region_like(
+                            arena,
+                            &name("moe_topk_indices"),
+                            layer.moe_topk_indices.as_ref(),
+                            4,
+                        )?,
+                        moe_topk_weights: allocate_optional_region_like(
+                            arena,
+                            &name("moe_topk_weights"),
+                            layer.moe_topk_weights.as_ref(),
+                            4,
+                        )?,
+                        moe_activated: allocate_optional_region_like(
+                            arena,
+                            &name("moe_activated"),
+                            layer.moe_activated.as_ref(),
+                            16,
+                        )?,
+                        moe_out: allocate_optional_region_like(
+                            arena,
+                            &name("moe_out"),
+                            layer.moe_out.as_ref(),
+                            16,
+                        )?,
+                        // Per-layer fields are replaced below.
+                        trace: None,
+                        positions: layer.positions.clone(),
+                        slot_mapping: layer.slot_mapping.clone(),
+                        block_tables: layer.block_tables.clone(),
+                        context_lens: layer.context_lens.clone(),
+                        cu_seqlens: layer.cu_seqlens.clone(),
+                    })
+                })
+                .transpose()?;
+
+            let mut slot_layers = Vec::with_capacity(layers.len());
+            for layer in &layers {
+                let mut execution = shared.clone().ok_or_else(|| {
+                    RvllmError::apple(
+                        AppleError::InvalidWeightBlob {
+                            reason: "missing layer scratch for Metal execution slot",
+                        },
+                        probe_ctx("prepare"),
+                    )
+                })?;
+                let layer_idx = layer.layer_idx;
+                let name =
+                    |field: &str| format!("metal_slot_{slot_index}_layer_{layer_idx}_{field}");
+                execution.trace =
+                    allocate_trace_like(arena, slot_index, layer_idx, layer.trace.as_ref())?;
+                execution.positions =
+                    allocate_region_like(arena, &name("positions"), &layer.positions, 4)?;
+                execution.slot_mapping =
+                    allocate_region_like(arena, &name("slot_mapping"), &layer.slot_mapping, 4)?;
+                execution.block_tables =
+                    allocate_region_like(arena, &name("block_tables"), &layer.block_tables, 4)?;
+                execution.context_lens =
+                    allocate_region_like(arena, &name("context_lens"), &layer.context_lens, 4)?;
+                execution.cu_seqlens =
+                    allocate_region_like(arena, &name("cu_seqlens"), &layer.cu_seqlens, 4)?;
+                slot_layers.push(execution);
+            }
+
+            let slot_name = |field: &str| format!("metal_slot_{slot_index}_{field}");
+            execution_slots.push(Gemma4MetalExecutionSlot {
+                residual: allocate_region_like(arena, &slot_name("residual"), &residual, 16)?,
+                logits: allocate_region_like(arena, &slot_name("logits"), &logits, 16)?,
+                normed_hidden: allocate_region_like(
+                    arena,
+                    &slot_name("normed_hidden"),
+                    &normed_hidden,
+                    16,
+                )?,
+                sampled: allocate_region_like(arena, &slot_name("sampled"), &sampled, 4)?,
+                final_argmax_partial_max: allocate_region_like(
+                    arena,
+                    &slot_name("final_argmax_partial_max"),
+                    &final_argmax_partial_max,
+                    16,
+                )?,
+                final_argmax_partial_idx: allocate_region_like(
+                    arena,
+                    &slot_name("final_argmax_partial_idx"),
+                    &final_argmax_partial_idx,
+                    16,
+                )?,
+                token_ids: allocate_region_like(arena, &slot_name("token_ids"), &token_ids, 4)?,
+                ple_token_inputs: ple
+                    .as_ref()
+                    .map(|ple| {
+                        allocate_region_like(
+                            arena,
+                            &slot_name("ple_token_inputs"),
+                            &ple.token_inputs,
+                            16,
+                        )
+                    })
+                    .transpose()?,
+                ple_context_inputs: ple
+                    .as_ref()
+                    .map(|ple| {
+                        allocate_region_like(
+                            arena,
+                            &slot_name("ple_context_inputs"),
+                            &ple.context_inputs,
+                            16,
+                        )
+                    })
+                    .transpose()?,
+                layers: slot_layers,
+            });
+        }
+
         Ok(Self {
+            float_type,
             hidden_size: plan.arch.hidden_size,
             vocab_size: plan.arch.vocab_size,
             num_layers: plan.arch.num_hidden_layers,
@@ -1565,6 +3085,16 @@ impl Gemma4MetalState {
                 .unwrap_or(PROBE_METAL_SOFTCAP),
             embedding_scale: (plan.arch.hidden_size as f32).sqrt(),
             max_probe_tokens,
+            max_batch_tokens,
+            max_batch_sequences,
+            memory_budget: plan.memory_budget.ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "missing Metal model memory budget",
+                    },
+                    probe_ctx("memory_budget"),
+                )
+            })?,
             embedding,
             final_norm,
             lm_head,
@@ -1572,14 +3102,17 @@ impl Gemma4MetalState {
             logits,
             normed_hidden,
             sampled,
+            final_argmax_partial_max,
+            final_argmax_partial_idx,
             token_ids,
             ple,
             layers,
+            execution_slots,
         })
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn resolve_tensor_alias(
     tensors: &BTreeMap<String, SafetensorTensorInfo>,
     candidates: Vec<String>,
@@ -1598,7 +3131,7 @@ fn resolve_tensor_alias(
         })
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn resolve_optional_tensor_alias(
     tensors: &BTreeMap<String, SafetensorTensorInfo>,
     candidates: Vec<String>,
@@ -1608,7 +3141,7 @@ fn resolve_optional_tensor_alias(
         .find(|name| tensors.contains_key(name))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn validate_tensor_shape(
     tensors: &BTreeMap<String, SafetensorTensorInfo>,
     name: &str,
@@ -1632,7 +3165,7 @@ fn validate_tensor_shape(
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn validate_optional_norm_shape(
     tensors: &BTreeMap<String, SafetensorTensorInfo>,
     name: &Option<String>,
@@ -1659,7 +3192,7 @@ fn validate_optional_norm_shape(
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn validate_optional_layer_scalar_shape(
     tensors: &BTreeMap<String, SafetensorTensorInfo>,
     name: &Option<String>,
@@ -1688,7 +3221,7 @@ fn validate_optional_layer_scalar_shape(
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn resolve_weight_prefix(tensors: &BTreeMap<String, SafetensorTensorInfo>) -> String {
     if tensors.contains_key("model.embed_tokens.weight") {
         "model".to_owned()
@@ -1701,7 +3234,7 @@ fn resolve_weight_prefix(tensors: &BTreeMap<String, SafetensorTensorInfo>) -> St
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn region_lookup(refs: &mut Vec<(String, MetalRegion)>, name: &str) -> Result<MetalRegion> {
     let idx = refs.iter().position(|(n, _)| n == name).ok_or_else(|| {
         RvllmError::apple(
@@ -1714,7 +3247,7 @@ fn region_lookup(refs: &mut Vec<(String, MetalRegion)>, name: &str) -> Result<Me
     Ok(refs.swap_remove(idx).1)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn optional_region_lookup(
     refs: &mut Vec<(String, MetalRegion)>,
     name: Option<&str>,
@@ -1725,7 +3258,7 @@ fn optional_region_lookup(
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn optional_distinct_region_lookup(
     refs: &mut Vec<(String, MetalRegion)>,
     name: Option<&str>,
@@ -1737,7 +3270,7 @@ fn optional_distinct_region_lookup(
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn optional_region_or_alias_lookup(
     refs: &mut Vec<(String, MetalRegion)>,
     name: Option<&str>,
@@ -1751,7 +3284,7 @@ fn optional_region_or_alias_lookup(
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn map_fused_bytes_to_arena(
     arena: &mut MetalBufferArena,
     name: &str,
@@ -1764,13 +3297,57 @@ fn map_fused_bytes_to_arena(
     Ok(region)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn map_f32_tensor_to_arena(
+    arena: &mut MetalBufferArena,
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    tensor_name: &str,
+    region_name: &str,
+) -> Result<MetalRegion> {
+    let info = tensors.get(tensor_name).ok_or_else(|| {
+        RvllmError::apple(
+            AppleError::InvalidWeightBlob {
+                reason: "missing f32 tensor",
+            },
+            probe_ctx("prepare"),
+        )
+    })?;
+    let bytes = load_safetensor_entry_f32(info)?;
+    map_fused_bytes_to_arena(arena, region_name, &bytes)
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn map_router_tensor_to_arena(
+    arena: &mut MetalBufferArena,
+    tensors: &BTreeMap<String, SafetensorTensorInfo>,
+    tensor_name: &str,
+    region_name: &str,
+    float_type: MetalFloatType,
+) -> Result<MetalRegion> {
+    match float_type {
+        MetalFloatType::F16 => map_f32_tensor_to_arena(arena, tensors, tensor_name, region_name),
+        MetalFloatType::Bf16 => {
+            let info = tensors.get(tensor_name).ok_or_else(|| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "missing router tensor",
+                    },
+                    probe_ctx("prepare"),
+                )
+            })?;
+            let bytes = load_safetensor_entry_for_float_type(info, float_type)?;
+            map_fused_bytes_to_arena(arena, region_name, &bytes)
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn concat_f16_tensors(
-    model_dir: &Path,
     tensors: &BTreeMap<String, SafetensorTensorInfo>,
     names: &[String],
     expected_shapes: &[Vec<usize>],
     op: &'static str,
+    float_type: MetalFloatType,
 ) -> Result<Vec<u8>> {
     if names.len() != expected_shapes.len() {
         return Err(RvllmError::apple(
@@ -1799,13 +3376,13 @@ fn concat_f16_tensors(
                 probe_ctx(op),
             ));
         }
-        let bytes = load_safetensor_f16(model_dir, name)?;
+        let bytes = load_safetensor_entry_for_float_type(info, float_type)?;
         out.extend_from_slice(&bytes);
     }
     Ok(out)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn write_i32_region(arena: &MetalBufferArena, region: &MetalRegion, values: &[i32]) -> Result<()> {
     unsafe {
         let dst = arena.host_ptr(region) as *mut i32;
@@ -1814,7 +3391,7 @@ fn write_i32_region(arena: &MetalBufferArena, region: &MetalRegion, values: &[i3
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn write_f32_region(arena: &MetalBufferArena, region: &MetalRegion, values: &[f32]) -> Result<()> {
     unsafe {
         let dst = arena.host_ptr(region) as *mut f32;
@@ -1823,7 +3400,7 @@ fn write_f32_region(arena: &MetalBufferArena, region: &MetalRegion, values: &[f3
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn build_rope_tables(
     max_positions: usize,
     half_rope: usize,
@@ -1868,6 +3445,10 @@ mod tests {
             head_dim: 192,
             intermediate_size: 4096,
             use_double_wide_mlp: true,
+            enable_moe_block: false,
+            num_experts: None,
+            top_k_experts: None,
+            moe_intermediate_size: None,
             num_kv_shared_layers: shared_layers,
             hidden_size_per_layer_input: 0,
             vocab_size_per_layer_input: 0,
@@ -1906,6 +3487,21 @@ mod tests {
         let sources = arch.shared_kv_source_layers();
 
         assert_eq!(sources, vec![None, None, None, None, Some(2), Some(3)]);
+    }
+
+    #[test]
+    fn layer_dims_require_explicit_window_only_for_sliding_attention() {
+        let mut sliding = shared_kv_test_arch(vec![LayerAttnType::SlidingAttention], 0);
+        sliding.sliding_window = None;
+        assert!(MetalProbeLayerDims::from_arch_layer(&sliding, 0).is_err());
+        sliding.sliding_window = Some(u32::MAX as usize + 1);
+        assert!(MetalProbeLayerDims::from_arch_layer(&sliding, 0).is_err());
+
+        let mut full = shared_kv_test_arch(vec![LayerAttnType::Full], 0);
+        full.sliding_window = None;
+        let dims = MetalProbeLayerDims::from_arch_layer(&full, 0)
+            .expect("full attention must not require a sliding window");
+        assert_eq!(dims.attention_window, 0);
     }
 
     #[test]
@@ -2077,6 +3673,7 @@ mod tests {
     "global_head_dim": {global_head_dim},
     "num_global_key_value_heads": 1,
     "layer_types": ["sliding_attention", "full_attention"],
+    "sliding_window": 32,
     "vocab_size": {vocab},
     "max_position_embeddings": 16,
     "rms_norm_eps": 0.000001,
@@ -2103,6 +3700,60 @@ mod tests {
     }
 
     #[test]
+    fn explicit_limits_keep_independent_owners_and_reject_excess_before_tensor_scan() {
+        let dir = write_two_layer_sliding_global_plan_fixture();
+        let small = crate::MetalModelLimits {
+            max_context_tokens: 8,
+            max_batch_tokens: 4,
+            max_batch_sequences: 1,
+        };
+        let large = crate::MetalModelLimits {
+            max_context_tokens: 16,
+            max_batch_tokens: 16,
+            max_batch_sequences: 2,
+        };
+        let a = ProbeModelPlan::with_limits(&dir, Some(small)).unwrap();
+        let b = ProbeModelPlan::with_limits(&dir, Some(large)).unwrap();
+        let again = ProbeModelPlan::with_limits(&dir, Some(small)).unwrap();
+        assert_eq!(
+            (
+                a.max_probe_tokens,
+                a.max_batch_tokens,
+                a.max_batch_sequences
+            ),
+            (8, 4, 1)
+        );
+        assert_eq!(
+            (
+                b.max_probe_tokens,
+                b.max_batch_tokens,
+                b.max_batch_sequences
+            ),
+            (16, 16, 2)
+        );
+        assert_eq!(a.arena_bytes, again.arena_bytes);
+        assert!(b.scratch_slot_bytes > a.scratch_slot_bytes);
+        assert_eq!(a.physical_kv_pages, 1);
+        assert_eq!(b.physical_kv_pages, 2);
+        assert!(a.explicit_batch_sequences && a.debug_trace_layers.is_empty());
+        // A bad limit must be rejected even when tensor scanning would fail.
+        fs::remove_file(dir.join("model.safetensors")).unwrap();
+        let err = ProbeModelPlan::with_limits(
+            &dir,
+            Some(crate::MetalModelLimits {
+                max_context_tokens: 17,
+                ..large
+            }),
+        )
+        .err()
+        .unwrap();
+        assert!(err
+            .to_string()
+            .contains("invalid explicit Metal model limits"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn probe_model_plan_selects_sliding_and_global_layer_dims() {
         let dir = write_two_layer_sliding_global_plan_fixture();
         let plan = ProbeModelPlan::new(&dir).expect("build probe model plan");
@@ -2113,6 +3764,7 @@ mod tests {
             sliding.attention_kind,
             MetalProbeLayerAttentionKind::Sliding
         );
+        assert_eq!(sliding.attention_window, 32);
         assert_eq!(sliding.num_heads, 1);
         assert_eq!(sliding.num_kv_heads, 1);
         assert_eq!(sliding.head_dim, 128);
@@ -2124,6 +3776,7 @@ mod tests {
 
         let full = plan.layer_names[1].dims;
         assert_eq!(full.attention_kind, MetalProbeLayerAttentionKind::Full);
+        assert_eq!(full.attention_window, 0);
         assert_eq!(full.num_heads, 1);
         assert_eq!(full.num_kv_heads, 1);
         assert_eq!(full.head_dim, 256);
@@ -2133,6 +3786,159 @@ mod tests {
         assert_eq!(full.kv_dim, 256);
         assert_eq!(full.qkv_rows, 768);
 
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn additional_package_weights_are_accounted_before_device_budgeting() {
+        let dir = write_two_layer_sliding_global_plan_fixture();
+        let base = ProbeModelPlan::new(&dir).expect("build base probe model plan");
+        let base_weights = base.weights_bytes;
+        let base_arena = base.arena_bytes;
+        let additional = 12_345;
+        let with_sidecar = base
+            .with_additional_weight_bytes(additional)
+            .expect("account package sidecar");
+        assert_eq!(with_sidecar.weights_bytes, base_weights + additional);
+        assert_eq!(with_sidecar.arena_bytes, base_arena + additional);
+
+        let overflow = ProbeModelPlan::new(&dir)
+            .expect("rebuild probe model plan")
+            .with_additional_weight_bytes(usize::MAX);
+        assert!(overflow.is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn low_bit_replacement(
+        tensor_name: impl Into<String>,
+        format: rvllm_apple::AppleLowBitWeightFormat,
+        shape: [usize; 2],
+    ) -> MetalLowBitWeightReplacement {
+        MetalLowBitWeightReplacement {
+            tensor_name: tensor_name.into(),
+            format,
+            shape,
+            packed_values_bytes: low_bit_packed_values_bytes(format, shape[0], shape[1])
+                .expect("packed bytes"),
+            scales_bytes: low_bit_scales_bytes(shape[0], shape[1]).expect("scale bytes"),
+        }
+    }
+
+    #[test]
+    fn low_bit_replacement_plan_omits_native_weights_and_accounts_exact_storage() {
+        let dir = write_two_layer_sliding_global_plan_fixture();
+        let base = ProbeModelPlan::new(&dir).expect("build base plan");
+        let native_names = base
+            .layer_names
+            .iter()
+            .map(|layer| layer.down_proj_name.clone())
+            .collect::<Vec<_>>();
+        let native_bytes = native_names
+            .iter()
+            .map(|name| base.tensors.get(name).expect("native tensor").nbytes)
+            .sum::<usize>();
+        let base_weights_bytes = base.weights_bytes;
+        let base_unfloored_arena_bytes = base.unfloored_arena_bytes;
+        let replacements = vec![
+            low_bit_replacement(
+                native_names[1].clone(),
+                rvllm_apple::AppleLowBitWeightFormat::W8A16,
+                [128, 256],
+            ),
+            low_bit_replacement(
+                native_names[0].clone(),
+                rvllm_apple::AppleLowBitWeightFormat::W4A16,
+                [128, 256],
+            ),
+        ];
+        let mut expected_low_bit_arena_bytes = 0usize;
+        for replacement in replacements.iter().rev() {
+            expected_low_bit_arena_bytes =
+                align_up_checked(expected_low_bit_arena_bytes, 16).expect("align values");
+            expected_low_bit_arena_bytes += replacement.packed_values_bytes;
+            expected_low_bit_arena_bytes =
+                align_up_checked(expected_low_bit_arena_bytes, 16).expect("align scales");
+            expected_low_bit_arena_bytes += replacement.scales_bytes;
+        }
+
+        let planned = base
+            .with_low_bit_replacements(&replacements)
+            .expect("replace two dense projections");
+        assert_eq!(planned.low_bit_replacements.len(), 2);
+        assert!(native_names
+            .iter()
+            .all(|name| !planned.names.contains(name)));
+        assert_eq!(
+            planned.weights_bytes,
+            base_weights_bytes - native_bytes + expected_low_bit_arena_bytes
+        );
+        assert_eq!(
+            planned.unfloored_arena_bytes,
+            base_unfloored_arena_bytes - native_bytes + expected_low_bit_arena_bytes
+        );
+        assert_eq!(
+            planned.arena_bytes,
+            max(planned.unfloored_arena_bytes, PROBE_METAL_ARENA_BYTES)
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn low_bit_replacement_plan_rejects_duplicate_missing_shape_and_moe_inputs() {
+        let dir = write_two_layer_sliding_global_plan_fixture();
+        let plan = ProbeModelPlan::new(&dir).expect("build base plan");
+        let name = plan.layer_names[0].down_proj_name.clone();
+        let valid = low_bit_replacement(
+            name.clone(),
+            rvllm_apple::AppleLowBitWeightFormat::W4A16,
+            [128, 256],
+        );
+
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("duplicate plan")
+            .with_low_bit_replacements(&[valid.clone(), valid.clone()])
+            .is_err());
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("missing plan")
+            .with_low_bit_replacements(&[low_bit_replacement(
+                "model.layers.99.mlp.down_proj.weight",
+                rvllm_apple::AppleLowBitWeightFormat::W4A16,
+                [128, 256],
+            )])
+            .is_err());
+
+        let mut bad_shape = valid.clone();
+        bad_shape.shape = [128, 255];
+        bad_shape.packed_values_bytes =
+            low_bit_packed_values_bytes(bad_shape.format, 128, 255).expect("bad packed bytes");
+        bad_shape.scales_bytes = low_bit_scales_bytes(128, 255).expect("bad scale bytes");
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("shape plan")
+            .with_low_bit_replacements(&[bad_shape])
+            .is_err());
+
+        let mut bad_payload = valid.clone();
+        bad_payload.packed_values_bytes -= 1;
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("payload plan")
+            .with_low_bit_replacements(&[bad_payload])
+            .is_err());
+
+        let mut moe_plan = ProbeModelPlan::new(&dir).expect("moe plan");
+        moe_plan.layer_names[0].moe = Some(ProbeMoeNames {
+            num_experts: 2,
+            top_k: 1,
+            intermediate_size: 64,
+            router_proj_name: String::new(),
+            router_scale_name: String::new(),
+            router_per_expert_scale_name: String::new(),
+            pre_ff2_norm_name: String::new(),
+            post_ff1_norm_name: String::new(),
+            post_ff2_norm_name: String::new(),
+            expert_gate_up_name: String::new(),
+            expert_down_name: String::new(),
+        });
+        assert!(moe_plan.with_low_bit_replacements(&[valid]).is_err());
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -2558,23 +4364,16 @@ mod tests {
 
     #[test]
     #[ignore = "set RVLLM_GEMMA4_MODEL_DIR to plan a real Gemma4 model directory"]
-    fn real_gemma4_model_dir_large_probe_arena_bytes_when_opted_in() {
+    fn real_gemma4_model_dir_arena_bytes_are_computable() {
         let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
             eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
             return;
         };
         let model_dir = PathBuf::from(model_dir);
-        let previous = std::env::var_os(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV);
-        std::env::set_var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
         let bytes = Gemma4MetalState::required_probe_model_arena_bytes(&model_dir)
-            .expect("large Gemma4 probe arena bytes should be computable under explicit opt-in");
-        if let Some(previous) = previous {
-            std::env::set_var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, previous);
-        } else {
-            std::env::remove_var(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV);
-        }
+            .expect("Gemma4 Metal arena bytes should be computable without a layer-count opt-in");
         eprintln!(
-            "large Gemma4 probe arena requirement: {bytes} bytes ({:.2} GiB)",
+            "Gemma4 Metal arena requirement: {bytes} bytes ({:.2} GiB)",
             bytes as f64 / 1024.0 / 1024.0 / 1024.0
         );
         assert!(bytes > 1024 * 1024 * 1024);
@@ -2582,5 +4381,5 @@ mod tests {
 }
 
 #[derive(Debug, Default, Clone)]
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub struct Gemma4MetalState;

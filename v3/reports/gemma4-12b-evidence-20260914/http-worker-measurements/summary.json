@@ -1,0 +1,42 @@
+{
+  "schema": "rvllm.gemma12b_http_measurement_summary.v1",
+  "binary_sha256": "a2e9f7a47d28d9a8fb2dc9587a70f0e5110c6371a4501da0297569f60d5a124f",
+  "measured_requests": 7,
+  "warmups": 2,
+  "prompt_tokens": 84,
+  "outputs_per_request": 10,
+  "ane_steps_per_request": 9,
+  "eligible_requests": 7,
+  "all_identical_strata": true,
+  "stratum": {
+    "available_cpus": null,
+    "cpu_speed_limit_percent": null,
+    "low_power_mode": false,
+    "pmset_power_mode": 0,
+    "power_source": "battery",
+    "scheduler_limit_percent": null,
+    "thermal_state": 0
+  },
+  "median_ane_steps_per_second": 6.08594365959837,
+  "ane_steps_per_second_range": [
+    5.801157588768185,
+    6.128127744652236
+  ],
+  "median_client_wall_ms": 2300.62925,
+  "median_prefill_including_import_ms": 802.652375,
+  "median_metal_gpu_execution_ms": 449.551374,
+  "median_decode_ms": 1478.817502,
+  "median_decode_components_ms": {
+    "attention_ms": 15.793713000000004,
+    "ffn_ms": 74.823248,
+    "host_ms": 3.414169999999988,
+    "output_ms": 21.340246000000004,
+    "qkv_ms": 31.188874,
+    "total_ms": 165.02154199999998,
+    "vocabulary_ms": 18.912248
+  },
+  "server_exit_success": true,
+  "boot_unchanged": true,
+  "remaining_owned_staging_directories": [],
+  "claim": "Repeated identical workload characterization. No before/after speedup. Compare only matching eligible sampled strata; CPU cycles exclude GPU and ANE."
+}

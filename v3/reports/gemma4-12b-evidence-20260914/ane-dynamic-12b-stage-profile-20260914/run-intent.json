@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/release/rvllm_ane_probe",
+    "--model-dir",
+    "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "--ffn-prefix",
+    "model.language_model.layers.0.mlp",
+    "--ffn-mode",
+    "dynamic",
+    "--profile-stages",
+    "true",
+    "--iterations",
+    "12",
+    "--report",
+    "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/ane-dynamic-12b-stage-profile-20260914/report.json"
+  ],
+  "binary_sha256": "9fb9f47a986370eabee7a65d6862d36d55c129a0f4343774a828788a7aa04142",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "load_before": "13:01  up  4:42, 1 user, load averages: 14.17 27.86 41.93\n",
+  "scope": "Attribute contended real 12B FFN application call to host input, ANE evaluate call, host output. Three numerical inputs, five warmups, twelve measured calls. No isolated hardware benchmark claim."
+}

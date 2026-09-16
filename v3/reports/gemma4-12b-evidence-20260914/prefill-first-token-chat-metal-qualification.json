@@ -1,0 +1,103 @@
+{
+  "schema": "rvllm.prefill_first_token_qualification.v1",
+  "cases": [
+    {
+      "case": "capital",
+      "prompt_tokens": 21,
+      "generated_tokens": [
+        50429,
+        106
+      ],
+      "prefill_sample_capture_ms": 3996.626042,
+      "prefill_steps": 1,
+      "decode_steps_before_verifier": 0,
+      "command_buffers_before_verifier": 1,
+      "layers_exported": 48,
+      "seed_report": "prefill-first-token-chat-capital-seed.json",
+      "seed_report_sha256": "e9bb1ab3023d78b7aaebb70a4426ceb1c2dfad96d17b8f275cd653dfce1b6360"
+    },
+    {
+      "case": "arithmetic",
+      "prompt_tokens": 28,
+      "generated_tokens": [
+        236800,
+        236778,
+        236800,
+        106
+      ],
+      "prefill_sample_capture_ms": 3545.0751670000004,
+      "prefill_steps": 1,
+      "decode_steps_before_verifier": 0,
+      "command_buffers_before_verifier": 1,
+      "layers_exported": 48,
+      "seed_report": "prefill-first-token-chat-arithmetic-seed.json",
+      "seed_report_sha256": "6d40db89b387c5f51738cb73d16f88f32e0beffeb5fcb1ca4f9a23b5ea708a0d"
+    },
+    {
+      "case": "addition",
+      "prompt_tokens": 27,
+      "generated_tokens": [
+        236812,
+        236778,
+        106
+      ],
+      "prefill_sample_capture_ms": 4554.144125,
+      "prefill_steps": 1,
+      "decode_steps_before_verifier": 0,
+      "command_buffers_before_verifier": 1,
+      "layers_exported": 48,
+      "seed_report": "prefill-first-token-chat-addition-seed.json",
+      "seed_report_sha256": "b06401851ff95e10a5208ddf08b67c5192f756ea5970980c6d4eb4c0bbe67ea6"
+    },
+    {
+      "case": "opposite",
+      "prompt_tokens": 23,
+      "generated_tokens": [
+        66020,
+        106
+      ],
+      "prefill_sample_capture_ms": 3625.60525,
+      "prefill_steps": 1,
+      "decode_steps_before_verifier": 0,
+      "command_buffers_before_verifier": 1,
+      "layers_exported": 48,
+      "seed_report": "prefill-first-token-chat-opposite-seed.json",
+      "seed_report_sha256": "6fb91b0d74af0b5fb3a84ee74a10a550eead7333f739f1943ac8b5e94d485ff8"
+    },
+    {
+      "case": "gold",
+      "prompt_tokens": 28,
+      "generated_tokens": [
+        36928,
+        106
+      ],
+      "prefill_sample_capture_ms": 3509.445083,
+      "prefill_steps": 1,
+      "decode_steps_before_verifier": 0,
+      "command_buffers_before_verifier": 1,
+      "layers_exported": 48,
+      "seed_report": "prefill-first-token-chat-gold-seed.json",
+      "seed_report_sha256": "9f59bb5dccc65981cfdc145a8e1c1bad05fbd30d0fd5945d8ea71221bcff6230"
+    },
+    {
+      "case": "cpu",
+      "prompt_tokens": 22,
+      "generated_tokens": [
+        32936,
+        106
+      ],
+      "prefill_sample_capture_ms": 2589.369208,
+      "prefill_steps": 1,
+      "decode_steps_before_verifier": 0,
+      "command_buffers_before_verifier": 1,
+      "layers_exported": 48,
+      "seed_report": "prefill-first-token-chat-cpu-seed.json",
+      "seed_report_sha256": "4efa3dd8cfd6afb2522398f383cd1deb81ceda98c8597bc6410efa2e40d6111c"
+    }
+  ],
+  "model_revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "probe_sha256": "670a3d886a8206ae06ebaef970231878675823a008b7a570f36c6d3463067640",
+  "bf16_metallib_sha256": "24086ed59b6e079a5e5ac219036c90eb81db1d489a72fdd356d4c79433a4a762",
+  "ane_execution_verified": false,
+  "timing_policy": "One observation per case; other system workloads active; not an isolated benchmark."
+}

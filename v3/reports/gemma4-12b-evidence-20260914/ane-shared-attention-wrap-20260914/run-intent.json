@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/ane-shared-attention-wrap-20260914/attention-test",
+    "ane_attention::tests::hardware_shared_attention_preserves_caches_across_window_wrap",
+    "--ignored",
+    "--exact",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "binary_sha256": "e1c9449784e4e34112da6051333209c441dc21dbd7a0193aeed4277fe3c6e904",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "scope": "Two shared attention graphs, four independent requests, fourteen evaluations; full 1024 sliding ring wrap and global 64 positions. Stop on first failure."
+}

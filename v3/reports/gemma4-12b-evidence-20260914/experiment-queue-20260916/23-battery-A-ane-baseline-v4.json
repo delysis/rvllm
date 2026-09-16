@@ -1,0 +1,94 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "purpose": "timing",
+  "command": {
+    "executable": {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-full-model-20260916/rvllm_disaggregated_infer",
+      "sha256": "aa015ca92c735e36c1da17d258031a4c743823a4b29feacb5ba46cbbc9f3c605"
+    },
+    "cwd": "/Users/george/Downloads/rvllm/v3",
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--context-capacity",
+      "1024",
+      "--interleave",
+      "true",
+      "--max-new-tokens",
+      "10",
+      "--ane-compile-budget",
+      "0",
+      "--metallib-bf16",
+      "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+      "--ane-weights",
+      "static-int8-ffn-cached",
+      "--output-dir",
+      "{output}/backend",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt"
+    ],
+    "env": {}
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/target/simd-attention-bf16.metallib",
+      "sha256": "6efa8fbed39f6d36fb83fe823da1a5d0733c22970b96b431439be27a07617705"
+    },
+    {
+      "path": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/int8-stacked-comparison-20260916/copy-prompt.txt",
+      "sha256": "9269f2ca629b55246f417545e5a4f3acde6d28bf790d7552b63fefd4c875ea8a"
+    }
+  ],
+  "conditions": {
+    "power_source": "battery",
+    "low_power_mode": false,
+    "pmset_power_mode": 0,
+    "thermal_state": 0,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/Downloads/rvllm/v3",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer",
+      "rvllm-native-kit-baseline",
+      "rvllm_experiment_queue-v3"
+    ],
+    "idle_llama_servers": [
+      {
+        "pid": 1038,
+        "port": 8093
+      }
+    ]
+  },
+  "stable_seconds": 120,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 600,
+  "id": "23-battery-A-ane",
+  "after": [
+    "22-battery-B-native"
+  ]
+}

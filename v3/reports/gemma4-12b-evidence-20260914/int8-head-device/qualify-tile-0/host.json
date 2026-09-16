@@ -1,0 +1,161 @@
+{
+  "backend_tolerance": "0.01 + 0.02 * abs(cpu_reference)",
+  "claim": "One vocabulary tile on authenticated saved states; not full-vocabulary ANE ranking or full-model quality/performance.",
+  "first_row": 0,
+  "input_sources": [
+    {
+      "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/ane-position-21-layer-47.fp16",
+      "capture_sha256": "33e77f2fb75d409f4eacfbca476aaec5f8641d5763e1555fc1bd3f8192ae5f06",
+      "normalized_fp16_sha256": "19ccb599b0094d07996235b8679b17adcbd6490e0af092b3d2840147b7935b09",
+      "recorded_next_token": 106,
+      "recorded_top_five": [
+        [
+          106,
+          18.046875
+        ],
+        [
+          1340,
+          1.17578125
+        ],
+        [
+          236748,
+          0.95849609375
+        ],
+        [
+          869,
+          0.64208984375
+        ],
+        [
+          11989,
+          0.453857421875
+        ]
+      ],
+      "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-0/step-21.json",
+      "step_sha256": "f174a4fd9949d093df6a7b94423682cb530b4f188bca65a404e57444519d8730"
+    },
+    {
+      "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/ane-position-84-layer-47.fp16",
+      "capture_sha256": "46e090bef1a20e59d5fe92bb62e0dcda7cf759371be1c7154d2ce62bb55a4441",
+      "normalized_fp16_sha256": "7e8f6f7b12eb410097578c7611e46360ecced1669e5b901973928f6e0f1d132f",
+      "recorded_next_token": 3730,
+      "recorded_top_five": [
+        [
+          3730,
+          10.9921875
+        ],
+        [
+          37423,
+          -12.5703125
+        ],
+        [
+          9595,
+          -13.1171875
+        ],
+        [
+          861,
+          -13.3046875
+        ],
+        [
+          16045,
+          -13.765625
+        ]
+      ],
+      "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-1/step-84.json",
+      "step_sha256": "635118e473749155fdaf2e9850614cbccefd86fa28c3868a19ec84cfcd941c6d"
+    },
+    {
+      "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/ane-position-652-layer-47.fp16",
+      "capture_sha256": "b12dd4471bd6cdfeb1e0b7756b3beaa0211662b47b83088e82cc9d2478c9030d",
+      "normalized_fp16_sha256": "aaecb479b6d0a0bec5822a2114c21260e3cc5a90685408d1122a8177d083f962",
+      "recorded_next_token": 236778,
+      "recorded_top_five": [
+        [
+          236778,
+          24.59375
+        ],
+        [
+          236770,
+          10.015625
+        ],
+        [
+          236812,
+          7.65234375
+        ],
+        [
+          236800,
+          6.8984375
+        ],
+        [
+          236771,
+          6.1640625
+        ]
+      ],
+      "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/interactive-simd-attention-capture-four/inference/case-2/step-652.json",
+      "step_sha256": "3640223d50f64220896869c9170a34d349351cd5e0d0e1aea3c3c9051eb3c51f"
+    },
+    {
+      "capture": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/ane-position-230-layer-47.fp16",
+      "capture_sha256": "414d3321dd15733789bb0f36989df381f85e85f086432307958004f4a42249b7",
+      "normalized_fp16_sha256": "a59bf185ad718e481c174195e9358c13dadaf73b3b38a252b352e545b9f5987b",
+      "recorded_next_token": 106,
+      "recorded_top_five": [
+        [
+          106,
+          17.0625
+        ],
+        [
+          236779,
+          1.548828125
+        ],
+        [
+          1340,
+          0.71142578125
+        ],
+        [
+          236748,
+          0.066162109375
+        ],
+        [
+          954,
+          0.060760498046875
+        ]
+      ],
+      "step": "/Users/george/Downloads/rvllm/v3/reports/gemma4-12b-evidence-20260914/text-mma-extended-context1024-four/inference/case-2/step-230.json",
+      "step_sha256": "3d99aacd99bf044eb3cce10d296ca2c317a2b39a9d98f0808864db170a108230"
+    }
+  ],
+  "int8_source_bytes": 62947520,
+  "mode": "qualify",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "original_fp16_sha256": "b6228f0eb7d8198ff13bfb1b1ea7eed8efca326b10e81c96bab506faa37325fe",
+  "quantization_errors": [
+    {
+      "backend_tolerance_violations": 143,
+      "elements": 16384,
+      "maximum_absolute_error": 0.8182296752929688,
+      "relative_l2_error": 0.004275380549225176
+    },
+    {
+      "backend_tolerance_violations": 47,
+      "elements": 16384,
+      "maximum_absolute_error": 1.4570255279541016,
+      "relative_l2_error": 0.0029719330854313334
+    },
+    {
+      "backend_tolerance_violations": 529,
+      "elements": 16384,
+      "maximum_absolute_error": 0.7001399993896484,
+      "relative_l2_error": 0.005645011471343877
+    },
+    {
+      "backend_tolerance_violations": 140,
+      "elements": 16384,
+      "maximum_absolute_error": 0.6322050094604492,
+      "relative_l2_error": 0.004006140257410117
+    }
+  ],
+  "reconstructed_fp16_sha256": "311be70cfa985fb1e2737a5090a6f7433734f34f16e22c3aba7748ae5841ae1d",
+  "row_count": 16384,
+  "schema": "rvllm.gemma4_head_tile_int8.v1",
+  "tile": 0
+}

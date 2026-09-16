@@ -1,0 +1,43 @@
+[
+  {
+    "args": [
+      "--restore-int8-cache",
+      "true",
+      "--cache",
+      "reuse",
+      "--ane-compile-budget",
+      "2"
+    ],
+    "exit_code": 1,
+    "stderr": "ANE weight FFN probe failed: INT8 cache restoration requires mode int8, cache reuse, compile budget 1, driver journal, and no CPU/comparison/layout experiment",
+    "journal_created": false
+  },
+  {
+    "args": [
+      "--restore-int8-cache",
+      "true",
+      "--cache",
+      "reuse",
+      "--ane-compile-budget",
+      "1",
+      "--int8-stacked",
+      "true"
+    ],
+    "exit_code": 1,
+    "stderr": "ANE weight FFN probe failed: INT8 cache restoration requires mode int8, cache reuse, compile budget 1, driver journal, and no CPU/comparison/layout experiment",
+    "journal_created": false
+  },
+  {
+    "args": [
+      "--restore-int8-cache",
+      "true",
+      "--cache",
+      "require",
+      "--ane-compile-budget",
+      "1"
+    ],
+    "exit_code": 1,
+    "stderr": "ANE weight FFN probe failed: INT8 cache restoration requires mode int8, cache reuse, compile budget 1, driver journal, and no CPU/comparison/layout experiment",
+    "journal_created": false
+  }
+]

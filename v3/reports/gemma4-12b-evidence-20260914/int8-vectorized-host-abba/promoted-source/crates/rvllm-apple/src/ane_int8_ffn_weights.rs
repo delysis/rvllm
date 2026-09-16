@@ -1,0 +1,379 @@
+//! Per-output INT8 weights for the private ANE constant-weight FFN experiment.
+//! Activations remain FP16. This is separate from the public group-32 packed
+//! weight ABI: the ANE constexpr operation requires one scale per output row.
+
+use half::f16;
+use half::slice::HalfFloatSliceExt;
+
+#[derive(PartialEq)]
+struct RowInt8 {
+    rows: usize,
+    columns: usize,
+    values: Vec<i8>,
+    scales: Vec<f16>,
+}
+
+impl RowInt8 {
+    // Host preparation. Preserve scalar source bytes while reducing conversion
+    // and quantization instructions; this makes no device speedup assumption.
+    fn quantize_vectorized(weights: &[f16], rows: usize, columns: usize) -> Result<Self, String> {
+        if rows == 0
+            || columns == 0
+            || rows % 32 != 0
+            || columns % 32 != 0
+            || rows.checked_mul(columns) != Some(weights.len())
+        {
+            return Err("ANE INT8 weights require a nonempty, 32-aligned matrix".into());
+        }
+        let mut values = Vec::with_capacity(weights.len());
+        let mut scales = Vec::with_capacity(rows);
+        // One bounded row buffer; no model-sized FP32 copy. The half crate's
+        // safe slice operation dispatches to the host's vector conversion.
+        let mut row_values = vec![0.0_f32; columns];
+        for (index, row) in weights.chunks_exact(columns).enumerate() {
+            row.convert_to_f32_slice(&mut row_values);
+            // Positive IEEE bits have the same ordering as their values. This
+            // integer reduction also detects every infinity/NaN, including
+            // negative and signaling NaNs, without a branch per coefficient.
+            let maximum_bits = row_values
+                .iter()
+                .map(|value| value.to_bits() & 0x7fff_ffff)
+                .max()
+                .unwrap_or(0);
+            if maximum_bits >= f32::INFINITY.to_bits() {
+                return Err(format!("ANE INT8 weight row {index} is nonfinite"));
+            }
+            let maximum = f32::from_bits(maximum_bits);
+            let scale = if maximum == 0.0 {
+                f16::ONE
+            } else {
+                f16::from_f32(maximum / 127.0)
+            };
+            if !scale.is_finite() || scale <= f16::ZERO {
+                return Err(format!("ANE INT8 row {index} scale is not representable"));
+            }
+            let stored_scale = scale.to_f32();
+            // Preserve division and ties-to-even exactly. Reciprocal multiply
+            // can change bytes, graph identity, and subsequent model output.
+            values.extend(row_values.iter().map(|&weight| {
+                (weight / stored_scale)
+                    .round_ties_even()
+                    .clamp(-127.0, 127.0) as i8
+            }));
+            scales.push(scale);
+        }
+        Ok(Self {
+            rows,
+            columns,
+            values,
+            scales,
+        })
+    }
+
+    fn quantize(weights: &[f16], rows: usize, columns: usize) -> Result<Self, String> {
+        if rows == 0
+            || columns == 0
+            || rows % 32 != 0
+            || columns % 32 != 0
+            || rows.checked_mul(columns) != Some(weights.len())
+        {
+            return Err("ANE INT8 weights require a nonempty, 32-aligned matrix".into());
+        }
+        let mut values = Vec::with_capacity(weights.len());
+        let mut scales = Vec::with_capacity(rows);
+        for (index, row) in weights.chunks_exact(columns).enumerate() {
+            let maximum = row.iter().try_fold(0.0_f32, |maximum, weight| {
+                if !weight.is_finite() {
+                    return Err(format!("ANE INT8 weight row {index} is nonfinite"));
+                }
+                Ok(maximum.max(weight.to_f32().abs()))
+            })?;
+            let scale = if maximum == 0.0 {
+                f16::ONE
+            } else {
+                f16::from_f32(maximum / 127.0)
+            };
+            if !scale.is_finite() || scale <= f16::ZERO {
+                return Err(format!("ANE INT8 row {index} scale is not representable"));
+            }
+            // Quantize against the exact stored FP16 scale, so reconstruction
+            // is authoritative and independent of an unstored FP32 value.
+            for weight in row {
+                let integer = (weight.to_f32() / scale.to_f32())
+                    .round_ties_even()
+                    .clamp(-127.0, 127.0);
+                values.push(integer as i8);
+            }
+            scales.push(scale);
+        }
+        Ok(Self {
+            rows,
+            columns,
+            values,
+            scales,
+        })
+    }
+
+    fn dequantized(&self) -> Vec<f16> {
+        self.values
+            .chunks_exact(self.columns)
+            .zip(&self.scales)
+            .flat_map(|(row, scale)| {
+                row.iter()
+                    .map(move |&value| f16::from_f32(f32::from(value) * scale.to_f32()))
+            })
+            .collect()
+    }
+}
+
+/// Three immutable quantized matrices, in gate/up/down order.
+#[derive(PartialEq)]
+pub struct AneInt8FfnWeights {
+    hidden: usize,
+    intermediate: usize,
+    matrices: [RowInt8; 3],
+}
+
+impl AneInt8FfnWeights {
+    pub fn quantize(
+        gate: &[f16],
+        up: &[f16],
+        down: &[f16],
+        hidden: usize,
+        intermediate: usize,
+    ) -> Result<Self, String> {
+        Self::quantize_with(
+            gate,
+            up,
+            down,
+            hidden,
+            intermediate,
+            RowInt8::quantize_vectorized,
+        )
+    }
+
+    /// Scalar reference for source-byte audits and host preparation benchmarks.
+    /// This performs no ANE calls.
+    pub fn quantize_scalar_reference(
+        gate: &[f16],
+        up: &[f16],
+        down: &[f16],
+        hidden: usize,
+        intermediate: usize,
+    ) -> Result<Self, String> {
+        Self::quantize_with(gate, up, down, hidden, intermediate, RowInt8::quantize)
+    }
+
+    fn quantize_with(
+        gate: &[f16],
+        up: &[f16],
+        down: &[f16],
+        hidden: usize,
+        intermediate: usize,
+        quantize: fn(&[f16], usize, usize) -> Result<RowInt8, String>,
+    ) -> Result<Self, String> {
+        let count = hidden
+            .checked_mul(intermediate)
+            .filter(|&n| n > 0 && n == gate.len() && n == up.len() && n == down.len())
+            .ok_or("ANE INT8 FFN matrix shape mismatch or overflow")?;
+        let bytes = count
+            .checked_mul(3)
+            .and_then(|n| n.checked_add(intermediate.checked_mul(4)?))
+            .and_then(|n| n.checked_add(hidden.checked_mul(2)?))
+            .and_then(|n| n.checked_add(7 * 64))
+            .ok_or("ANE INT8 FFN storage overflow")?;
+        if bytes > u32::MAX as usize || hidden > 65536 || intermediate > 65536 {
+            return Err("ANE INT8 FFN exceeds tensor or blob limits".into());
+        }
+        Ok(Self {
+            hidden,
+            intermediate,
+            matrices: [
+                quantize(gate, intermediate, hidden)?,
+                quantize(up, intermediate, hidden)?,
+                quantize(down, hidden, intermediate)?,
+            ],
+        })
+    }
+
+    pub fn shape(&self) -> (usize, usize) {
+        (self.hidden, self.intermediate)
+    }
+
+    /// Dense FP16 reconstruction from precisely the stored integer/scale pair.
+    /// Used by numerical references and the dense representation control.
+    pub fn dequantized(&self) -> [Vec<f16>; 3] {
+        self.matrices.each_ref().map(RowInt8::dequantized)
+    }
+
+    pub fn source_blob_bytes(&self) -> usize {
+        7 * 64
+            + self
+                .matrices
+                .iter()
+                .map(|m| m.values.len() + m.scales.len() * 2)
+                .sum::<usize>()
+    }
+
+    /// Core ML blob codes: signed INT8=4, FP16=1. Chunk offsets address the
+    /// 64-byte descriptor, whose data offset addresses the following payload.
+    pub(crate) fn blob_and_constants(&self) -> (Vec<u8>, String) {
+        let mut blob = Vec::with_capacity(self.source_blob_bytes());
+        blob.resize(64, 0);
+        blob[..4].copy_from_slice(&6_u32.to_le_bytes());
+        blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
+        let mut constants = String::new();
+        for (matrix, name) in self.matrices.iter().zip(["Wg", "Wu", "Wd"]) {
+            let q_offset = append_descriptor(&mut blob, 4, matrix.values.len());
+            blob.extend(matrix.values.iter().map(|&value| value.to_le_bytes()[0]));
+            let scale_offset = append_descriptor(&mut blob, 1, matrix.scales.len() * 2);
+            for scale in &matrix.scales {
+                blob.extend_from_slice(&scale.to_le_bytes());
+            }
+            let (rows, columns) = (matrix.rows, matrix.columns);
+            constants.push_str(&format!(
+                "        tensor<fp16, [{rows}, {columns}, 1, 1]> {name} = constexpr_affine_dequantize()[axis = int32(0), name = string(\"{name}\"), quantized_data = tensor<int8, [{rows}, {columns}, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({q_offset}))), scale = tensor<fp16, [{rows}]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({scale_offset}))), zero_point = int8(0)];\n"
+            ));
+        }
+        debug_assert_eq!(blob.len(), self.source_blob_bytes());
+        (blob, constants)
+    }
+}
+
+fn append_descriptor(blob: &mut Vec<u8>, dtype: u32, bytes: usize) -> usize {
+    let offset = blob.len();
+    debug_assert_eq!(offset % 64, 0);
+    blob.resize(offset + 64, 0);
+    blob[offset..offset + 4].copy_from_slice(&0xDEAD_BEEF_u32.to_le_bytes());
+    blob[offset + 4..offset + 8].copy_from_slice(&dtype.to_le_bytes());
+    blob[offset + 8..offset + 16].copy_from_slice(&(bytes as u64).to_le_bytes());
+    blob[offset + 16..offset + 24].copy_from_slice(&((offset + 64) as u64).to_le_bytes());
+    offset
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn compare_quantizers(weights: &[f16], rows: usize, columns: usize) {
+        let scalar = RowInt8::quantize(weights, rows, columns);
+        let vector = RowInt8::quantize_vectorized(weights, rows, columns);
+        match (scalar, vector) {
+            (Ok(scalar), Ok(vector)) => {
+                assert_eq!(scalar.values, vector.values);
+                assert_eq!(
+                    scalar
+                        .scales
+                        .iter()
+                        .map(|v| v.to_bits())
+                        .collect::<Vec<_>>(),
+                    vector
+                        .scales
+                        .iter()
+                        .map(|v| v.to_bits())
+                        .collect::<Vec<_>>()
+                );
+            }
+            (Err(scalar), Err(vector)) => assert_eq!(scalar, vector),
+            _ => panic!("quantizers disagree about whether the matrix is valid"),
+        }
+    }
+
+    #[test]
+    fn vectorized_quantizer_covers_all_half_patterns_and_rounding_ties() {
+        // Every FP16 bit pattern appears in an anchored row. Anchors prevent
+        // tiny finite values from rejecting an entire test matrix by underflow.
+        for start in (0..=u16::MAX as usize).step_by(32) {
+            let mut weights = vec![f16::ONE; 32 * 32];
+            for row in 0..32 {
+                weights[row * 32] = f16::from_bits((start + row) as u16);
+            }
+            compare_quantizers(&weights, 32, 32);
+        }
+        let ties: Vec<_> = (0..1024)
+            .map(|index| {
+                if index % 32 == 0 {
+                    f16::from_f32(127.0)
+                } else {
+                    f16::from_f32((index % 31) as f32 - 15.5)
+                }
+            })
+            .collect();
+        compare_quantizers(&ties, 32, 32);
+        compare_quantizers(&vec![f16::ZERO; 1024], 32, 32);
+        compare_quantizers(&vec![f16::from_bits(1); 1024], 32, 32);
+    }
+
+    #[test]
+    fn vectorized_quantizer_matches_gemma_row_widths_and_source_blob() {
+        let mut random = 7_u64;
+        for columns in [3840, 15360] {
+            let weights: Vec<_> = (0..32 * columns)
+                .map(|_| {
+                    random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    f16::from_f32(((random >> 32) as i32) as f32 * (0.02 / i32::MAX as f32))
+                })
+                .collect();
+            compare_quantizers(&weights, 32, columns);
+        }
+        let weights: Vec<_> = (0..32 * 64)
+            .map(|i| f16::from_f32((i % 29) as f32 / 32.0 - 0.4))
+            .collect();
+        let scalar =
+            AneInt8FfnWeights::quantize_scalar_reference(&weights, &weights, &weights, 32, 64)
+                .unwrap();
+        let vector = AneInt8FfnWeights::quantize(&weights, &weights, &weights, 32, 64).unwrap();
+        assert!(scalar == vector);
+        assert_eq!(scalar.blob_and_constants(), vector.blob_and_constants());
+    }
+
+    #[test]
+    fn stored_scales_round_ties_even_and_zero_rows_are_exact() {
+        let mut weights = vec![f16::ZERO; 32 * 32];
+        weights[..6].copy_from_slice(&[127.0, -127.0, 0.5, 1.5, -0.5, -1.5].map(f16::from_f32));
+        let quantized = RowInt8::quantize(&weights, 32, 32).unwrap();
+        assert_eq!(&quantized.values[..6], &[127, -127, 0, 2, 0, -2]);
+        assert!(quantized.scales.iter().all(|&scale| scale == f16::ONE));
+        assert!(quantized.dequantized()[32..]
+            .iter()
+            .all(|&w| w == f16::ZERO));
+        weights[8] = f16::NAN;
+        assert!(RowInt8::quantize(&weights, 32, 32).is_err());
+        assert!(RowInt8::quantize(&[f16::from_bits(1); 1024], 32, 32).is_err());
+    }
+
+    #[test]
+    fn blob_descriptors_decode_all_three_nonsquare_matrices() {
+        let weights: Vec<_> = (0..32 * 64)
+            .map(|i| f16::from_f32((i % 29) as f32 / 32.0 - 0.4))
+            .collect();
+        let quantized = AneInt8FfnWeights::quantize(&weights, &weights, &weights, 32, 64).unwrap();
+        let (blob, constants) = quantized.blob_and_constants();
+        let read_u64 =
+            |offset| u64::from_le_bytes(blob[offset..offset + 8].try_into().unwrap()) as usize;
+        let mut offset = 64;
+        for matrix in &quantized.matrices {
+            assert_eq!(&blob[offset..offset + 4], &0xDEAD_BEEF_u32.to_le_bytes());
+            assert_eq!(blob[offset + 4], 4);
+            let count = read_u64(offset + 8);
+            let data = read_u64(offset + 16);
+            assert_eq!(data, offset + 64);
+            assert_eq!(count, matrix.values.len());
+            for (&byte, &expected) in blob[data..data + count].iter().zip(&matrix.values) {
+                assert_eq!(i8::from_le_bytes([byte]), expected);
+            }
+            offset = data + count;
+            assert_eq!(blob[offset + 4], 1);
+            let count = read_u64(offset + 8);
+            let data = read_u64(offset + 16);
+            assert_eq!(count, matrix.rows * 2);
+            for (bytes, expected) in blob[data..data + count].chunks_exact(2).zip(&matrix.scales) {
+                assert_eq!(f16::from_le_bytes([bytes[0], bytes[1]]), *expected);
+            }
+            offset = data + count;
+        }
+        assert_eq!(offset, blob.len());
+        assert_eq!(constants.matches("constexpr_affine_dequantize").count(), 3);
+        assert_eq!(constants.matches("axis = int32(0)").count(), 3);
+    }
+}

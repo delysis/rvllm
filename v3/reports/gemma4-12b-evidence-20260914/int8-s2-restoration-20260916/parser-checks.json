@@ -1,0 +1,89 @@
+{
+  "executable_sha256": "341966b7ad6d732d659e9548dae0b3a62a45b1f29017b307696a6815deb7ae53",
+  "checks": [
+    {
+      "name": "valid-s2-parser",
+      "env": true,
+      "extra": [],
+      "expected": "--model-dir required",
+      "chunk_id": "e06a49",
+      "wall_time_seconds": 0.170582875,
+      "exit_code": 1,
+      "original_token_count": 13,
+      "output": "ANE weight FFN probe failed: --model-dir required\n",
+      "passed": true
+    },
+    {
+      "name": "missing-journal",
+      "env": false,
+      "extra": [],
+      "expected": "INT8 cache restoration requires",
+      "chunk_id": "0c547b",
+      "wall_time_seconds": 0.000006375,
+      "exit_code": 1,
+      "original_token_count": 54,
+      "output": "ANE weight FFN probe failed: INT8 cache restoration requires mode int8, cache reuse, compile budget 1, driver journal, and no CPU/comparison/stacked/palette experiment; only S1 or the existing S2 graph is supported\n",
+      "passed": true
+    },
+    {
+      "name": "comparison-refused",
+      "env": true,
+      "extra": [
+        "--compare",
+        "true"
+      ],
+      "expected": "INT8 cache restoration requires",
+      "chunk_id": "8c21a5",
+      "wall_time_seconds": 0.000005625,
+      "exit_code": 1,
+      "original_token_count": 54,
+      "output": "ANE weight FFN probe failed: INT8 cache restoration requires mode int8, cache reuse, compile budget 1, driver journal, and no CPU/comparison/stacked/palette experiment; only S1 or the existing S2 graph is supported\n",
+      "passed": true
+    },
+    {
+      "name": "stacked-refused",
+      "env": true,
+      "extra": [
+        "--int8-stacked",
+        "true"
+      ],
+      "expected": "INT8 cache restoration requires",
+      "chunk_id": "d66eb2",
+      "wall_time_seconds": 0.000005708,
+      "exit_code": 1,
+      "original_token_count": 54,
+      "output": "ANE weight FFN probe failed: INT8 cache restoration requires mode int8, cache reuse, compile budget 1, driver journal, and no CPU/comparison/stacked/palette experiment; only S1 or the existing S2 graph is supported\n",
+      "passed": true
+    },
+    {
+      "name": "unqualified-batch-refused",
+      "env": true,
+      "extra": [
+        "--int8-batch",
+        "1"
+      ],
+      "expected": "exactly two logical tokens",
+      "chunk_id": "2211e2",
+      "wall_time_seconds": 0.000006125,
+      "exit_code": 1,
+      "original_token_count": 24,
+      "output": "ANE weight FFN probe failed: the initial INT8 batch probe permits exactly two logical tokens\n",
+      "passed": true
+    },
+    {
+      "name": "wrong-budget-refused",
+      "env": true,
+      "extra": [
+        "--ane-compile-budget",
+        "0"
+      ],
+      "expected": "INT8 cache restoration requires",
+      "chunk_id": "037914",
+      "wall_time_seconds": 0.00000775,
+      "exit_code": 1,
+      "original_token_count": 54,
+      "output": "ANE weight FFN probe failed: INT8 cache restoration requires mode int8, cache reuse, compile budget 1, driver journal, and no CPU/comparison/stacked/palette experiment; only S1 or the existing S2 graph is supported\n",
+      "passed": true
+    }
+  ]
+}

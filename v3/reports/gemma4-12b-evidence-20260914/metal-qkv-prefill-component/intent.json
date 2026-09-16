@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/Users/george/Downloads/rvllm/v3/target/debug/deps/rvllm_apple_metal-8232e03e367746a9",
+    "layer_forward::qkv_prefill_tests::qkv_prefill_preserves_norm_boundary_and_measures_gpu_time",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "binary_sha256": "5a5e51fd7bd146beb4b13686a19f8863dc320a30491e96875bcd09213cbecc11",
+  "load_before": "16:14  up  7:56, 1 user, load averages: 6.77 18.86 33.89\n",
+  "boot_before": "kern.boottime: { sec = 1789388363, usec = 814453 } Mon Sep 14 08:19:23 2026\n",
+  "scope": "Public Metal only. Real sliding/global QKV and gamma, controlled BF16 activations, guarded outputs/negative slots. Two geometries, 18 command buffers each. Combined candidate projection plus unchanged precision-boundary epilogue against qualified scalar fused shader."
+}

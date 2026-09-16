@@ -1,0 +1,17 @@
+{
+  "approval": "User explicitly approved one corrected single-input attention validation: Go for it!",
+  "test": "ane_attention::tests::hardware_attention_matches_imported_prefill_and_appended_decode",
+  "scope": "At most two attention programs, three append/evaluate calls per program; stop on first failure; no retry.",
+  "source_sha256_before": {
+    "crates/rvllm-apple/src/ane_attention.rs": "d87f9b63cae61c2b7814172d88c582c146ab68cb703d19fb3d6c48610d43d32e",
+    "crates/rvllm-apple/src/ane_attention_layout.rs": "a5bef7ec0addef9221df1a6a1239e4054f5557743a22c9ffe247ef0af7737b99",
+    "crates/rvllm-apple-ane-sys/src/in_memory.rs": "f92a5645bcf015e8aa4d12c1c5089ee29998147f1f48a8ddbb8d8bfb37180fc5",
+    "crates/rvllm-apple-ane-sys/src/diagnostic_journal.rs": "b2adf492c92162dee62fb5856d31fc96104aacf6aa13f5d8cefdcb46c1f8ff7f",
+    "Cargo.lock": "2fedd351dc596cd9a0bcac62dede857fd584ee336fccc079362b4b6f600d2842"
+  },
+  "enabled_attention_source_sha256": "49ee4d0efbab3a8fa1ab6e595ca23e6b1888f388b15dcb1d064194455480835f",
+  "executable": "/Users/george/Downloads/rvllm/v3/target/ane-approved-attention-20260914T161346Z/attention-test",
+  "executable_sha256": "edbddc86c5c65d2dbf9508876f865844f5e454932103d1fa837c8e5bce56b81f",
+  "source_quarantine_restored": true,
+  "hardware_executed": false
+}

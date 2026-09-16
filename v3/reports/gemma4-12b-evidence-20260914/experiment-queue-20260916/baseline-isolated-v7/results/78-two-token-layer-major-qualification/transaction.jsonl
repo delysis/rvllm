@@ -1,0 +1,10 @@
+{"prompt_tokens":84,"reference_timing_fields_unavailable":true,"snapshot_report_sha256":"0b096c565cc841ee625081d23b1752af0590c25c8f48554451e97e1fb7140ee8","stage":"fixture","timing_claim":false,"weight_plan":"static-int8-ffn-cached"}
+{"predictions":[{"position":84,"token":3730,"top_five_bits":[[3730,1093656576],[37423,3242795008],[9595,3243368448],[861,3243565056],[16045,3244048384]]},{"position":85,"token":37423,"top_five_bits":[[37423,1098629120],[7184,3236151296],[3673,3238182912],[17615,3238576128],[6938,3239542784]]},{"position":86,"token":38167,"top_five_bits":[[38167,1094262784],[32694,3238699008],[532,3238772736],[1164,3239321600],[9212,3239583744]]}],"stage":"serial"}
+{"fp16_values_compared":368640,"layer_bit_comparisons":96,"passed":true,"stage":"accepted-and-continuation"}
+{"passed":true,"stage":"rejected-replaced-and-continuation"}
+{"passed":true,"stage":"one-output-boundary"}
+{"passed":true,"stage":"unresolved-drop-poisoned"}
+{"callbacks":1,"passed":true,"stage":"execution-error-poisoned"}
+{"callbacks":2,"passed":true,"stage":"execution-error-poisoned"}
+{"callbacks":95,"passed":true,"stage":"execution-error-poisoned"}
+{"claim":"Layer-major two-token schedule matches serial INT8 layer bits and committed greedy continuation at captured Metal position 84. Existing S1 graphs only; no batched arithmetic or drafter.","compiler_calls":0,"reimport_recovered":true,"stage":"complete","timing_claim":false}
