@@ -2,17 +2,27 @@
 //! any ANE framework. Emits cache summaries and reviewable MIL input artifacts.
 #![forbid(unsafe_code)]
 
+#[cfg(target_os = "macos")]
 use rvllm_apple::ane_attention_layout::PackedAttentionLayout;
+#[cfg(target_os = "macos")]
 use rvllm_apple::{AppleBackend, AppleRuntimePlan, HandoffKind};
+#[cfg(target_os = "macos")]
 use rvllm_core::{ReqId, TokenId};
+#[cfg(target_os = "macos")]
 use rvllm_runtime::apple_bridge::{
     handoff_from_decode_plan_with_paged_kv, handoff_from_prefill_plan_with_paged_kv,
 };
+#[cfg(target_os = "macos")]
 use rvllm_runtime::apple_metal_backend::ModelMetalBackend;
+#[cfg(target_os = "macos")]
 use rvllm_runtime::{BatchPlan, PagedKvConfig, PagedKvPool};
+#[cfg(target_os = "macos")]
 use sha2::{Digest, Sha256};
+#[cfg(target_os = "macos")]
 use std::io::Write;
+#[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
 use std::time::Instant;
 
 fn main() -> std::process::ExitCode {
@@ -25,6 +35,12 @@ fn main() -> std::process::ExitCode {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    Err("prefill handoff requires macOS with Apple Metal".into())
+}
+
+#[cfg(target_os = "macos")]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut model_dir = None;
     let mut output_dir = None;
@@ -324,6 +340,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn write_f16_tensor(path: &Path, values: &[half::f16]) -> Result<String, std::io::Error> {
     let file = std::fs::OpenOptions::new()
         .create_new(true)

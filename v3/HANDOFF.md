@@ -5,6 +5,11 @@ The end-to-end optimization goal is unfinished. Keep this campaign stopped
 until the user explicitly resumes it. This document supersedes older reports
 that describe the experiment worker as running.
 
+Initial checkpoint: `74735053d96c9e0c6a0f16c8307db9e4ebab47f4`. Its first CI
+run exposed Linux-only CLI/dependency defects; a narrow portability follow-up
+is documented in [validation](reports/checkpoint-20260916/validation.md).
+Always inspect CI for the latest commit, not just the original checkpoint.
+
 ## Current result
 
 Gemma 4 12B has an exercised Metal prefill / ANE decode path, a persistent

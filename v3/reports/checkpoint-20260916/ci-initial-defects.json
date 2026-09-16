@@ -1,0 +1,23 @@
+{
+  "schema": "rvllm.checkpoint_ci_defects.v1",
+  "commit": "74735053d96c9e0c6a0f16c8307db9e4ebab47f4",
+  "run_id": 35133416842,
+  "url": "https://github.com/delysis/rvllm/actions/runs/35133416842",
+  "completed_linux_failures": [
+    {
+      "job": 104919716430,
+      "kind": "check",
+      "errors": [
+        "error[E0432]: unresolved import `rvllm_runtime::apple_metal_backend::ModelMetalBackend`"
+      ]
+    },
+    {
+      "job": 104919716426,
+      "kind": "test",
+      "errors": [
+        "error[E0433]: cannot find module or crate `tempfile` in this scope"
+      ]
+    }
+  ],
+  "correction": "Gate macOS diagnostic imports/body and add portable tempfile dev dependency; device campaign remains stopped."
+}

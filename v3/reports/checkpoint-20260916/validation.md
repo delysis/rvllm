@@ -76,3 +76,25 @@ No accelerator work was launched while preparing this checkpoint.
 
 Read [the handoff](../../HANDOFF.md) before resuming. GitHub CI status should
 be checked against the pushed commit; local host results do not imply CI passed.
+
+## CI follow-up
+
+The initial checkpoint is `74735053d96c9e0c6a0f16c8307db9e4ebab47f4`.
+[Its first CI run](https://github.com/delysis/rvllm/actions/runs/35133416842)
+passed the GB10 job but exposed two Linux portability defects: the diagnostic
+prefill CLI unconditionally imported the Apple-only `ModelMetalBackend`, and
+portable Core ML artifact-cache tests used `tempfile` while it was declared
+only as a macOS dependency. The follow-up gates the CLI's device implementation
+to macOS, returns an explicit unsupported-platform error elsewhere, and adds
+the existing `tempfile` version as a platform-independent dev dependency.
+These fixes do not change the macOS inference implementation or resume trials.
+New CI must establish the Linux check/test result; the original failed run is
+preserved rather than rerun under its old identity.
+
+The follow-up passes `cargo check --offline --locked -j 2 -p rvllm-runtime
+--features apple --bin rvllm_prefill_handoff` on macOS. The exact CLI source
+also compiles to metadata with the installed `wasm32-unknown-unknown` target,
+which exercises its non-macOS branch without external backend dependencies;
+that is a platform-gate check, not a Linux workspace test. Raw logs are
+`prefill-platform-check.*` and `prefill-non-macos-check.*`. The initial CI defect
+identities are saved in `ci-initial-defects.json`. No accelerator test ran.
