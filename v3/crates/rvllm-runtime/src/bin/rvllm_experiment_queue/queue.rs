@@ -571,6 +571,17 @@ fn execute(
             return Ok(false);
         }
         let current = probe(monitor, &job.conditions, None).map_err(|e| e.to_string())?;
+        // Probes perform I/O. STOP and the original deadline can change while
+        // they run; neither may be checked only before that blocking work.
+        if stopped(queue, stop) {
+            return Ok(false);
+        }
+        if wait_started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
+            return Err(format!(
+                "job {} expired before launch; no trial started",
+                job.id
+            ));
+        }
         Ok(gate.observe(
             &current,
             Instant::now(),

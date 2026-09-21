@@ -45,8 +45,15 @@ jobs:
             cargo -V
             uname -a
           } > "$RUNNER_TEMP/queue-host-receipts/identity.txt"
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Check queue formatting
+        run: |
+          # The base has unrelated rustfmt differences. Check this boundary,
+          # without silently rewriting or skipping any changed queue file.
+          rustfmt --edition 2021 --check --config skip_children=true \
+            crates/rvllm-runtime/src/bin/rvllm_experiment_queue.rs \
+            crates/rvllm-runtime/src/bin/rvllm_experiment_queue/queue.rs \
+            crates/rvllm-runtime/src/bin/rvllm_experiment_queue/prelaunch.rs \
+            2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/format.log"
       - name: Fetch locked dependencies
         run: cargo fetch --locked
       - name: Build the normal queue executable (no execution)
