@@ -33,6 +33,7 @@ jobs:
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
+        if: runner.os == 'macOS'
         with:
           workspaces: v3
           key: queue-host-release
@@ -55,19 +56,35 @@ jobs:
             crates/rvllm-runtime/src/bin/rvllm_experiment_queue/prelaunch.rs \
             2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/format.log"
       - name: Fetch locked dependencies
+        if: runner.os == 'macOS'
         run: cargo fetch --locked
-      - name: Build the normal queue executable (no execution)
+      - name: Build the normal macOS queue executable (no execution)
+        if: runner.os == 'macOS'
         run: |
           cargo build --offline --locked --release -j 2 -p rvllm-runtime \
             --features macos-private-ane-research --bin rvllm_experiment_queue \
             2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/build.log"
           shasum -a 256 target/release/rvllm_experiment_queue \
             > "$RUNNER_TEMP/queue-host-receipts/binary.sha256"
-      - name: Run host-only queue tests (never ignored fixtures)
+      - name: Run native host-only queue tests (never ignored fixtures)
+        if: runner.os == 'macOS'
         run: |
           cargo test --offline --locked --release -j 2 -p rvllm-runtime \
             --features macos-private-ane-research --bin rvllm_experiment_queue \
             -- --nocapture 2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/tests.log"
+      - name: Run portable prelaunch tests without private Apple features
+        if: runner.os == 'Linux'
+        run: |
+          # The normal Cargo binary intentionally requires a macOS-only
+          # feature. Compile only its std-only test path here, never bypass
+          # the repository's private-API platform guard.
+          binary="$RUNNER_TEMP/queue-host-portable-tests"
+          rustc --edition 2021 --test -O \
+            crates/rvllm-runtime/src/bin/rvllm_experiment_queue.rs \
+            -o "$binary" 2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/build.log"
+          shasum -a 256 "$binary" \
+            > "$RUNNER_TEMP/queue-host-receipts/portable-test-binary.sha256"
+          "$binary" --nocapture 2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/tests.log"
       - name: Exercise the stopped executable without a power observer
         if: runner.os == 'macOS'
         run: |

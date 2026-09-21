@@ -45,11 +45,13 @@ cannot be replayed. No attempt is deleted to manufacture a clean run.
 
 ## New qualification path
 
-The added host workflow builds the normal release queue executable, records
-its hash/source/toolchain, and runs only the named binary's non-ignored tests
-on Linux and macOS. Linux exercises the portable verification helper; macOS
-also exercises the existing queue/power-policy tests and the new native
-regressions. These are different coverage levels, not platform parity.
+The added host workflow builds the normal release queue executable on macOS,
+records its hash/source/toolchain, and runs only that binary's non-ignored
+tests. Linux compiles the binary source's std-only test path with `rustc --test`,
+without enabling the deliberately macOS-only private research feature. It
+exercises only the portable verification helper. macOS also exercises the
+existing queue/power-policy tests and the new native regressions. These are
+different coverage levels, not a Linux queue build or platform parity.
 
 A stopped queue now returns before starting its power observer or registering
 a signal handler. A native executable smoke uses a fresh temporary queue with
@@ -65,6 +67,15 @@ cover a real `StableGate` gap through verification, refusal at the last spawn
 boundary, and the stopped worker's early return.
 
 ## Evidence boundaries and next gate
+
+The initial host CI attempt stopped on pre-existing formatting differences in
+untouched Apple files. The workflow now explicitly checks all three changed
+queue Rust files. Its first Linux Cargo build also correctly hit the existing
+macOS-only private-API guard; the workflow was corrected to test the portable
+path without that feature. Neither failure justifies weakening a product guard
+or silently reformatting unrelated source. The native Cargo qualification is
+retained. The verifier-panic fixture runs under the test harness and does not
+claim recovery from release `panic=abort`, forced termination or kernel panic.
 
 The authoring environment has no Rust compiler or reachable Git clone endpoint.
 The modified source was reconstructed from GitHub reads, with both existing
