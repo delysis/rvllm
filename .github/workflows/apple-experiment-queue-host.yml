@@ -1,0 +1,90 @@
+name: Apple experiment queue host qualification
+
+on:
+  push:
+    branches: [main]
+    paths: ['v3/**', '.github/workflows/apple-experiment-queue-host.yml']
+  pull_request:
+    paths: ['v3/**', '.github/workflows/apple-experiment-queue-host.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  queue-host:
+    name: Queue host (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: v3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3
+          key: queue-host-release
+      - name: Record source and toolchain identity
+        run: |
+          mkdir -p "$RUNNER_TEMP/queue-host-receipts"
+          {
+            git rev-parse HEAD
+            rustc -Vv
+            cargo -V
+            uname -a
+          } > "$RUNNER_TEMP/queue-host-receipts/identity.txt"
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+      - name: Build the normal queue executable (no execution)
+        run: |
+          cargo build --offline --locked --release -j 2 -p rvllm-runtime \
+            --features macos-private-ane-research --bin rvllm_experiment_queue \
+            2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/build.log"
+          shasum -a 256 target/release/rvllm_experiment_queue \
+            > "$RUNNER_TEMP/queue-host-receipts/binary.sha256"
+      - name: Run host-only queue tests (never ignored fixtures)
+        run: |
+          cargo test --offline --locked --release -j 2 -p rvllm-runtime \
+            --features macos-private-ane-research --bin rvllm_experiment_queue \
+            -- --nocapture 2>&1 | tee "$RUNNER_TEMP/queue-host-receipts/tests.log"
+      - name: Exercise the stopped executable without a power observer
+        if: runner.os == 'macOS'
+        run: |
+          binary="$PWD/target/release/rvllm_experiment_queue"
+          scratch=$(mktemp -d "$RUNNER_TEMP/queue-host-smoke.XXXXXX")
+          queue="$scratch/queue"
+          mkdir -p "$queue/jobs" "$queue/results"
+          "$binary" status "$queue" > "$RUNNER_TEMP/queue-host-receipts/status.json"
+          "$binary" stop "$queue" > "$RUNNER_TEMP/queue-host-receipts/smoke.log"
+          # STOP must be honored before reading even this malformed fixture.
+          printf 'invalid\n' > "$queue/jobs/must-not-read.json"
+          "$binary" run "$queue" "$scratch/hardware.lock" 0 \
+            >> "$RUNNER_TEMP/queue-host-receipts/smoke.log" 2>&1
+          test -f "$queue/STOP"
+          grep -qF '"status": "stopped"' "$queue/state.json"
+          test -z "$(ls -A "$queue/results")"
+          for journal in "$queue"/power-*; do
+            test ! -e "$journal"
+          done
+          cp "$queue/state.json" "$RUNNER_TEMP/queue-host-receipts/stopped-state.json"
+      - name: Preserve exact receipts, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: queue-host-${{ matrix.os }}
+          path: ${{ runner.temp }}/queue-host-receipts
+          if-no-files-found: warn

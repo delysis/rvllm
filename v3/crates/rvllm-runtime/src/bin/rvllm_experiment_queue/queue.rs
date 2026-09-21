@@ -509,8 +509,15 @@ impl Drop for OwnedChild {
     }
 }
 
-fn launch(call: &Invocation, output: &Path, label: &str) -> Result<OwnedChild> {
-    verify_pin(&call.executable)?;
+/// Call only after pin verification has completed and its worker was joined.
+/// Prepare output handles before the last gate check, leaving no hash or
+/// report I/O between that check and spawn. Validators verify their own pin.
+fn launch_verified(
+    call: &Invocation,
+    output: &Path,
+    label: &str,
+    before_spawn: impl FnOnce() -> Result<()>,
+) -> Result<OwnedChild> {
     let directory = output.to_str().ok_or("output path is not UTF-8")?;
     let mut command = Command::new(&call.executable.path);
     command
@@ -527,6 +534,7 @@ fn launch(call: &Invocation, output: &Path, label: &str) -> Result<OwnedChild> {
         .stdin(Stdio::null())
         .stdout(File::create_new(output.join(format!("{label}.stdout")))?)
         .stderr(File::create_new(output.join(format!("{label}.stderr")))?);
+    before_spawn()?;
     Ok(OwnedChild(command.spawn()?))
 }
 
@@ -549,14 +557,33 @@ fn execute(
     queue: &Path,
     monitor: &PowerMonitor,
     stop: &AtomicBool,
-    expected_controls: &Value,
+    wait_started: Instant,
+    gate: &mut StableGate,
 ) -> Result<Option<bool>> {
-    job.verify_files()?;
-    let current = probe(monitor, &job.conditions, None)?;
-    if stopped(queue, stop)
-        || current["ready"] != true
-        || current["power"]["sample"]["controls"] != *expected_controls
-    {
+    let mut observe = || -> std::result::Result<bool, String> {
+        if wait_started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
+            return Err(format!(
+                "job {} expired before launch; no trial started",
+                job.id
+            ));
+        }
+        if stopped(queue, stop) {
+            return Ok(false);
+        }
+        let current = probe(monitor, &job.conditions, None).map_err(|e| e.to_string())?;
+        Ok(gate.observe(
+            &current,
+            Instant::now(),
+            Duration::from_secs(job.stable_seconds),
+        ))
+    };
+    // Hashing can exceed the 2.5-second observation budget. Keep sampling
+    // the SAME stable gate while the scoped verifier runs, then join it.
+    // A fresh equal-valued sample alone cannot bridge an unobserved gap.
+    if !super::prelaunch::verify(
+        || job.verify_files().map_err(|e| e.to_string()),
+        &mut observe,
+    )? {
         return Ok(None);
     }
     let output = queue.join("results").join(&job.id);
@@ -568,7 +595,21 @@ fn execute(
     )?;
     let phase = monitor.begin();
     let started = Instant::now();
-    let mut child = launch(&job.command, &output, "trial")?;
+    let mut child = launch_verified(&job.command, &output, "trial", || {
+        if observe()? {
+            return Ok(());
+        }
+        // This attempt already owns durable output. Preserve it and halt,
+        // rather than deleting it or silently retrying the same manifest.
+        atomic_json(
+            &output.join("report.json"),
+            &json!({"schema":"rvllm.experiment_result.v1","id":job.id,
+                "purpose":job.purpose,"status":"failed","trial_started":false,
+                "sampled_conditions_eligible":false,"stop_requested":stopped(queue,stop),
+                "error":"launch gate lost after attempt setup; no trial started"}),
+        )?;
+        Err("launch gate lost after attempt setup; no trial started".into())
+    })?;
     let pid = child.0.id();
     atomic_json(
         &output.join("report.json"),
@@ -619,7 +660,8 @@ fn execute(
         && (job.purpose == Purpose::Preparation || eligible);
     if accepted {
         if let Some(call) = &job.validator {
-            let mut validator = launch(call, &output, "validation")?;
+            verify_pin(&call.executable)?;
+            let mut validator = launch_verified(call, &output, "validation", || Ok(()))?;
             let status = validator.0.wait()?;
             accepted = status.success();
             validation = json!({"exit_code":status.code(),"success":status.success()});
@@ -678,6 +720,15 @@ fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
 
 fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
     let _accelerator_lock = lock(accelerator_lock)?;
+    // A stopped queue needs neither a power observer nor a signal handler.
+    // This also permits a real executable smoke without sampling hardware.
+    if queue.join("STOP").exists() {
+        atomic_json(
+            &queue.join("state.json"),
+            &json!({"status":"stopped","pid":std::process::id()}),
+        )?;
+        return Ok(());
+    }
     let stop = Arc::new(AtomicBool::new(false));
     let signal = Arc::clone(&stop);
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
@@ -737,11 +788,11 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
                 Instant::now(),
                 Duration::from_secs(job.stable_seconds),
             ) {
-                selected = Some((job, observation["power"]["sample"]["controls"].clone()));
+                selected = Some(job);
                 break;
             }
         }
-        if let Some((job, controls)) = selected {
+        if let Some(job) = selected {
             idle = Instant::now();
             if stopped(queue, &stop) {
                 continue;
@@ -750,7 +801,10 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
                 &queue.join("state.json"),
                 &json!({"status":"starting","id":job.id,"pid":std::process::id()}),
             )?;
-            match execute(&job, queue, &monitor, &stop, &controls)? {
+            let (wait_started, gate) = waiting
+                .get_mut(&job.id)
+                .ok_or("selected job is missing its stable gate")?;
+            match execute(&job, queue, &monitor, &stop, *wait_started, gate)? {
                 Some(false) => {
                     return Err(
                         format!("job {} failed; queue stopped without retry", job.id).into(),
@@ -1104,5 +1158,74 @@ mod tests {
             max_run_seconds: 10,
         };
         assert!(dependencies_ready(&job, dir.path()).is_err());
+    }
+
+    #[test]
+    fn pin_verification_cannot_bridge_an_unobserved_stable_window_gap() {
+        let mut gate = StableGate::new();
+        let now = Instant::now();
+        let needed = Duration::from_secs(5);
+        let p = json!({"ready":true,"power":observation()});
+        for seconds in 0..5 {
+            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
+        }
+        assert!(gate.observe(&p, now + needed, needed));
+        let mut observations = 0;
+        let accepted = super::super::prelaunch::verify(
+            || Ok(()),
+            || {
+                observations += 1;
+                let seconds = if observations == 1 { 5 } else { 8 };
+                Ok(gate.observe(&p, now + Duration::from_secs(seconds), needed))
+            },
+        )
+        .unwrap();
+        assert!(!accepted);
+        assert_eq!(gate.since, Some(now + Duration::from_secs(8)));
+    }
+
+    #[test]
+    fn last_gate_refusal_prevents_spawn_after_output_setup() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = std::env::current_exe().unwrap();
+        let call = Invocation {
+            executable: Pin {
+                sha256: digest(&executable).unwrap(),
+                path: executable,
+            },
+            cwd: dir.path().to_owned(),
+            args: vec!["--list".into()],
+            env: BTreeMap::new(),
+        };
+        let mut checked = false;
+        let result = launch_verified(&call, dir.path(), "trial", || {
+            checked = true;
+            assert!(dir.path().join("trial.stdout").is_file());
+            assert!(dir.path().join("trial.stderr").is_file());
+            Err("stale launch gate".into())
+        });
+        assert!(checked);
+        assert!(matches!(result, Err(error) if error.to_string() == "stale launch gate"));
+    }
+
+    #[test]
+    fn stopped_worker_returns_before_observer_or_manifest_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("jobs")).unwrap();
+        fs::create_dir(dir.path().join("results")).unwrap();
+        fs::write(dir.path().join("jobs/must-not-read.json"), b"invalid").unwrap();
+        fs::write(dir.path().join("STOP"), b"preserved").unwrap();
+        run_owned(dir.path(), &dir.path().join("hardware.lock"), 0).unwrap();
+        assert_eq!(
+            read_json(&dir.path().join("state.json")).unwrap()["status"],
+            "stopped"
+        );
+        assert_eq!(fs::read(dir.path().join("STOP")).unwrap(), b"preserved");
+        assert_eq!(fs::read_dir(dir.path().join("results")).unwrap().count(), 0);
+        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("power-")));
     }
 }

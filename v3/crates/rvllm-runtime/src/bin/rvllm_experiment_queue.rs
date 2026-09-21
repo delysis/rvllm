@@ -4,6 +4,9 @@
 #[cfg(target_os = "macos")]
 #[path = "rvllm_compare_disaggregated/fair.rs"]
 mod fair;
+#[cfg(any(target_os = "macos", test))]
+#[path = "rvllm_experiment_queue/prelaunch.rs"]
+mod prelaunch;
 #[cfg(target_os = "macos")]
 #[path = "rvllm_experiment_queue/queue.rs"]
 mod queue;
