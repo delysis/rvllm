@@ -15,6 +15,19 @@ follow-up synchronizes the Swift header and fixes platform-specific FFI test
 fixtures; its local FFI suite passes 17/17. See the same validation report.
 An automatic goal continuation is not an explicit request to resume experiments.
 
+On 2026-09-21, the host-only queue continuation from commit
+`65436c7c05ffe41285cb567cd87c8fb3a04c689b` was integrated. It keeps the
+existing stability gate sampled while potentially large input pins are hashed,
+rechecks STOP and the original deadline after probe I/O, and makes one final
+gate observation immediately before spawning a trial. No campaign worker or
+accelerator fixture was started. CI runs
+[35643037368](https://github.com/delysis/rvllm/actions/runs/35643037368) and
+[35643037377](https://github.com/delysis/rvllm/actions/runs/35643037377) passed
+the macOS and Linux queue-host jobs, workspace check/test, GB10, and Apple
+shipping safety. The same macOS queue suite passed locally (24 tests), and a
+fresh STOP-only smoke exited without a power journal or result. See the
+[continuation report](reports/experiment-queue-continuation-20260921.md).
+
 ## Current result
 
 Gemma 4 12B has an exercised Metal prefill / ANE decode path, a persistent
@@ -33,7 +46,7 @@ acceptance claim. No new optimized default is promoted by this checkpoint.
 | Two-token layer-major reference | 368,640 FP16 values / 96 layer outputs exact; transaction accept/reject/recovery passed; 3,728 evaluations, 162 clean unloads, zero compilation | Diagnostic S1 calls only; no production S2 route or drafter |
 | Logical S2 FFN | Broad S1/S2 device output parity; original four-input CPU-qualified subset available | Short Fair pilot's three blocks all failed the 5% drift gate; result is **inconclusive**, not a 1.8x speedup |
 | Interleaved S2 timing | 17 host tests, frozen signed executable, parser rejection checks, immutable AC/battery jobs | Jobs 07/08 have never run |
-| Conditional Rust queue | Immutable pinned jobs, serialized ownership, power/thermal/activity gates, preserved failures, buffered report reads | Latest per-pass shared-probe revision has **13 passing host tests**; normal worker binary not rebuilt or live-qualified yet |
+| Conditional Rust queue | Immutable pinned jobs, serialized ownership, power/thermal/activity gates, preserved failures, buffered report reads, and continuous launch-gate sampling through pin hashing | Latest source has **24 passing macOS host tests** and **8 portable Linux helper tests**; the normal binary passed a STOP-only smoke but is not campaign-frozen or live-qualified |
 | Shared KV-import scratch | Two new host tests pass; explicit alternate path; existing import remains default; validates before writes and clears the full used surface | Captured-byte, device-continuation and timing qualification remain pending |
 
 Baseline timing details: median prefill including KV import 802.65 ms,
@@ -109,6 +122,11 @@ under the original checkout `/Users/george/Downloads/rvllm`.
 - Last runnable worker is **worker v6**, distinct from **queue directory v7**:
   `experiment-queue-20260916/rvllm_experiment_queue-release-v6`, SHA-256
   `bc02bf13c917874a066cd0de66b17fd81461ae612c12f07b355817eed39aa210`.
+- A normal release executable built locally from the 2026-09-21 continuation
+  had SHA-256
+  `9c11fed2f41b6eb950eeaabf51909174fc0a64b961f918aef262c296bae7a490`.
+  It passed only the fresh STOP-queue smoke; it was not copied into the
+  campaign, frozen as a worker, or exercised against live launch conditions.
 - Shared lock: `experiment-queue-20260916/hardware.lock`. The worker owns it
   for its whole lifetime, including while waiting.
 - 36 manifests remain: seven completed and 29 pending. Completed IDs are
@@ -174,10 +192,12 @@ evaluations, two warmups and seven measured requests, with 1024 retained KV.
 
 1. Read this document and inspect `git status`, the current commit, STOP,
    processes, disk, boot and model availability. Preserve existing evidence.
-2. Build and freeze the latest queue worker with the reused Cargo target.
-   Its 13 tests have passed; it still needs ordinary executable build and a
-   bounded non-device scheduling check. Verify shared observations let ready
-   jobs make progress without weakening the 2.5-second freshness rule.
+2. Build and freeze a campaign worker from the integrated queue source with
+   the reused Cargo target. Its 24 macOS host tests, eight portable helper
+   tests, and STOP-only executable smoke have passed; the ordinary build above
+   is not a frozen campaign artifact. Run a bounded non-device scheduling
+   check and verify shared observations let ready jobs make progress without
+   weakening the 2.5-second freshness rule.
 3. Audit pending pins, idle-server identity and previous results. Preserve
    never-started superseded manifests before replacing them with new IDs;
    retain failed/incomplete attempts unchanged. Use one shared hardware lock.

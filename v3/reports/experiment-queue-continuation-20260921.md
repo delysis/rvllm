@@ -4,6 +4,24 @@ Base: `a039716d47c1b3aec28d05812845659d9d4b696b` on `delysis/rvllm:main`.
 This is a source/host-qualification continuation of [the checkpoint](../HANDOFF.md),
 not a hardware campaign result or a new optimized default.
 
+## Integration result
+
+The three published commits through
+`65436c7c05ffe41285cb567cd87c8fb3a04c689b` were fast-forwarded onto local
+`main` after review. The exact published source passed the local macOS release
+queue suite: **24 passed, 0 failed, 0 ignored**. A normal release executable
+was then built with SHA-256
+`9c11fed2f41b6eb950eeaabf51909174fc0a64b961f918aef262c296bae7a490`.
+A fresh STOP-marked queue containing a malformed manifest exited as stopped
+without reading that manifest, creating a result, or starting a power journal.
+No existing campaign directory was used.
+
+The previously pending hosted runs also completed successfully. Queue-host run
+[35643037368](https://github.com/delysis/rvllm/actions/runs/35643037368)
+passed both macOS and Linux jobs. Existing CI run
+[35643037377](https://github.com/delysis/rvllm/actions/runs/35643037377)
+passed Check, Test, GB10 compile-check, and Apple shipping release safety.
+
 ## Established starting point
 
 All four checks on the exact base commit succeeded in
@@ -77,12 +95,12 @@ or silently reformatting unrelated source. The native Cargo qualification is
 retained. The verifier-panic fixture runs under the test harness and does not
 claim recovery from release `panic=abort`, forced termination or kernel panic.
 
-The authoring environment has no Rust compiler or reachable Git clone endpoint.
-The modified source was reconstructed from GitHub reads, with both existing
-Rust files checked against their exact base Git blob hashes. This is source
-identity evidence, not a compile/test result. New Rust tests, formatting and
-executable-smoke results must be taken from the new workflow's actual receipts.
-No new test pass is claimed by this document.
+The original authoring environment had no Rust compiler or reachable Git clone
+endpoint. The modified source was reconstructed from GitHub reads, with both
+existing Rust files checked against their exact base Git blob hashes. That was
+source identity evidence rather than a compile/test result. The hosted and
+local validation above now supply the missing build, test, formatting, and
+executable-smoke evidence for the integrated bytes.
 
 No STOP marker, queued manifest, model, frozen local executable, power setting,
 shipping/private-API boundary or multi-I/O quarantine was changed. No ignored
