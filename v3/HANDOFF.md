@@ -1,4 +1,109 @@
-# Gemma 4 Metal / ANE checkpoint — paused 2026-09-16
+# Gemma 4 Metal / ANE checkpoint — active candidate handoff, 2026-09-22
+
+## Superseding Chat Pro Astra brief
+
+The user explicitly resumed controlled candidate work on 2026-09-22 and asked
+that all further extensive work be directed by this file. This section
+supersedes the older pause wording below. It is committed and pushed on
+`origin/codex/gemma4-kernel-candidates` at
+`ca814876b01d986a28a46bd6c94edeec1a5b6ddb`; work from that exact branch, not
+from an assumed local checkout or an older eight-patch packet.
+
+### What is actually established
+
+- The branch contains the original six default-off candidates, formatting
+  repairs, and a local Metal 3.1 ABI repair for `metal-gqa-kv8`. The repair
+  changes `threads_per_threadgroup` from scalar `uint` to `uint3` at both GQA
+  entry points and passes `threads.x` into the scalar helper. It was necessary
+  because this machine's Metal compiler rejected mixed scalar/vector grid
+  attributes.
+- The targeted host checks passed: five ANE-candidate source/oracle tests, two
+  byte-exact blocked32 KV-layout tests, and twelve Metal research-policy/source
+  tests. Existing unrelated workspace warnings remain warnings; do not describe
+  them as candidate failures or a clean full-workspace Clippy result.
+- All three BF16 Metal candidate sources compiled and linked with the local
+  Metal 3.1 toolchain after that repair. This is compiler evidence only.
+- A real local Gemma 4 12B, six-token reference screen reached Metal prefill
+  for baseline, short-MMA, rounded-gate, and GQA. Every run then failed before
+  decode because the current client's compiled ANE cache is absent. The legacy
+  CLI writes its useful report too late, so these are not durable successful
+  prefill receipts and are not full-route correctness evidence.
+- The six-token input cannot exercise `metal-gqa-kv8`: its admission range is
+  64--1024 prompt tokens. Its apparent successful prefill is therefore only a
+  fallback observation. Do not broaden that selector or claim GQA dispatch.
+
+No candidate has a speed result, full-token continuation result, tensor-oracle
+result, accepted ANE graph, or promotion to `main`.
+
+### Current machine and authority
+
+The old queue STOP marker was removed under the user's explicit resumption.
+There is no active rvllm worker. The M4 Max is on AC, but its current power
+mode is distinct from the historical battery/low-power-off/mode-0 stratum.
+The local Gemma 4 12B snapshot is present. An unrelated llama-server is also
+present and must never be stopped. Recheck free disk (minimum 16 GiB), boot,
+power/thermal controls, lock ownership, cache availability and process policy
+immediately before every live operation. Never change OS power settings, clear
+evidence, kill an accelerator child, or run concurrent hardware owners.
+
+### Required next implementation: evidence first
+
+Do **not** add another kernel. First implement and test the following narrow
+follow-up on top of `ca814876`; a user-supplied external proposal named
+`rvllm-gemma4-followup-ca814876-20260922-03` describes the same design but is
+not itself authoritative or present in Git.
+
+1. Add a five-slot, safe-atomic Metal dispatch ledger owned by the existing
+   pipeline owner: short GEMM, short QKV, rounded gate, sliding GQA-D256 and
+   global GQA-D512. Increment only after a real encoder dispatch has been
+   encoded and ended. A requested selector, eligible shape, or available PSO
+   is not dispatch evidence.
+2. Add a strict `--prefill-only true` mode to `rvllm_disaggregated_infer`.
+   It requires one unchanged pinned HF reference and a fresh output directory,
+   performs one synchronous Metal prefill, records a flushed/synced
+   `case-N/prefill-result.json` before any ANE initialization, verifies the
+   first token, captures the current seed/KV form, and exits before creating an
+   ANE owner. Reject interactive/text/worker/interleaved/retained-Metal modes,
+   ANE capture/cache operations, nonbaseline ANE/KV selections and nonzero
+   compile budgets. A fallback-only candidate must write its receipt then fail.
+3. Add a real delivery gate: rustfmt, the targeted host tests, private research
+   CLI build, and baseline plus all three candidates in BF16 and FP16 through
+   Metal 3.1 compile/link. It must reject zero-test filters, preserve failed
+   output, use offline locked Cargo, and never invoke inference. Run the real
+   gate locally; mock shell tests are only tests of the gate.
+
+Keep the normal CLI continuation path unchanged. Prefill-only is functional
+triage, not performance or tensor acceptance. Instrumented binaries must be
+used on both sides of any future timing comparison.
+
+### Required execution order after the evidence change
+
+1. Run the real delivery gate and commit only if it passes. Preserve the GQA
+   ABI fix and do not reapply the original eight mboxes.
+2. Run fresh prefill-only screens: baseline, short-MMA and rounded-gate with
+   the six-token reference; GQA only with a separately pinned >=64-token
+   reference. Require first-token equality, one-prefill/no-decode contract,
+   and positive matching dispatch counts (zero for baseline). A prefill receipt
+   alone does not qualify arithmetic or timing.
+3. Recover the existing baseline cache separately via the established bounded
+   fresh-serial-process `--prepare-ane-cache all-int8` mechanism, then perform
+   a distinct strict `--inspect-ane-cache all-int8`. Require all 162 visits,
+   zero compiler calls during inspection, lifecycle evidence and available
+   status; exit status alone is insufficient. Never compile during a timing run.
+4. Establish a fresh full-route baseline using the complete reference
+   continuation and original driver/tensor oracles. Stop candidate timing if
+   this fails.
+5. Qualify one candidate at a time against its proper control: chunk4 after
+   separately provisioning its 48 FFNs; tiles4 against existing INT8
+   sliding-QKV (not FP16 QKV); blocked32 against reuse-scratch. Maintain the
+   original numerical oracles. Only then run a predeclared ABBA screen with two
+   warmups and seven measured requests per arm, a 5% baseline-drift rejection
+   gate, isolated power strata and an independent confirmation.
+
+Promote to `main` only after the relevant compiler, dispatch, tensor,
+full-continuation and matched-timing evidence all pass. Commit/push every
+reviewable source and handoff change; do not commit models, caches, frozen
+executables or bulky raw artifacts.
 
 **The user requested a pause and a checkpoint on `delysis/rvllm:main`.**
 The end-to-end optimization goal is unfinished. Keep this campaign stopped
