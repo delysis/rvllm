@@ -307,4 +307,4 @@ recover the unchanged ANE decode cache, run the short-MMA and positive GQA
 full-continuation/oracle checks, then run the predeclared ABBA timing campaign
 with dispatch evidence. Do not promote from host/compiler receipts alone.
 
-Integration commit: **TO_BE_FILLED_AFTER_COMMIT**.
+Integration commit: **e52cbb549967e17e3d7f266b7d1f9d2f1efdf800**.
