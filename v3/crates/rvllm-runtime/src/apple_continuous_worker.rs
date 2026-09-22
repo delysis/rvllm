@@ -92,7 +92,10 @@ fn create_embedded_apple_metal_worker_inner(
         .as_ref()
         .map(PersistentCacheHostConfig::tenant_namespace)
         .unwrap_or_else(|| "embedded-apple-session".to_owned());
-    if matches!(engine_config.backend_policy, BackendPolicy::CoreMlOnly | BackendPolicy::MetalPrefillAneDecode) {
+    if matches!(
+        engine_config.backend_policy,
+        BackendPolicy::CoreMlOnly | BackendPolicy::MetalPrefillAneDecode
+    ) {
         return Err(InferenceError::InvalidConfig {
             field: "backend_policy",
             reason: "requested backend policy cannot be satisfied by the embedded Metal worker",
@@ -181,7 +184,10 @@ fn create_development_apple_metal_worker_inner(
         .as_ref()
         .map(PersistentCacheHostConfig::tenant_namespace)
         .unwrap_or_else(|| worker_config.cache_namespace.clone());
-    if matches!(engine_config.backend_policy, BackendPolicy::CoreMlOnly | BackendPolicy::MetalPrefillAneDecode) {
+    if matches!(
+        engine_config.backend_policy,
+        BackendPolicy::CoreMlOnly | BackendPolicy::MetalPrefillAneDecode
+    ) {
         return Err(InferenceError::InvalidConfig {
             field: "backend_policy",
             reason: "requested backend policy cannot be satisfied by a Metal development worker",

@@ -96,6 +96,17 @@ run format-manifest-copy cp "$manifest" "$out/format-manifest.txt"
 run format-manifest load_packet_format_paths "$out/format-manifest.txt"
 run format-manifest-unchanged cmp "$manifest" "$out/format-manifest.txt"
 run format-source-hashes shasum -a 256 "$manifest" "${packet_rust_paths[@]}"
+# Rust include_str! embeds these candidate shaders at build time. Pin the
+# reviewed six files as well; source edits must not escape the expanded gate.
+shader_paths=(
+    crates/rvllm-apple-metal/src/research_shaders/short_mma16x64.metal
+    crates/rvllm-apple-metal/src/research_shaders/rounded_gate32.metal
+    crates/rvllm-apple-metal/src/research_shaders/gqa_kv8.metal
+    crates/rvllm-apple-metal/src/research_shaders/mma32_prefetch.metal
+    crates/rvllm-apple-metal/src/research_shaders/attn_q4.metal
+    crates/rvllm-apple-metal/src/research_shaders/rms_simd32.metal
+)
+run shader-source-hashes shasum -a 256 "${shader_paths[@]}"
 printf 'packet-owned-files-only; unlisted source NOT checked\n' > "$out/format-scope.txt"
 index=0
 for path in "${packet_rust_paths[@]}"; do
@@ -115,14 +126,21 @@ done
 # Formatting is read-only; reject source/manifest edits during this stage.
 run format-source-unchanged shasum -a 256 -c "$out/format-source-hashes.stdout"
 common=(--offline --locked --release -j 2 --target aarch64-apple-darwin)
-host_tests metal-policy cargo test "${common[@]}" -p rvllm-apple-metal --lib research::tests
+host_tests metal-policy cargo test "${common[@]}" -p rvllm-apple-metal --lib research::
 host_tests dispatch-evidence cargo test "${common[@]}" -p rvllm-apple-metal --lib research_evidence::tests
+host_tests metal-next cargo test "${common[@]}" -p rvllm-apple-metal --lib research_next::
 host_tests ane-candidates cargo test "${common[@]}" -p rvllm-apple \
     --features macos-private-ane-research --lib ane_int8_candidates::tests
 host_tests kv-layout cargo test "${common[@]}" -p rvllm-apple \
     --features macos-private-ane-research --lib ane_attention_layout::blocked32_tests
 host_tests prefill-screen cargo test "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --bin rvllm_disaggregated_infer prefill_screen::tests
+host_tests attention-transposes cargo test "${common[@]}" -p rvllm-apple \
+    --features macos-private-ane-research --lib ane_attention_layout::transpose_tests
+host_tests head-ranking cargo test "${common[@]}" -p rvllm-runtime \
+    --features macos-private-ane-research --lib gemma_head_ranking::tests
+host_tests decode-policy cargo test "${common[@]}" -p rvllm-runtime \
+    --features macos-private-ane-research --lib gemma_ane_decode::tests
 run cli-build cargo build "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --bin rvllm_disaggregated_infer
 # Anchor each executable immediately after its own build, not after the
@@ -136,9 +154,11 @@ run built-exporter-hashes shasum -a 256 "$exporter"
 run built-cli-unchanged shasum -a 256 -c "$out/built-cli-hashes.stdout"
 
 for dtype in bf16 f16; do
-    for candidate in off metal-short-mma16x64 metal-rounded-gate32 metal-gqa-kv8; do
+    for candidate in off metal-short-mma16x64 metal-rounded-gate32 metal-gqa-kv8 \
+        metal-mma32-prefetch metal-attn-q4 metal-rms-simd32; do
         stem="$dtype-$candidate"
         run "$stem-exporter-unchanged" shasum -a 256 -c "$out/built-exporter-hashes.stdout"
+        run "$stem-shader-source-unchanged" shasum -a 256 -c "$out/shader-source-hashes.stdout"
         run "$stem-export" "$exporter" "$dtype" "$candidate"
         cp "$out/$stem-export.stdout" "$out/$stem.metal"
         [[ -s "$out/$stem.metal" ]] || { echo "empty source: $stem" >&2; exit 1; }
@@ -158,5 +178,6 @@ run artifact-unchanged shasum -a 256 -c "$out/artifact-hashes.stdout"
 # Extend the original packet-source check through tests/builds/exports. This
 # is bounded consistency evidence, not a lock or a full-workspace source pin.
 run format-source-unchanged-final shasum -a 256 -c "$out/format-source-hashes.stdout"
+run shader-source-unchanged-final shasum -a 256 -c "$out/shader-source-hashes.stdout"
 cp "$out/artifact-hashes.stdout" "$out/SHA256SUMS"
 printf 'compiled-only; no accelerator acceptance\n' > "$out/status.txt"

@@ -1,0 +1,104 @@
+{
+  "schema": "rvllm.kernel_proposal.v1",
+  "base_commit": "faa753360e30ce59540d1d113994c711a1d19675",
+  "candidate": "metal-rms-simd32",
+  "control": "metal-off-mma32-simdgroup",
+  "selector": [
+    "RVLLM_METAL_RESEARCH",
+    "metal-rms-simd32"
+  ],
+  "status": "source-ready-native-checks-unrun",
+  "admitted_to_queue": false,
+  "live_command": null,
+  "hypothesis": "Replace the 256-thread post-O/post-down RMS reductions with one 32-lane SIMD reduction.",
+  "supported_shape": {
+    "tokens": [
+      6,
+      21,
+      64,
+      84,
+      256,
+      1008
+    ],
+    "component_only_token_boundary": [
+      1024
+    ],
+    "hidden": 3840,
+    "gamma": "real, not 1+gamma",
+    "epsilon": 1e-06,
+    "dtype": "BF16 storage / FP32 statistics"
+  },
+  "memory_and_programs": {
+    "new_psos": 1,
+    "threads": 32,
+    "threadgroup_bytes": 0,
+    "extra_device_scratch_bytes": 0
+  },
+  "required_features": [
+    "macos-private-ane-research"
+  ],
+  "metal_environment_common": {
+    "RVLLM_METAL_PREFILL_GEMM": "mma32",
+    "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup"
+  },
+  "local_pins": {
+    "executable_sha256": null,
+    "metallib_sha256": null,
+    "reference_sha256": null,
+    "model_config_sha256": null,
+    "oracle_sha256": null
+  },
+  "stratum": {
+    "power_source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null,
+    "min_free_bytes": 17179869184,
+    "quiet_seconds": 120,
+    "idle_process_exemptions": []
+  },
+  "timing": {
+    "block_order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmups_per_block": 2,
+    "measured_per_block": 7,
+    "prompt_tokens": 84,
+    "outputs_per_request": 10,
+    "ane_steps_per_request": 9,
+    "ane_evaluations_per_step": 208,
+    "requests_per_block": 9,
+    "ane_evaluations_per_full_abba": 67392,
+    "baseline_drift_limit": 0.05,
+    "normalize_accelerator_by_cpu_cycles": false,
+    "independent_confirmation_required": true,
+    "max_run_seconds_per_block": 3600,
+    "on_overrun": "record overrun; join safely; never kill an accelerator child"
+  },
+  "acceptance": {
+    "tensor_tolerances": "unchanged-existing-oracle-pinned-locally",
+    "require_first_token_and_complete_continuation": true,
+    "require_actual_dispatch_or_program_identity": true,
+    "performance": "Reject on control drift >5%, nonpositive paired gain, changed work counts, unpinned inputs, any oracle failure, or inconsistent stratum. Retain all repetitions. A positive screen is provisional until independent confirmation; no automatic promotion."
+  },
+  "experiment": "Require 96 post-projection RMS encodes in an untraced 48-layer prefill; all other new slots zero. Qualify adversarial nonunit gamma, zero/tiny/large finite inputs, exact in-place and disjoint buffers using the existing unchanged tensor gate. Reject any shape/alias fallback as candidate coverage. Preserve projection-to-storage rounding. Then matched 84-token full-route ABBA; do not use layer-trace output as proof this candidate ran.",
+  "risks": [
+    "The FP32 reduction order changes; exact scalar formula is not numerical acceptance.",
+    "One lane now visits 120 elements; reduced synchronization can lose to extra serial work.",
+    "Native layer-trace mode suppresses this route."
+  ],
+  "incompatibility": "One performance candidate per arm. Do not combine new candidates with each other or the original six until individual effects are independently established.",
+  "component_screen": {
+    "geometry_cases": 3,
+    "arms": 2,
+    "warmups_per_case_per_arm": 2,
+    "checked_repeats_per_case_per_arm": 7,
+    "total_component_dispatches": 54,
+    "geometry": "H=3840, M in [6,84,1024], real gamma, eps=1e-6; both exact-in-place and disjoint buffer cases are required as correctness variants.",
+    "oracle": "FP64 statistics reference and original target tolerance; this changes reduction order. Do not use old trace mode as candidate evidence.",
+    "adapter_status": "Native component adapter not supplied or qualified. Count 54 dispatches per chosen aliasing layout; two layouts total108."
+  }
+}

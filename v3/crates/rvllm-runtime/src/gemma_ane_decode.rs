@@ -6,11 +6,15 @@
 #![forbid(unsafe_code)]
 
 use crate::ane_prefill::{AnePrefillSnapshot, PrefillLayerShape};
+use crate::gemma_head_ranking::{
+    validate_head_ranking_configuration, validate_head_ranking_mode, HeadRankingPlan,
+    HeadRankingStats, HeadTop5,
+};
 #[cfg(test)]
 use half::bf16;
 use half::f16;
 use rvllm_apple::ane_attention::{AneAttention, AneAttentionProgram};
-use rvllm_apple::ane_attention_layout::KvImportPacking;
+use rvllm_apple::ane_attention_layout::{KvImportPacking, PackedAttentionLayout};
 use rvllm_apple::ane_dynamic_ffn::{AneDynamicFfn, AneDynamicFfnProgram};
 use rvllm_apple::ane_dynamic_linear::{AneDynamicLinear, AneDynamicLinearProgram};
 use rvllm_apple::ane_int8_ffn_weights::{AneInt8FfnWeights, AneInt8LinearWeights};
@@ -53,6 +57,8 @@ pub enum AneWeightPlan {
     StaticInt8FfnCached,
     /// Default-off, single-I/O output-channel chunked INT8 FFN.
     StaticInt8Chunk4FfnCached,
+    StaticInt8Down4FfnCached,
+    StaticInt8FfnTransposeAttentionCached,
     /// Experimental INT8 sliding QKV and ordinary INT8 FFNs. Global QKV stays FP16.
     StaticInt8FfnSlidingQkvCached,
     /// Four output-row tiles, only for the already-experimental INT8 sliding QKV.
@@ -73,6 +79,10 @@ impl AneWeightPlan {
             Self::StaticLut4FfnCached => "static-lut4-ffn-cached",
             Self::StaticInt8FfnCached => "static-int8-ffn-cached",
             Self::StaticInt8Chunk4FfnCached => "static-int8-chunk4-ffn-cached",
+            Self::StaticInt8Down4FfnCached => "static-int8-down4-ffn-cached",
+            Self::StaticInt8FfnTransposeAttentionCached => {
+                "static-int8-ffn-transpose-attention-cached"
+            }
             Self::StaticInt8FfnSlidingQkvCached => "static-int8-ffn-sliding-qkv-cached",
             Self::StaticInt8FfnSlidingQkvTiles4Cached => {
                 "static-int8-ffn-sliding-qkv-tiles4-cached"
@@ -90,6 +100,8 @@ impl AneWeightPlan {
             | Self::StaticLut4FfnCached
             | Self::StaticInt8FfnCached
             | Self::StaticInt8Chunk4FfnCached
+            | Self::StaticInt8Down4FfnCached
+            | Self::StaticInt8FfnTransposeAttentionCached
             | Self::StaticInt8FfnSlidingQkvCached
             | Self::StaticInt8FfnSlidingQkvTiles4Cached
             | Self::StaticInt8StackedFfnCached => 162,
@@ -103,6 +115,8 @@ impl AneWeightPlan {
             | Self::StaticLut4FfnCached
             | Self::StaticInt8FfnCached
             | Self::StaticInt8Chunk4FfnCached
+            | Self::StaticInt8Down4FfnCached
+            | Self::StaticInt8FfnTransposeAttentionCached
             | Self::StaticInt8FfnSlidingQkvCached
             | Self::StaticInt8FfnSlidingQkvTiles4Cached
             | Self::StaticInt8StackedFfnCached
@@ -114,6 +128,8 @@ impl AneWeightPlan {
     fn static_ffn_precision(self) -> StaticFfnPrecision {
         match self {
             Self::StaticInt8Chunk4FfnCached => StaticFfnPrecision::Int8Chunk4,
+            Self::StaticInt8Down4FfnCached => StaticFfnPrecision::Int8Down4,
+            Self::StaticInt8FfnTransposeAttentionCached => StaticFfnPrecision::Int8,
             Self::StaticInt8FfnCached
             | Self::StaticInt8FfnSlidingQkvCached
             | Self::StaticInt8FfnSlidingQkvTiles4Cached => StaticFfnPrecision::Int8,
@@ -139,6 +155,7 @@ enum StaticFfnPrecision {
     Int8,
     Int8Stacked,
     Int8Chunk4,
+    Int8Down4,
     Lut4,
 }
 
@@ -156,7 +173,9 @@ pub enum AneStaticCachePart {
     FeedForwardInt8,
     FeedForwardInt8Stacked,
     FeedForwardInt8Chunk4,
+    FeedForwardInt8Down4,
     VocabularyAndAttention,
+    AttentionTransposeFlags,
 }
 
 pub fn provision_static_cache(model_dir: &Path, part: AneStaticCachePart) -> Result<usize, String> {
@@ -251,7 +270,9 @@ fn visit_static_cache(
         AneProgramCachePolicy::RequireExisting
     } else {
         AneProgramCachePolicy::ReuseOrCompileUpTo(
-            if part == AneStaticCachePart::VocabularyAndAttention {
+            if part == AneStaticCachePart::AttentionTransposeFlags {
+                2
+            } else if part == AneStaticCachePart::VocabularyAndAttention {
                 2 + VOCAB / HEAD_ROWS
             } else {
                 LAYERS
@@ -259,6 +280,29 @@ fn visit_static_cache(
         )
     };
     let mut results = Vec::new();
+    if part == AneStaticCachePart::AttentionTransposeFlags {
+        for (name, layout) in [
+            (
+                "attention-transpose/sliding",
+                PackedAttentionLayout::sliding(16, 8, 256, 1024)?,
+            ),
+            (
+                "attention-transpose/global",
+                PackedAttentionLayout::new(16, 1, 512, capacity)?,
+            ),
+        ] {
+            check_stop()?;
+            record_cache_entry(
+                &mut results,
+                name.into(),
+                AneAttentionProgram::compile_transpose_flags_with_cache_policy(layout, policy)
+                    .map(drop),
+                inspect,
+            )?;
+        }
+        check_stop()?;
+        return Ok(results);
+    }
     if part == AneStaticCachePart::VocabularyAndAttention {
         check_stop()?;
         record_cache_entry(
@@ -328,7 +372,8 @@ fn visit_static_cache(
             | AneStaticCachePart::FeedForwardLut4
             | AneStaticCachePart::FeedForwardInt8
             | AneStaticCachePart::FeedForwardInt8Stacked
-            | AneStaticCachePart::FeedForwardInt8Chunk4 => {
+            | AneStaticCachePart::FeedForwardInt8Chunk4
+            | AneStaticCachePart::FeedForwardInt8Down4 => {
                 let gate = load("mlp.gate_proj.weight")?;
                 let up = load("mlp.up_proj.weight")?;
                 let down = load("mlp.down_proj.weight")?;
@@ -339,6 +384,7 @@ fn visit_static_cache(
                     match part {
                         AneStaticCachePart::FeedForwardInt8 => StaticFfnPrecision::Int8,
                         AneStaticCachePart::FeedForwardInt8Chunk4 => StaticFfnPrecision::Int8Chunk4,
+                        AneStaticCachePart::FeedForwardInt8Down4 => StaticFfnPrecision::Int8Down4,
                         AneStaticCachePart::FeedForwardInt8Stacked => {
                             StaticFfnPrecision::Int8Stacked
                         }
@@ -349,7 +395,8 @@ fn visit_static_cache(
                 )
                 .map(drop)
             }
-            AneStaticCachePart::VocabularyAndAttention => unreachable!(),
+            AneStaticCachePart::VocabularyAndAttention
+            | AneStaticCachePart::AttentionTransposeFlags => unreachable!(),
         };
         record_cache_entry(
             &mut results,
@@ -412,6 +459,10 @@ fn load_static_ffn(
         StaticFfnPrecision::Int8Chunk4 => {
             let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
             AneGatedFfn::compile_int8_chunk4_with_cache_policy(&weights, policy)
+        }
+        StaticFfnPrecision::Int8Down4 => {
+            let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
+            AneGatedFfn::compile_int8_down4_with_cache_policy(&weights, policy)
         }
         StaticFfnPrecision::Int8Stacked => {
             let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
@@ -545,9 +596,44 @@ pub struct GemmaAneDecode {
     epsilon: f32,
     softcap: f32,
     next_position: Option<usize>,
+    head_ranking: HeadRankingPlan,
+    head_ranking_eligible: bool,
+    head_ranking_timing: bool,
+    last_head_ranking: Option<(HeadRankingStats, Option<f64>)>,
 }
 
 impl GemmaAneDecode {
+    /// Default-off CPU head transformation work. This never changes projection
+    /// weights, ANE requests, quantization, or the model's softcap expression.
+    pub fn configure_head_ranking(
+        &mut self,
+        plan: HeadRankingPlan,
+        timing: bool,
+    ) -> Result<(), String> {
+        // Enforce the same control/compile boundary for direct library callers,
+        // not merely callers routed through the CLI option validator.
+        validate_head_ranking_mode(
+            plan,
+            timing,
+            false,
+            false,
+            false,
+            0,
+            self.head_ranking_eligible,
+        )?;
+        validate_head_ranking_configuration(plan, timing, self.softcap)?;
+        self.head_ranking = plan;
+        self.head_ranking_timing = timing;
+        self.last_head_ranking = None;
+        Ok(())
+    }
+
+    /// CPU transformation time excludes every ANE head projection and surface
+    /// call. `None` means no successful observed step, never zero device time.
+    pub fn head_ranking_observation(&self) -> Option<(HeadRankingStats, Option<f64>)> {
+        self.last_head_ranking
+    }
+
     /// Counts successful bit-identical comparisons in the explicit check plan.
     /// The candidate output continues through the decoder; no fallback occurs.
     pub fn stacked_ffn_checks_per_layer(&self) -> Option<Vec<usize>> {
@@ -592,6 +678,8 @@ impl GemmaAneDecode {
             weights,
             AneWeightPlan::StaticInt8Chunk4FfnCached
                 | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached
+                | AneWeightPlan::StaticInt8Down4FfnCached
+                | AneWeightPlan::StaticInt8FfnTransposeAttentionCached
         ) && compile_budget != 0
         {
             return Err(
@@ -619,10 +707,29 @@ impl GemmaAneDecode {
         } else {
             weights.cache_policy()
         };
-        let sliding =
-            AneAttentionProgram::compile_sliding_with_cache_policy(16, 8, 256, 1024, cache_policy)?;
-        let global =
-            AneAttentionProgram::compile_with_cache_policy(16, 1, 512, capacity, cache_policy)?;
+        let (sliding, global) = if weights == AneWeightPlan::StaticInt8FfnTransposeAttentionCached {
+            (
+                AneAttentionProgram::compile_transpose_flags_with_cache_policy(
+                    PackedAttentionLayout::sliding(16, 8, 256, 1024)?,
+                    cache_policy,
+                )?,
+                AneAttentionProgram::compile_transpose_flags_with_cache_policy(
+                    PackedAttentionLayout::new(16, 1, 512, capacity)?,
+                    cache_policy,
+                )?,
+            )
+        } else {
+            (
+                AneAttentionProgram::compile_sliding_with_cache_policy(
+                    16,
+                    8,
+                    256,
+                    1024,
+                    cache_policy,
+                )?,
+                AneAttentionProgram::compile_with_cache_policy(16, 1, 512, capacity, cache_policy)?,
+            )
+        };
         let ffn = if weights == AneWeightPlan::DynamicFfn {
             Some(AneDynamicFfnProgram::compile(HIDDEN, INTERMEDIATE)?)
         } else {
@@ -767,6 +874,11 @@ impl GemmaAneDecode {
             epsilon: arch.rms_norm_eps,
             softcap: arch.logit_softcap,
             next_position: None,
+            head_ranking: HeadRankingPlan::Baseline,
+            head_ranking_eligible: weights == AneWeightPlan::StaticInt8FfnCached
+                && compile_budget == 0,
+            head_ranking_timing: false,
+            last_head_ranking: None,
         })
     }
 
@@ -885,6 +997,7 @@ impl GemmaAneDecode {
         observer: &mut impl FnMut(usize, &[f16]) -> Result<(), String>,
         ffn_input_observer: &mut impl FnMut(usize, &[f16]) -> Result<(), String>,
     ) -> Result<AneDecodedToken, String> {
+        self.last_head_ranking = None;
         let started = Instant::now();
         let mut times = AneDecodeTimes::default();
         let offset = self.embedding_info.file_offset + token.raw() as usize * HIDDEN * 2;
@@ -985,22 +1098,51 @@ impl GemmaAneDecode {
             self.epsilon,
         )?;
         let mut top_five = [(u32::MAX, f32::NEG_INFINITY); 5];
+        let mut ranker = if self.head_ranking == HeadRankingPlan::SoftcapPrune {
+            Some(HeadTop5::new(self.head_ranking, self.softcap)?)
+        } else {
+            None
+        };
+        let mut ranking_ms = 0.0;
         for (tile, head) in self.head.iter_mut().enumerate() {
             let timer = Instant::now();
             head.project(&self.hidden, &mut self.head_output)?;
             times.vocabulary_ms += milliseconds(timer);
-            for (row, value) in self.head_output.iter().enumerate() {
-                if !value.is_finite() {
-                    return Err("ANE vocabulary projection is nonfinite".into());
+            let ranking_started = self.head_ranking_timing.then(Instant::now);
+            if let Some(ranker) = &mut ranker {
+                for (row, &value) in self.head_output.iter().enumerate() {
+                    ranker.observe((tile * HEAD_ROWS + row) as u32, value)?;
                 }
-                let divided = f16::from_f32(value.to_f32() / self.softcap);
-                let squashed = f16::from_f32(divided.to_f32().tanh());
-                let logit = f16::from_f32(squashed.to_f32() * self.softcap).to_f32();
-                if let Some(rank) = top_five.iter().position(|&(_, best)| logit > best) {
-                    top_five.copy_within(rank..4, rank + 1);
-                    top_five[rank] = ((tile * HEAD_ROWS + row) as u32, logit);
+            } else {
+                for (row, value) in self.head_output.iter().enumerate() {
+                    if !value.is_finite() {
+                        return Err("ANE vocabulary projection is nonfinite".into());
+                    }
+                    let divided = f16::from_f32(value.to_f32() / self.softcap);
+                    let squashed = f16::from_f32(divided.to_f32().tanh());
+                    let logit = f16::from_f32(squashed.to_f32() * self.softcap).to_f32();
+                    if let Some(rank) = top_five.iter().position(|&(_, best)| logit > best) {
+                        top_five.copy_within(rank..4, rank + 1);
+                        top_five[rank] = ((tile * HEAD_ROWS + row) as u32, logit);
+                    }
                 }
             }
+            if let Some(started) = ranking_started {
+                ranking_ms += milliseconds(started);
+            }
+        }
+        let stats = if let Some(ranker) = ranker {
+            top_five = ranker.finish(VOCAB as u32)?;
+            ranker.stats()
+        } else {
+            HeadRankingStats {
+                considered: VOCAB as u32,
+                transformed: VOCAB as u32,
+                pruned: 0,
+            }
+        };
+        if self.head_ranking != HeadRankingPlan::Baseline || self.head_ranking_timing {
+            self.last_head_ranking = Some((stats, self.head_ranking_timing.then_some(ranking_ms)));
         }
         times.total_ms = milliseconds(started);
         times.host_ms = times.total_ms
@@ -1255,6 +1397,39 @@ mod int8_projection_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn transpose_attention_does_not_change_weights_program_count_or_compile_policy() {
+        let plan = super::AneWeightPlan::StaticInt8FfnTransposeAttentionCached;
+        assert_eq!(plan.program_count(), 162);
+        assert_eq!(plan.static_ffn_precision(), super::StaticFfnPrecision::Int8);
+        assert!(!plan.quantizes_qkv(true));
+        let result = super::GemmaAneDecode::load_with_compile_budget(
+            std::path::Path::new("/must-not-read-transpose-model"),
+            1024,
+            plan,
+            1,
+        );
+        assert!(matches!(result,Err(error) if error.contains("zero compile budget")));
+    }
+
+    #[test]
+    fn down4_is_one_cached_program_per_layer_and_never_compiles_on_inference() {
+        let plan = super::AneWeightPlan::StaticInt8Down4FfnCached;
+        assert_eq!(plan.program_count(), 162);
+        assert_eq!(
+            plan.static_ffn_precision(),
+            super::StaticFfnPrecision::Int8Down4
+        );
+        assert!(!plan.quantizes_qkv(true));
+        let result = super::GemmaAneDecode::load_with_compile_budget(
+            std::path::Path::new("/must-not-read-down4-model"),
+            1024,
+            plan,
+            1,
+        );
+        assert!(matches!(result,Err(error) if error.contains("zero compile budget")));
+    }
+
     #[test]
     fn tiles4_is_single_variant_sliding_only_and_cached() {
         let plan = AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached;

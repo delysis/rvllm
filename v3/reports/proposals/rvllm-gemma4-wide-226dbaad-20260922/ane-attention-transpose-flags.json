@@ -1,0 +1,103 @@
+{
+  "schema": "rvllm.kernel_proposal.v1",
+  "base_commit": "faa753360e30ce59540d1d113994c711a1d19675",
+  "candidate": "ane-attention-transpose-flags",
+  "control": "static-int8-ffn-cached",
+  "selector": [
+    "--ane-weights",
+    "static-int8-ffn-transpose-attention-cached"
+  ],
+  "status": "source-ready-native-checks-unrun",
+  "admitted_to_queue": false,
+  "live_command": null,
+  "hypothesis": "Express Q^T K and P V^T with MIL matmul flags rather than two explicit operand permutations.",
+  "supported_shape": {
+    "heads": 16,
+    "sliding": [
+      8,
+      256,
+      1024
+    ],
+    "global_capacities": [
+      64,
+      1024
+    ],
+    "global_kv_heads": 1,
+    "global_head_dim": 512,
+    "probability_scale": 32.0,
+    "output_unscale": 0.03125
+  },
+  "memory_and_programs": {
+    "replacement_programs": 2,
+    "active_programs": 162,
+    "input_output_surface_change_bytes": 0,
+    "source_transposes_before": 3,
+    "source_transposes_after": 1
+  },
+  "required_features": [
+    "macos-private-ane-research"
+  ],
+  "metal_environment_common": {
+    "RVLLM_METAL_PREFILL_GEMM": "mma32",
+    "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup"
+  },
+  "local_pins": {
+    "executable_sha256": null,
+    "metallib_sha256": null,
+    "reference_sha256": null,
+    "model_config_sha256": null,
+    "oracle_sha256": null
+  },
+  "stratum": {
+    "power_source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null,
+    "min_free_bytes": 17179869184,
+    "quiet_seconds": 120,
+    "idle_process_exemptions": []
+  },
+  "timing": {
+    "block_order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmups_per_block": 2,
+    "measured_per_block": 7,
+    "prompt_tokens": 84,
+    "outputs_per_request": 10,
+    "ane_steps_per_request": 9,
+    "ane_evaluations_per_step": 208,
+    "requests_per_block": 9,
+    "ane_evaluations_per_full_abba": 67392,
+    "baseline_drift_limit": 0.05,
+    "normalize_accelerator_by_cpu_cycles": false,
+    "independent_confirmation_required": true,
+    "max_run_seconds_per_block": 3600,
+    "on_overrun": "record overrun; join safely; never kill an accelerator child"
+  },
+  "acceptance": {
+    "tensor_tolerances": "unchanged-existing-oracle-pinned-locally",
+    "require_first_token_and_complete_continuation": true,
+    "require_actual_dispatch_or_program_identity": true,
+    "performance": "Reject on control drift >5%, nonpositive paired gain, changed work counts, unpinned inputs, any oracle failure, or inconsistent stratum. Retain all repetitions. A positive screen is provisional until independent confirmation; no automatic promotion."
+  },
+  "experiment": "Separately prepare and inspect --prepare-ane-cache attention-transpose-flags / --inspect-ane-cache attention-transpose-flags: exactly two program visits. Compare generated graph constants/materialization and private compiler artifacts before spending full-model timing work; identical compiler artifact is a reason to reject a duplicate mechanism, not claim a speedup. Use actual captured single-I/O attention inputs for both layer families and the original tensor oracle. Full route retains INT8 FFNs and baseline other projections, zero compile budget. Then 84-token ABBA with attention phase and full decode metrics.",
+  "risks": [
+    "Core ML has an equivalent compiler pass already; the private compiler may emit an identical program.",
+    "Flagged matmul can change compiler reduction/scheduling, so unchanged FP16 graph boundaries do not waive the oracle."
+  ],
+  "incompatibility": "One performance candidate per arm. Do not combine new candidates with each other or the original six until individual effects are independently established.",
+  "component_screen": {
+    "geometry_cases": 3,
+    "arms": 2,
+    "warmup_inputs_per_case_per_arm": 2,
+    "checked_inputs_per_case_per_arm": 13,
+    "total_component_evaluations": 90,
+    "geometry": "Sliding(16,8,256,1024); global(16,1,512,64) and global(16,1,512,1024). Select only one capacity in a full-route job.",
+    "oracle": "Identical packed surface contents and original device oracle. Preserve FP16 probability scale32 and unscale1/32, masks, output permutation and all intermediate precision.",
+    "adapter_status": "Public single-I/O source/constructor supplied; local owner binds existing attention fixture. Inspect compiler artifacts before spending a timing campaign on equivalent graphs."
+  }
+}

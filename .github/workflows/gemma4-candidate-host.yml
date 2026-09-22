@@ -1,0 +1,75 @@
+name: Gemma 4 candidate host qualification
+
+on:
+  push:
+    branches: [main, codex/gemma4-kernel-candidates]
+    paths: ['v3/**', '.github/workflows/gemma4-candidate-host.yml']
+  pull_request:
+    paths: ['v3/**', '.github/workflows/gemma4-candidate-host.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+  PYTHONDONTWRITEBYTECODE: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+
+jobs:
+  host:
+    name: Public host tests and MSL source export (no devices)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: v3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, inspected 2026-09-22
+        with:
+          persist-credentials: false
+      - name: Create receipt directory before dependency setup
+        run: |
+          mkdir "$RUNNER_TEMP/gemma4-candidate-host"
+          {
+            git rev-parse HEAD
+            git status --porcelain=v1
+            uname -a
+            python3 --version
+          } > "$RUNNER_TEMP/gemma4-candidate-host/identity.txt"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable action revision
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Provision locked Cargo dependencies (networked setup, not a trial)
+        run: |
+          cargo fetch --locked 2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/fetch.log"
+      - name: Provision pinned CPU-model test dependency
+        run: |
+          python3 -m venv "$RUNNER_TEMP/gemma4-candidate-venv"
+          "$RUNNER_TEMP/gemma4-candidate-venv/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: \
+            -r tools/gemma4-candidate-ci-requirements.txt \
+            2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/python-setup.log"
+      - name: Run independent CPU models, staging checks and gate contracts
+        run: |
+          "$RUNNER_TEMP/gemma4-candidate-venv/bin/python" tools/run_gemma4_python_checks.py --require-rustfmt \
+            2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/python-tests.log"
+      - name: Run exact reviewed public Rust tests and fourteen source exports
+        run: |
+          "$RUNNER_TEMP/gemma4-candidate-venv/bin/python" tools/run_gemma4_candidate_ci.py \
+            --output "$RUNNER_TEMP/gemma4-candidate-host/rust-and-export" \
+            2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/rust-and-export.log"
+      - name: Confirm checks did not modify tracked source
+        run: |
+          git -C .. diff --exit-code -- . \
+            2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/source-unchanged.log"
+      - name: Preserve receipts even when checks fail
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gemma4-candidate-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gemma4-candidate-host
+          if-no-files-found: error
+          retention-days: 14

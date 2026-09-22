@@ -186,10 +186,9 @@ mod tests {
         let fallback = dispatch_report("metal-gqa-kv8", zero, zero).unwrap();
         assert_eq!(fallback["selection_exercised"], false);
         assert_eq!(fallback["encoded_dispatches"]["research_gqa_kv8_d256"], 0);
-        let gqa = ResearchDispatchSnapshot {
-            counts: [0, 0, 0, 40, 8],
-            overflowed: false,
-        };
+        let mut gqa = ResearchDispatchSnapshot::default();
+        gqa.counts[3] = 40;
+        gqa.counts[4] = 8;
         let report = dispatch_report("metal-gqa-kv8", zero, gqa).unwrap();
         assert_eq!(report["selection_exercised"], true);
         assert_eq!(report["encoded_dispatches"]["research_gqa_kv8_d512"], 8);

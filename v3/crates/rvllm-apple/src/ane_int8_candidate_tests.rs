@@ -452,3 +452,6 @@ fn chunking_is_bit_exact_for_quantized_payloads_and_scale_payloads() -> TestResu
     );
     Ok(())
 }
+
+#[path = "ane_int8_next_tests.rs"]
+mod next;

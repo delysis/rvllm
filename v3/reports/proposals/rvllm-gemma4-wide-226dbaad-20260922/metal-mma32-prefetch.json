@@ -1,0 +1,105 @@
+{
+  "schema": "rvllm.kernel_proposal.v1",
+  "base_commit": "faa753360e30ce59540d1d113994c711a1d19675",
+  "candidate": "metal-mma32-prefetch",
+  "control": "metal-off-mma32-simdgroup",
+  "selector": [
+    "RVLLM_METAL_RESEARCH",
+    "metal-mma32-prefetch"
+  ],
+  "status": "source-ready-native-checks-unrun",
+  "admitted_to_queue": false,
+  "live_command": null,
+  "hypothesis": "Overlap next-K global loads with current-K MMA while keeping 32x32x32/ascending-eight-wide accumulation.",
+  "supported_shape": {
+    "tokens": [
+      6,
+      21,
+      64,
+      84,
+      256,
+      1008
+    ],
+    "component_only_token_boundary": [
+      1024
+    ],
+    "H": 3840,
+    "I": 15360,
+    "layers": 48,
+    "heads": 16,
+    "dtype": "BF16; FP32 QKV output"
+  },
+  "memory_and_programs": {
+    "new_psos": 2,
+    "threads": 128,
+    "threadgroup_bytes": 8192,
+    "register_operands_per_thread": 16,
+    "extra_device_scratch_bytes": 0
+  },
+  "required_features": [
+    "macos-private-ane-research"
+  ],
+  "metal_environment_common": {
+    "RVLLM_METAL_PREFILL_GEMM": "mma32",
+    "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup"
+  },
+  "local_pins": {
+    "executable_sha256": null,
+    "metallib_sha256": null,
+    "reference_sha256": null,
+    "model_config_sha256": null,
+    "oracle_sha256": null
+  },
+  "stratum": {
+    "power_source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null,
+    "min_free_bytes": 17179869184,
+    "quiet_seconds": 120,
+    "idle_process_exemptions": []
+  },
+  "timing": {
+    "block_order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmups_per_block": 2,
+    "measured_per_block": 7,
+    "prompt_tokens": 84,
+    "outputs_per_request": 10,
+    "ane_steps_per_request": 9,
+    "ane_evaluations_per_step": 208,
+    "requests_per_block": 9,
+    "ane_evaluations_per_full_abba": 67392,
+    "baseline_drift_limit": 0.05,
+    "normalize_accelerator_by_cpu_cycles": false,
+    "independent_confirmation_required": true,
+    "max_run_seconds_per_block": 3600,
+    "on_overrun": "record overrun; join safely; never kill an accelerator child"
+  },
+  "acceptance": {
+    "tensor_tolerances": "unchanged-existing-oracle-pinned-locally",
+    "require_first_token_and_complete_continuation": true,
+    "require_actual_dispatch_or_program_identity": true,
+    "performance": "Reject on control drift >5%, nonpositive paired gain, changed work counts, unpinned inputs, any oracle failure, or inconsistent stratum. Retain all repetitions. A positive screen is provisional until independent confirmation; no automatic promotion."
+  },
+  "experiment": "For each independently pinned prompt run matched off/candidate/off prefill-only screens. Require 48 new QKV and 144 new GEMM encodes, no foreign slots, finite seed/KV and first-token equality. Use the unchanged captured-KV/final-state and full-continuation oracles; layer-trace mode is NOT candidate evidence. On admitted shapes compare completed GPU interval and complete handoff separately; then 84-token ABBA full route with 10 outputs/9 ANE steps.",
+  "risks": [
+    "Register pressure/spills can erase overlap; compiler scheduling is not measured.",
+    "Native layer-trace mode suppresses MMA admission: positive ledger counts are mandatory."
+  ],
+  "incompatibility": "One performance candidate per arm. Do not combine new candidates with each other or the original six until individual effects are independently established.",
+  "component_screen": {
+    "geometry_cases": 36,
+    "arms": 2,
+    "warmups_per_case_per_arm": 2,
+    "checked_repeats_per_case_per_arm": 7,
+    "total_component_dispatches": 648,
+    "geometry": "Six admitted projection roles times M in [6,21,64,84,256,1024]; BF16 input/weights, FP32 QKV or BF16 other output.",
+    "oracle": "Existing target oracle, original tolerances; compare every output element with incumbent MMA32 and independent reference. Require candidate dispatch. The old layer-trace switch disables this route.",
+    "adapter_status": "Native component adapter not supplied or qualified; local owner must bind existing oracle to this entry point before admission."
+  }
+}

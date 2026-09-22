@@ -1,0 +1,97 @@
+{
+  "schema": "rvllm.kernel_proposal.v1",
+  "base_commit": "faa753360e30ce59540d1d113994c711a1d19675",
+  "candidate": "ane-int8-ffn-packed32",
+  "control": "static-int8-ffn-cached",
+  "selector": null,
+  "status": "blocked-missing-compiled-io-descriptor",
+  "admitted_to_queue": false,
+  "live_command": null,
+  "hypothesis": "Declare packed external [1,120,1,32] vectors around the unchanged INT8 FFN to investigate singleton-axis padding.",
+  "supported_shape": {
+    "hidden": 3840,
+    "intermediate": 15360,
+    "input_declared_shape": [
+      1,
+      120,
+      1,
+      32
+    ],
+    "output_declared_shape": [
+      1,
+      120,
+      1,
+      32
+    ]
+  },
+  "memory_and_programs": {
+    "convolutions_per_program": 3,
+    "replacement_programs_if_later_qualified": 48,
+    "source_blob_extra_bytes": 0,
+    "declared_input_bytes": 7680,
+    "declared_output_bytes": 7680,
+    "baseline_surface_bytes_each": 245760
+  },
+  "required_features": [
+    "macos-private-ane-research"
+  ],
+  "metal_environment_common": {
+    "RVLLM_METAL_PREFILL_GEMM": "mma32",
+    "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup"
+  },
+  "local_pins": {
+    "executable_sha256": null,
+    "metallib_sha256": null,
+    "reference_sha256": null,
+    "model_config_sha256": null,
+    "oracle_sha256": null
+  },
+  "stratum": {
+    "power_source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null,
+    "min_free_bytes": 17179869184,
+    "quiet_seconds": 120,
+    "idle_process_exemptions": []
+  },
+  "timing": {
+    "block_order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmups_per_block": 2,
+    "measured_per_block": 7,
+    "prompt_tokens": 84,
+    "outputs_per_request": 10,
+    "ane_steps_per_request": 9,
+    "ane_evaluations_per_step": 208,
+    "requests_per_block": 9,
+    "ane_evaluations_per_full_abba": 67392,
+    "baseline_drift_limit": 0.05,
+    "normalize_accelerator_by_cpu_cycles": false,
+    "independent_confirmation_required": true,
+    "max_run_seconds_per_block": 3600,
+    "on_overrun": "record overrun; join safely; never kill an accelerator child"
+  },
+  "acceptance": {
+    "tensor_tolerances": "unchanged-existing-oracle-pinned-locally",
+    "require_first_token_and_complete_continuation": true,
+    "require_actual_dispatch_or_program_identity": true,
+    "performance": "Reject on control drift >5%, nonpositive paired gain, changed work counts, unpinned inputs, any oracle failure, or inconsistent stratum. Retain all repetitions. A positive screen is provisional until independent confirmation; no automatic promotion."
+  },
+  "experiment": "BLOCKED: do not submit an inference/cache/timing job. First the local owner must add a reviewed single-I/O compiled-descriptor read using an API actually present on this machine, verify input/output dimensions, row strides, bytes and layout, and bind that evidence to this exact MIL+weights+OS+boot. No guessed private API is supplied. The source generator and byte codec can be host-tested now. Only after descriptor verification may a separate reviewed adapter execute one program and the unchanged FFN oracle; later timing would use the same ABBA protocol, not a claimed 32x gain.",
+  "risks": [
+    "Compiled strides and minimum IOSurface size are unknown; the current FFI trusts caller byte counts.",
+    "Reshapes may create expensive internal materializations; logical byte reduction does not prove allocation or traffic reduction."
+  ],
+  "incompatibility": "One performance candidate per arm. Do not combine new candidates with each other or the original six until individual effects are independently established.",
+  "component_screen": {
+    "accelerator_evaluations_authorized": 0,
+    "host_codec": "18 blocks of3840 values cover all65536 FP16 bit patterns; validate pack/unpack before writes.",
+    "missing_fact": "Actual compiled input/output strides and surface byte requirements for the declared reshapes. No selector, private descriptor API guess, or device caller is supplied.",
+    "admission": "A separate reviewed boundary change is required after local descriptor facts; this file must not be converted into a live job yet."
+  }
+}

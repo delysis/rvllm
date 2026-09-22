@@ -184,6 +184,140 @@ fn build_ffn_chunk4(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, 
     })
 }
 
+/// Full gate/up projections followed by four disjoint output-row down tiles.
+/// Each down row keeps its complete K reduction; there is no split-K sum.
+pub const FFN_DOWN4: &str = "ane-int8-ffn-down4";
+
+pub fn ffn_down4_shape(shape: (usize, usize)) -> bool {
+    shape == (3840, 15360)
+}
+
+pub fn ffn_down4(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, String> {
+    if !ffn_down4_shape(weights.shape()) {
+        return Err("ane-int8-ffn-down4 requires hidden=3840, intermediate=15360".into());
+    }
+    build_ffn_down4(weights)
+}
+
+fn build_ffn_down4(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, String> {
+    let (hidden, intermediate) = weights.shape();
+    if hidden == 0 || hidden % 128 != 0 || intermediate == 0 || intermediate % 32 != 0 {
+        return Err("down4 requires four nonempty 32-row-aligned output tiles".into());
+    }
+    let bytes = weights
+        .source_blob_bytes()
+        .checked_add(6 * 64)
+        .ok_or("down4 blob overflow")?;
+    let io = hidden.checked_mul(64).ok_or("down4 surface overflow")?;
+    let mut blob = begin_blob(12, bytes)?;
+    let mut constants = String::new();
+    let [gate, up, down] = weights.matrices();
+    append_rows(&mut blob, &mut constants, "Wg", &gate, 0..intermediate)?;
+    append_rows(&mut blob, &mut constants, "Wu", &up, 0..intermediate)?;
+    let chunk = hidden / 4;
+    for part in 0..4 {
+        append_rows(
+            &mut blob,
+            &mut constants,
+            &format!("Wd{part}"),
+            &down,
+            part * chunk..(part + 1) * chunk,
+        )?;
+    }
+    if blob.len() != bytes {
+        return Err("down4 source size mismatch".into());
+    }
+    let mut mil = graph_header(hidden, &constants);
+    mil.push_str(GELU_CONSTANTS);
+    convolution(&mut mil, "gate0", "Wg", "x", intermediate);
+    convolution(&mut mil, "up0", "Wu", "x", intermediate);
+    gelu_branch(&mut mil, 0, intermediate);
+    for part in 0..4 {
+        convolution(
+            &mut mil,
+            &format!("down{part}"),
+            &format!("Wd{part}"),
+            "gated0",
+            chunk,
+        );
+    }
+    concatenate(&mut mil, "y", &["down0", "down1", "down2", "down3"], hidden);
+    mil.push_str("    } -> (y);\n}\n");
+    Ok(Int8CandidateSource {
+        name: FFN_DOWN4,
+        mil,
+        blob,
+        budget: Int8CandidateBudget {
+            source_blob_bytes: bytes,
+            convolutions: 6,
+            programs: 1,
+            input_surface_bytes: io,
+            output_surface_bytes: io,
+        },
+    })
+}
+
+/// Source-only packed external vector experiment. Compilation/evaluation is
+/// intentionally not wired: compiled strides/surface sizes must first be
+/// verified on the target. No guessed private descriptor API is introduced.
+pub const FFN_PACKED32: &str = "ane-int8-ffn-packed32";
+
+pub fn ffn_packed32_source(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, String> {
+    if weights.shape() != (3840, 15360) {
+        return Err("packed32 declaration supports only Gemma 4 12B".into());
+    }
+    build_ffn_packed32_source(weights)
+}
+
+fn build_ffn_packed32_source(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, String> {
+    let (hidden, intermediate) = weights.shape();
+    if hidden == 0 || hidden % 32 != 0 || intermediate == 0 || intermediate % 32 != 0 {
+        return Err("packed32 source requires aligned nonempty channels".into());
+    }
+    let bytes = weights.source_blob_bytes();
+    let io = hidden
+        .checked_mul(2)
+        .ok_or("packed32 logical byte overflow")?;
+    let mut blob = begin_blob(6, bytes)?;
+    let mut constants = String::new();
+    let [gate, up, down] = weights.matrices();
+    append_rows(&mut blob, &mut constants, "Wg", &gate, 0..intermediate)?;
+    append_rows(&mut blob, &mut constants, "Wu", &up, 0..intermediate)?;
+    append_rows(&mut blob, &mut constants, "Wd", &down, 0..hidden)?;
+    if blob.len() != bytes {
+        return Err("packed32 blob length mismatch".into());
+    }
+    let mut mil = String::from(HEADER);
+    mil.push_str(&format!(
+        "    func main<ios18>(tensor<fp16, [1, {}, 1, 32]> x) {{\n",
+        hidden / 32
+    ));
+    mil.push_str(CONV_CONSTANTS);
+    mil.push_str(&constants);
+    mil.push_str(GELU_CONSTANTS);
+    mil.push_str(&format!("        tensor<int32, [4]> unpack_shape = const()[name = string(\"unpack_shape\"), val = tensor<int32, [4]>([1, {hidden}, 1, 1])];\n"));
+    mil.push_str(&format!("        tensor<int32, [4]> pack_shape = const()[name = string(\"pack_shape\"), val = tensor<int32, [4]>([1, {}, 1, 32])];\n",hidden/32));
+    mil.push_str(&format!("        tensor<fp16, [1, {hidden}, 1, 1]> unpacked = reshape(x = x, shape = unpack_shape)[name = string(\"unpacked\")];\n"));
+    convolution(&mut mil, "gate0", "Wg", "unpacked", intermediate);
+    convolution(&mut mil, "up0", "Wu", "unpacked", intermediate);
+    gelu_branch(&mut mil, 0, intermediate);
+    convolution(&mut mil, "down_result", "Wd", "gated0", hidden);
+    mil.push_str(&format!("        tensor<fp16, [1, {}, 1, 32]> y = reshape(x = down_result, shape = pack_shape)[name = string(\"y\")];\n",hidden/32));
+    mil.push_str("    } -> (y);\n}\n");
+    Ok(Int8CandidateSource {
+        name: FFN_PACKED32,
+        mil,
+        blob,
+        budget: Int8CandidateBudget {
+            source_blob_bytes: bytes,
+            convolutions: 3,
+            programs: 1,
+            input_surface_bytes: io,
+            output_surface_bytes: io,
+        },
+    })
+}
+
 fn begin_blob(descriptors: u32, bytes: usize) -> Result<Vec<u8>, String> {
     if bytes < 64 || bytes > u32::MAX as usize {
         return Err("candidate source exceeds the existing blob ABI".into());

@@ -174,3 +174,137 @@ only after headroom is restored, without weakening its condition.
   strata, and the 5% drift gate. Do not pool AC/Fair/battery results.
 - [ ] Promote only after compiler, dispatch, tensor, full-continuation, and
   matched-timing evidence all pass; otherwise defer with the failed receipt.
+
+## Wide-series source integration and CI (Astra proposal, 2026-09-22)
+
+**Integration base: `faa753360e30ce59540d1d113994c711a1d19675`.** This supersedes
+only the earlier packet-delivery plan, not the experiment pause, hardware-owner
+rules or the original numerical gates. The reviewer could not fetch the locally
+reported `15f1d378` / `fdc6b4ca` documentation updates. Preserve those updates;
+merge this appendix with them rather than resetting or replacing this file.
+
+### This is code to integrate and test, not another research-only handoff
+
+The eleven-patch integration series installs the prior six new runtime
+candidates, the blocked packed-I/O source prototype, their tests and seven inert
+proposals, a baseline-preservation fix, CI, and the expanded native delivery
+gate. Do not reapply the older eight-patch wide packet as well. Every modified
+existing file has a complete preimage checked against the visible native base;
+the earlier seven hunk-only Rust contexts were replaced with exact blob matches.
+A full workspace/native application check remains the local owner's task.
+
+Affected areas: Metal `research{,_next,_evidence}.rs`, `layer_forward.rs` and three
+new shaders; ANE INT8 source/oracle modules and attention layout/wrappers;
+`gemma_ane_decode.rs`, `gemma_head_ranking.rs`, disaggregated CLI options; the
+scoped delivery gate; installed Python/JSON qualification tools; the seven staged
+proposal files; `.github/workflows/gemma4-candidate-host.yml`; and this handoff.
+Detailed inventory and evidence boundaries are in
+`v3/reports/gemma4-wide-integration-faa75336.md` and the packet manifest.
+
+Runtime candidates: `metal-mma32-prefetch`, `metal-attn-q4`, `metal-rms-simd32`,
+`ane-int8-ffn-down4`, `ane-attention-transpose-flags`, `cpu-head-softcap-prune`.
+`ane-int8-ffn-packed32` remains source/codec-only: no selector, cache part, driver
+consumer or runnable job. The original six candidates retain their names and
+fallbacks. Existing GQA Metal 3.1 fixes, private/shipping gates, single-I/O
+quarantine, failed evidence, numerical tolerances and ignored fixtures survive.
+
+One integration correction matters: the original proposed head-ranking setter
+unconditionally constructed a softcap-30 candidate even with both experiment
+and timing off. It now preserves ordinary baseline checkpoint softcaps and
+checks candidate/control eligibility for direct library callers as well as the
+CLI. Failed configuration is checked before mutating the owner.
+
+### Immediate local-owner task: integrate source, execute host/compiler gates
+
+1. Inspect the real branch/status and preserve local/unseen handoff edits. Check
+   and apply the complete integration series; do not copy partial source trees
+   over the checkout. Resolve only actual conflicts; no reset of local work.
+2. Format/check only the 24 paths in `v3/tools/gemma4_candidate_rustfmt.paths`.
+   The reviewer did not execute rustfmt. Use the existing stdin/nonrecursive
+   method, not `cargo fmt --all` or recursive formatting of unrelated modules.
+3. Run `python3 tools/run_gemma4_python_checks.py --require-rustfmt` from `v3`
+   with the pinned NumPy test dependency. The new workflow runs these same tests
+   on Ubuntu and then runs 45 named public Rust tests and fourteen source
+   exports. A positive total without the expected test names is rejected.
+4. Run the single expanded native `check_gemma4_candidate_delivery.sh` with a
+   fresh absolute output directory and the existing Cargo target cache. Its
+   original eight plus six new Metal 3.1 compile/link arms total fourteen. It
+   also checks all 24 Rust files, six shader-source inputs and the new native
+   host filters. Preserve failed logs; fix packet-owned compile/format issues
+   rather than weakening a gate. No inference runs in this gate.
+5. Commit/push the actual reviewed source, tests/workflow and updated handoff on
+   the research branch under the user's local-owner authority. Return the exact
+   head, CI URLs/results, native compiler/test counts and any remaining error.
+   Do not complete this phase by only committing another routing/audit document.
+
+The pipeline distinguishes source integration, public-host CI, native compiler
+acceptance and candidate promotion. No result in one category proves another.
+The source proposals are potential runtime implementations, not accepted speed
+improvements. All default selections remain unchanged.
+
+### Later work remains gated and locally owned
+
+No inference, cache recovery, timing, accelerator fixture, STOP clearing or
+active/attempted queue mutation was performed or authorized by this source
+packet. Follow the existing phase permissions and `v3/HANDOFF.md` before any
+such operation. Do not create jobs from the null-pin worksheet.
+
+Clarification to the historical checklist above: short-MMA is a Metal candidate;
+its missing ANE cache is the unchanged baseline decode cache, not a new
+short-MMA-specific ANE program set. Down4 needs 48 replacement FFNs; transpose
+attention needs two replacement shared programs. Host pruning needs no new ANE
+program. Packed32 must stay blocked pending compiled I/O descriptors and a new
+boundary review. No compressed/resident allocation saving is established.
+
+Keep actual dispatch separate from requested selection. Old layer tracing can
+force the prefetch/RMS fallback; that fallback is not their tensor oracle. GQA
+still requires at least 64 prompt tokens. The original complete continuation,
+component/tensor checks, workload pins, 16 GiB disk floor, one-owner policy,
+power/thermal strata and predeclared 5% drift gate remain required. Major new
+kernel/oracle/adapter design returns to Astra with the exact source and failure
+receipt; routine integration and native validation belong to the local owner.
+
+Reviewer evidence for this packet: 63 Python tests collected, 62 passed, one
+real-rustfmt semantics test skipped because rustfmt was unavailable. These are
+CPU-model, source and fake-tool orchestration checks, not Rust/Metal execution.
+Rust compilation/tests, real formatting, private MIL acceptance, native delivery,
+CI execution and all device/performance/promotion gates remain unrun here.
+
+### Local-owner integration receipt (2026-09-22)
+
+The eleven-patch replacement packet was checksum-verified (`157` hashed files)
+and replay-verified in isolation (`11` patches, `0` commits, `0` source
+executed, `46` final changed files, `18` restored preimages). It was applied
+sequentially on `faa753360e30ce59540d1d113994c711a1d19675`; the local docs
+commits `15f1d378` and `fdc6b4ca` were preserved. A host-inventory typo exposed
+by the first runner was corrected: the three ANE next tests are actually under
+the `next::` module, not `next_tests::`.
+
+Concrete receipts:
+
+- `python3 tools/run_gemma4_python_checks.py --require-rustfmt`: **63/63**
+  passed with real rustfmt enforced.
+- Host runner receipt:
+  `/tmp/rvllm-gemma4-host-ci-rerun.9yUkF5/receipts/result.json`; **45 named
+  Rust tests and 14 source exports** passed. This is host/source evidence only.
+- Native delivery gate receipt:
+  `/tmp/rvllm-gemma4-native-gate-rerun2.AKD8El/output`; **passed** with
+  `compiled-only; no accelerator acceptance`, including 24 Rust paths, six
+  shader inputs, and fourteen Metal 3.1 compile/link arms.
+
+The host runner and native gate do not qualify inference, cache recovery,
+accelerator behavior, timing, or promotion. Those remain the next Astra-owned
+engineering phase after restoring the 16 GiB free-disk floor. The first host
+receipt failed only because of the inventory spelling mismatch; its executed
+28 tests all passed and the corrected rerun is the authoritative receipt.
+
+### Handoff for ChatGPT 6 Pro / Astra
+
+Use the resulting pushed commit below as the exact source head. Review the
+source, receipts, and blockers before proposing kernel changes. The single next
+major task is to design and execute the evidence-gated Gemma 4 promotion phase:
+recover the unchanged ANE decode cache, run the short-MMA and positive GQA
+full-continuation/oracle checks, then run the predeclared ABBA timing campaign
+with dispatch evidence. Do not promote from host/compiler receipts alone.
+
+Integration commit: **TO_BE_FILLED_AFTER_COMMIT**.

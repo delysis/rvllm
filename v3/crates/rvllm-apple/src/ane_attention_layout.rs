@@ -863,3 +863,131 @@ mod blocked32_tests {
         Ok(())
     }
 }
+
+impl PackedAttentionLayout {
+    /// Same packed single-I/O tensors and every FP16 materialization. Replace
+    /// two last-axis permutations with the documented MIL matmul flags. This
+    /// is an explicit compiler-layout experiment, not a new attention formula.
+    pub fn mil_transpose_flags(self) -> Result<String, String> {
+        if self.query_heads != 16
+            || !matches!(
+                (self.kv_heads, self.head_dim, self.capacity, self.window),
+                (8, 256, 1024, Some(1024)) | (1, 512, 64 | 1024, None)
+            )
+        {
+            return Err(
+                "transpose attention requires the existing Gemma 4 12B single-I/O shapes".into(),
+            );
+        }
+        let (kv, dim, group, capacity) =
+            (self.kv_heads, self.head_dim, self.groups(), self.capacity);
+        let mut source = self.mil();
+        let changes=[
+            (format!("        tensor<fp16, [1, {kv}, {group}, {dim}]> q = transpose(x = qr, perm = perm)[name = string(\"q\")];\n"),String::new()),
+            (format!("        tensor<fp16, [1, {kv}, {capacity}, {dim}]> v = transpose(x = vr, perm = perm)[name = string(\"v\")];\n"),String::new()),
+            ("        bool no_transpose = const()[name = string(\"no_transpose\"), val = bool(false)];\n".into(),
+             "        bool no_transpose = const()[name = string(\"no_transpose\"), val = bool(false)];\n        bool do_transpose = const()[name = string(\"do_transpose\"), val = bool(true)];\n".into()),
+            ("matmul(x = q, y = k, transpose_x = no_transpose, transpose_y = no_transpose)".into(),
+             "matmul(x = qr, y = k, transpose_x = do_transpose, transpose_y = no_transpose)".into()),
+            ("matmul(x = scaled_probabilities, y = v, transpose_x = no_transpose, transpose_y = no_transpose)".into(),
+             "matmul(x = scaled_probabilities, y = vr, transpose_x = no_transpose, transpose_y = do_transpose)".into()),
+        ];
+        // A future baseline generator change must invalidate this transform;
+        // never silently emit a half-rewritten graph or change its cache key.
+        for (old, new) in changes {
+            if source.matches(&old).count() != 1 {
+                return Err("transpose attention baseline source contract changed".into());
+            }
+            source = source.replacen(&old, &new, 1);
+        }
+        Ok(source)
+    }
+}
+
+#[cfg(test)]
+mod transpose_tests {
+    use super::*;
+
+    #[test]
+    fn only_operand_permutations_change_and_all_roundings_survive() {
+        for layout in [
+            PackedAttentionLayout::sliding(16, 8, 256, 1024).unwrap(),
+            PackedAttentionLayout::new(16, 1, 512, 64).unwrap(),
+            PackedAttentionLayout::new(16, 1, 512, 1024).unwrap(),
+        ] {
+            let base = layout.mil();
+            let candidate = layout.mil_transpose_flags().unwrap();
+            assert_eq!(base.matches(" = transpose(").count(), 3);
+            assert_eq!(candidate.matches(" = transpose(").count(), 1);
+            assert_eq!(candidate.matches(" = matmul(").count(), 2);
+            for line in base.lines().filter(|l| {
+                l.contains(" = add(")
+                    || l.contains(" = mul(")
+                    || l.contains(" = softmax(")
+                    || l.contains(" = reshape(")
+                    || l.contains(" = slice_by_size(")
+            }) {
+                assert!(
+                    candidate.lines().any(|l| l == line),
+                    "changed materialization: {line}"
+                );
+            }
+            assert!(candidate.contains("fp16(32.0)"));
+            assert!(candidate.contains("fp16(0.03125)"));
+            assert!(candidate.contains(
+                "matmul(x = qr, y = k, transpose_x = do_transpose, transpose_y = no_transpose)"
+            ));
+            assert!(candidate.contains("matmul(x = scaled_probabilities, y = vr, transpose_x = no_transpose, transpose_y = do_transpose)"));
+            assert_eq!(candidate.matches("func main").count(), 1);
+            assert!(candidate.ends_with("    } -> (y);\n}\n"));
+        }
+        assert!(PackedAttentionLayout::new(4, 2, 32, 32)
+            .unwrap()
+            .mil_transpose_flags()
+            .is_err());
+    }
+
+    #[test]
+    fn last_axis_flags_match_explicit_transposes_for_asymmetric_values() {
+        // Independent small coordinate oracle. Q is physically [D,G], K/V
+        // [D,T]; score [G,T], output [G,D]. G, D and T are distinct.
+        let (g, d, t) = (3_usize, 5_usize, 7_usize);
+        let q = (0..d * g)
+            .map(|i| i as f32 * 0.013 - 0.1)
+            .collect::<Vec<_>>();
+        let k = (0..d * t)
+            .map(|i| ((i * 17) % 23) as f32 * 0.007 - 0.09)
+            .collect::<Vec<_>>();
+        let v = (0..d * t)
+            .map(|i| ((i * 11) % 19) as f32 * 0.017 - 0.2)
+            .collect::<Vec<_>>();
+        let qt = (0..g)
+            .flat_map(|h| (0..d).map(move |j| (h, j)))
+            .map(|(h, j)| q[j * g + h])
+            .collect::<Vec<_>>();
+        let vt = (0..t)
+            .flat_map(|r| (0..d).map(move |j| (r, j)))
+            .map(|(r, j)| v[j * t + r])
+            .collect::<Vec<_>>();
+        let mut scores = vec![0.0; g * t];
+        for h in 0..g {
+            for r in 0..t {
+                let explicit = (0..d).map(|j| qt[h * d + j] * k[j * t + r]).sum::<f32>();
+                let flagged = (0..d).map(|j| q[j * g + h] * k[j * t + r]).sum::<f32>();
+                assert_eq!(explicit.to_bits(), flagged.to_bits());
+                scores[h * t + r] = explicit;
+            }
+        }
+        for h in 0..g {
+            for j in 0..d {
+                let explicit = (0..t)
+                    .map(|r| scores[h * t + r] * vt[r * d + j])
+                    .sum::<f32>();
+                let flagged = (0..t)
+                    .map(|r| scores[h * t + r] * v[j * t + r])
+                    .sum::<f32>();
+                assert_eq!(explicit.to_bits(), flagged.to_bits());
+            }
+        }
+    }
+}

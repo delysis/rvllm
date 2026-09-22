@@ -28,6 +28,7 @@ pub mod ane_int8_ffn_weights;
 #[cfg(feature = "macos-private-ane-research")]
 pub mod ane_linear;
 pub mod ane_lut4_ffn_weights;
+pub mod ane_packed32_layout;
 pub mod backend;
 pub mod coreml_artifact;
 pub mod coreml_projection;

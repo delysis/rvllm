@@ -14,6 +14,7 @@ use rvllm_runtime::gemma_ane_decode::{
     inspect_static_cache_with_capacity_until, provision_static_cache_with_capacity_until,
     AneStaticCachePart, AneWeightPlan, GemmaAneDecode,
 };
+use rvllm_runtime::gemma_head_ranking::{validate_head_ranking_mode, HeadRankingPlan};
 use rvllm_runtime::text_generation::{encode_gemma4_user_prompt, IncrementalTextDecoder};
 use rvllm_runtime::{BatchPlan, PagedKvConfig, PagedKvPool};
 use sha2::{Digest, Sha256};
@@ -81,6 +82,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut runtime_worker = false;
     let mut ane_weights = AneWeightPlan::StaticInt8FfnCached;
     let mut kv_import_packing = KvImportPacking::Baseline;
+    let mut head_ranking = HeadRankingPlan::Baseline;
+    let mut head_ranking_timing = false;
     let mut prepare_cache = None;
     let mut inspect_cache = false;
     let mut compile_budget = 0_usize;
@@ -94,11 +97,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!(
                 "  --kv-import-packing baseline|reuse-scratch|cpu-kv-blocked32 (default baseline)"
             );
+            println!("  --head-ranking baseline|cpu-head-softcap-prune (default baseline)");
+            println!("  --head-ranking-timing BOOL   CPU softcap/ranking only; default false; same setting on both timing arms");
             println!("  PART=all-int8                  Visit qkv, output, ffn-int8 and head-attention in fresh serial processes");
             println!(
                 "  PART=ffn-int8-chunk4           Explicit single-I/O FFN output-channel chunking"
             );
             println!("  --ane-weights static-int8-chunk4-ffn-cached (zero compile budget)");
+            println!("  PART=ffn-int8-down4; --ane-weights static-int8-down4-ffn-cached (zero compile budget)");
+            println!("  PART=attention-transpose-flags; --ane-weights static-int8-ffn-transpose-attention-cached (zero compile budget)");
             println!("  PART=ffn-int8-stacked          Prepare/inspect the experimental stacked INT8 FFNs");
             println!(
                 "  PART=qkv-sliding-int8-tiles4   Output-row tiling; original FP16 global QKV"
@@ -131,6 +138,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--interactive" => interactive = value.parse()?,
             "--runtime-worker" => runtime_worker = value.parse()?,
             "--kv-import-packing" => kv_import_packing = value.parse()?,
+            "--head-ranking" => head_ranking = value.parse()?,
+            "--head-ranking-timing" => head_ranking_timing = value.parse()?,
             "--ane-compile-budget" => compile_budget = value.parse()?,
             "--context-capacity" => context_capacity = value.parse()?,
             "--prepare-ane-cache" | "--inspect-ane-cache" => {
@@ -150,6 +159,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "ffn-lut4" => AneStaticCachePart::FeedForwardLut4,
                     "ffn-int8" => AneStaticCachePart::FeedForwardInt8,
                     "ffn-int8-chunk4" => AneStaticCachePart::FeedForwardInt8Chunk4,
+                    "ffn-int8-down4" => AneStaticCachePart::FeedForwardInt8Down4,
+                    "attention-transpose-flags" => AneStaticCachePart::AttentionTransposeFlags,
                     "ffn-int8-stacked" => AneStaticCachePart::FeedForwardInt8Stacked,
                     "head-attention" => AneStaticCachePart::VocabularyAndAttention,
                     _ => {
@@ -174,6 +185,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         AneWeightPlan::StaticInt8FfnSlidingQkvCached
                     }
                     "static-int8-chunk4-ffn-cached" => AneWeightPlan::StaticInt8Chunk4FfnCached,
+                    "static-int8-down4-ffn-cached" => AneWeightPlan::StaticInt8Down4FfnCached,
+                    "static-int8-ffn-transpose-attention-cached" => {
+                        AneWeightPlan::StaticInt8FfnTransposeAttentionCached
+                    }
                     "static-int8-stacked-ffn-cached" => AneWeightPlan::StaticInt8StackedFfnCached,
                     "static-int8-stacked-ffn-checked" => AneWeightPlan::StaticInt8StackedFfnChecked,
                     _ => {
@@ -187,6 +202,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             _ => return Err(format!("unknown argument {flag}").into()),
         }
     }
+    validate_head_ranking_mode(
+        head_ranking,
+        head_ranking_timing,
+        prefill_only,
+        runtime_worker,
+        prepare_cache.is_some(),
+        compile_budget,
+        ane_weights == AneWeightPlan::StaticInt8FfnCached,
+    )?;
     interleave |= interactive || runtime_worker;
     retain_metal |= interleave;
     prefill_screen::PrefillScreenOptions {
@@ -210,6 +234,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ane_weights,
         AneWeightPlan::StaticInt8Chunk4FfnCached
             | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached
+            | AneWeightPlan::StaticInt8Down4FfnCached
+            | AneWeightPlan::StaticInt8FfnTransposeAttentionCached
     ) && compile_budget != 0
     {
         return Err(
@@ -577,6 +603,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ane_weights,
             compile_budget,
         )?);
+        if head_ranking != HeadRankingPlan::Baseline || head_ranking_timing {
+            ane.as_mut()
+                .ok_or("ANE owner missing")?
+                .configure_head_ranking(head_ranking, head_ranking_timing)?;
+        }
         ane_prepare_ms = Some(elapsed_ms(timer));
         ane_prepare_measurement = Some(measured.finish(1));
         eprintln!(
@@ -674,6 +705,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ane_weights,
                     compile_budget,
                 )?);
+                if head_ranking != HeadRankingPlan::Baseline || head_ranking_timing {
+                    ane.as_mut()
+                        .ok_or("ANE owner missing")?
+                        .configure_head_ranking(head_ranking, head_ranking_timing)?;
+                }
                 ane_prepare_ms = Some(elapsed_ms(timer));
                 ane_prepare_measurement = Some(measured.finish(1));
             }
@@ -749,11 +785,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         &mut streamed_text,
                     )?;
                 }
+                let head_observation=decoder.head_ranking_observation().map(|(stats,cpu_ms)|
+                    serde_json::json!({"candidate":head_ranking.name(),"considered":stats.considered,
+                        "transformed":stats.transformed,"pruned":stats.pruned,"cpu_ms":cpu_ms,
+                        "phase":"host-softcap-top5-excluding-ANE-projection"}));
                 let t = result.times;
                 let step = serde_json::json!({
                     "position": position, "input_token":input.raw(),"next_token":result.token.raw(),
                     "top_five":result.top_five,"layer_states":layer_receipts,
                     "ffn_inputs":ffn_input_receipts,
+                    "head_ranking":head_observation,
                     "qkv_ms":t.qkv_ms,"attention_ms":t.attention_ms,"output_ms":t.output_ms,
                     "ffn_ms":t.ffn_ms,"vocabulary_ms":t.vocabulary_ms,"host_ms":t.host_ms,"total_ms":t.total_ms,
                     "measurement":measurement,
@@ -829,6 +870,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "metal_residency":if retain_metal {"retained-through-ane-decode"} else {"released-after-all-prefills-before-ane-load"},
             "metal_arena_before_release":{"capacity_bytes":metal_arena.capacity_bytes,"allocated_bytes":metal_arena.allocated_bytes,"regions":metal_arena.region_count},
             "ane_weight_plan":ane_weights.name(),
+            "head_ranking_plan":head_ranking.name(),"head_ranking_timing":head_ranking_timing,
             "metal_research_candidate":kernels.research.name(),
             "kv_import_packing":kv_import_packing.name(),
             "stacked_ffn_checks_per_layer":ane.as_ref().and_then(GemmaAneDecode::stacked_ffn_checks_per_layer),

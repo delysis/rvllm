@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "suites": [
+    {
+      "label": "metal-research",
+      "package": "rvllm-apple-metal",
+      "filter": "research::",
+      "tests": [
+        "research::tests::selection_is_exact_and_default_off",
+        "research::tests::near_miss_models_never_enter_any_candidate",
+        "research::tests::resource_and_alias_guards_reject_boundary_failures",
+        "research::short_mma_tests::short_projection_shape_and_buffer_boundaries",
+        "research::short_mma_tests::emitted_storage_and_output_abis_are_explicit",
+        "research::short_mma_tests::cooperative_staging_and_fragment_output_cover_each_element_once",
+        "research::rounded_gate_tests::fusion_rejects_shortened_input_or_weight_lifetimes",
+        "research::rounded_gate_tests::generated_epilogue_retains_both_storage_rounding_boundaries",
+        "research::rounded_gate_tests::removed_bf16_projection_rounding_is_observably_a_different_algorithm",
+        "research::gqa_tests::grouped_heads_and_native_scratch_cover_both_attention_kinds",
+        "research::gqa_tests::metadata_and_kv_bounds_are_checked_including_output_aliases",
+        "research::gqa_tests::source_keeps_online_statistics_float_and_checks_physical_pages"
+      ]
+    },
+    {
+      "label": "metal-dispatch",
+      "package": "rvllm-apple-metal",
+      "filter": "research_evidence::tests::",
+      "tests": [
+        "research_evidence::tests::selection_without_dispatch_is_not_evidence",
+        "research_evidence::tests::counters_distinguish_kernel_families_and_request_boundaries",
+        "research_evidence::tests::counter_reset_and_overflow_never_become_zero_work",
+        "research_evidence::tests::all_stable_slots_match_expected_kernel_names",
+        "research_evidence::tests::prefetchgemm_slots_are_selected_individually_and_never_foreign",
+        "research_evidence::tests::temporal256_slots_are_selected_individually_and_never_foreign",
+        "research_evidence::tests::rms32_slots_are_selected_individually_and_never_foreign"
+      ]
+    },
+    {
+      "label": "metal-next",
+      "package": "rvllm-apple-metal",
+      "filter": "research_next::",
+      "tests": [
+        "research_next::tests::prefetch_roles_and_boundaries_are_explicit",
+        "research_next::tests::cooperative_register_prefetch_covers_a_tile_once_with_no_last_k_read",
+        "research_next::tests::prefetch_source_keeps_dtype_rounding_and_metal31_vector_grid_abi",
+        "research_next::temporal_tests::query_tiles_cover_active_rows_exactly_and_every_simd_group_reaches_barriers",
+        "research_next::temporal_tests::temporal_shape_and_generated_sources_keep_global_and_sliding_distinct",
+        "research_next::rms_tests::rms_in_place_alias_and_extent_rules_are_checked",
+        "research_next::rms_tests::rms_reduction_covers_each_feature_once_and_retains_real_gamma",
+        "research_next::identity_tests::new_routes_reject_near_miss_models_and_preserve_the_attention_window_boundary",
+        "research_next::temporal_capacity_tests::long_prefix_and_integer_overflow_fail_closed_before_encoding"
+      ]
+    },
+    {
+      "label": "ane-candidates",
+      "package": "rvllm-apple",
+      "filter": "ane_int8_candidates::tests::",
+      "tests": [
+        "ane_int8_candidates::tests::chunk4_generated_graph_and_blob_agree_with_independent_ffn",
+        "ane_int8_candidates::tests::chunk4_preserves_baseline_gelu_order_and_rejects_broken_descriptors",
+        "ane_int8_candidates::tests::tiles4_preserves_serialized_rows_and_projection_numerics",
+        "ane_int8_candidates::tests::graph_shapes_are_narrow_and_do_not_admit_global_qkv",
+        "ane_int8_candidates::tests::chunking_is_bit_exact_for_quantized_payloads_and_scale_payloads",
+        "ane_int8_candidates::tests::next::down4_preserves_full_k_reductions_rows_and_gelu_materializations",
+        "ane_int8_candidates::tests::next::packed32_graph_keeps_weights_and_every_ffn_rounding",
+        "ane_int8_candidates::tests::next::packed32_host_codec_is_byte_exact_and_validates_before_writes"
+      ]
+    },
+    {
+      "label": "kv-layout",
+      "package": "rvllm-apple",
+      "filter": "ane_attention_layout::blocked32_tests::",
+      "tests": [
+        "ane_attention_layout::blocked32_tests::blocked32_matches_allocating_reference_including_raw_bits_and_guard_bytes",
+        "ane_attention_layout::blocked32_tests::blocked32_errors_are_transactional_and_selection_is_explicit"
+      ]
+    },
+    {
+      "label": "ane-transposes",
+      "package": "rvllm-apple",
+      "filter": "ane_attention_layout::transpose_tests::",
+      "tests": [
+        "ane_attention_layout::transpose_tests::only_operand_permutations_change_and_all_roundings_survive",
+        "ane_attention_layout::transpose_tests::last_axis_flags_match_explicit_transposes_for_asymmetric_values"
+      ]
+    },
+    {
+      "label": "head-ranking",
+      "package": "rvllm-runtime",
+      "filter": "gemma_head_ranking::tests::",
+      "tests": [
+        "gemma_head_ranking::tests::default_configuration_preserves_baseline_softcap_flexibility",
+        "gemma_head_ranking::tests::raw_top_five_is_not_a_valid_replacement_for_rounded_top_five",
+        "gemma_head_ranking::tests::every_finite_half_has_a_monotone_rounded_softcap_on_this_host",
+        "gemma_head_ranking::tests::ties_signed_zero_negatives_and_stream_errors_are_preserved",
+        "gemma_head_ranking::tests::head_experiment_mode_gate_fails_before_model_access"
+      ]
+    }
+  ]
+}

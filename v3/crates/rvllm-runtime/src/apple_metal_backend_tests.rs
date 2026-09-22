@@ -418,18 +418,38 @@ fn configured_metal_float_type_keeps_explicit_overrides() {
 #[test]
 fn explicit_metal_identity_does_not_follow_process_environment() {
     use rvllm_apple_metal::{MetalKernelOptions, MetalModelLimits};
-    let names = ["RVLLM_METAL_PREFILL_GEMM", "RVLLM_METAL_PREFILL_ATTENTION", "RVLLM_METAL_BF16_ACCUM"];
+    let names = [
+        "RVLLM_METAL_PREFILL_GEMM",
+        "RVLLM_METAL_PREFILL_ATTENTION",
+        "RVLLM_METAL_BF16_ACCUM",
+    ];
     let guard = MetalDebugEnvGuard::new(&names);
     let options = ModelMetalOptions {
         float_type: MetalFloatType::Bf16,
-        kernels: MetalKernelOptions { prefill_mma32: true, prefill_simd_attention: true, ..MetalKernelOptions::default() },
-        limits: MetalModelLimits { max_context_tokens: 1024, max_batch_tokens: 1024, max_batch_sequences: 1 },
+        kernels: MetalKernelOptions {
+            prefill_mma32: true,
+            prefill_simd_attention: true,
+            ..MetalKernelOptions::default()
+        },
+        limits: MetalModelLimits {
+            max_context_tokens: 1024,
+            max_batch_tokens: 1024,
+            max_batch_sequences: 1,
+        },
     };
-    let backend = ModelMetalBackend::with_options("unused-model".into(), "unused.metallib".into(), options);
-    let fingerprint = |kernels| metal_numeric_abi_fingerprint_impl(
-        MetalFloatType::Bf16, false, false, None, None,
-        MetalLowBitResidencyPolicy::HybridFallback, kernels,
-    );
+    let backend =
+        ModelMetalBackend::with_options("unused-model".into(), "unused.metallib".into(), options);
+    let fingerprint = |kernels| {
+        metal_numeric_abi_fingerprint_impl(
+            MetalFloatType::Bf16,
+            false,
+            false,
+            None,
+            None,
+            MetalLowBitResidencyPolicy::HybridFallback,
+            kernels,
+        )
+    };
     let before = fingerprint(backend.kernel_options);
     guard.set(names[0], "off");
     guard.set(names[1], "off");
@@ -437,15 +457,30 @@ fn explicit_metal_identity_does_not_follow_process_environment() {
     assert_eq!(before, fingerprint(backend.kernel_options));
     let source = kernels::kernel_source_with_options(options.float_type, backend.kernel_options);
     assert!(!source.contains("acc = bf16_acc"));
-    let scalar_options = MetalKernelOptions { prefill_simd_attention: false, ..options.kernels };
+    let scalar_options = MetalKernelOptions {
+        prefill_simd_attention: false,
+        ..options.kernels
+    };
     assert_ne!(before, fingerprint(scalar_options));
     assert!(!backend.debug_sync && !backend.experimental_kv_int8);
-    let mut invalid = ModelMetalBackend::with_options("unused-model".into(), "unused.metallib".into(), ModelMetalOptions {
-        kernels: MetalKernelOptions { quantized_bf16_accumulation: true, ..options.kernels },
-        ..options
-    });
-    let err = invalid.initialize_model_resources().err().expect("reject before opening model/library or creating a device");
-    assert!(err.to_string().contains("explicit native Metal libraries require FP32 accumulation"));
+    let mut invalid = ModelMetalBackend::with_options(
+        "unused-model".into(),
+        "unused.metallib".into(),
+        ModelMetalOptions {
+            kernels: MetalKernelOptions {
+                quantized_bf16_accumulation: true,
+                ..options.kernels
+            },
+            ..options
+        },
+    );
+    let err = invalid
+        .initialize_model_resources()
+        .err()
+        .expect("reject before opening model/library or creating a device");
+    assert!(err
+        .to_string()
+        .contains("explicit native Metal libraries require FP32 accumulation"));
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]

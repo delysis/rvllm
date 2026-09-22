@@ -368,6 +368,22 @@ impl AneGatedFfn {
         Self::compile_program_with_spatial(&mil, &blob, hidden, tokens, policy)
     }
 
+    /// Default-off full-K output-row down tiling, with unchanged single-I/O ABI.
+    pub fn compile_int8_down4_with_cache_policy(
+        weights: &AneInt8FfnWeights,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        let source = crate::ane_int8_candidates::ffn_down4(weights)?;
+        tracing::debug!(
+            candidate = source.name,
+            source_blob_bytes = source.blob.len(),
+            convolutions = source.budget.convolutions,
+            programs = source.budget.programs,
+            "ANE candidate source; compiled memory and performance unmeasured"
+        );
+        Self::compile_program(&source.mil, &source.blob, weights.shape().0, policy)
+    }
+
     /// Experimental eight-bit palette storage of the exact INT8 reconstruction.
     /// This changes constant encoding only; inference still has one input and
     /// one output and uses the existing three-convolution GELU graph.

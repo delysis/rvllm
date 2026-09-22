@@ -1,0 +1,116 @@
+{
+  "schema": "rvllm.kernel_proposal.v1",
+  "base_commit": "faa753360e30ce59540d1d113994c711a1d19675",
+  "candidate": "metal-attn-q4",
+  "control": "metal-off-mma32-simdgroup",
+  "selector": [
+    "RVLLM_METAL_RESEARCH",
+    "metal-attn-q4"
+  ],
+  "status": "source-ready-native-checks-unrun",
+  "admitted_to_queue": false,
+  "live_command": null,
+  "hypothesis": "Reuse staged K/V across four adjacent query positions instead of the older candidate's query-head grouping.",
+  "supported_shape": {
+    "tokens": [
+      64,
+      65,
+      84,
+      256,
+      1008
+    ],
+    "component_only_token_boundary": [
+      1024
+    ],
+    "H": 3840,
+    "I": 15360,
+    "layers": 48,
+    "heads": 16,
+    "sliding": [
+      8,
+      256,
+      1024
+    ],
+    "global": [
+      1,
+      512,
+      0
+    ],
+    "batch": 1,
+    "scale": 1.0,
+    "maximum_logical_context_capacity": 1024
+  },
+  "memory_and_programs": {
+    "new_psos": 2,
+    "threads": 128,
+    "threadgroup_bytes_sliding": 16448,
+    "threadgroup_bytes_global": 16416,
+    "extra_device_scratch_bytes": 0
+  },
+  "required_features": [
+    "macos-private-ane-research"
+  ],
+  "metal_environment_common": {
+    "RVLLM_METAL_PREFILL_GEMM": "mma32",
+    "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup"
+  },
+  "local_pins": {
+    "executable_sha256": null,
+    "metallib_sha256": null,
+    "reference_sha256": null,
+    "model_config_sha256": null,
+    "oracle_sha256": null
+  },
+  "stratum": {
+    "power_source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null,
+    "min_free_bytes": 17179869184,
+    "quiet_seconds": 120,
+    "idle_process_exemptions": []
+  },
+  "timing": {
+    "block_order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmups_per_block": 2,
+    "measured_per_block": 7,
+    "prompt_tokens": 84,
+    "outputs_per_request": 10,
+    "ane_steps_per_request": 9,
+    "ane_evaluations_per_step": 208,
+    "requests_per_block": 9,
+    "ane_evaluations_per_full_abba": 67392,
+    "baseline_drift_limit": 0.05,
+    "normalize_accelerator_by_cpu_cycles": false,
+    "independent_confirmation_required": true,
+    "max_run_seconds_per_block": 3600,
+    "on_overrun": "record overrun; join safely; never kill an accelerator child"
+  },
+  "acceptance": {
+    "tensor_tolerances": "unchanged-existing-oracle-pinned-locally",
+    "require_first_token_and_complete_continuation": true,
+    "require_actual_dispatch_or_program_identity": true,
+    "performance": "Reject on control drift >5%, nonpositive paired gain, changed work counts, unpinned inputs, any oracle failure, or inconsistent stratum. Retain all repetitions. A positive screen is provisional until independent confirmation; no automatic promotion."
+  },
+  "experiment": "Six-token input is a negative fallback control. Positive pinned 64/65/84-token screens must record 40 D256 and 8 D512 encodes. Exercise nonidentity pages, window edges, masked future tokens, holes, and malformed page indices in the separate local component adapter before full-model acceptance. Compare to off/MMA/SIMD first; measure old metal-gqa-kv8 as a separate secondary control, never combine selectors. After the unchanged tensor and continuation gates pass, use 84-token ABBA and independently confirm at 256/1008 tokens. The proposed runtime does not enter the >1024-prefix eviction regime; a host window-edge algebra test is not evidence for that unsupported hardware regime.",
+  "risks": [
+    "Overlapping temporal windows still load extra union rows; head reuse is sacrificed relative to old GQA.",
+    "Metadata/page holes and inactive tail SIMD groups must not bypass barriers or hide NaNs."
+  ],
+  "incompatibility": "One performance candidate per arm. Do not combine new candidates with each other or the original six until individual effects are independently established.",
+  "component_screen": {
+    "geometry_cases": 14,
+    "arms": 2,
+    "warmups_per_case_per_arm": 2,
+    "checked_repeats_per_case_per_arm": 7,
+    "total_component_dispatches": 252,
+    "geometry": "Sliding D256/KV8 and global D512/KV1, M in [64,65,84,255,256,1023,1024], one request and context capacity <=1024.",
+    "oracle": "Dense gathered-page reference under original tolerances; nonidentity page map, inactive tail groups, causal positions, holes and nonfinite/invalid-page diagnostics. Six-token and >1024-capacity cases are fallback controls, not positive trials.",
+    "adapter_status": "Native component adapter not supplied or qualified; local owner must preserve checked buffer extents and all-lane barriers."
+  }
+}

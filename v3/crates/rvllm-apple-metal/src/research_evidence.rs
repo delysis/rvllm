@@ -4,13 +4,20 @@
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-/// Fixed order is part of the receipt schema, independent of hash-map order.
-pub const RESEARCH_KERNEL_NAMES: [&str; 5] = [
+/// Append-only diagnostic slots; the first five retain their original indices.
+/// Consumers must bind the registry and executable used by a receipt.
+pub const RESEARCH_KERNEL_COUNT: usize = 10;
+pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
     "research_rounded_gate32",
     "research_gqa_kv8_d256",
     "research_gqa_kv8_d512",
+    "research_gemm_mma32_prefetch",
+    "research_qkv_mma32_prefetch",
+    "research_attn_q4_d256",
+    "research_attn_q4_d512",
+    "research_rms_simd32",
 ];
 
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
@@ -21,6 +28,11 @@ pub(crate) enum ResearchKernel {
     RoundedGate,
     Gqa256,
     Gqa512,
+    PrefetchGemm,
+    PrefetchQkv,
+    Temporal256,
+    Temporal512,
+    Rms32,
 }
 
 /// Sample only at a quiescent owner boundary. These atomics do not synchronize
@@ -28,7 +40,7 @@ pub(crate) enum ResearchKernel {
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 #[derive(Debug, Default)]
 pub(crate) struct ResearchDispatchCounters {
-    counts: [AtomicU64; 5],
+    counts: [AtomicU64; RESEARCH_KERNEL_COUNT],
     overflowed: AtomicBool,
 }
 
@@ -54,7 +66,7 @@ impl ResearchDispatchCounters {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ResearchDispatchSnapshot {
-    pub counts: [u64; 5],
+    pub counts: [u64; RESEARCH_KERNEL_COUNT],
     pub overflowed: bool,
 }
 
@@ -63,7 +75,7 @@ impl ResearchDispatchSnapshot {
         if self.overflowed || earlier.overflowed {
             return Err("research dispatch counter overflow");
         }
-        let mut counts = [0; 5];
+        let mut counts = [0; RESEARCH_KERNEL_COUNT];
         for (i, count) in counts.iter_mut().enumerate() {
             *count = self.counts[i]
                 .checked_sub(earlier.counts[i])
@@ -83,17 +95,20 @@ impl ResearchDispatchSnapshot {
             return Err("research dispatch counter overflow");
         }
         let allowed = match requested {
-            "off" => [false; 5],
-            "metal-short-mma16x64" => [true, true, false, false, false],
-            "metal-rounded-gate32" => [false, false, true, false, false],
-            "metal-gqa-kv8" => [false, false, false, true, true],
+            "off" => 0..0,
+            "metal-short-mma16x64" => 0..2,
+            "metal-rounded-gate32" => 2..3,
+            "metal-gqa-kv8" => 3..5,
+            "metal-mma32-prefetch" => 5..7,
+            "metal-attn-q4" => 7..9,
+            "metal-rms-simd32" => 9..10,
             _ => return Err("unknown research candidate in receipt"),
         };
         if self
             .counts
             .iter()
-            .zip(allowed)
-            .any(|(&n, ok)| n != 0 && !ok)
+            .enumerate()
+            .any(|(i, &n)| n != 0 && !allowed.contains(&i))
         {
             return Err("receipt contains a different candidate's dispatches");
         }
@@ -121,7 +136,8 @@ mod tests {
         counters.record(ResearchKernel::Gqa256);
         counters.record(ResearchKernel::Gqa512);
         let delta = counters.snapshot().checked_since(before).unwrap();
-        assert_eq!(delta.counts, [0, 0, 0, 1, 1]);
+        assert_eq!(&delta.counts[..5], &[0, 0, 0, 1, 1]);
+        assert!(delta.counts[5..].iter().all(|&n| n == 0));
         assert_eq!(delta.selection_exercised("metal-gqa-kv8"), Ok(true));
         assert!(delta.selection_exercised("off").is_err());
         assert!(delta.selection_exercised("metal-rounded-gate32").is_err());
@@ -160,10 +176,11 @@ mod tests {
         ] {
             counters.record(kernel);
         }
-        assert_eq!(counters.snapshot().counts, [1, 1, 1, 1, 1]);
+        assert_eq!(&counters.snapshot().counts[..5], &[1, 1, 1, 1, 1]);
+        assert!(counters.snapshot().counts[5..].iter().all(|&n| n == 0));
         assert_eq!(
-            RESEARCH_KERNEL_NAMES,
-            [
+            &RESEARCH_KERNEL_NAMES[..5],
+            &[
                 "research_gemm_mma16x64",
                 "research_qkv_mma16x64",
                 "research_rounded_gate32",
@@ -171,5 +188,40 @@ mod tests {
                 "research_gqa_kv8_d512",
             ]
         );
+    }
+    #[test]
+    fn prefetchgemm_slots_are_selected_individually_and_never_foreign() {
+        for kind in [ResearchKernel::PrefetchGemm, ResearchKernel::PrefetchQkv] {
+            let counters = ResearchDispatchCounters::default();
+            counters.record(kind);
+            let got = counters.snapshot();
+            assert_eq!(got.selection_exercised("metal-mma32-prefetch"), Ok(true));
+            assert!(got.selection_exercised("off").is_err());
+            assert!(got.selection_exercised("metal-gqa-kv8").is_err());
+        }
+    }
+
+    #[test]
+    fn temporal256_slots_are_selected_individually_and_never_foreign() {
+        for kind in [ResearchKernel::Temporal256, ResearchKernel::Temporal512] {
+            let counters = ResearchDispatchCounters::default();
+            counters.record(kind);
+            let got = counters.snapshot();
+            assert_eq!(got.selection_exercised("metal-attn-q4"), Ok(true));
+            assert!(got.selection_exercised("off").is_err());
+            assert!(got.selection_exercised("metal-gqa-kv8").is_err());
+        }
+    }
+
+    #[test]
+    fn rms32_slots_are_selected_individually_and_never_foreign() {
+        for kind in [ResearchKernel::Rms32] {
+            let counters = ResearchDispatchCounters::default();
+            counters.record(kind);
+            let got = counters.snapshot();
+            assert_eq!(got.selection_exercised("metal-rms-simd32"), Ok(true));
+            assert!(got.selection_exercised("off").is_err());
+            assert!(got.selection_exercised("metal-gqa-kv8").is_err());
+        }
     }
 }

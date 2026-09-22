@@ -114,6 +114,32 @@ impl AneAttentionProgram {
         Ok(Self { layout, program })
     }
 
+    /// Explicit graph permutation candidate; never changes the baseline source
+    /// or single-I/O sizes. Shared program, separate KV surfaces per layer.
+    pub fn compile_transpose_flags_with_cache_policy(
+        layout: PackedAttentionLayout,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        if !qualified_layout(layout) {
+            return Err("transpose attention shape is outside the single-I/O boundary".into());
+        }
+        let mil = layout.mil_transpose_flags()?;
+        tracing::debug!(
+            candidate = "ane-attention-transpose-flags",
+            input_bytes = layout.input_bytes(),
+            output_bytes = layout.output_bytes(),
+            "ANE graph permutation candidate; compiler scheduling unmeasured"
+        );
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &mil,
+            &[],
+            layout.input_bytes(),
+            layout.output_bytes(),
+            policy,
+        )?;
+        Ok(Self { layout, program })
+    }
+
     pub fn create_request(&self) -> Result<AneAttention, String> {
         let layout = self.layout;
         let mut kernel = self.program.create_request()?;

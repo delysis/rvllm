@@ -1,0 +1,93 @@
+{
+  "schema": "rvllm.kernel_proposal.v1",
+  "base_commit": "faa753360e30ce59540d1d113994c711a1d19675",
+  "candidate": "cpu-head-softcap-prune",
+  "control": "head-ranking-baseline",
+  "selector": [
+    "--head-ranking",
+    "cpu-head-softcap-prune"
+  ],
+  "status": "source-ready-native-checks-unrun",
+  "admitted_to_queue": false,
+  "live_command": null,
+  "hypothesis": "Use raw witnesses for rounded-softcap winners to skip transformations that cannot beat the current fifth entry, preserving all ties.",
+  "supported_shape": {
+    "vocab": 262144,
+    "head_tiles": 16,
+    "rows_per_tile": 16384,
+    "softcap": 30.0,
+    "top_k": 5,
+    "input": "finite FP16 projection results"
+  },
+  "memory_and_programs": {
+    "new_programs": 0,
+    "device_memory_delta_bytes": 0,
+    "host_state": "five winner IDs/scores plus five raw witnesses; no per-token heap allocation"
+  },
+  "required_features": [
+    "macos-private-ane-research"
+  ],
+  "metal_environment_common": {
+    "RVLLM_METAL_PREFILL_GEMM": "mma32",
+    "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup"
+  },
+  "local_pins": {
+    "executable_sha256": null,
+    "metallib_sha256": null,
+    "reference_sha256": null,
+    "model_config_sha256": null,
+    "oracle_sha256": null
+  },
+  "stratum": {
+    "power_source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null,
+    "min_free_bytes": 17179869184,
+    "quiet_seconds": 120,
+    "idle_process_exemptions": []
+  },
+  "timing": {
+    "block_order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmups_per_block": 2,
+    "measured_per_block": 7,
+    "prompt_tokens": 84,
+    "outputs_per_request": 10,
+    "ane_steps_per_request": 9,
+    "ane_evaluations_per_step": 208,
+    "requests_per_block": 9,
+    "ane_evaluations_per_full_abba": 67392,
+    "baseline_drift_limit": 0.05,
+    "normalize_accelerator_by_cpu_cycles": false,
+    "independent_confirmation_required": true,
+    "max_run_seconds_per_block": 3600,
+    "on_overrun": "record overrun; join safely; never kill an accelerator child"
+  },
+  "acceptance": {
+    "tensor_tolerances": "unchanged-existing-oracle-pinned-locally",
+    "require_first_token_and_complete_continuation": true,
+    "require_actual_dispatch_or_program_identity": true,
+    "performance": "Reject on control drift >5%, nonpositive paired gain, changed work counts, unpinned inputs, any oracle failure, or inconsistent stratum. Retain all repetitions. A positive screen is provisional until independent confirmation; no automatic promotion."
+  },
+  "experiment": "Run the exhaustive finite-half native host test including reversed/permuted streams, signed zero and saturation counterexample. Replay captured head logits and require identical five token IDs and score bits, not only top1. Use --head-ranking-timing true on BOTH baseline and candidate timing arms; report considered=262144 and transformed+pruned=considered each successful step. The optional CPU timer excludes all ANE head project/surface calls. Full-model 84-token/10-output ABBA with the same compiled programs, binary and power stratum; no CPU-cycle normalization of device time.",
+  "risks": [
+    "Native FP32 tanh/FP16 transform monotonicity must pass the supplied exhaustive finite-half test.",
+    "Adversarial ascending streams prune little; synthetic pruning counts are not a performance result."
+  ],
+  "incompatibility": "One performance candidate per arm. Do not combine new candidates with each other or the original six until individual effects are independently established.",
+  "component_screen": {
+    "host_exhaustive_domain": 63488,
+    "oracle": "Native Rust exhaustive finite-half monotonicity plus ascending, reversed and fixed-permutation streams; compare rounded-score bits and stable tokenIDs to independent all-transform stable sort.",
+    "captured_vectors": 13,
+    "vocabulary_rows_per_vector": 262144,
+    "warmups_per_arm": 2,
+    "measured_repeats_per_arm": 7,
+    "timing": "--head-ranking-timing true on both full-route arms. Timer encloses CPU ranking only, not head.project. transformed+pruned must equal considered=262144 per step.",
+    "adapter_status": "Runtime CLI and host oracle supplied. Captured-logit timing adapter is local-only; no new ANE program required."
+  }
+}
