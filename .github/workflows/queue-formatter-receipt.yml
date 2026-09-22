@@ -1,0 +1,32 @@
+name: Queue formatter receipt
+
+on:
+  pull_request:
+    paths: ['.github/workflows/queue-formatter-receipt.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  formatter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - shell: bash
+        run: |
+          sysroot=$(rustc --print sysroot)
+          mkdir -p "$RUNNER_TEMP/formatter/bin" "$RUNNER_TEMP/formatter/lib"
+          cp "$sysroot/bin/rustfmt" "$RUNNER_TEMP/formatter/bin/"
+          cp -a "$sysroot/lib/"*.so* "$RUNNER_TEMP/formatter/lib/"
+          rustfmt -V > "$RUNNER_TEMP/formatter/version.txt"
+          ldd "$sysroot/bin/rustfmt" > "$RUNNER_TEMP/formatter/dependencies.txt"
+          tar -czf "$RUNNER_TEMP/formatter.tar.gz" -C "$RUNNER_TEMP" formatter
+      - uses: actions/upload-artifact@v4
+        with:
+          name: queue-formatter
+          path: ${{ runner.temp }}/formatter.tar.gz
+          retention-days: 1
+          if-no-files-found: error
