@@ -15,13 +15,18 @@ pub const LINEAR_TILES4: &str = "ane-int8-linear-tiles4";
 /// Global QKV (8704 rows in this ANE path) is deliberately not admitted.
 pub fn linear_tiles4(weights: &AneInt8LinearWeights) -> Result<Int8CandidateSource, String> {
     if !linear_tiles4_shape(weights.shape()) {
-        return Err("ane-int8-linear-tiles4 supports only sliding QKV, O and head-block shapes".into());
+        return Err(
+            "ane-int8-linear-tiles4 supports only sliding QKV, O and head-block shapes".into(),
+        );
     }
     build_linear_tiles4(weights)
 }
 
 pub fn linear_tiles4_shape(shape: (usize, usize)) -> bool {
-    matches!(shape, (3840, 8192) | (4096, 3840) | (8192, 3840) | (3840, 16384))
+    matches!(
+        shape,
+        (3840, 8192) | (4096, 3840) | (8192, 3840) | (3840, 16384)
+    )
 }
 
 fn build_linear_tiles4(weights: &AneInt8LinearWeights) -> Result<Int8CandidateSource, String> {
@@ -29,27 +34,48 @@ fn build_linear_tiles4(weights: &AneInt8LinearWeights) -> Result<Int8CandidateSo
     if input == 0 || input % 32 != 0 || output == 0 || output % 128 != 0 {
         return Err("tiles4 requires nonempty aligned output chunks".into());
     }
-    let bytes = weights.source_blob_bytes().checked_add(6 * 64).ok_or("tiles4 blob overflow")?;
+    let bytes = weights
+        .source_blob_bytes()
+        .checked_add(6 * 64)
+        .ok_or("tiles4 blob overflow")?;
     let mut blob = begin_blob(8, bytes)?;
     let mut constants = String::new();
     let matrix = weights.matrix();
     let chunk = output / 4;
     for part in 0..4 {
-        append_rows(&mut blob, &mut constants, &format!("W{part}"), &matrix,
-            part * chunk..(part + 1) * chunk)?;
+        append_rows(
+            &mut blob,
+            &mut constants,
+            &format!("W{part}"),
+            &matrix,
+            part * chunk..(part + 1) * chunk,
+        )?;
     }
-    if blob.len() != bytes { return Err("tiles4 source size mismatch".into()); }
+    if blob.len() != bytes {
+        return Err("tiles4 source size mismatch".into());
+    }
     let mut mil = graph_header(input, &constants);
     for part in 0..4 {
-        convolution(&mut mil, &format!("y{part}"), &format!("W{part}"), "x", chunk);
+        convolution(
+            &mut mil,
+            &format!("y{part}"),
+            &format!("W{part}"),
+            "x",
+            chunk,
+        );
     }
     concatenate(&mut mil, "y", &["y0", "y1", "y2", "y3"], output);
     mil.push_str("    } -> (y);\n}\n");
     Ok(Int8CandidateSource {
-        name: LINEAR_TILES4, mil, blob,
+        name: LINEAR_TILES4,
+        mil,
+        blob,
         budget: Int8CandidateBudget {
-            source_blob_bytes: bytes, convolutions: 4, programs: 1,
-            input_surface_bytes: input * 64, output_surface_bytes: output * 64,
+            source_blob_bytes: bytes,
+            convolutions: 4,
+            programs: 1,
+            input_surface_bytes: input * 64,
+            output_surface_bytes: output * 64,
         },
     })
 }
@@ -92,7 +118,9 @@ fn build_ffn_chunk4(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, 
     if hidden == 0 || intermediate == 0 || hidden % 32 != 0 || intermediate % 128 != 0 {
         return Err("chunk4 requires nonempty aligned rows".into());
     }
-    let bytes = weights.source_blob_bytes().checked_add(12 * 64)
+    let bytes = weights
+        .source_blob_bytes()
+        .checked_add(12 * 64)
         .ok_or("chunk4 blob overflow")?;
     let mut blob = begin_blob(18, bytes)?;
     let mut constants = String::new();
@@ -100,28 +128,58 @@ fn build_ffn_chunk4(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, 
     let chunk = intermediate / 4;
     for part in 0..4 {
         let rows = part * chunk..(part + 1) * chunk;
-        append_rows(&mut blob, &mut constants, &format!("Wg{part}"), &gate, rows.clone())?;
+        append_rows(
+            &mut blob,
+            &mut constants,
+            &format!("Wg{part}"),
+            &gate,
+            rows.clone(),
+        )?;
         append_rows(&mut blob, &mut constants, &format!("Wu{part}"), &up, rows)?;
     }
     append_rows(&mut blob, &mut constants, "Wd", &down, 0..hidden)?;
-    if blob.len() != bytes { return Err("chunk4 source size mismatch".into()); }
+    if blob.len() != bytes {
+        return Err("chunk4 source size mismatch".into());
+    }
     let mut mil = graph_header(hidden, &constants);
     mil.push_str(GELU_CONSTANTS);
     for part in 0..4 {
-        convolution(&mut mil, &format!("gate{part}"), &format!("Wg{part}"), "x", chunk);
-        convolution(&mut mil, &format!("up{part}"), &format!("Wu{part}"), "x", chunk);
+        convolution(
+            &mut mil,
+            &format!("gate{part}"),
+            &format!("Wg{part}"),
+            "x",
+            chunk,
+        );
+        convolution(
+            &mut mil,
+            &format!("up{part}"),
+            &format!("Wu{part}"),
+            "x",
+            chunk,
+        );
         gelu_branch(&mut mil, part, chunk);
     }
-    concatenate(&mut mil, "gated", &["gated0", "gated1", "gated2", "gated3"], intermediate);
+    concatenate(
+        &mut mil,
+        "gated",
+        &["gated0", "gated1", "gated2", "gated3"],
+        intermediate,
+    );
     // One full down projection: splitting its reduction would add new FP16
     // rounding and is NOT part of this candidate.
     convolution(&mut mil, "y", "Wd", "gated", hidden);
     mil.push_str("    } -> (y);\n}\n");
     Ok(Int8CandidateSource {
-        name: FFN_CHUNK4, mil, blob,
+        name: FFN_CHUNK4,
+        mil,
+        blob,
         budget: Int8CandidateBudget {
-            source_blob_bytes: bytes, convolutions: 9, programs: 1,
-            input_surface_bytes: hidden * 64, output_surface_bytes: hidden * 64,
+            source_blob_bytes: bytes,
+            convolutions: 9,
+            programs: 1,
+            input_surface_bytes: hidden * 64,
+            output_surface_bytes: hidden * 64,
         },
     })
 }
@@ -131,7 +189,8 @@ fn begin_blob(descriptors: u32, bytes: usize) -> Result<Vec<u8>, String> {
         return Err("candidate source exceeds the existing blob ABI".into());
     }
     let mut blob = Vec::new();
-    blob.try_reserve_exact(bytes).map_err(|error| format!("candidate source allocation: {error}"))?;
+    blob.try_reserve_exact(bytes)
+        .map_err(|error| format!("candidate source allocation: {error}"))?;
     blob.resize(64, 0);
     blob[..4].copy_from_slice(&descriptors.to_le_bytes());
     blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
@@ -140,7 +199,9 @@ fn begin_blob(descriptors: u32, bytes: usize) -> Result<Vec<u8>, String> {
 
 fn descriptor(blob: &mut Vec<u8>, dtype: u32, bytes: usize) -> Result<usize, String> {
     let offset = blob.len();
-    let end = offset.checked_add(64).and_then(|n| n.checked_add(bytes))
+    let end = offset
+        .checked_add(64)
+        .and_then(|n| n.checked_add(bytes))
         .filter(|&n| n <= u32::MAX as usize && n <= blob.capacity())
         .ok_or("candidate descriptor exceeds reserved source")?;
     if offset % 64 != 0 || bytes == 0 || bytes % 64 != 0 {
@@ -155,22 +216,40 @@ fn descriptor(blob: &mut Vec<u8>, dtype: u32, bytes: usize) -> Result<usize, Str
 }
 
 fn append_rows(
-    blob: &mut Vec<u8>, constants: &mut String, name: &str,
-    matrix: &AneInt8MatrixView<'_>, rows: Range<usize>,
+    blob: &mut Vec<u8>,
+    constants: &mut String,
+    name: &str,
+    matrix: &AneInt8MatrixView<'_>,
+    rows: Range<usize>,
 ) -> Result<(), String> {
     let columns = matrix.columns;
-    if rows.start >= rows.end || rows.end > matrix.scales.len()
-        || columns == 0 || columns % 32 != 0 || rows.start % 32 != 0 || rows.end % 32 != 0
+    if rows.start >= rows.end
+        || rows.end > matrix.scales.len()
+        || columns == 0
+        || columns % 32 != 0
+        || rows.start % 32 != 0
+        || rows.end % 32 != 0
         || matrix.scales.len().checked_mul(columns) != Some(matrix.values.len())
-    { return Err("invalid candidate constant row range".into()); }
+    {
+        return Err("invalid candidate constant row range".into());
+    }
     let count = rows.end - rows.start;
-    let start = rows.start.checked_mul(columns).ok_or("row offset overflow")?;
+    let start = rows
+        .start
+        .checked_mul(columns)
+        .ok_or("row offset overflow")?;
     let end = rows.end.checked_mul(columns).ok_or("row end overflow")?;
     let scale_bytes = count.checked_mul(2).ok_or("scale length overflow")?;
     let q = descriptor(blob, 4, end - start)?;
-    blob.extend(matrix.values[start..end].iter().map(|value| value.to_le_bytes()[0]));
+    blob.extend(
+        matrix.values[start..end]
+            .iter()
+            .map(|value| value.to_le_bytes()[0]),
+    );
     let scale = descriptor(blob, 1, scale_bytes)?;
-    for value in &matrix.scales[rows] { blob.extend_from_slice(&value.to_le_bytes()); }
+    for value in &matrix.scales[rows] {
+        blob.extend_from_slice(&value.to_le_bytes());
+    }
     constants.push_str(&format!(
         "        tensor<fp16, [{count}, {columns}, 1, 1]> {name} = constexpr_affine_dequantize()[axis = int32(0), name = string(\"{name}\"), quantized_data = tensor<int8, [{count}, {columns}, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({q}))), scale = tensor<fp16, [{count}]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({scale}))), zero_point = int8(0)];\n"
     ));
@@ -196,7 +275,9 @@ const GELU_CONSTANTS: &str = r#"        fp16 gelu_half = const()[name = string("
 
 fn graph_header(input: usize, constants: &str) -> String {
     let mut source = String::from(HEADER);
-    source.push_str(&format!("    func main<ios18>(tensor<fp16, [1, {input}, 1, 1]> x) {{\n"));
+    source.push_str(&format!(
+        "    func main<ios18>(tensor<fp16, [1, {input}, 1, 1]> x) {{\n"
+    ));
     source.push_str(CONV_CONSTANTS);
     source.push_str(constants);
     source
@@ -207,7 +288,9 @@ fn convolution(source: &mut String, output: &str, weight: &str, input: &str, row
 }
 
 fn concatenate(source: &mut String, output: &str, inputs: &[&str], rows: usize) {
-    source.push_str("        int32 concat_axis = const()[name = string(\"concat_axis\"), val = int32(1)];\n");
+    source.push_str(
+        "        int32 concat_axis = const()[name = string(\"concat_axis\"), val = int32(1)];\n",
+    );
     source.push_str("        bool concat_interleave = const()[name = string(\"concat_interleave\"), val = bool(false)];\n");
     source.push_str(&format!("        tensor<fp16, [1, {rows}, 1, 1]> {output} = concat(axis = concat_axis, interleave = concat_interleave, values = ({}))[name = string(\"{output}\")];\n", inputs.join(", ")));
 }
@@ -228,7 +311,11 @@ fn gelu_branch(source: &mut String, part: usize, rows: usize) {
         ("activated", "mul", p("gate_halved"), p("gelu_factor")),
         ("gated", "mul", p("activated"), p("up")),
     ] {
-        let y = if y.is_empty() { y } else { format!(", y = {y}") };
+        let y = if y.is_empty() {
+            y
+        } else {
+            format!(", y = {y}")
+        };
         let name = p(name);
         source.push_str(&format!("        tensor<fp16, [1, {rows}, 1, 1]> {name} = {op}(x = {x}{y})[name = string(\"{name}\")];\n"));
     }
