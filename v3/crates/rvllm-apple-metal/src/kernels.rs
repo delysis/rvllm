@@ -2595,7 +2595,7 @@ pub fn kernel_source_with_options(
     match float_type {
         MetalFloatType::F16 => source.push_str(candidate),
         MetalFloatType::Bf16 => source.push_str(
-            &replace_msl_word(candidate, "half", "bfloat").replace("f16_sat", "bf16_sat")
+            &replace_msl_word(candidate, "half", "bfloat").replace("f16_sat", "bf16_sat"),
         ),
     }
     Cow::Owned(source)

@@ -74,7 +74,9 @@ impl AneWeightPlan {
             Self::StaticInt8FfnCached => "static-int8-ffn-cached",
             Self::StaticInt8Chunk4FfnCached => "static-int8-chunk4-ffn-cached",
             Self::StaticInt8FfnSlidingQkvCached => "static-int8-ffn-sliding-qkv-cached",
-            Self::StaticInt8FfnSlidingQkvTiles4Cached => "static-int8-ffn-sliding-qkv-tiles4-cached",
+            Self::StaticInt8FfnSlidingQkvTiles4Cached => {
+                "static-int8-ffn-sliding-qkv-tiles4-cached"
+            }
             Self::StaticInt8StackedFfnCached => "static-int8-stacked-ffn-cached",
             Self::StaticInt8StackedFfnChecked => "static-int8-stacked-ffn-checked",
         }
@@ -112,10 +114,9 @@ impl AneWeightPlan {
     fn static_ffn_precision(self) -> StaticFfnPrecision {
         match self {
             Self::StaticInt8Chunk4FfnCached => StaticFfnPrecision::Int8Chunk4,
-            Self::StaticInt8FfnCached | Self::StaticInt8FfnSlidingQkvCached
-            | Self::StaticInt8FfnSlidingQkvTiles4Cached => {
-                StaticFfnPrecision::Int8
-            }
+            Self::StaticInt8FfnCached
+            | Self::StaticInt8FfnSlidingQkvCached
+            | Self::StaticInt8FfnSlidingQkvTiles4Cached => StaticFfnPrecision::Int8,
             Self::StaticInt8StackedFfnCached | Self::StaticInt8StackedFfnChecked => {
                 StaticFfnPrecision::Int8Stacked
             }
@@ -125,7 +126,10 @@ impl AneWeightPlan {
     }
 
     fn quantizes_qkv(self, sliding: bool) -> bool {
-        matches!(self, Self::StaticInt8FfnSlidingQkvCached | Self::StaticInt8FfnSlidingQkvTiles4Cached) && sliding
+        matches!(
+            self,
+            Self::StaticInt8FfnSlidingQkvCached | Self::StaticInt8FfnSlidingQkvTiles4Cached
+        ) && sliding
     }
 }
 
@@ -293,7 +297,8 @@ fn visit_static_cache(
         let shape = layer_shape(&arch, index);
         let q_width = shape.query_heads * shape.head_dim;
         let result = match part {
-            AneStaticCachePart::QueryKeyValue | AneStaticCachePart::QueryKeyValueSlidingInt8
+            AneStaticCachePart::QueryKeyValue
+            | AneStaticCachePart::QueryKeyValueSlidingInt8
             | AneStaticCachePart::QueryKeyValueSlidingInt8Tiles4 => {
                 let mut weights = load("self_attn.q_proj.weight")?;
                 weights.extend(load("self_attn.k_proj.weight")?);
@@ -307,10 +312,12 @@ fn visit_static_cache(
                     load_static_qkv_tiles4(&weights, rows, policy).map(drop)
                 } else {
                     load_static_qkv(
-                        &weights, rows,
+                        &weights,
+                        rows,
                         part == AneStaticCachePart::QueryKeyValueSlidingInt8 && !shared_value,
                         policy,
-                    ).map(drop)
+                    )
+                    .map(drop)
                 }
             }
             AneStaticCachePart::Output => {
@@ -356,7 +363,9 @@ fn visit_static_cache(
 }
 
 fn load_static_qkv_tiles4(
-    weights: &[f16], rows: usize, policy: AneProgramCachePolicy,
+    weights: &[f16],
+    rows: usize,
+    policy: AneProgramCachePolicy,
 ) -> Result<AneLinear, String> {
     if rows != 8192 {
         return Err("tiled INT8 QKV supports only the 8192-row sliding projection".into());
@@ -579,8 +588,15 @@ impl GemmaAneDecode {
         weights: AneWeightPlan,
         compile_budget: usize,
     ) -> Result<Self, String> {
-        if matches!(weights, AneWeightPlan::StaticInt8Chunk4FfnCached | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached) && compile_budget != 0 {
-            return Err("candidate inference requires zero compile budget; provision separately".into());
+        if matches!(
+            weights,
+            AneWeightPlan::StaticInt8Chunk4FfnCached
+                | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached
+        ) && compile_budget != 0
+        {
+            return Err(
+                "candidate inference requires zero compile budget; provision separately".into(),
+            );
         }
         if weights == AneWeightPlan::StaticInt8StackedFfnChecked
             && (compile_budget != 0 || std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_none())
@@ -635,16 +651,17 @@ impl GemmaAneDecode {
                 qkv_weights.extend(load("self_attn.v_proj.weight")?);
             }
             let projection_width = q_width + kv_width * if shared_value { 1 } else { 2 };
-            let qkv = if weights == AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached && !shared_value {
-                load_static_qkv_tiles4(&qkv_weights, projection_width, cache_policy)?
-            } else {
-                load_static_qkv(
-                    &qkv_weights,
-                    projection_width,
-                    weights.quantizes_qkv(!shared_value),
-                    cache_policy,
-                )?
-            };
+            let qkv =
+                if weights == AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached && !shared_value {
+                    load_static_qkv_tiles4(&qkv_weights, projection_width, cache_policy)?
+                } else {
+                    load_static_qkv(
+                        &qkv_weights,
+                        projection_width,
+                        weights.quantizes_qkv(!shared_value),
+                        cache_policy,
+                    )?
+                };
             drop(qkv_weights);
             let output_weights = load("self_attn.o_proj.weight")?;
             let output = match &output_programs {
@@ -801,7 +818,10 @@ impl GemmaAneDecode {
         for (layer, saved) in self.layers.iter_mut().zip(&snapshot.layers) {
             if packing == KvImportPacking::Blocked32 {
                 layer.attention.import_cache_blocked32_with_scratch(
-                    &saved.keys, &saved.values, snapshot.tokens, &mut scratch,
+                    &saved.keys,
+                    &saved.values,
+                    snapshot.tokens,
+                    &mut scratch,
                 )?;
             } else if packing == KvImportPacking::ReuseScratch {
                 layer.attention.import_cache_with_scratch(
@@ -1243,8 +1263,10 @@ mod tests {
         assert_eq!(plan.static_ffn_precision(), StaticFfnPrecision::Int8);
         assert!(plan.quantizes_qkv(true));
         assert!(!plan.quantizes_qkv(false));
-        assert!(matches!(load_static_qkv_tiles4(&[], 8704, plan.cache_policy()),
-            Err(error) if error.contains("8192-row sliding")));
+        assert!(
+            matches!(load_static_qkv_tiles4(&[], 8704, plan.cache_policy()),
+            Err(error) if error.contains("8192-row sliding"))
+        );
         assert!(matches!(GemmaAneDecode::load_with_compile_budget(
             Path::new("/must-not-read-candidate-checkpoint"), 1024, plan, 1),
             Err(error) if error.contains("zero compile budget")));
@@ -1259,7 +1281,11 @@ mod tests {
         assert!(!plan.quantizes_qkv(true));
         assert!(!plan.quantizes_qkv(false));
         let result = GemmaAneDecode::load_with_compile_budget(
-            Path::new("/must-not-read-candidate-checkpoint"), 1024, plan, 1);
+            Path::new("/must-not-read-candidate-checkpoint"),
+            1024,
+            plan,
+            1,
+        );
         assert!(matches!(result, Err(error) if error.contains("zero compile budget")));
     }
     #[test]

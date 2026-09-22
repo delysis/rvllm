@@ -33,11 +33,12 @@ impl std::str::FromStr for KvImportPacking {
             "baseline" => Ok(Self::Baseline),
             "reuse-scratch" => Ok(Self::ReuseScratch),
             "cpu-kv-blocked32" => Ok(Self::Blocked32),
-            _ => Err("KV import packing must be baseline, reuse-scratch or cpu-kv-blocked32".into()),
+            _ => {
+                Err("KV import packing must be baseline, reuse-scratch or cpu-kv-blocked32".into())
+            }
         }
     }
 }
-
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PackedAttentionLayout {
@@ -308,19 +309,25 @@ impl PackedAttentionLayout {
         tokens: usize,
         packed: &mut [u8],
     ) -> Result<bool, String> {
-        let supported = self.query_heads == 16 && self.capacity == 1024
+        let supported = self.query_heads == 16
+            && self.capacity == 1024
             && (1..=4096).contains(&tokens)
-            && matches!((self.kv_heads, self.head_dim, self.window),
-                (8, 256, Some(1024)) | (1, 512, None));
+            && matches!(
+                (self.kv_heads, self.head_dim, self.window),
+                (8, 256, Some(1024)) | (1, 512, None)
+            );
         if !supported {
             self.import_cache_into(keys, values, tokens, packed)?;
             return Ok(false);
         }
         let retained = self.retained_tokens(tokens)?;
         let width = self.kv_width();
-        if tokens.checked_mul(width) != Some(keys.len()) || values.len() != keys.len()
+        if tokens.checked_mul(width) != Some(keys.len())
+            || values.len() != keys.len()
             || packed.len() != self.input_bytes
-        { return Err("packed attention prefill shape mismatch".into()); }
+        {
+            return Err("packed attention prefill shape mismatch".into());
+        }
         packed.fill(0);
         // Two 2 KiB stack tiles. No f16 arithmetic/conversion: preserve NaN
         // payloads, infinities, subnormals and signed zero just like import_cache.
@@ -338,7 +345,8 @@ impl PackedAttentionLayout {
                     for channel in 0..32 {
                         let dst = (channel * 32 + token) * 2;
                         key_tile[dst..dst + 2].copy_from_slice(&keys[src + channel].to_le_bytes());
-                        value_tile[dst..dst + 2].copy_from_slice(&values[src + channel].to_le_bytes());
+                        value_tile[dst..dst + 2]
+                            .copy_from_slice(&values[src + channel].to_le_bytes());
                     }
                 }
                 for channel in 0..32 {
@@ -783,28 +791,52 @@ mod blocked32_tests {
     use super::*;
 
     #[test]
-    fn blocked32_matches_allocating_reference_including_raw_bits_and_guard_bytes() -> Result<(), String> {
+    fn blocked32_matches_allocating_reference_including_raw_bits_and_guard_bytes(
+    ) -> Result<(), String> {
         let sliding = PackedAttentionLayout::sliding(16, 8, 256, 1024)?;
         let global = PackedAttentionLayout::new(16, 1, 512, 1024)?;
         let small = PackedAttentionLayout::sliding(4, 2, 32, 35)?;
         let mut storage = vec![0x5a; sliding.input_bytes() + 128];
         let pointer = storage.as_ptr();
         for (layout, tokens, routed) in [
-            (sliding, 0, false), (sliding, 1, true), (sliding, 31, true),
-            (sliding, 32, true), (sliding, 33, true), (sliding, 84, true),
-            (sliding, 1023, true), (sliding, 1024, true), (sliding, 1027, true),
-            (sliding, 4096, true), (global, 84, true), (global, 1024, true),
+            (sliding, 0, false),
+            (sliding, 1, true),
+            (sliding, 31, true),
+            (sliding, 32, true),
+            (sliding, 33, true),
+            (sliding, 84, true),
+            (sliding, 1023, true),
+            (sliding, 1024, true),
+            (sliding, 1027, true),
+            (sliding, 4096, true),
+            (global, 84, true),
+            (global, 1024, true),
             (small, 133, false),
         ] {
             let n = tokens * layout.kv_width();
-            let keys = (0..n).map(|i| f16::from_bits((i.wrapping_mul(43)) as u16)).collect::<Vec<_>>();
-            let values = (0..n).map(|i| f16::from_bits((i.wrapping_mul(73).wrapping_add(32768)) as u16)).collect::<Vec<_>>();
+            let keys = (0..n)
+                .map(|i| f16::from_bits((i.wrapping_mul(43)) as u16))
+                .collect::<Vec<_>>();
+            let values = (0..n)
+                .map(|i| f16::from_bits((i.wrapping_mul(73).wrapping_add(32768)) as u16))
+                .collect::<Vec<_>>();
             let expected = layout.import_cache(&keys, &values, tokens)?;
             storage.fill(0x5a);
             let end = 64 + layout.input_bytes();
-            assert_eq!(layout.import_cache_blocked32_into(&keys, &values, tokens, &mut storage[64..end])?, routed);
+            assert_eq!(
+                layout.import_cache_blocked32_into(
+                    &keys,
+                    &values,
+                    tokens,
+                    &mut storage[64..end]
+                )?,
+                routed
+            );
             assert_eq!(&storage[64..end], expected.as_slice());
-            assert!(storage[..64].iter().chain(&storage[end..]).all(|&b| b == 0x5a));
+            assert!(storage[..64]
+                .iter()
+                .chain(&storage[end..])
+                .all(|&b| b == 0x5a));
             assert_eq!(storage.as_ptr(), pointer);
         }
         Ok(())
@@ -815,11 +847,16 @@ mod blocked32_tests {
         let layout = PackedAttentionLayout::new(16, 1, 512, 1024)?;
         let mut bytes = vec![0xa5; layout.input_bytes()];
         for tokens in [1, 1025, usize::MAX] {
-            assert!(layout.import_cache_blocked32_into(&[], &[], tokens, &mut bytes).is_err());
+            assert!(layout
+                .import_cache_blocked32_into(&[], &[], tokens, &mut bytes)
+                .is_err());
             assert!(bytes.iter().all(|&b| b == 0xa5));
         }
         assert_eq!(KvImportPacking::default(), KvImportPacking::Baseline);
-        assert_eq!("cpu-kv-blocked32".parse::<KvImportPacking>()?, KvImportPacking::Blocked32);
+        assert_eq!(
+            "cpu-kv-blocked32".parse::<KvImportPacking>()?,
+            KvImportPacking::Blocked32
+        );
         for invalid in ["auto", "blocked32", "", " cpu-kv-blocked32"] {
             assert!(invalid.parse::<KvImportPacking>().is_err());
         }

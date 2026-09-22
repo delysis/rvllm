@@ -82,8 +82,11 @@ impl PipelineCache {
         for name in self.kernel_options.research.pipeline_names() {
             self.pipelines.remove(*name);
             match self.compile(ctx, name) {
-                Ok(()) => tracing::info!(candidate = self.kernel_options.research.name(),
-                    function = *name, "Research PSO compiled; not hardware-qualified"),
+                Ok(()) => tracing::info!(
+                    candidate = self.kernel_options.research.name(),
+                    function = *name,
+                    "Research PSO compiled; not hardware-qualified"
+                ),
                 Err(error) => tracing::warn!(candidate = self.kernel_options.research.name(),
                     function = *name, %error, "Research PSO unavailable; known-good fallback retained"),
             }
@@ -103,16 +106,24 @@ impl PipelineCache {
         if self.gpu_family != AppleGpuFamily::Apple9
             || self.float_type.is_none()
             || self.kernel_options.quantized_bf16_accumulation
-            || !self.kernel_options.research.pipeline_names().contains(&name)
+            || !self
+                .kernel_options
+                .research
+                .pipeline_names()
+                .contains(&name)
         {
             return None;
         }
         let pso = self.pipelines.get(name)?;
         crate::research::launch_fits(
-            pso.threadExecutionWidth(), pso.maxTotalThreadsPerThreadgroup(),
-            pso.staticThreadgroupMemoryLength(), self.max_threadgroup_memory,
-            threads, planned_bytes,
-        ).then_some(pso)
+            pso.threadExecutionWidth(),
+            pso.maxTotalThreadsPerThreadgroup(),
+            pso.staticThreadgroupMemoryLength(),
+            self.max_threadgroup_memory,
+            threads,
+            planned_bytes,
+        )
+        .then_some(pso)
     }
 
     /// Get a cached PSO by name.

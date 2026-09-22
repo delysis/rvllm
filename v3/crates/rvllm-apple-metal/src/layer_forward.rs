@@ -17,19 +17,29 @@ use rvllm_core::Result;
 
 // Shared research shape check; all FFI/resource checks stay in this boundary crate.
 fn research_layer_eligible(
-    pipelines: &PipelineCache, dims: &MetalLayerDims, phase: MetalPhase,
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
     candidate: crate::MetalResearchCandidate,
 ) -> bool {
     pipelines.kernel_options().research == candidate
         && !pipelines.kernel_options().quantized_bf16_accumulation
         && matches!(phase, MetalPhase::Prefill { .. })
         && (crate::research::Gemma12bResearchShape {
-            tokens: dims.num_tokens, hidden: dims.hidden, intermediate: dims.intermediate,
-            layers: dims.num_layers, heads: dims.num_heads, kv_heads: dims.num_kv_heads,
-            head_dim: dims.head_dim, attention_window: dims.attention_window,
-            moe_experts: dims.moe_num_experts, moe_top_k: dims.moe_top_k,
-            moe_intermediate: dims.moe_intermediate, ple: dims.ple_dim,
-        }).supports(candidate)
+            tokens: dims.num_tokens,
+            hidden: dims.hidden,
+            intermediate: dims.intermediate,
+            layers: dims.num_layers,
+            heads: dims.num_heads,
+            kv_heads: dims.num_kv_heads,
+            head_dim: dims.head_dim,
+            attention_window: dims.attention_window,
+            moe_experts: dims.moe_num_experts,
+            moe_top_k: dims.moe_top_k,
+            moe_intermediate: dims.moe_intermediate,
+            ple: dims.ple_dim,
+        })
+        .supports(candidate)
 }
 
 /// The same decision drives execution and diagnostic encoder accounting.
@@ -37,15 +47,34 @@ fn research_layer_eligible(
 /// scratch plan. This is a dispatch predicate, not a hardware acceptance flag.
 #[allow(clippy::too_many_arguments)]
 pub fn supports_research_rounded_gate(
-    pipelines: &PipelineCache, dims: &MetalLayerDims, phase: MetalPhase,
-    weights: &MetalLayerWeights, scratch: &MetalScratch,
-    capture_gate_up: bool, arena_bytes: usize,
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    capture_gate_up: bool,
+    arena_bytes: usize,
 ) -> bool {
-    research_layer_eligible(pipelines, dims, phase, crate::MetalResearchCandidate::RoundedGate32)
-        && pipelines.research_pso("research_rounded_gate32", 128, 14_336).is_some()
+    research_layer_eligible(
+        pipelines,
+        dims,
+        phase,
+        crate::MetalResearchCandidate::RoundedGate32,
+    ) && pipelines
+        .research_pso("research_rounded_gate32", 128, 14_336)
+        .is_some()
         && crate::research::rounded_gate_buffers_fit(
-            [scratch.normed_hidden, weights.gate_up_offset, scratch.gate_up_out, scratch.activated],
-            dims.num_tokens, dims.hidden, dims.intermediate, arena_bytes, capture_gate_up,
+            [
+                scratch.normed_hidden,
+                weights.gate_up_offset,
+                scratch.gate_up_out,
+                scratch.activated,
+            ],
+            dims.num_tokens,
+            dims.hidden,
+            dims.intermediate,
+            arena_bytes,
+            capture_gate_up,
         )
 }
 
@@ -1483,38 +1512,70 @@ pub unsafe fn metal_encode_forward_layer(
             })?;
             let research_name = if dims.head_dim == 256 {
                 "research_gqa_kv8_d256"
-            } else { "research_gqa_kv8_d512" };
+            } else {
+                "research_gqa_kv8_d512"
+            };
             let research_threads = if dims.num_kv_heads == 8 { 64 } else { 128 };
-            let research_pso = if batch_size == 1 && dims.attn_scale == 1.0
-                && research_layer_eligible(pipelines, dims, phase, crate::MetalResearchCandidate::GqaKv8)
-            {
+            let research_pso = if batch_size == 1
+                && dims.attn_scale == 1.0
+                && research_layer_eligible(
+                    pipelines,
+                    dims,
+                    phase,
+                    crate::MetalResearchCandidate::GqaKv8,
+                ) {
                 meta.cu_seqlens_offset.and_then(|cu| {
                     let shape = crate::research::GqaBufferShape {
-                        tokens: num_tokens, kv_heads: dims.num_kv_heads, head_dim: dims.head_dim,
-                        block_size: dims.block_size, max_blocks: dims.max_blocks_per_seq,
+                        tokens: num_tokens,
+                        kv_heads: dims.num_kv_heads,
+                        head_dim: dims.head_dim,
+                        block_size: dims.block_size,
+                        max_blocks: dims.max_blocks_per_seq,
                         num_blocks: dims.num_blocks_total,
                     };
-                    if !shape.buffers_fit([scratch.q_offset, attention_kv_cache_k_offset,
-                        attention_kv_cache_v_offset, scratch.attn_out, meta.block_tables_offset,
-                        meta.context_lens_offset, cu, meta.positions_offset], buf.length())
-                    { return None; }
-                    pipelines.research_pso(research_name, research_threads,
-                        2 * 8 * dims.head_dim as usize * 2 + 8 * 4)
+                    if !shape.buffers_fit(
+                        [
+                            scratch.q_offset,
+                            attention_kv_cache_k_offset,
+                            attention_kv_cache_v_offset,
+                            scratch.attn_out,
+                            meta.block_tables_offset,
+                            meta.context_lens_offset,
+                            cu,
+                            meta.positions_offset,
+                        ],
+                        buf.length(),
+                    ) {
+                        return None;
+                    }
+                    pipelines.research_pso(
+                        research_name,
+                        research_threads,
+                        2 * 8 * dims.head_dim as usize * 2 + 8 * 4,
+                    )
                 })
-            } else { None };
+            } else {
+                None
+            };
             let use_research = research_pso.is_some();
             let use_simd =
                 trace.is_none() && supports_gemma4_prefill_simd_attention(pipelines, dims);
             let pso = if let Some(pso) = research_pso {
                 encoder.setLabel(Some(&objc2_foundation::NSString::from_str(research_name)));
-                tracing::debug!(candidate = "metal-gqa-kv8", kernel = research_name,
-                    tokens = num_tokens, "Research dispatch");
+                tracing::debug!(
+                    candidate = "metal-gqa-kv8",
+                    kernel = research_name,
+                    tokens = num_tokens,
+                    "Research dispatch"
+                );
                 pso
-            } else { pipelines.get(if use_simd {
-                "attention_prefill_simdgroup_f16"
             } else {
-                "attention_prefill_f16"
-            })? };
+                pipelines.get(if use_simd {
+                    "attention_prefill_simdgroup_f16"
+                } else {
+                    "attention_prefill_f16"
+                })?
+            };
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
             encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
@@ -1573,16 +1634,32 @@ pub unsafe fn metal_encode_forward_layer(
             );
             if use_research {
                 encoder.setBytes_length_atIndex(
-                    std::ptr::NonNull::from(&dims.num_blocks_total).cast(), 4, 17);
+                    std::ptr::NonNull::from(&dims.num_blocks_total).cast(),
+                    4,
+                    17,
+                );
             }
             let groups = if use_research {
-                MTLSize { width: total_q as usize, height: dims.num_kv_heads as usize,
-                    depth: (dims.num_heads / dims.num_kv_heads).div_ceil(4) as usize }
-            } else { MTLSize {
-                width: total_q as usize, height: dims.num_heads as usize, depth: 1,
-            } };
+                MTLSize {
+                    width: total_q as usize,
+                    height: dims.num_kv_heads as usize,
+                    depth: (dims.num_heads / dims.num_kv_heads).div_ceil(4) as usize,
+                }
+            } else {
+                MTLSize {
+                    width: total_q as usize,
+                    height: dims.num_heads as usize,
+                    depth: 1,
+                }
+            };
             let tpg = MTLSize {
-                width: if use_research { research_threads } else if use_simd { 32 } else { 1 },
+                width: if use_research {
+                    research_threads
+                } else if use_simd {
+                    32
+                } else {
+                    1
+                },
                 height: 1,
                 depth: 1,
             };
@@ -1730,9 +1807,22 @@ pub unsafe fn metal_encode_forward_layer(
         && weights.post_per_layer_input_norm_offset.is_some();
     let mut layer_scale_fused = false;
     let rounded_gate = supports_research_rounded_gate(
-        pipelines, dims, phase, weights, scratch, trace.is_some(), buf.length())
-        && try_encode_research_rounded_gate(
-            cmd_buf, pipelines, buf, dims, weights, scratch, trace.is_some())?;
+        pipelines,
+        dims,
+        phase,
+        weights,
+        scratch,
+        trace.is_some(),
+        buf.length(),
+    ) && try_encode_research_rounded_gate(
+        cmd_buf,
+        pipelines,
+        buf,
+        dims,
+        weights,
+        scratch,
+        trace.is_some(),
+    )?;
     if !rounded_gate {
         encode_gemm_with_output(
             &cmd_buf,
@@ -5390,43 +5480,64 @@ unsafe fn encode_gemm_with_output(
             },
         )
     })?;
-    let short_name = if output_f32 { "research_qkv_mma16x64" } else { "research_gemm_mma16x64" };
+    let short_name = if output_f32 {
+        "research_qkv_mma16x64"
+    } else {
+        "research_gemm_mma16x64"
+    };
     let short_pso = if allow_prefill_mma
         && pipelines.kernel_options().research == crate::MetalResearchCandidate::ShortMma16x64
         && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
-        && alpha == 1.0 && beta == 0.0
+        && alpha == 1.0
+        && beta == 0.0
         && crate::research::short_mma_shape(m, n, k, output_f32)
         && crate::research::projection_buffers_fit(
-            [a_offset, b_offset, c_offset], [m, n, k], if output_f32 { 4 } else { 2 }, buf.length())
-    {
+            [a_offset, b_offset, c_offset],
+            [m, n, k],
+            if output_f32 { 4 } else { 2 },
+            buf.length(),
+        ) {
         pipelines.research_pso(short_name, 128, (16 * 40 + 64 * 40) * 2 + 16 * 64 * 4)
-    } else { None };
+    } else {
+        None
+    };
     let use_short = short_pso.is_some();
     let use_mma = !use_short && allow_prefill_mma && is_prefill_mma_shape(m, n, k, output_f32);
-    let use_batch8 =
-        !use_short && !use_mma && (output_f32 || supports_batch8_gemm(pipelines.gpu_family(), m, n, k));
+    let use_batch8 = !use_short
+        && !use_mma
+        && (output_f32 || supports_batch8_gemm(pipelines.gpu_family(), m, n, k));
     let use_vec = !use_short && !use_mma && !use_batch8 && supports_vec_gemm(m, n, k);
-    let use_tiled = !use_short && !use_mma && !use_batch8 && !use_vec && supports_tiled_gemm(m, n, k);
+    let use_tiled =
+        !use_short && !use_mma && !use_batch8 && !use_vec && supports_tiled_gemm(m, n, k);
     let pso = if let Some(pso) = short_pso {
         encoder.setLabel(Some(&objc2_foundation::NSString::from_str(short_name)));
-        tracing::debug!(candidate = "metal-short-mma16x64", kernel = short_name,
-            m, n, k, output_f32, "Research dispatch");
+        tracing::debug!(
+            candidate = "metal-short-mma16x64",
+            kernel = short_name,
+            m,
+            n,
+            k,
+            output_f32,
+            "Research dispatch"
+        );
         pso
-    } else { pipelines.get(if use_mma && output_f32 {
-        "qkv_project_f32_mma32"
-    } else if use_mma {
-        "gemm_f16_mma32"
-    } else if output_f32 {
-        "qkv_project_f32_batch8"
-    } else if use_batch8 {
-        "gemm_f16_batch8"
-    } else if use_vec {
-        "gemm_f16_vec8"
-    } else if use_tiled {
-        "gemm_f16_tiled16"
     } else {
-        "gemm_f16"
-    })? };
+        pipelines.get(if use_mma && output_f32 {
+            "qkv_project_f32_mma32"
+        } else if use_mma {
+            "gemm_f16_mma32"
+        } else if output_f32 {
+            "qkv_project_f32_batch8"
+        } else if use_batch8 {
+            "gemm_f16_batch8"
+        } else if use_vec {
+            "gemm_f16_vec8"
+        } else if use_tiled {
+            "gemm_f16_tiled16"
+        } else {
+            "gemm_f16"
+        })?
+    };
     encoder.setComputePipelineState(pso);
     encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
     encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
@@ -5458,8 +5569,18 @@ unsafe fn encode_gemm_with_output(
     );
 
     let (groups, tpg) = if use_short {
-        (MTLSize { width: (m as usize).div_ceil(16), height: (n as usize).div_ceil(64), depth: 1 },
-         MTLSize { width: 128, height: 1, depth: 1 })
+        (
+            MTLSize {
+                width: (m as usize).div_ceil(16),
+                height: (n as usize).div_ceil(64),
+                depth: 1,
+            },
+            MTLSize {
+                width: 128,
+                height: 1,
+                depth: 1,
+            },
+        )
     } else if use_mma {
         (
             MTLSize {
@@ -5523,37 +5644,82 @@ unsafe fn encode_gemm_with_output(
 /// One encoder replaces the gate/up GEMM and activation encoder, without
 /// changing the command-buffer dependency or arena ownership model.
 unsafe fn try_encode_research_rounded_gate(
-    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>, pipelines: &PipelineCache,
-    buf: &ProtocolObject<dyn MTLBuffer>, dims: &MetalLayerDims,
-    weights: &MetalLayerWeights, scratch: &MetalScratch, capture_gate_up: bool,
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    dims: &MetalLayerDims,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    capture_gate_up: bool,
 ) -> Result<bool> {
     let Some(pso) = pipelines.research_pso("research_rounded_gate32", 128, 14_336) else {
         return Ok(false);
     };
     if !crate::research::rounded_gate_buffers_fit(
-        [scratch.normed_hidden, weights.gate_up_offset, scratch.gate_up_out, scratch.activated],
-        dims.num_tokens, dims.hidden, dims.intermediate, buf.length(), capture_gate_up,
-    ) { return Ok(false); }
+        [
+            scratch.normed_hidden,
+            weights.gate_up_offset,
+            scratch.gate_up_out,
+            scratch.activated,
+        ],
+        dims.num_tokens,
+        dims.hidden,
+        dims.intermediate,
+        buf.length(),
+        capture_gate_up,
+    ) {
+        return Ok(false);
+    }
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-        rvllm_core::RvllmError::apple(rvllm_core::AppleError::MetalUnavailable,
-            rvllm_core::AppleCtx { backend: "metal", op: "research_rounded_gate32", device: "apple-silicon" })
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "research_rounded_gate32",
+                device: "apple-silicon",
+            },
+        )
     })?;
-    encoder.setLabel(Some(&objc2_foundation::NSString::from_str("metal-rounded-gate32")));
+    encoder.setLabel(Some(&objc2_foundation::NSString::from_str(
+        "metal-rounded-gate32",
+    )));
     encoder.setComputePipelineState(pso);
-    for (index, offset) in [scratch.normed_hidden, weights.gate_up_offset,
-        scratch.activated, scratch.gate_up_out].into_iter().enumerate() {
+    for (index, offset) in [
+        scratch.normed_hidden,
+        weights.gate_up_offset,
+        scratch.activated,
+        scratch.gate_up_out,
+    ]
+    .into_iter()
+    .enumerate()
+    {
         encoder.setBuffer_offset_atIndex(Some(buf), offset, index);
     }
     let capture = u32::from(capture_gate_up);
-    for (index, value) in [dims.num_tokens, dims.hidden, dims.intermediate, capture].iter().enumerate() {
+    for (index, value) in [dims.num_tokens, dims.hidden, dims.intermediate, capture]
+        .iter()
+        .enumerate()
+    {
         encoder.setBytes_length_atIndex(std::ptr::NonNull::from(value).cast(), 4, index + 4);
     }
     encoder.dispatchThreadgroups_threadsPerThreadgroup(
-        MTLSize { width: (dims.num_tokens as usize).div_ceil(32),
-            height: (dims.intermediate as usize).div_ceil(32), depth: 1 },
-        MTLSize { width: 128, height: 1, depth: 1 });
+        MTLSize {
+            width: (dims.num_tokens as usize).div_ceil(32),
+            height: (dims.intermediate as usize).div_ceil(32),
+            depth: 1,
+        },
+        MTLSize {
+            width: 128,
+            height: 1,
+            depth: 1,
+        },
+    );
     encoder.endEncoding();
-    tracing::debug!(candidate = "metal-rounded-gate32", tokens = dims.num_tokens,
-        capture_gate_up, "Research dispatch");
+    tracing::debug!(
+        candidate = "metal-rounded-gate32",
+        tokens = dims.num_tokens,
+        capture_gate_up,
+        "Research dispatch"
+    );
     Ok(true)
 }

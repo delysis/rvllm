@@ -10,12 +10,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("f16") => MetalFloatType::F16,
         _ => return Err("usage: rvllm-metal-research-source bf16|f16 off|CANDIDATE".into()),
     };
-    let research: MetalResearchCandidate = args.next().ok_or("explicit candidate required")?.parse()?;
+    let research: MetalResearchCandidate =
+        args.next().ok_or("explicit candidate required")?.parse()?;
     if args.next().is_some() {
         return Err("unexpected extra argument".into());
     }
     let source = rvllm_apple_metal::kernels::kernel_source_with_options(
-        dtype, MetalKernelOptions { research, ..MetalKernelOptions::default() }
+        dtype,
+        MetalKernelOptions {
+            research,
+            ..MetalKernelOptions::default()
+        },
     );
     std::io::stdout().lock().write_all(source.as_bytes())?;
     Ok(())

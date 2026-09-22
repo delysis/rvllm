@@ -15,26 +15,26 @@ compile_error!(
 );
 
 pub mod ane;
-pub mod ane_attention_layout;
-pub mod ane_ffn_layout;
-pub mod ane_int8_ffn_weights;
-pub mod ane_int8_candidates;
-pub mod ane_lut4_ffn_weights;
 #[cfg(feature = "macos-private-ane-research")]
 pub mod ane_attention;
+pub mod ane_attention_layout;
 #[cfg(feature = "macos-private-ane-research")]
 pub mod ane_dynamic_ffn;
 #[cfg(feature = "macos-private-ane-research")]
 pub mod ane_dynamic_linear;
+pub mod ane_ffn_layout;
+pub mod ane_int8_candidates;
+pub mod ane_int8_ffn_weights;
 #[cfg(feature = "macos-private-ane-research")]
 pub mod ane_linear;
+pub mod ane_lut4_ffn_weights;
 pub mod backend;
 pub mod coreml_artifact;
 pub mod coreml_projection;
 pub mod device;
 pub mod disaggregated;
-pub mod handoff;
 pub mod gemma_decode_math;
+pub mod handoff;
 pub mod iosurface;
 pub mod low_bit_weights;
 pub mod metal;

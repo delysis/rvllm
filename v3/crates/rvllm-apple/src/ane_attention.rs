@@ -189,21 +189,39 @@ impl AneAttention {
     /// Separately measurable CPU transpose; reuses the same scratch and the
     /// same synchronous surface write/frontier publication as the old candidate.
     pub fn import_cache_blocked32_with_scratch(
-        &mut self, keys: &[f16], values: &[f16], tokens: usize, scratch: &mut Vec<u8>,
+        &mut self,
+        keys: &[f16],
+        values: &[f16],
+        tokens: usize,
+        scratch: &mut Vec<u8>,
     ) -> Result<(), String> {
         self.layout.retained_tokens(tokens)?;
-        if tokens.checked_mul(self.layout.kv_width()) != Some(keys.len()) || values.len() != keys.len() {
+        if tokens.checked_mul(self.layout.kv_width()) != Some(keys.len())
+            || values.len() != keys.len()
+        {
             return Err("packed attention prefill shape mismatch".into());
         }
         let bytes = self.layout.input_bytes();
         if scratch.len() < bytes {
-            scratch.try_reserve(bytes - scratch.len()).map_err(|error| format!("KV scratch allocation: {error}"))?;
+            scratch
+                .try_reserve(bytes - scratch.len())
+                .map_err(|error| format!("KV scratch allocation: {error}"))?;
             scratch.resize(bytes, 0);
         }
         let packed = &mut scratch[..bytes];
-        let routed = self.layout.import_cache_blocked32_into(keys, values, tokens, packed)?;
-        tracing::debug!(candidate = if routed { "cpu-kv-blocked32" } else { "reuse-scratch-fallback" },
-            tokens, bytes, "CPU KV pack complete; surface write follows");
+        let routed = self
+            .layout
+            .import_cache_blocked32_into(keys, values, tokens, packed)?;
+        tracing::debug!(
+            candidate = if routed {
+                "cpu-kv-blocked32"
+            } else {
+                "reuse-scratch-fallback"
+            },
+            tokens,
+            bytes,
+            "CPU KV pack complete; surface write follows"
+        );
         self.kernel.write_input(packed)?;
         self.tokens_seen = tokens;
         Ok(())

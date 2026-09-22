@@ -1438,7 +1438,10 @@ impl ModelGpuSubmission {
         let gpu_start = self.command_buffer.GPUStartTime();
         let gpu_end = self.command_buffer.GPUEndTime();
         perf.last_step_gpu_execution_ns.set(
-            (gpu_start.is_finite() && gpu_end.is_finite() && gpu_start > 0.0 && gpu_end > gpu_start)
+            (gpu_start.is_finite()
+                && gpu_end.is_finite()
+                && gpu_start > 0.0
+                && gpu_end > gpu_start)
                 .then(|| ((gpu_end - gpu_start) * 1e9) as u64),
         );
 
@@ -4029,8 +4032,13 @@ impl ModelMetalBackend {
                     matches!(phase, MetalPhase::Prefill { .. })
                         && supports_qkv_prefill_projection(pipelines, &dims),
                     rvllm_apple_metal::layer_forward::supports_research_rounded_gate(
-                        pipelines, &dims, phase, &weights, &scratch,
-                        layer_trace_scratch.is_some(), arena.capacity(),
+                        pipelines,
+                        &dims,
+                        phase,
+                        &weights,
+                        &scratch,
+                        layer_trace_scratch.is_some(),
+                        arena.capacity(),
                     ),
                 ));
             if weights.layer_scalar_offset.is_some() {

@@ -2,8 +2,8 @@
 #![forbid(unsafe_code)]
 
 use half::f16;
-use rvllm_apple::{AppleBackend, AppleRuntimePlan, HandoffKind};
 use rvllm_apple::ane_attention_layout::KvImportPacking;
+use rvllm_apple::{AppleBackend, AppleRuntimePlan, HandoffKind};
 use rvllm_apple_metal::{MetalFloatType, MetalKernelOptions, MetalModelLimits};
 use rvllm_core::{ReqId, TokenId};
 use rvllm_runtime::ane_prefill::{AneDecodeStart, PrefillScalarType};
@@ -73,13 +73,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if flag == "--help" || flag == "-h" {
             println!("Gemma 4 12B: Metal prefill, ANE decode, greedy text generation.\n\nUsage: rvllm_disaggregated_infer --model-dir PATH --prompt TEXT [options]\n\n  --metallib-bf16 PATH           Precompiled BF16 Metal library (or RVLLM_METAL_METALLIB_BF16)\n  --prompt TEXT                 One user text turn; may be repeated\n  --prompt-file PATH            Read one user text turn from a UTF-8 file\n  --max-new-tokens N             Output limit including EOS (default 64)\n  --context-capacity 64|1024     Prompt plus decoded input capacity (default 1024)\n  --ane-weights PLAN             static-int8-ffn-cached (default), static-all-cached, or research plans\n  --ane-compile-budget 0..16     Bounded recovery of missing cached programs (default 0)\n  --retain-metal BOOL            Keep Metal loaded during ANE decode (default false)\n  --interleave BOOL              Prepare both backends once, then prefill/decode each request\n  --interactive BOOL             Read successive user prompts from stdin, one per line; implies interleave\n  --runtime-worker BOOL          Use the serial runtime owner (INT8/MMA/SIMD; default false)\n  --output-dir PATH              Optional local report directory\n  --hf-reference PATH           Verify against pinned token IDs; requires output directory\n  --capture-layer-states BOOL    Capture first ANE step; requires output directory\n  --prepare-ane-cache PART       qkv, output, ffn, ffn-int8, ffn-lut4, head-attention\n\nText input uses the qualified single-user, non-thinking checkpoint template.\nMultiple prompts share initialization. Model histories, tools and multimodal inputs are unsupported.");
             println!("\n  --inspect-ane-cache PART       Strict load inspection of a cache part; zero compiles/evaluations");
-            println!("  --kv-import-packing baseline|reuse-scratch|cpu-kv-blocked32 (default baseline)");
+            println!(
+                "  --kv-import-packing baseline|reuse-scratch|cpu-kv-blocked32 (default baseline)"
+            );
             println!("  PART=all-int8                  Visit qkv, output, ffn-int8 and head-attention in fresh serial processes");
-            println!("  PART=ffn-int8-chunk4           Explicit single-I/O FFN output-channel chunking");
+            println!(
+                "  PART=ffn-int8-chunk4           Explicit single-I/O FFN output-channel chunking"
+            );
             println!("  --ane-weights static-int8-chunk4-ffn-cached (zero compile budget)");
             println!("  PART=ffn-int8-stacked          Prepare/inspect the experimental stacked INT8 FFNs");
-            println!("  PART=qkv-sliding-int8-tiles4   Output-row tiling; original FP16 global QKV");
-            println!("  --ane-weights static-int8-ffn-sliding-qkv-tiles4-cached (zero compile budget)");
+            println!(
+                "  PART=qkv-sliding-int8-tiles4   Output-row tiling; original FP16 global QKV"
+            );
+            println!(
+                "  --ane-weights static-int8-ffn-sliding-qkv-tiles4-cached (zero compile budget)"
+            );
             println!("  PART=qkv-sliding-int8          Experimental INT8 sliding QKV; original FP16 global QKV");
             println!("  --capture-ffn-inputs BOOL      Capture actual FFN inputs for the first two ANE steps; requires output directory; diagnostics only");
             println!("  --ane-weights static-int8-ffn-sliding-qkv-cached\n                                Experimental sliding QKV quantization; full-model quality unqualified");
@@ -140,7 +148,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "static-all-cached" => AneWeightPlan::StaticAllCached,
                     "static-lut4-ffn-cached" => AneWeightPlan::StaticLut4FfnCached,
                     "static-int8-ffn-cached" => AneWeightPlan::StaticInt8FfnCached,
-                    "static-int8-ffn-sliding-qkv-tiles4-cached" => AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached,
+                    "static-int8-ffn-sliding-qkv-tiles4-cached" => {
+                        AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached
+                    }
                     "static-int8-ffn-sliding-qkv-cached" => {
                         AneWeightPlan::StaticInt8FfnSlidingQkvCached
                     }
@@ -161,9 +171,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     interleave |= interactive || runtime_worker;
     retain_metal |= interleave;
     let model_dir = model_dir.ok_or("--model-dir required")?;
-    if matches!(ane_weights, AneWeightPlan::StaticInt8Chunk4FfnCached
-        | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached) && compile_budget != 0 {
-        return Err("candidate inference requires zero compile budget; provision separately".into());
+    if matches!(
+        ane_weights,
+        AneWeightPlan::StaticInt8Chunk4FfnCached
+            | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached
+    ) && compile_budget != 0
+    {
+        return Err(
+            "candidate inference requires zero compile budget; provision separately".into(),
+        );
     }
     if ane_weights == AneWeightPlan::StaticInt8StackedFfnChecked
         && (paths.is_empty()

@@ -111,8 +111,12 @@ impl AneLinear {
         let source = crate::ane_int8_candidates::linear_tiles4(weights)?;
         let (input, output) = weights.shape();
         let layout = LinearLayout::new(input, output, 1)?;
-        tracing::debug!(candidate = source.name, source_blob_bytes = source.blob.len(),
-            convolutions = source.budget.convolutions, "ANE candidate source");
+        tracing::debug!(
+            candidate = source.name,
+            source_blob_bytes = source.blob.len(),
+            convolutions = source.budget.convolutions,
+            "ANE candidate source"
+        );
         Self::compile_program(&source.mil, &source.blob, input, output, layout, policy)
     }
 
@@ -321,8 +325,12 @@ impl AneGatedFfn {
         policy: AneProgramCachePolicy,
     ) -> Result<Self, String> {
         let source = crate::ane_int8_candidates::ffn_chunk4(weights)?;
-        tracing::debug!(candidate = source.name, source_blob_bytes = source.blob.len(),
-            convolutions = source.budget.convolutions, "ANE candidate source");
+        tracing::debug!(
+            candidate = source.name,
+            source_blob_bytes = source.blob.len(),
+            convolutions = source.budget.convolutions,
+            "ANE candidate source"
+        );
         Self::compile_program(&source.mil, &source.blob, weights.shape().0, policy)
     }
 

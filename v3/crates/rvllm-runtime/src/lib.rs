@@ -13,10 +13,10 @@
 pub mod ane_prefill;
 #[cfg(feature = "apple")]
 pub mod apple_bridge;
-#[cfg(target_os = "macos")]
-pub mod apple_measurement;
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 pub mod apple_continuous_worker;
+#[cfg(target_os = "macos")]
+pub mod apple_measurement;
 #[cfg(feature = "apple")]
 pub mod apple_metal_backend;
 pub mod bring_up;
@@ -29,7 +29,11 @@ pub mod gemma4_layer_exec;
     target_arch = "aarch64"
 ))]
 pub mod gemma_ane_decode;
-#[cfg(all(feature = "macos-private-ane-research", target_os = "macos", target_arch = "aarch64"))]
+#[cfg(all(
+    feature = "macos-private-ane-research",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
 pub mod gemma_disaggregated_worker;
 pub mod layer_exec;
 pub mod paged_kv;
