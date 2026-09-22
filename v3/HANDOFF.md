@@ -15,6 +15,19 @@ follow-up synchronizes the Swift header and fixes platform-specific FFI test
 fixtures; its local FFI suite passes 17/17. See the same validation report.
 An automatic goal continuation is not an explicit request to resume experiments.
 
+On 2026-09-22, a broad kernel-candidate delegation was staged for ordinary
+ChatGPT Pro through the local Chat Pro Bridge. The first job
+`rvllm-gemma4-kernels-d4f5c324-20260922-01` stopped before Send because an old
+tab could not identify the model selector. After the user reloaded the current
+extension, `rvllm-gemma4-kernels-d4f5c324-20260922-02` positively verified
+ordinary Chat and `6 Pro` and reached the Send checkpoint, but its marked user
+turn was not visible during submission or one status inspection. The user found
+the complete draft in the composer and sent it once manually. A subsequent
+bridge inspection bound the marked user turn and reported `running` at
+`https://chatgpt.com/c/6ab28a98-8104-83ea-b0d5-f301d3bfc73c`. Do not resubmit
+it or use Work mode; collect the result through the same durable ID. See the
+[delegation record](reports/chat-pro-kernel-delegation-20260922.md).
+
 On 2026-09-21, the host-only queue continuation from commit
 `65436c7c05ffe41285cb567cd87c8fb3a04c689b` was integrated. It keeps the
 existing stability gate sampled while potentially large input pins are hashed,
