@@ -14,6 +14,8 @@ rvllm_experiment_queue submit /absolute/queue /absolute/job.json
 rvllm_experiment_queue run /absolute/queue /absolute/shared-accelerator.lock 600
 rvllm_experiment_queue status /absolute/queue
 rvllm_experiment_queue stop /absolute/queue
+rvllm_experiment_queue audit /absolute/queue /absolute/shared-accelerator.lock
+rvllm_experiment_queue qualify-host /absolute/new-evidence /absolute/shared-accelerator.lock /absolute/conditions-job.json
 ```
 
 Launch `run` as a background process; it needs no interactive terminal. The
@@ -33,7 +35,7 @@ Schema is `rvllm.experiment_job.v1`. Unknown fields are rejected. Every job has:
 
 - `id`: up to 96 ASCII letters, digits, dashes or underscores. IDs are unique.
 - `purpose`: `timing` or `preparation`. Preparation can succeed despite power
-  changes, but its raw eligibility stays false and it makes no performance
+  changes, but its timing eligibility stays false and it makes no performance
   claim. Timing requires eligible observations throughout the child lifetime.
 - `command`: `executable: {path, sha256}`, absolute `cwd`, `args` array and
   optional `env` map. Arguments expand only the literal `{output}` token to
@@ -53,7 +55,9 @@ Schema is `rvllm.experiment_job.v1`. Unknown fields are rejected. Every job has:
   `minimum_free_bytes`, absolute `disk_path`, and `quiet_process_names`.
   Optional `idle_llama_servers: [{pid, port}]` allows explicitly identified
   persistent localhost llama servers only while all `/slots` entries report
-  `is_processing: false`. Unknown, busy or unreachable servers block launch.
+  `is_processing: false`. The PID must also own that IPv4 loopback or wildcard
+  listening port, checked rootlessly with `lsof`; an unrelated idle server cannot
+  exempt a busy PID. Unknown, busy, unreachable or unowned endpoints block launch.
   Preparation jobs may use `thermal_state: null` to accept either benign state;
   timing jobs must name exactly one state. Unknown/Serious/Critical is refused.
 - `stable_seconds` (1–600), `max_wait_seconds` (at most one day), and
@@ -65,8 +69,14 @@ observation gap over 2.5 seconds; equal controls on either side of an
 unobserved interval do not establish continuity. Waiting deadlines are retained
 when a window restarts. An unready job does not block an independent ready job;
 use dependencies to enforce ABBA order. Input hashes are checked again before
-launch, followed by a fresh condition check. A failed
-or incomplete attempt stops the queue, including after restart. Review its
+launch, followed by a fresh condition check. Before probing or selecting any
+candidate, the entire queue is inspected.
+A failed, incomplete, orphaned or mismatched attempt stops the queue, including
+after restart; a lexically early ready job cannot hide a later failure.
+A successful result must identify its job and have consistent exit, pin,
+overrun, purpose and validator outcomes. Its saved manifest must match the
+submitted manifest. Missing/cyclic dependencies and filename/ID mismatches
+are rejected before selection. Review the
 evidence and submit a revised attempt to a new queue; no automatic cache repair
 or statistical retry policy is inferred. Dependency submission order prevents
 cycles through normal submission. Edit a source manifest and submit a new ID;
@@ -123,3 +133,39 @@ an indefinite pending launch; a runtime deadline identifies overruns while
 preserving safe child ownership. File hashes and cooperative locks prevent
 ordinary artifact drift and overlapping queue workers, not adversarial local
 filesystem changes.
+
+## Resume inspection and live host qualification
+
+`audit QUEUE GLOBAL_LOCK` acquires both worker and shared accelerator locks.
+It inspects all attempts and dependencies, then hashes every pending command,
+validator and input. Each file is read once per audit; every expected hash is
+checked independently, including conflicting expectations for the same path.
+The JSON report includes all pin mismatches and the running worker's digest.
+A mismatch exits nonzero. No STOP marker or manifest is changed, no observer
+or trial is started, and a successful audit is not reused to skip launch-time
+pin checks. Malformed/quarantined queue state fails before pin hashing.
+
+`qualify-host NEW_OUTPUT GLOBAL_LOCK CONDITIONS_JOB.json` is an explicit live
+host-only exercise. NEW_OUTPUT must not exist. It copies only the supplied
+job's conditions; **it never executes that job's command**. Under one continuous
+shared hardware lock it stages an impossible-disk negative control, a later
+ready `/usr/bin/true` job, and a dependent `/usr/bin/touch` job that sets STOP
+only in the new evidence directory. Each stock executable is pinned. These
+are preparation jobs with two-second stability windows, 30-second waiting
+bounds and five-second runtime bounds; the original campaign durations and
+16 GiB floor are unchanged. Failed runs retain their evidence without retry.
+The conditions file's exact bytes and digest are saved and checked after use.
+
+Success requires that the blocked job was never attempted, both independent
+and dependent jobs succeeded, and neither claimed timing eligibility. The
+normal worker loop, observations, dependency resolution, pin verification and
+child ownership are exercised. This is not inference, numerical, throughput,
+S2 or KV-import acceptance, nor a substitute for an actual timing job's quiet
+window. Run it from the exact worker binary being qualified and retain its
+digest; hosted tests cannot freeze a worker in the target machine's campaign.
+
+During a timing child, activity-observation gaps over 2.5 seconds disqualify
+the result even when power continues to be sampled and both endpoint probes
+are ready. Preparation reports always set `sampled_conditions_eligible=false`;
+`raw_conditions_eligible` separately preserves their actual observed gate result.
+Historical receipts are not rewritten.
