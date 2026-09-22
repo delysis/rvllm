@@ -16,7 +16,15 @@ The current local change also normalizes the temporary-directory path in one
 contract assertion so the test is valid on macOS `/private/var` aliases. This
 does not change gate behavior.
 
-## Work for ChatGPT 6 Pro in the web app
+## Work for ChatGPT 6 Astra in the web app
+
+This handoff is the routing point for the remaining major work. ChatGPT 6
+Astra should take the next substantive implementation/review pass from the
+committed tree at `faa75336` (or a descendant containing this handoff), after
+reading both this file and `v3/HANDOFF.md`. Astra may return reviewable source
+patches, tests, and analysis, but must not claim native execution, device
+qualification, timing, cache provisioning, or promotion. The local owner
+retains those operations.
 
 Do substantive implementation and review work only. Inspect the current tree
 and this handoff before proposing changes. Any serious implementation change
@@ -36,6 +44,23 @@ patch. Preserve the existing Gemma 4 handoff constraints in `v3/HANDOFF.md`:
 For this packet, review the three gate files and identify any correctness,
 portability, or scope issues. Do not run the real build gate or alter Git
 history; the local owner performs those operations.
+
+## Next Astra work after this piece
+
+The gate-consistency piece is complete in `faa75336` and is intentionally
+limited to the packet-owned formatting manifest, delivery shell gate,
+contract tests, and this routing record. The next major work belongs to
+ChatGPT 6 Astra:
+
+1. Review the committed gate patch and its 22-test contract evidence for
+   portability, race windows, and scope fidelity.
+2. Propose or implement only reviewable follow-up patches, documenting
+   affected files, invariants, and tests here before handoff.
+3. Leave the native delivery gate, prefill-only screens, cache recovery,
+   full-route qualification, tensor oracles, matched timing, and promotion to
+   the local owner in the order specified by `v3/HANDOFF.md`.
+
+Do not add kernels or broaden acceptance criteria in this continuation.
 
 ## Local owner responsibilities
 
