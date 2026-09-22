@@ -28,7 +28,7 @@ class CandidateCiTests(unittest.TestCase):
         names = {name for suite in self.suites for name in suite["tests"]}
         self.assertGreaterEqual(len(names), 40)
         for fragment in ["research::short_mma_tests::", "research_next::temporal_tests::",
-                         "ane_int8_candidates::tests::next_tests::",
+            "ane_int8_candidates::tests::next::",
                          "ane_attention_layout::blocked32_tests::",
                          "ane_attention_layout::transpose_tests::",
                          "gemma_head_ranking::tests::"]:

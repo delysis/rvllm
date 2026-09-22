@@ -1110,3 +1110,23 @@ mod tests {
         }
     }
 }
+
+
+impl AneGatedFfn {
+    /// Explicit second-wave INT8 layout experiment. The existing single-I/O
+    /// owner and logical width-one projection boundary are not changed.
+    pub fn compile_int8_wave2_with_cache_policy(
+        weights: &AneInt8FfnWeights,
+        variant: crate::ane_int8_candidates::wave2::FfnVariant,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        let source = crate::ane_int8_candidates::wave2::build(weights, variant)?;
+        tracing::debug!(
+            candidate = source.name,
+            source_blob_bytes = source.blob.len(),
+            convolutions = source.budget.convolutions,
+            "ANE candidate source"
+        );
+        Self::compile_program(&source.mil, &source.blob, weights.shape().0, policy)
+    }
+}

@@ -61,6 +61,7 @@ pub mod gemma4_model;
 pub mod kernels;
 pub mod options;
 pub mod research;
+pub mod research_wave2;
 pub mod research_evidence;
 pub mod research_next;
 pub use options::{MetalKernelOptions, MetalModelLimits};

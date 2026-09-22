@@ -458,3 +458,10 @@ fn gelu_branch(source: &mut String, part: usize, rows: usize) {
 #[cfg(test)]
 #[path = "ane_int8_candidate_tests.rs"]
 mod tests;
+
+#[path = "ane_int8_wave2.rs"]
+pub mod wave2;
+
+#[cfg(test)]
+#[path = "ane_int8_wave2_tests.rs"]
+mod wave2_tests;

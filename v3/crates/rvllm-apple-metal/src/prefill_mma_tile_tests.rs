@@ -4,7 +4,7 @@ use crate::arena::MetalRegion;
 use crate::weight_loader::{load_safetensor_entry_bf16, scan_safetensor_tensors};
 use crate::MetalFloatType;
 use half::bf16;
-use objc2_metal::MTLComputePipelineState;
+use objc2_metal::{MTLComputePipelineState, MTLDevice};
 use std::path::PathBuf;
 
 // Isolate reduction depth: identical 32x32 output ownership, four accumulator
@@ -64,7 +64,9 @@ kernel void KERNEL_NAME(
     .replace("OUTPUT_TYPE", output)
 }
 
-fn tile_source(stage: &str, output: &str, name: &str) -> String {
+// The BF16 tile is now the same source used by the explicit runtime route.
+// Keep only the independent FP32-operand 32x64 control in this older fixture.
+fn float_tile64_control_source(output: &str, name: &str) -> String {
     r#"
 kernel void KERNEL_NAME(
     device const bfloat *A [[buffer(0)]], device const bfloat *B [[buffer(1)]],
@@ -129,7 +131,7 @@ kernel void KERNEL_NAME(
 }
 "#
     .replace("KERNEL_NAME", name)
-    .replace("STAGE_TYPE", stage)
+    .replace("STAGE_TYPE", "float")
     .replace("OUTPUT_TYPE", output)
 }
 
@@ -147,12 +149,46 @@ fn native_bf16_bk64_checks_precision_and_m84_ffn(
     run_tile_comparison(true)
 }
 
+#[test]
+#[ignore = "explicit real-weight Metal wave2 FP32-operand oracle; no ANE access"]
+fn native_wave2_fp32_operands_preserve_existing_oracle_gates(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    run_matrix_comparison(false, Some(crate::research_wave2::Candidate::Mma32F32))
+}
+
+#[test]
+#[ignore = "explicit real-weight Metal wave2 vector-load oracle; no ANE access"]
+fn native_wave2_vector_loads_preserve_existing_oracle_gates(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    run_matrix_comparison(false, Some(crate::research_wave2::Candidate::Mma32Load4))
+}
+
 fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let qualify_only = std::env::var_os("RVLLM_METAL_MMA_TILE_QUALIFY_ONLY").is_some();
+    run_matrix_comparison(reduction64, None)
+}
+
+fn run_matrix_comparison(
+    reduction64: bool,
+    wave2: Option<crate::research_wave2::Candidate>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // New fixtures are numerical-only. Timing belongs to a separately admitted
+    // campaign, not to incidental execution of an ignored component test.
+    let qualify_only =
+        wave2.is_some() || std::env::var_os("RVLLM_METAL_MMA_TILE_QUALIFY_ONLY").is_some();
+    let require_fp32_bits =
+        reduction64 || wave2 == Some(crate::research_wave2::Candidate::Mma32Load4);
     let model =
         PathBuf::from(std::env::var_os("RVLLM_METAL_QKV_MODEL_DIR").ok_or("model required")?);
     let tensors = scan_safetensor_tensors(&model)?;
-    let names = if reduction64 {
+    let names = if let Some(kind) = wave2 {
+        let kernels = kind.pipeline_names();
+        vec![
+            "qkv_project_f32_mma32",
+            kernels[1],
+            "gemm_f16_mma32",
+            kernels[0],
+        ]
+    } else if reduction64 {
         vec![
             "qkv_project_f32_mma32",
             "bk64_bf16_f32",
@@ -162,37 +198,54 @@ fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std
     } else {
         vec![
             "qkv_project_f32_mma32",
-            "tile64_bf16_f32",
+            "wave2_qkv_mma32x64",
             "tile64_f32_f32",
             "gemm_f16_mma32",
-            "tile64_bf16_bf16",
+            "wave2_gemm_mma32x64",
             "tile64_f32_bf16",
         ]
     };
     let variant_count = names.len() / 2;
-    let mut source =
-        crate::kernels::kernel_source_for_float_type(MetalFloatType::Bf16).into_owned();
+    let selected = if reduction64 {
+        crate::MetalResearchCandidate::Off
+    } else {
+        crate::MetalResearchCandidate::Wave2(
+            wave2.unwrap_or(crate::research_wave2::Candidate::LongMma32x64),
+        )
+    };
+    let mut source = crate::kernels::kernel_source_with_options(
+        MetalFloatType::Bf16,
+        crate::MetalKernelOptions {
+            research: selected,
+            ..crate::MetalKernelOptions::default()
+        },
+    )
+    .into_owned();
     if reduction64 {
         source.push_str(&reduction64_source("float", names[1]));
         source.push_str(&reduction64_source("bfloat", names[3]));
-    } else {
-        for (stage, output, name) in [
-            ("bfloat", "float", names[1]),
-            ("float", "float", names[2]),
-            ("bfloat", "bfloat", names[4]),
-            ("float", "bfloat", names[5]),
-        ] {
-            source.push_str(&tile_source(stage, output, name));
-        }
+    } else if wave2.is_none() {
+        // Preserve the old 32x64 FP32-operand control; native BF16 operands
+        // are no longer duplicated under a test-only source/name.
+        source.push_str(&float_tile64_control_source("float", names[2]));
+        source.push_str(&float_tile64_control_source("bfloat", names[5]));
     }
     let mut ctx = MetalContext::new()?;
     ctx.compile_library(&source)?;
     let mut pipelines = PipelineCache::new();
     for name in &names {
         pipelines.compile(&ctx, name)?;
+        let pso = pipelines.get(name)?;
+        if pso.threadExecutionWidth() != 32
+            || pso.maxTotalThreadsPerThreadgroup() < 128
+            || pso.staticThreadgroupMemoryLength() > ctx.device().maxThreadgroupMemoryLength()
+        {
+            return Err(format!("unsupported matrix fixture PSO limits: {name}").into());
+        }
     }
     let resources:Vec<_>=names.iter().map(|name|{let p=pipelines.get(name).unwrap();serde_json::json!({"name":name,"static_shared_bytes":p.staticThreadgroupMemoryLength(),"max_threads":p.maxTotalThreadsPerThreadgroup(),"execution_width":p.threadExecutionWidth()})}).collect();
     let mut reports = Vec::new();
+    let vector_load = wave2 == Some(crate::research_wave2::Candidate::Mma32Load4);
     let shapes = if reduction64 {
         vec![
             ("all-tails", 0, 63_u32, 67_u32, 65_u32, vec![]),
@@ -208,7 +261,16 @@ fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std
         ]
     } else {
         vec![
-            ("all-tails", 0, 63_u32, 67_u32, 35_u32, vec![]),
+            // Vector loading admits aligned N/K only. Its policy tests reject
+            // other N/K; this actual execution still exercises a partial M tile.
+            (
+                "all-tails",
+                0,
+                63_u32,
+                if vector_load { 64_u32 } else { 67_u32 },
+                if vector_load { 64_u32 } else { 35_u32 },
+                vec![],
+            ),
             (
                 "sliding-qkv",
                 0,
@@ -330,11 +392,13 @@ fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std
             encoder.dispatchThreadgroups_threadsPerThreadgroup(
                 MTLSize {
                     width: (m as usize).div_ceil(32),
-                    height: (n as usize).div_ceil(if reduction64 || path % variant_count == 0 {
-                        32
-                    } else {
-                        64
-                    }),
+                    height: (n as usize).div_ceil(
+                        if reduction64 || wave2.is_some() || path % variant_count == 0 {
+                            32
+                        } else {
+                            64
+                        },
+                    ),
                     depth: 1,
                 },
                 MTLSize {
@@ -387,13 +451,13 @@ fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std
         for path in 0..variant_count {
             let output = &float_outputs[path];
             let packed = read(path + variant_count);
-            if reduction64 {
+            if require_fp32_bits {
                 assert!(
                     baseline
                         .iter()
                         .zip(output)
                         .all(|(a, b)| a.to_bits() == b.to_bits()),
-                    "{label} BK64 must preserve every FP32 accumulator result"
+                    "{label} layout-only variant must preserve every FP32 accumulator result"
                 );
             }
             for (&value, &actual) in output.iter().zip(&packed) {
@@ -488,11 +552,20 @@ fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std
             Some((v[2] + v[3]) * 0.5)
         };
         let medians: Vec<_> = gpu.iter().map(|v| median(v)).collect();
-        reports.push(serde_json::json!({"projection":label,"m":m,"n":n,"k":k,"relative_l2_vs_mma32":l2,"sampled_fp64_max_abs":cpu_max,"bf16_rounding_exact":true,"fp32_bit_parity_required":reduction64,"guards_intact":true,"commands":names.len()+order.len(),"trial_order":order,"gpu_ms":gpu,"wall_ms":wall,"gpu_median_ms":medians}));
+        reports.push(serde_json::json!({"projection":label,"m":m,"n":n,"k":k,"relative_l2_vs_mma32":l2,"sampled_fp64_max_abs":cpu_max,"bf16_rounding_exact":true,"fp32_bit_parity_required":require_fp32_bits,"guards_intact":true,"commands":names.len()+order.len(),"trial_order":order,"gpu_ms":gpu,"wall_ms":wall,"gpu_median_ms":medians}));
     }
-    let report = serde_json::json!({"schema":"rvllm.metal_tile_comparison.v2","qualification_only":qualify_only,"reduction64":reduction64,"variants":names,"pipeline_resources":resources,"cases":reports,"scope":"Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt."});
+    let report = serde_json::json!({"schema":"rvllm.metal_tile_comparison.v2","qualification_only":qualify_only,"reduction64":reduction64,"wave2":wave2.map(|kind| kind.name()),"variants":names,"pipeline_resources":resources,"cases":reports,"scope":"Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt."});
     if let Some(path) = std::env::var_os("RVLLM_METAL_MMA_TILE_REPORT") {
-        std::fs::write(path, serde_json::to_vec_pretty(&report)?)?;
+        let bytes = serde_json::to_vec_pretty(&report)?;
+        if wave2.is_some() {
+            use std::io::Write;
+            let mut file = std::fs::File::create_new(path)?;
+            file.write_all(&bytes)?;
+            file.write_all(b"\n")?;
+            file.sync_all()?;
+        } else {
+            std::fs::write(path, bytes)?;
+        }
     }
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())

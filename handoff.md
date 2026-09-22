@@ -308,3 +308,37 @@ full-continuation/oracle checks, then run the predeclared ABBA timing campaign
 with dispatch evidence. Do not promote from host/compiler receipts alone.
 
 Integration commit: **e52cbb549967e17e3d7f266b7d1f9d2f1efdf800**.
+
+## Wave 2 packet intake and deferral (2026-09-22)
+
+Wave 2 archive `rvllm-gemma4-wave2-faa75336-20260922.tar` was checksum
+verified and its complete eight-patch series replayed cleanly against the
+declared `faa75336` base. The packet is explicitly a proposal backlog: it
+contains no commits, no live queue mutation, no accelerator/native execution,
+and all six selectors are default-off with null pins.
+
+The non-conflicting proposal/source artifacts were staged locally: four Metal
+shader candidates, the ANE wave2 source/codec module, proposal JSON/templates,
+and the fail-closed whole-tensor audit tool. The packet's tensor-audit tests
+pass **13/13**, and the existing integrated Python qualification passes
+**63/63** after correcting the already-known `next::` inventory spelling.
+The packet's isolated Linux/source checks were not treated as native evidence.
+
+### Deferred blockers / Astra to-dos
+
+- [ ] Manually merge patch 8's runtime wiring into the current Wave 1 head.
+  Direct application conflicts in `handoff.md`, Metal routing/evidence and
+  runtime decode/prefill files because Wave 1 changed the same regions. Do not
+  replace those files wholesale with the packet's `faa75336` preimages.
+- [ ] Add and review the missing `research_wave2` and ANE wave2 test-module
+  wiring only after the merge is reconciled; current staged artifacts are not
+  an admitted runnable route.
+- [ ] Extend the reviewed host inventory and delivery gate for the four new
+  Metal selectors and wave2 test filters, then run real rustfmt, host Rust
+  tests, and the additional Metal 3.1 compile/link matrix.
+- [ ] Keep all six experiment manifests unadmitted until actual model,
+  executable, library, oracle, and cache pins are populated from local assets.
+- [ ] After compiler/source qualification, perform the separately gated
+  tensor-oracle, full-continuation, cache, and timing work. No inference,
+  cache recovery, accelerator fixture, queue admission, or timing was run for
+  Wave 2.

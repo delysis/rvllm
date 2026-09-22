@@ -1,0 +1,162 @@
+{
+  "schema": "rvllm.gemma4.wave2.proposal.v1",
+  "base_commit": "faa753360e30ce59540d1d113994c711a1d19675",
+  "candidate": "ane-int8-ffn-interleaved",
+  "rank_for_screening": 6,
+  "status": "PROPOSAL_NOT_ADMITTED",
+  "job_id": null,
+  "default_off": true,
+  "hypothesis": "Interleave stored gate/up quantized rows and scales, reshape and slice before the unchanged activation.",
+  "control": "static-int8-stacked-ffn-cached",
+  "candidate_environment": {
+    "RVLLM_METAL_RESEARCH": "off",
+    "RVLLM_METAL_PREFILL_GEMM": "mma32",
+    "RVLLM_METAL_QKV_PREFILL": "batch8",
+    "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup",
+    "RVLLM_METAL_BF16_ACCUM": null
+  },
+  "ane_plan": "static-int8-interleaved-ffn-cached",
+  "ane_compile_budget": 0,
+  "new_cache_part": "ffn-int8-interleaved",
+  "required_features": [
+    "macos-private-ane-research"
+  ],
+  "target": {
+    "soc": "M4 Max",
+    "os": "macOS 15.6 (24G84)",
+    "model": "Gemma 4 12B",
+    "hidden": 3840,
+    "intermediate": 15360,
+    "layers": 48,
+    "dtype": "BF16 Metal / INT8 FFN weights and FP16 ANE activations",
+    "head_families": [
+      [
+        16,
+        8,
+        256,
+        1024
+      ],
+      [
+        16,
+        1,
+        512,
+        0
+      ]
+    ]
+  },
+  "local_pins": {
+    "source_commit": null,
+    "source_tree": null,
+    "binary_sha256": null,
+    "metallib_sha256": null,
+    "model_revision": null,
+    "model_config_sha256": null,
+    "reference_sha256": null,
+    "original_tensor_policy_sha256": null,
+    "driver_journal": null,
+    "boot_identity": null,
+    "shared_hardware_lock": null
+  },
+  "functional_screen": {
+    "prompt_tokens": [
+      84
+    ],
+    "one_case_per_pinned_reference": true,
+    "prefill_only": false,
+    "timing_acceptance": false,
+    "require_first_token_match": true,
+    "require_matching_dispatch_or_program_identity": true,
+    "negative_cases": [
+      "wrong hidden/intermediate dimensions",
+      "nonzero inference compile budget",
+      "missing compiled program"
+    ],
+    "never_pad_or_rewrite_a_reference": true
+  },
+  "tensor_gate": {
+    "tool": "v3/tools/gemma4_tensor_audit.py",
+    "policy": "Use unchanged original oracle thresholds pinned by the local maintainer; this proposal supplies none.",
+    "required": "Original component/driver oracle, all captured KV/seed outputs, and complete unchanged reference continuation. Token agreement alone is insufficient.",
+    "extra_checks": [
+      "all finite",
+      "full shape and byte length",
+      "global raw-V distinction",
+      "no altered RMS gamma or FP32 statistics",
+      "accepted ten-step FP16 ANE GELU materializations"
+    ]
+  },
+  "timing": {
+    "enabled_only_after_all_acceptance_gates": true,
+    "phase": "normal disaggregated route; not instrumented prefill-only capture I/O",
+    "prompt_tokens": 84,
+    "requested_output_tokens": 10,
+    "continuation_steps": 9,
+    "context_capacity": 1024,
+    "order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmups_per_block": 2,
+    "measured_requests_per_block": 7,
+    "block_count": 4,
+    "total_requests": 36,
+    "baseline_drift_max_fraction": 0.05,
+    "candidate_repeat_drift_max_fraction": 0.05,
+    "minimum_relevant_gain_fraction": 0.02,
+    "accept": "Both baseline and candidate repeats satisfy the predeclared drift gate; paired complete-route median improves by at least the predeclared 2%, no material stage regression; all originals pass; independent confirmation required. No winner from compilation/static counts.",
+    "early_eos_or_different_work": "Do not pad; reject work-count comparability and use a new separately pinned protocol.",
+    "cpu_cycle_normalization": false,
+    "record_separately": [
+      "host packing/copies",
+      "completed Metal GPU interval",
+      "prefill and KV import",
+      "ANE per-stage duration",
+      "complete request and continuation",
+      "peak RSS/footprint",
+      "compilation and load time outside timing",
+      "program evaluations and unloads"
+    ],
+    "maximum_model_decode_steps": 324,
+    "expected_ane_evaluations_per_decode_step": 208,
+    "maximum_ane_program_evaluations": 67392
+  },
+  "power": {
+    "minimum_free_disk_gib": 16,
+    "alter_settings": false,
+    "stratum_must_be_pinned": true,
+    "power_source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null,
+    "separate_AC_battery_and_nominal_Fair": true,
+    "no_stale_pid_exemptions": true
+  },
+  "resource_model": {
+    "new_optional_psos_per_selected_library": 0,
+    "new_weight_specific_ffn_programs_if_fully_provisioned": 48,
+    "full_model_loaded_programs": 162,
+    "per_threadgroup_shared_bytes": null,
+    "additional_global_metal_scratch_bytes": 0,
+    "logical_single_io_bytes_each": 245760,
+    "source_blob_bytes_per_ffn": 177016640,
+    "residency_or_compression_claim": false
+  },
+  "key_risks": [
+    "Private compiler reshape/slice layout may be rejected or costly. Compare stacked, not just separate gate/up.",
+    "Native compiler and accelerator correctness are unrun in the research environment."
+  ],
+  "queue_admission": "Local owner only, new job ID and fresh output. Do not edit attempted manifests, reuse old receipts, touch STOP markers or auto-launch from this proposal.",
+  "matched_controls": [
+    "same instrumented executable and source revision",
+    "same model revision and original reference",
+    "same prompt and requested output count",
+    "same trace/capture flags and retention/interleave policy",
+    "same Metal baseline MMA32 and SIMD-attention flags",
+    "same driver lifecycle/journal mode",
+    "zero ANE compiler calls inside timing",
+    "same cold/warm/cache policy",
+    "same declared power/thermal tuple"
+  ]
+}
