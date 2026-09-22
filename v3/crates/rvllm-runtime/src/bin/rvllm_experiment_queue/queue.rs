@@ -17,6 +17,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const SCHEMA: &str = "rvllm.experiment_job.v1";
 
+#[path = "host_qualification.rs"]
+mod host_qualification;
+#[cfg(test)]
+#[path = "qualification_tests.rs"]
+mod qualification_tests;
+#[path = "scheduling.rs"]
+mod scheduling;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Pin {
@@ -335,12 +343,48 @@ fn slots_idle(bytes: &[u8]) -> bool {
         })
 }
 
+fn listener_report_matches(bytes: &[u8], pid: u32, port: u16) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let mut owner = None;
+    text.lines().any(|line| {
+        if let Some(value) = line.strip_prefix('p') {
+            owner = value.parse::<u32>().ok();
+        }
+        owner == Some(pid)
+            && matches!(line.strip_prefix('n'), Some(address)
+                if address == format!("127.0.0.1:{port}") || address == format!("*:{port}"))
+    })
+}
+
+fn listener_owned_by(pid: u32, port: u16) -> bool {
+    Command::new("/usr/sbin/lsof")
+        .args([
+            "-nP",
+            "-a",
+            "-p",
+            &pid.to_string(),
+            &format!("-i4TCP:{port}"),
+            "-sTCP:LISTEN",
+            "-Fpn",
+        ])
+        .output()
+        .is_ok_and(|output| {
+            output.status.success() && listener_report_matches(&output.stdout, pid, port)
+        })
+}
+
 fn idle_server(server: &IdleLlamaServer, processes: &[Process]) -> Value {
     let identity = processes
         .iter()
         .any(|p| p.pid == server.pid && p.name == "llama-server");
     if !identity {
         return json!({"pid":server.pid,"port":server.port,"idle":false,"error":"server identity absent"});
+    }
+    if !listener_owned_by(server.pid, server.port) {
+        return json!({"pid":server.pid,"port":server.port,"idle":false,
+            "error":"PID does not own the IPv4 loopback/wildcard listener"});
     }
     let response = Command::new("/usr/bin/curl")
         .args([
@@ -552,6 +596,23 @@ fn phase_eligible(phase: &Value, c: &Conditions) -> bool {
     }
 }
 
+fn timing_eligible(purpose: Purpose, raw_conditions_eligible: bool) -> bool {
+    purpose == Purpose::Timing && raw_conditions_eligible
+}
+
+/// Power may still be sampled while process/disk probes or report I/O stall.
+/// Equal snapshots cannot certify that unobserved activity interval.
+fn check_observation_gap(value: &mut Value, previous: Instant, now: Instant) {
+    let gap = now
+        .checked_duration_since(previous)
+        .map(|d| d.as_secs_f64() * 1000.0);
+    value["observation_gap_ms"] = json!(gap);
+    if sample_age_ms(previous, now).is_none() {
+        value["ready"] = json!(false);
+        value["observation_gap_error"] = json!("missing continuous activity coverage");
+    }
+}
+
 fn execute(
     job: &Job,
     queue: &Path,
@@ -629,9 +690,15 @@ fn execute(
     let mut violations = Vec::new();
     let mut observations = File::create_new(output.join("conditions.jsonl"))?;
     let mut overdue = false;
+    let mut last_observed = gate
+        .last_observed
+        .ok_or("missing final launch observation")?;
     let exit = loop {
         match probe(monitor, &job.conditions, Some(pid)) {
-            Ok(value) => {
+            Ok(mut value) => {
+                let now = Instant::now();
+                check_observation_gap(&mut value, last_observed, now);
+                last_observed = now;
                 writeln!(observations, "{value}")?;
                 if value["ready"] != true && violations.len() < 32 {
                     violations.push(value);
@@ -662,8 +729,9 @@ fn execute(
     drop(child);
     let measurement = phase.finish(1);
     let files_unchanged = job.verify_files().map_err(|e| e.to_string());
-    let eligible =
+    let raw_conditions_eligible =
         violations.is_empty() && !overdue && phase_eligible(&measurement, &job.conditions);
+    let eligible = timing_eligible(job.purpose, raw_conditions_eligible);
     let mut validation = Value::Null;
     let mut accepted = exit.success()
         && !overdue
@@ -679,9 +747,10 @@ fn execute(
         }
     }
     let report = json!({"schema":"rvllm.experiment_result.v1","id":job.id,"purpose":job.purpose,
-        "status":if accepted {"succeeded"}else{"failed"},
+        "status":if accepted {"succeeded"}else{"failed"},"trial_started":true,
         "exit_code":exit.code(),"signal_or_missing_exit_code":exit.code().is_none(),
-        "sampled_conditions_eligible":eligible,"violations":violations,"overdue":overdue,
+        "sampled_conditions_eligible":eligible,"raw_conditions_eligible":raw_conditions_eligible,
+        "violations":violations,"overdue":overdue,
         "files_unchanged":files_unchanged.is_ok(),"file_error":files_unchanged.err(),
         "validation":validation,"measurement":measurement,
         "stop_requested":stopped(queue,stop),
@@ -695,7 +764,12 @@ fn manifest_paths(queue: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for entry in fs::read_dir(queue.join("jobs"))? {
         let entry = entry?;
-        if entry.file_type()?.is_file() && entry.path().extension().is_some_and(|e| e == "json") {
+        if entry.path().extension().is_some_and(|e| e == "json") {
+            if !entry.file_type()?.is_file() {
+                return Err(
+                    format!("manifest is not a regular file: {}", entry.path().display()).into(),
+                );
+            }
             files.push(entry.path());
         }
     }
@@ -703,15 +777,44 @@ fn manifest_paths(queue: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+/// An attempt directory is never pending, even when its report is absent.
+fn successful_result(queue: &Path, id: &str) -> Result<Option<Value>> {
+    if !valid_id(id) {
+        return Err("invalid result identity".into());
+    }
+    let output = queue.join("results").join(id);
+    if !output.try_exists()? {
+        return Ok(None);
+    }
+    if !fs::symlink_metadata(&output)?.file_type().is_dir() {
+        return Err(format!("result {id} is not an owned attempt directory").into());
+    }
+    let value = read_json(&output.join("report.json"))?;
+    if value["schema"] != "rvllm.experiment_result.v1"
+        || value["id"] != id
+        || value["status"] != "succeeded"
+        || value["exit_code"] != 0
+        || value["files_unchanged"] != true
+        || value["overdue"] != false
+        || value["signal_or_missing_exit_code"] != false
+        || !matches!(value["purpose"].as_str(), Some("timing" | "preparation"))
+        || (value["purpose"] == "timing" && value["sampled_conditions_eligible"] != true)
+        || value
+            .get("trial_started")
+            .is_some_and(|started| *started != true)
+        || (value["validation"] != Value::Null && value["validation"]["success"] != true)
+    {
+        return Err(
+            format!("job {id} has failed, incomplete or mismatched output; no replay").into(),
+        );
+    }
+    Ok(Some(value))
+}
+
 fn dependencies_ready(job: &Job, queue: &Path) -> Result<bool> {
     for dependency in &job.after {
-        let report = queue.join("results").join(dependency).join("report.json");
-        if !report.exists() {
+        if successful_result(queue, dependency)?.is_none() {
             return Ok(false);
-        }
-        let value = read_json(&report)?;
-        if value["status"] != "succeeded" {
-            return Err(format!("dependency {dependency} did not succeed; queue stopped").into());
         }
     }
     Ok(true)
@@ -730,7 +833,11 @@ fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
 }
 
 fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
-    let _accelerator_lock = lock(accelerator_lock)?;
+    let accelerator_guard = lock(accelerator_lock)?;
+    run_locked(queue, idle_seconds, &accelerator_guard)
+}
+
+fn run_locked(queue: &Path, idle_seconds: u64, _accelerator_guard: &File) -> Result<()> {
     // A stopped queue needs neither a power observer nor a signal handler.
     // This also permits a real executable smoke without sampling hardware.
     if queue.join("STOP").exists() {
@@ -757,52 +864,13 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
             )?;
             return Ok(());
         }
-        let mut selected = None;
-        let mut pending = Vec::new();
         let mut probes = ProbeCache::default();
-        for path in manifest_paths(queue)? {
-            let job: Job = serde_json::from_reader(BufReader::new(File::open(&path)?))?;
-            let result = queue.join("results").join(&job.id);
-            if result.exists() {
-                let report = read_json(&result.join("report.json"))?;
-                if report["status"] != "succeeded" {
-                    return Err(format!(
-                        "job {} has failed or incomplete output; no replay",
-                        job.id
-                    )
-                    .into());
-                }
-                continue;
-            }
-            job.validate()?;
-            if !dependencies_ready(&job, queue)? {
-                pending.push(json!({"id":job.id,"waiting_for_dependencies":job.after}));
-                continue;
-            }
-            let (started, gate) = waiting
-                .entry(job.id.clone())
-                .or_insert_with(|| (Instant::now(), StableGate::new()));
-            if started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
-                return Err(format!(
-                    "job {} expired waiting for conditions; no trial started",
-                    job.id
-                )
-                .into());
-            }
-            let observation = probe_shared(&monitor, &job.conditions, None, &mut probes)?;
-            pending.push(
-                json!({"id":job.id,"wait_seconds":started.elapsed().as_secs(),
-                "conditions":observation}),
-            );
-            if gate.observe(
-                &observation,
-                Instant::now(),
-                Duration::from_secs(job.stable_seconds),
-            ) {
-                selected = Some(job);
-                break;
-            }
-        }
+        let (selected, pending) = scheduling::select(
+            queue,
+            &mut waiting,
+            |conditions| probe_shared(&monitor, conditions, None, &mut probes),
+            Instant::now,
+        )?;
         if let Some(job) = selected {
             idle = Instant::now();
             if stopped(queue, &stop) {
@@ -860,7 +928,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
 
 pub(super) fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    let usage="usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | status QUEUE | stop QUEUE";
+    let usage="usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | status QUEUE | stop QUEUE | audit QUEUE GLOBAL_LOCK | qualify-host NEW_OUTPUT GLOBAL_LOCK CONDITIONS_JOB.json";
     if args.len() < 2 {
         return Err(usage.into());
     }
@@ -911,6 +979,26 @@ pub(super) fn main() -> Result<()> {
                 return Err("idle time must be <= 86400 seconds".into());
             }
             run(&queue, &lock_path, idle)
+        }
+        Some("audit") if args.len() == 3 => {
+            let lock_path = PathBuf::from(&args[2]);
+            if !lock_path.is_absolute() {
+                return Err("global lock must be absolute".into());
+            }
+            let _queue_guard = lock(&queue.join("worker.lock"))?;
+            let _accelerator_guard = lock(&lock_path)?;
+            let report = scheduling::audit(&queue)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            if report["all_pins_match"] != true {
+                return Err(
+                    "pending pins differ; preserve manifests and submit revised jobs under new IDs"
+                        .into(),
+                );
+            }
+            Ok(())
+        }
+        Some("qualify-host") if args.len() == 4 => {
+            host_qualification::run(&queue, Path::new(&args[2]), Path::new(&args[3]))
         }
         Some("stop") if args.len() == 2 => {
             File::create_new(queue.join("STOP"))?;
