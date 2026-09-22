@@ -1,0 +1,185 @@
+{
+  "schema": "rvllm.kernel_candidate.NONLIVE_PROPOSAL.v1",
+  "status": "untrusted_unpinned_not_queue_admissible",
+  "job": "rvllm-gemma4-kernels-d4f5c324-20260922-02",
+  "base_commit": "d4f5c324d60875228733132ee78cfe61fd8c9402",
+  "candidate": "metal-gqa-kv8",
+  "patch": "series/0004-metal-gqa-kv8.patch",
+  "default_enabled": false,
+  "requires_whole_ordered_series_through": "0008-review-safety-and-evidence-fixes.patch",
+  "hypothesis": "Stage eight K/V rows once for two sliding or four global query heads while retaining per-key FP32 online-softmax and per-SIMD reduction order.",
+  "supported_shapes": "Gemma 4 12B full layer identity, batch=1, query rows=64..1024, QH=16, scale exactly 1.0, sliding(KVH=8,HD=256,W=1024) or global(1,512,W=0); valid context/positions must fit allocated page table/cache. Future full-route recipes stay within context 1024.",
+  "fallback": "No selection changes production defaults. Unsupported Metal/resource shapes use original kernels; ANE graph APIs reject before private calls and require explicit baseline re-selection; unsupported valid CPU layouts use old reusable packer.",
+  "feature_requirements": {
+    "host_tests": [
+      "rvllm-apple/default-empty",
+      "rvllm-apple-metal/default-empty"
+    ],
+    "full_route": [
+      "rvllm-runtime/macos-private-ane-research"
+    ],
+    "target": "aarch64-apple-darwin",
+    "shipping_private_api_allowed": false
+  },
+  "local_pins_required": {
+    "reviewed_commit": null,
+    "rustc_version": null,
+    "cargo_lock_sha256": null,
+    "xcode_version": null,
+    "metal_compiler_version": null,
+    "executable_path": null,
+    "executable_sha256": null,
+    "candidate_metallib_path": null,
+    "candidate_metallib_sha256": null,
+    "baseline_metallib_path": null,
+    "baseline_metallib_sha256": null,
+    "checkpoint_manifest_sha256": null,
+    "quantized_payload_manifest_sha256": null,
+    "reference_file_paths_and_sha256": null,
+    "power_monitor_identity": null,
+    "diagnostic_journal_path": null,
+    "local_component_adapter_source_sha256": null
+  },
+  "stratum": {
+    "power_source": "battery",
+    "low_power_mode": false,
+    "pmset_mode": 0,
+    "thermal_state": "nominal",
+    "must_observe_not_set": true,
+    "pooling_with_other_strata": false
+  },
+  "additional_strata": "AC, low-power-on, other pmset modes and Fair must be new independent pins/experiments; no conversion or pooling.",
+  "selection": {
+    "environment": {
+      "RVLLM_METAL_PREFILL_GEMM": "mma32",
+      "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup",
+      "RVLLM_METAL_BF16_ACCUM": "native",
+      "RVLLM_METAL_QKV_PREFILL": "off",
+      "RVLLM_METAL_RESEARCH": "metal-gqa-kv8"
+    },
+    "ane_weights": "static-int8-ffn-cached",
+    "kv_import_packing": "baseline",
+    "ane_compile_budget": 0,
+    "runtime_worker": false,
+    "interleave": true,
+    "retain_metal": true
+  },
+  "baseline": "Existing SIMD attention with research=off and unchanged FP16/BF16 storage. Also retain the existing scalar and sampled FP64 attention oracles.",
+  "requested_candidate_is_not_dispatch_evidence": true,
+  "required_actual_labels": [
+    "metal-gqa-kv8",
+    "research_gqa_kv8_d256",
+    "research_gqa_kv8_d512"
+  ],
+  "work": {
+    "sliding_grid": "M * 8 * 1 groups; 64 threads/group, two query heads/group",
+    "global_grid": "M * 1 * 4 groups; 128 threads/group, four query heads/group",
+    "layers_per_prompt": {
+      "sliding": 40,
+      "global": 8
+    },
+    "causal_attention_macs_per_layer_no_prefix": "2*16*HD*M*(M+1)/2, excluding softmax/scaling",
+    "staging_rows": 8,
+    "component_metadata_cases": [
+      "permuted physical pages",
+      "partial final page",
+      "negative unmapped page",
+      "positive OOB page -> nonfinite output, no load",
+      "negative/out-of-context position -> nonfinite output",
+      "nonzero prefix and window boundary only in an explicitly pinned component case"
+    ],
+    "prompt_token_counts_separate_cases": [
+      64,
+      84,
+      512,
+      1015
+    ],
+    "context_capacity": 1024,
+    "generated_tokens_including_first_metal_token": 10,
+    "ane_steps_per_request": 9,
+    "eos_early_stop": "invalidate unequal-work comparison, retain evidence"
+  },
+  "bounded_schedule": {
+    "kind": "manual A-before / B / A-after, separate owners/processes; not scheduled by these files",
+    "per_arm_warmup_requests": 2,
+    "per_arm_measured_requests": 7,
+    "total_requests_per_case_per_screen": 27,
+    "total_actual_ane_steps_if_no_early_eos": 243,
+    "retry_budget": 0,
+    "baseline_bracket_drift_limit_fraction": 0.05,
+    "drift_action": "reject this block and retain every receipt; no rescaling"
+  },
+  "qualification_before_timing": [
+    "Existing attention limits unchanged: versus scalar relative L2 < 0.003 AND max abs < 0.032; versus sampled FP64 relative L2 < 0.004 AND max abs < 0.01.",
+    "All valid-data outputs finite; malformed metadata positive-OOB/position cases must be nonfinite, never plausible clamped output. Canary guard regions must remain untouched.",
+    "Exact final greedy token path with baseline/HF references. Q/K normalization, proportional RoPE and global raw V are inherited untouched."
+  ],
+  "oracle_contract": {
+    "finite_required": true,
+    "forced_reference_decode": false,
+    "tolerance_change_allowed": false,
+    "failed_evidence_retained": true
+  },
+  "accept_reject": {
+    "scope": "advance to another independently pinned confirmation, never auto-promote production",
+    "accept": [
+      "All host/compiler/component/numerical/token/dispatch gates pass.",
+      "Power/thermal labels remain exactly the pinned stratum and baseline bracket drift is <=5%.",
+      "Candidate target-stage median is at least5% lower than BOTH baseline-arm medians.",
+      "End-to-end request median is no more than2% above the worse baseline-arm median.",
+      "Report raw samples and uncertainty; require a second independent passing block before proposing admission."
+    ],
+    "reject": [
+      "Any oracle mismatch, nonfinite valid-data output, cache miss, driver/compiler error, unexpected dispatch fallback, OOB/canary fault, changed work count, stratum transition, or drift>5%.",
+      "A speed-only win that fails quality is rejected.",
+      "An inconclusive/noisy or <5% target-stage result is not an accepted optimization."
+    ],
+    "no_cpu_cycle_normalization": true
+  },
+  "measurement_target": "completed Metal prompt interval and attention encoder interval",
+  "memory_program_budget": {
+    "extra_pso_functions": 2,
+    "threadgroup_bytes_d256": 8224,
+    "threadgroup_bytes_d512": 16416,
+    "persistent_arena_delta_bytes": 0,
+    "ane_program_delta": 0
+  },
+  "risks": [
+    "More threadgroup memory and barriers may outweigh KV-load sharing.",
+    "Actual simd_sum/exp lowering and masked-page behavior require hardware checks.",
+    "Poison must bypass FP16 finite saturation; Metal fast-math behavior remains a hardware gate.",
+    "No cross-threadgroup scheduler or persistent-kernel forward-progress assumption."
+  ],
+  "future_full_route_argv_template": [
+    "${PINNED_EXE}",
+    "--model-dir",
+    "${EXISTING_MODEL_DIR}",
+    "--metallib-bf16",
+    "${PINNED_LIBRARY}",
+    "--hf-reference",
+    "${PINNED_REFERENCE}",
+    "--output-dir",
+    "${NEW_EMPTY_REPORT_DIR}",
+    "--ane-weights",
+    "static-int8-ffn-cached",
+    "--ane-compile-budget",
+    "0",
+    "--kv-import-packing",
+    "baseline",
+    "--context-capacity",
+    "1024",
+    "--interleave",
+    "true",
+    "--retain-metal",
+    "true",
+    "--runtime-worker",
+    "false"
+  ],
+  "invocation_limits": [
+    "This array is documentation, not a runnable trial or accepted queue manifest.",
+    "Repeat --hf-reference with explicitly pinned inputs to form each bounded warmup/measured arm. Reference files carry their own token/output budget; --max-new-tokens is not relied on for reference mode.",
+    "No attempt ledger, STOP marker, process allowlist or queue entry is supplied or modified.",
+    "Initialization/compilation is excluded from steady-state timing and reported separately. No auto-download or compile-on-miss.",
+    "Use the same retained-Metal policy in all arms; the supplied historical baseline is not a substitute for these controls."
+  ]
+}

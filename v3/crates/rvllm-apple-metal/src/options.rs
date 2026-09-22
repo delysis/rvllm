@@ -7,6 +7,8 @@ pub struct MetalKernelOptions {
     pub prefill_mma32: bool,
     pub prefill_simd_attention: bool,
     pub quantized_bf16_accumulation: bool,
+    /// Explicit experiment, captured once; never inferred from model/device.
+    pub research: crate::research::MetalResearchCandidate,
 }
 
 impl MetalKernelOptions {
@@ -17,7 +19,15 @@ impl MetalKernelOptions {
         #[cfg(target_os = "macos")]
         {
             let selected = |name, value| std::env::var(name).ok().as_deref() == Some(value);
+            let research = match std::env::var("RVLLM_METAL_RESEARCH") {
+                Ok(value) => value.parse().unwrap_or_else(|reason| {
+                    tracing::warn!(%reason, requested = %value, "Metal research disabled");
+                    crate::research::MetalResearchCandidate::Off
+                }),
+                Err(_) => crate::research::MetalResearchCandidate::Off,
+            };
             Self {
+                research,
                 qkv_prefill_batch8: selected("RVLLM_METAL_QKV_PREFILL", "batch8"),
                 prefill_mma32: selected("RVLLM_METAL_PREFILL_GEMM", "mma32"),
                 prefill_simd_attention: selected("RVLLM_METAL_PREFILL_ATTENTION", "simdgroup"),

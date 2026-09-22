@@ -169,6 +169,15 @@ impl AneInt8LinearWeights {
         self.matrix.dequantized()
     }
 
+    /// Exact immutable rows for explicit layout-only source builders.
+    pub fn matrix(&self) -> AneInt8MatrixView<'_> {
+        AneInt8MatrixView {
+            columns: self.matrix.columns,
+            values: &self.matrix.values,
+            scales: &self.matrix.scales,
+        }
+    }
+
     pub fn source_blob_bytes(&self) -> usize {
         3 * 64 + self.matrix.values.len() + self.matrix.scales.len() * 2
     }

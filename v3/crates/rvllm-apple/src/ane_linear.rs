@@ -101,6 +101,21 @@ impl AneLinear {
         Self::compile_program(&mil, &blob, input_channels, output_channels, layout, policy)
     }
 
+    /// Explicit four-way output-row tiling of already-quantized INT8 weights.
+    /// Component O/head use requires separately supplied INT8 constants; the
+    /// runtime selector changes only the existing experimental sliding QKV path.
+    pub fn compile_int8_tiles4_with_cache_policy(
+        weights: &AneInt8LinearWeights,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        let source = crate::ane_int8_candidates::linear_tiles4(weights)?;
+        let (input, output) = weights.shape();
+        let layout = LinearLayout::new(input, output, 1)?;
+        tracing::debug!(candidate = source.name, source_blob_bytes = source.blob.len(),
+            convolutions = source.budget.convolutions, "ANE candidate source");
+        Self::compile_program(&source.mil, &source.blob, input, output, layout, policy)
+    }
+
     fn compile_program(
         mil: &str,
         blob: &[u8],
@@ -297,6 +312,18 @@ impl AneGatedFfn {
         let (blob, constants) = weights.stacked_blob_and_constants()?;
         let mil = ffn_mil_stacked(hidden, intermediate, &constants);
         Self::compile_program(&mil, &blob, hidden, policy)
+    }
+
+    /// Explicit Gemma 12B output-channel chunking; still one external I/O pair.
+    /// Unsupported geometry errors before reaching a private framework call.
+    pub fn compile_int8_chunk4_with_cache_policy(
+        weights: &AneInt8FfnWeights,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        let source = crate::ane_int8_candidates::ffn_chunk4(weights)?;
+        tracing::debug!(candidate = source.name, source_blob_bytes = source.blob.len(),
+            convolutions = source.budget.convolutions, "ANE candidate source");
+        Self::compile_program(&source.mil, &source.blob, weights.shape().0, policy)
     }
 
     /// Experimental constant INT8 weights with FP16 activations and unchanged

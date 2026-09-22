@@ -3,6 +3,7 @@
 
 use half::f16;
 use rvllm_apple::{AppleBackend, AppleRuntimePlan, HandoffKind};
+use rvllm_apple::ane_attention_layout::KvImportPacking;
 use rvllm_apple_metal::{MetalFloatType, MetalKernelOptions, MetalModelLimits};
 use rvllm_core::{ReqId, TokenId};
 use rvllm_runtime::ane_prefill::{AneDecodeStart, PrefillScalarType};
@@ -62,6 +63,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut interactive = false;
     let mut runtime_worker = false;
     let mut ane_weights = AneWeightPlan::StaticInt8FfnCached;
+    let mut kv_import_packing = KvImportPacking::Baseline;
     let mut prepare_cache = None;
     let mut inspect_cache = false;
     let mut compile_budget = 0_usize;
@@ -71,8 +73,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if flag == "--help" || flag == "-h" {
             println!("Gemma 4 12B: Metal prefill, ANE decode, greedy text generation.\n\nUsage: rvllm_disaggregated_infer --model-dir PATH --prompt TEXT [options]\n\n  --metallib-bf16 PATH           Precompiled BF16 Metal library (or RVLLM_METAL_METALLIB_BF16)\n  --prompt TEXT                 One user text turn; may be repeated\n  --prompt-file PATH            Read one user text turn from a UTF-8 file\n  --max-new-tokens N             Output limit including EOS (default 64)\n  --context-capacity 64|1024     Prompt plus decoded input capacity (default 1024)\n  --ane-weights PLAN             static-int8-ffn-cached (default), static-all-cached, or research plans\n  --ane-compile-budget 0..16     Bounded recovery of missing cached programs (default 0)\n  --retain-metal BOOL            Keep Metal loaded during ANE decode (default false)\n  --interleave BOOL              Prepare both backends once, then prefill/decode each request\n  --interactive BOOL             Read successive user prompts from stdin, one per line; implies interleave\n  --runtime-worker BOOL          Use the serial runtime owner (INT8/MMA/SIMD; default false)\n  --output-dir PATH              Optional local report directory\n  --hf-reference PATH           Verify against pinned token IDs; requires output directory\n  --capture-layer-states BOOL    Capture first ANE step; requires output directory\n  --prepare-ane-cache PART       qkv, output, ffn, ffn-int8, ffn-lut4, head-attention\n\nText input uses the qualified single-user, non-thinking checkpoint template.\nMultiple prompts share initialization. Model histories, tools and multimodal inputs are unsupported.");
             println!("\n  --inspect-ane-cache PART       Strict load inspection of a cache part; zero compiles/evaluations");
+            println!("  --kv-import-packing baseline|reuse-scratch|cpu-kv-blocked32 (default baseline)");
             println!("  PART=all-int8                  Visit qkv, output, ffn-int8 and head-attention in fresh serial processes");
+            println!("  PART=ffn-int8-chunk4           Explicit single-I/O FFN output-channel chunking");
+            println!("  --ane-weights static-int8-chunk4-ffn-cached (zero compile budget)");
             println!("  PART=ffn-int8-stacked          Prepare/inspect the experimental stacked INT8 FFNs");
+            println!("  PART=qkv-sliding-int8-tiles4   Output-row tiling; original FP16 global QKV");
+            println!("  --ane-weights static-int8-ffn-sliding-qkv-tiles4-cached (zero compile budget)");
             println!("  PART=qkv-sliding-int8          Experimental INT8 sliding QKV; original FP16 global QKV");
             println!("  --capture-ffn-inputs BOOL      Capture actual FFN inputs for the first two ANE steps; requires output directory; diagnostics only");
             println!("  --ane-weights static-int8-ffn-sliding-qkv-cached\n                                Experimental sliding QKV quantization; full-model quality unqualified");
@@ -96,6 +103,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--interleave" => interleave = value.parse()?,
             "--interactive" => interactive = value.parse()?,
             "--runtime-worker" => runtime_worker = value.parse()?,
+            "--kv-import-packing" => kv_import_packing = value.parse()?,
             "--ane-compile-budget" => compile_budget = value.parse()?,
             "--context-capacity" => context_capacity = value.parse()?,
             "--prepare-ane-cache" | "--inspect-ane-cache" => {
@@ -108,16 +116,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     CacheTarget::Part(match value.as_str() {
                     "qkv" => AneStaticCachePart::QueryKeyValue,
+                    "qkv-sliding-int8-tiles4" => AneStaticCachePart::QueryKeyValueSlidingInt8Tiles4,
                     "qkv-sliding-int8" => AneStaticCachePart::QueryKeyValueSlidingInt8,
                     "output" => AneStaticCachePart::Output,
                     "ffn" => AneStaticCachePart::FeedForward,
                     "ffn-lut4" => AneStaticCachePart::FeedForwardLut4,
                     "ffn-int8" => AneStaticCachePart::FeedForwardInt8,
+                    "ffn-int8-chunk4" => AneStaticCachePart::FeedForwardInt8Chunk4,
                     "ffn-int8-stacked" => AneStaticCachePart::FeedForwardInt8Stacked,
                     "head-attention" => AneStaticCachePart::VocabularyAndAttention,
                     _ => {
                         return Err(
-                            "cache part must be all-int8, qkv, qkv-sliding-int8, output, ffn, ffn-int8, ffn-int8-stacked, ffn-lut4 or head-attention".into(),
+                            "cache part must be all-int8, qkv, qkv-sliding-int8, qkv-sliding-int8-tiles4, output, ffn, ffn-int8, ffn-int8-stacked, ffn-int8-chunk4, ffn-lut4 or head-attention".into(),
                         )
                     }
                 })
@@ -130,9 +140,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "static-all-cached" => AneWeightPlan::StaticAllCached,
                     "static-lut4-ffn-cached" => AneWeightPlan::StaticLut4FfnCached,
                     "static-int8-ffn-cached" => AneWeightPlan::StaticInt8FfnCached,
+                    "static-int8-ffn-sliding-qkv-tiles4-cached" => AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached,
                     "static-int8-ffn-sliding-qkv-cached" => {
                         AneWeightPlan::StaticInt8FfnSlidingQkvCached
                     }
+                    "static-int8-chunk4-ffn-cached" => AneWeightPlan::StaticInt8Chunk4FfnCached,
                     "static-int8-stacked-ffn-cached" => AneWeightPlan::StaticInt8StackedFfnCached,
                     "static-int8-stacked-ffn-checked" => AneWeightPlan::StaticInt8StackedFfnChecked,
                     _ => {
@@ -149,6 +161,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     interleave |= interactive || runtime_worker;
     retain_metal |= interleave;
     let model_dir = model_dir.ok_or("--model-dir required")?;
+    if matches!(ane_weights, AneWeightPlan::StaticInt8Chunk4FfnCached
+        | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached) && compile_budget != 0 {
+        return Err("candidate inference requires zero compile budget; provision separately".into());
+    }
     if ane_weights == AneWeightPlan::StaticInt8StackedFfnChecked
         && (paths.is_empty()
             || output_dir.is_none()
@@ -170,7 +186,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err("--ane-compile-budget must be 0..=16, for cached inference only".into());
     }
     if let Some(target) = prepare_cache {
-        if !paths.is_empty()
+        if kv_import_packing != KvImportPacking::Baseline
+            || !paths.is_empty()
             || !prompts.is_empty()
             || capture_layers
             || capture_ffn_inputs
@@ -327,6 +344,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             || capture_ffn_inputs
             || ane_weights != AneWeightPlan::StaticInt8FfnCached
             || kernels != qualified
+            || kv_import_packing != KvImportPacking::Baseline
         {
             return Err(
                 "runtime worker requires the qualified INT8/MMA/SIMD route without layer capture"
@@ -540,7 +558,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let decoder = ane.as_mut().ok_or("ANE decoder missing")?;
             let measured = monitor.begin();
             let timer = Instant::now();
-            decoder.import_prefill(&start.cache)?;
+            decoder.import_prefill_with_packing(&start.cache, kv_import_packing)?;
             import_ms = elapsed_ms(timer);
             import_measurement = Some(measured.finish(1));
             drop(start);
@@ -646,7 +664,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let case = serde_json::json!({
             "reference":reference.path,"prompt_token_ids":reference.prompt,
             "generated_tokens":generated,"generated_text":generated_text,"matches_reference":matched,
-            "prefill_sample_capture_ms":prefill_sample_capture_ms,"ane_cache_import_ms":import_ms,
+            "prefill_sample_capture_ms":prefill_sample_capture_ms,"ane_cache_import_ms":import_ms, "kv_import_packing":kv_import_packing.name(),
             "metal_prefill_complete_ms":prefill_times.metal_execution_ms,"metal_host_non_wait_ms":prefill_times.host_non_wait_ms,
             "metal_command_buffer_wait_ms":prefill_times.command_buffer_wait_ms,"kv_capture_ms":prefill_times.kv_capture_ms,
             "metal_gpu_execution_ms":prefill_times.gpu_execution_ms,
@@ -688,6 +706,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "metal_residency":if retain_metal {"retained-through-ane-decode"} else {"released-after-all-prefills-before-ane-load"},
             "metal_arena_before_release":{"capacity_bytes":metal_arena.capacity_bytes,"allocated_bytes":metal_arena.allocated_bytes,"regions":metal_arena.region_count},
             "ane_weight_plan":ane_weights.name(),
+            "metal_research_candidate":kernels.research.name(),
+            "kv_import_packing":kv_import_packing.name(),
             "stacked_ffn_checks_per_layer":ane.as_ref().and_then(GemmaAneDecode::stacked_ffn_checks_per_layer),
             "loaded_ane_programs":if ane.is_some(){ane_weights.program_count()}else{0},
             "ane_cache_policy":if compile_budget != 0 { "reuse-with-compile-budget" } else if ane_weights.cache_policy() == rvllm_apple::ane_linear::AneProgramCachePolicy::RequireExisting {"require-existing"} else {"compile"},

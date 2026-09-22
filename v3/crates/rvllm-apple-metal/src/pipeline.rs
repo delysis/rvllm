@@ -18,6 +18,7 @@ pub struct PipelineCache {
     gpu_family: AppleGpuFamily,
     float_type: Option<MetalFloatType>,
     kernel_options: MetalKernelOptions,
+    max_threadgroup_memory: usize,
 }
 
 impl PipelineCache {
@@ -32,6 +33,7 @@ impl PipelineCache {
             gpu_family: AppleGpuFamily::Unknown,
             float_type: None,
             kernel_options,
+            max_threadgroup_memory: 0,
         }
     }
 
@@ -69,12 +71,48 @@ impl PipelineCache {
     /// Compile all required kernel functions for inference.
     pub fn compile_all(&mut self, ctx: &MetalContext) -> Result<()> {
         self.gpu_family = ctx.capabilities().gpu_family;
+        self.max_threadgroup_memory = ctx.capabilities().max_threadgroup_memory_length;
         let required = crate::kernels::KERNEL_NAMES;
         for name in required {
             self.compile(ctx, name)?;
         }
-        tracing::info!(count = required.len(), "All Metal PSOs compiled");
+        // Optional source may be absent from an explicitly supplied metallib.
+        // Clear any old PSO before attempting replacement: a caught failure must
+        // not leave a previous library's dtype or executable active.
+        for name in self.kernel_options.research.pipeline_names() {
+            self.pipelines.remove(*name);
+            match self.compile(ctx, name) {
+                Ok(()) => tracing::info!(candidate = self.kernel_options.research.name(),
+                    function = *name, "Research PSO compiled; not hardware-qualified"),
+                Err(error) => tracing::warn!(candidate = self.kernel_options.research.name(),
+                    function = *name, %error, "Research PSO unavailable; known-good fallback retained"),
+            }
+        }
+        tracing::info!(count = required.len(), "All required Metal PSOs compiled");
         Ok(())
+    }
+
+    /// No platform assumptions are inferred from a product name. A missing,
+    /// piecemeal, untyped, wrong-family, or resource-incompatible PSO is refused.
+    pub(crate) fn research_pso(
+        &self,
+        name: &str,
+        threads: usize,
+        planned_bytes: usize,
+    ) -> Option<&Retained<ProtocolObject<dyn MTLComputePipelineState>>> {
+        if self.gpu_family != AppleGpuFamily::Apple9
+            || self.float_type.is_none()
+            || self.kernel_options.quantized_bf16_accumulation
+            || !self.kernel_options.research.pipeline_names().contains(&name)
+        {
+            return None;
+        }
+        let pso = self.pipelines.get(name)?;
+        crate::research::launch_fits(
+            pso.threadExecutionWidth(), pso.maxTotalThreadsPerThreadgroup(),
+            pso.staticThreadgroupMemoryLength(), self.max_threadgroup_memory,
+            threads, planned_bytes,
+        ).then_some(pso)
     }
 
     /// Get a cached PSO by name.

@@ -1,0 +1,199 @@
+{
+  "schema": "rvllm.kernel_candidate.NONLIVE_PROPOSAL.v1",
+  "status": "untrusted_unpinned_not_queue_admissible",
+  "job": "rvllm-gemma4-kernels-d4f5c324-20260922-02",
+  "base_commit": "d4f5c324d60875228733132ee78cfe61fd8c9402",
+  "candidate": "metal-short-mma16x64",
+  "patch": "series/0002-metal-short-mma16x64.patch",
+  "default_enabled": false,
+  "requires_whole_ordered_series_through": "0008-review-safety-and-evidence-fixes.patch",
+  "hypothesis": "A 16x64x32 native-storage MMA tile may waste fewer prompt rows and reuse weight loads better for short prompts than the existing 32x32 tile. Fewer groups and larger staging may instead reduce occupancy.",
+  "supported_shapes": "Gemma 4 12B, H=3840,I=15360,L=48,QH=16,KVH/HD=8/256 or 1/512, no MoE/PLE, aggregate prefill rows M=6..64 (projection geometry is sequence-batch-independent; full-route recipes use batch one). Runtime BF16 only, existing MMA eligibility/options required. Projection tiling does not depend on attention window.",
+  "fallback": "No selection changes production defaults. Unsupported Metal/resource shapes use original kernels; ANE graph APIs reject before private calls and require explicit baseline re-selection; unsupported valid CPU layouts use old reusable packer.",
+  "feature_requirements": {
+    "host_tests": [
+      "rvllm-apple/default-empty",
+      "rvllm-apple-metal/default-empty"
+    ],
+    "full_route": [
+      "rvllm-runtime/macos-private-ane-research"
+    ],
+    "target": "aarch64-apple-darwin",
+    "shipping_private_api_allowed": false
+  },
+  "local_pins_required": {
+    "reviewed_commit": null,
+    "rustc_version": null,
+    "cargo_lock_sha256": null,
+    "xcode_version": null,
+    "metal_compiler_version": null,
+    "executable_path": null,
+    "executable_sha256": null,
+    "candidate_metallib_path": null,
+    "candidate_metallib_sha256": null,
+    "baseline_metallib_path": null,
+    "baseline_metallib_sha256": null,
+    "checkpoint_manifest_sha256": null,
+    "quantized_payload_manifest_sha256": null,
+    "reference_file_paths_and_sha256": null,
+    "power_monitor_identity": null,
+    "diagnostic_journal_path": null,
+    "local_component_adapter_source_sha256": null
+  },
+  "stratum": {
+    "power_source": "battery",
+    "low_power_mode": false,
+    "pmset_mode": 0,
+    "thermal_state": "nominal",
+    "must_observe_not_set": true,
+    "pooling_with_other_strata": false
+  },
+  "additional_strata": "AC, low-power-on, other pmset modes and Fair must be new independent pins/experiments; no conversion or pooling.",
+  "selection": {
+    "environment": {
+      "RVLLM_METAL_PREFILL_GEMM": "mma32",
+      "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup",
+      "RVLLM_METAL_BF16_ACCUM": "native",
+      "RVLLM_METAL_QKV_PREFILL": "off",
+      "RVLLM_METAL_RESEARCH": "metal-short-mma16x64"
+    },
+    "ane_weights": "static-int8-ffn-cached",
+    "kv_import_packing": "baseline",
+    "ane_compile_budget": 0,
+    "runtime_worker": false,
+    "interleave": true,
+    "retain_metal": true
+  },
+  "baseline": "Same new executable, research=off, existing MMA32 enabled, same BF16 numerical ABI; never compare this new tiling to a route with a different QKV storage boundary.",
+  "requested_candidate_is_not_dispatch_evidence": true,
+  "required_actual_labels": [
+    "metal-short-mma16x64",
+    "research_gemm_mma16x64",
+    "research_qkv_mma16x64"
+  ],
+  "work": {
+    "projections_per_layer": 4,
+    "projections_per_prompt": 192,
+    "grid": "ceil(M/16) * ceil(N/64) groups, 128 threads/group, ceil(K/32) staging rounds",
+    "pairs_N_K_native_output": [
+      [
+        30720,
+        3840
+      ],
+      [
+        3840,
+        4096
+      ],
+      [
+        3840,
+        8192
+      ],
+      [
+        3840,
+        15360
+      ]
+    ],
+    "pairs_N_K_fp32_output": [
+      [
+        8192,
+        3840
+      ],
+      [
+        9216,
+        3840
+      ]
+    ],
+    "macs_per_projection": "M*N*K (one MAC, not two FLOPs)",
+    "prompt_token_counts_separate_cases": [
+      6,
+      17,
+      33,
+      64
+    ],
+    "context_capacity": 1024,
+    "generated_tokens_including_first_metal_token": 10,
+    "ane_steps_per_request": 9,
+    "eos_early_stop": "invalidate unequal-work comparison, retain evidence"
+  },
+  "bounded_schedule": {
+    "kind": "manual A-before / B / A-after, separate owners/processes; not scheduled by these files",
+    "per_arm_warmup_requests": 2,
+    "per_arm_measured_requests": 7,
+    "total_requests_per_case_per_screen": 27,
+    "total_actual_ane_steps_if_no_early_eos": 243,
+    "retry_budget": 0,
+    "baseline_bracket_drift_limit_fraction": 0.05,
+    "drift_action": "reject this block and retain every receipt; no rescaling"
+  },
+  "qualification_before_timing": [
+    "Existing MMA fixture limits: relative L2 < 0.0001 versus the same numerical baseline; sampled FP64 absolute error < 0.005 + 0.0001*abs(reference). All values finite.",
+    "Exact final greedy token path against locally pinned HF reference and baseline. Full trace disables the existing MMA path; use a direct component-output capture plus the untraced final-output oracle. Do not present a traced fallback as validation of this candidate."
+  ],
+  "oracle_contract": {
+    "finite_required": true,
+    "forced_reference_decode": false,
+    "tolerance_change_allowed": false,
+    "failed_evidence_retained": true
+  },
+  "accept_reject": {
+    "scope": "advance to another independently pinned confirmation, never auto-promote production",
+    "accept": [
+      "All host/compiler/component/numerical/token/dispatch gates pass.",
+      "Power/thermal labels remain exactly the pinned stratum and baseline bracket drift is <=5%.",
+      "Candidate target-stage median is at least5% lower than BOTH baseline-arm medians.",
+      "End-to-end request median is no more than2% above the worse baseline-arm median.",
+      "Report raw samples and uncertainty; require a second independent passing block before proposing admission."
+    ],
+    "reject": [
+      "Any oracle mismatch, nonfinite valid-data output, cache miss, driver/compiler error, unexpected dispatch fallback, OOB/canary fault, changed work count, stratum transition, or drift>5%.",
+      "A speed-only win that fails quality is rejected.",
+      "An inconclusive/noisy or <5% target-stage result is not an accepted optimization."
+    ],
+    "no_cpu_cycle_normalization": true
+  },
+  "measurement_target": "completed Metal prompt interval and eligible projection encoder intervals",
+  "memory_program_budget": {
+    "extra_pso_functions": 2,
+    "threadgroup_bytes_per_dispatch": 10496,
+    "persistent_arena_delta_bytes": 0,
+    "ane_program_delta": 0
+  },
+  "risks": [
+    "Native bfloat SIMD-matrix lowering uncompiled here.",
+    "Different register/staging pressure may lose occupancy.",
+    "Trace mode deliberately falls back by inherited MMA policy.",
+    "Only the 12B geometry is admitted; larger models fall back."
+  ],
+  "future_full_route_argv_template": [
+    "${PINNED_EXE}",
+    "--model-dir",
+    "${EXISTING_MODEL_DIR}",
+    "--metallib-bf16",
+    "${PINNED_LIBRARY}",
+    "--hf-reference",
+    "${PINNED_REFERENCE}",
+    "--output-dir",
+    "${NEW_EMPTY_REPORT_DIR}",
+    "--ane-weights",
+    "static-int8-ffn-cached",
+    "--ane-compile-budget",
+    "0",
+    "--kv-import-packing",
+    "baseline",
+    "--context-capacity",
+    "1024",
+    "--interleave",
+    "true",
+    "--retain-metal",
+    "true",
+    "--runtime-worker",
+    "false"
+  ],
+  "invocation_limits": [
+    "This array is documentation, not a runnable trial or accepted queue manifest.",
+    "Repeat --hf-reference with explicitly pinned inputs to form each bounded warmup/measured arm. Reference files carry their own token/output budget; --max-new-tokens is not relied on for reference mode.",
+    "No attempt ledger, STOP marker, process allowlist or queue entry is supplied or modified.",
+    "Initialization/compilation is excluded from steady-state timing and reported separately. No auto-download or compile-on-miss.",
+    "Use the same retained-Metal policy in all arms; the supplied historical baseline is not a substitute for these controls."
+  ]
+}

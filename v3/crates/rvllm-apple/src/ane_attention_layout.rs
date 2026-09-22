@@ -7,6 +7,38 @@
 
 use half::f16;
 
+/// Explicit CPU handoff strategy. The historical allocating path stays default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KvImportPacking {
+    #[default]
+    Baseline,
+    ReuseScratch,
+    Blocked32,
+}
+
+impl KvImportPacking {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Baseline => "baseline",
+            Self::ReuseScratch => "reuse-scratch",
+            Self::Blocked32 => "cpu-kv-blocked32",
+        }
+    }
+}
+
+impl std::str::FromStr for KvImportPacking {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "baseline" => Ok(Self::Baseline),
+            "reuse-scratch" => Ok(Self::ReuseScratch),
+            "cpu-kv-blocked32" => Ok(Self::Blocked32),
+            _ => Err("KV import packing must be baseline, reuse-scratch or cpu-kv-blocked32".into()),
+        }
+    }
+}
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PackedAttentionLayout {
     query_heads: usize,
@@ -264,6 +296,63 @@ impl PackedAttentionLayout {
             }
         }
         Ok(())
+    }
+
+    /// Default-off 32x32 byte-preserving transpose. Returns true only when the
+    /// candidate ran. Unsupported layouts use the existing reusable packer;
+    /// malformed lengths error before changing a destination byte.
+    pub fn import_cache_blocked32_into(
+        self,
+        keys: &[f16],
+        values: &[f16],
+        tokens: usize,
+        packed: &mut [u8],
+    ) -> Result<bool, String> {
+        let supported = self.query_heads == 16 && self.capacity == 1024
+            && (1..=4096).contains(&tokens)
+            && matches!((self.kv_heads, self.head_dim, self.window),
+                (8, 256, Some(1024)) | (1, 512, None));
+        if !supported {
+            self.import_cache_into(keys, values, tokens, packed)?;
+            return Ok(false);
+        }
+        let retained = self.retained_tokens(tokens)?;
+        let width = self.kv_width();
+        if tokens.checked_mul(width) != Some(keys.len()) || values.len() != keys.len()
+            || packed.len() != self.input_bytes
+        { return Err("packed attention prefill shape mismatch".into()); }
+        packed.fill(0);
+        // Two 2 KiB stack tiles. No f16 arithmetic/conversion: preserve NaN
+        // payloads, infinities, subnormals and signed zero just like import_cache.
+        let mut key_tile = [0_u8; 32 * 32 * 2];
+        let mut value_tile = [0_u8; 32 * 32 * 2];
+        let mut first = tokens - retained;
+        while first < tokens {
+            let slot = first % self.capacity;
+            // Split at the physical ring edge; no burst may cross into V or a
+            // following channel. The next iteration resumes at slot zero.
+            let count = (tokens - first).min(32).min(self.capacity - slot);
+            for channel_first in (0..width).step_by(32) {
+                for token in 0..count {
+                    let src = (first + token) * width + channel_first;
+                    for channel in 0..32 {
+                        let dst = (channel * 32 + token) * 2;
+                        key_tile[dst..dst + 2].copy_from_slice(&keys[src + channel].to_le_bytes());
+                        value_tile[dst..dst + 2].copy_from_slice(&values[src + channel].to_le_bytes());
+                    }
+                }
+                for channel in 0..32 {
+                    let row = (channel_first + channel) * self.row_bytes();
+                    let k = row + (32 + slot) * 2;
+                    let v = row + (32 + self.capacity + slot) * 2;
+                    let src = channel * 64;
+                    packed[k..k + count * 2].copy_from_slice(&key_tile[src..src + count * 2]);
+                    packed[v..v + count * 2].copy_from_slice(&value_tile[src..src + count * 2]);
+                }
+            }
+            first += count;
+        }
+        Ok(true)
     }
 
     pub fn encode_mask(self, tokens: usize, mask: &mut [u8]) -> Result<(), String> {
@@ -686,5 +775,54 @@ mod tests {
         assert!(layout.value_offset(64).is_none());
         let mil = layout.mil();
         assert!(mil.contains("func main<ios18>(tensor<fp16, [1, 513, 1, 160]> x)"));
+    }
+}
+
+#[cfg(test)]
+mod blocked32_tests {
+    use super::*;
+
+    #[test]
+    fn blocked32_matches_allocating_reference_including_raw_bits_and_guard_bytes() -> Result<(), String> {
+        let sliding = PackedAttentionLayout::sliding(16, 8, 256, 1024)?;
+        let global = PackedAttentionLayout::new(16, 1, 512, 1024)?;
+        let small = PackedAttentionLayout::sliding(4, 2, 32, 35)?;
+        let mut storage = vec![0x5a; sliding.input_bytes() + 128];
+        let pointer = storage.as_ptr();
+        for (layout, tokens, routed) in [
+            (sliding, 0, false), (sliding, 1, true), (sliding, 31, true),
+            (sliding, 32, true), (sliding, 33, true), (sliding, 84, true),
+            (sliding, 1023, true), (sliding, 1024, true), (sliding, 1027, true),
+            (sliding, 4096, true), (global, 84, true), (global, 1024, true),
+            (small, 133, false),
+        ] {
+            let n = tokens * layout.kv_width();
+            let keys = (0..n).map(|i| f16::from_bits((i.wrapping_mul(43)) as u16)).collect::<Vec<_>>();
+            let values = (0..n).map(|i| f16::from_bits((i.wrapping_mul(73).wrapping_add(32768)) as u16)).collect::<Vec<_>>();
+            let expected = layout.import_cache(&keys, &values, tokens)?;
+            storage.fill(0x5a);
+            let end = 64 + layout.input_bytes();
+            assert_eq!(layout.import_cache_blocked32_into(&keys, &values, tokens, &mut storage[64..end])?, routed);
+            assert_eq!(&storage[64..end], expected.as_slice());
+            assert!(storage[..64].iter().chain(&storage[end..]).all(|&b| b == 0x5a));
+            assert_eq!(storage.as_ptr(), pointer);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn blocked32_errors_are_transactional_and_selection_is_explicit() -> Result<(), String> {
+        let layout = PackedAttentionLayout::new(16, 1, 512, 1024)?;
+        let mut bytes = vec![0xa5; layout.input_bytes()];
+        for tokens in [1, 1025, usize::MAX] {
+            assert!(layout.import_cache_blocked32_into(&[], &[], tokens, &mut bytes).is_err());
+            assert!(bytes.iter().all(|&b| b == 0xa5));
+        }
+        assert_eq!(KvImportPacking::default(), KvImportPacking::Baseline);
+        assert_eq!("cpu-kv-blocked32".parse::<KvImportPacking>()?, KvImportPacking::Blocked32);
+        for invalid in ["auto", "blocked32", "", " cpu-kv-blocked32"] {
+            assert!(invalid.parse::<KvImportPacking>().is_err());
+        }
+        Ok(())
     }
 }

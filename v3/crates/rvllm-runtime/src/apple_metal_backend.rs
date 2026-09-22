@@ -4028,6 +4028,10 @@ impl ModelMetalBackend {
                         ),
                     matches!(phase, MetalPhase::Prefill { .. })
                         && supports_qkv_prefill_projection(pipelines, &dims),
+                    rvllm_apple_metal::layer_forward::supports_research_rounded_gate(
+                        pipelines, &dims, phase, &weights, &scratch,
+                        layer_trace_scratch.is_some(), arena.capacity(),
+                    ),
                 ));
             if weights.layer_scalar_offset.is_some() {
                 self.perf.add_layer_scale_encoder_fusions(1);
@@ -4192,6 +4196,7 @@ impl ModelMetalBackend {
         debug_skip: MetalLayerDebugSkip,
         allow_prefill_mma: bool,
         qkv_prefill_projection_eligible: bool,
+        rounded_gate_encoder_fused: bool,
     ) -> u64 {
         let mut count = 10;
         if !(weights.q_norm_offset.is_some() && weights.k_norm_offset.is_some()) {
@@ -4246,7 +4251,9 @@ impl ModelMetalBackend {
             count = count.saturating_sub(2);
             count += u64::from(qkv_prefill_projection_eligible);
         }
-        count
+        // The candidate replaces two encoders with one. Its predicate includes
+        // live PSO limits and buffer bounds, not merely the requested selector.
+        count.saturating_sub(u64::from(rounded_gate_encoder_fused))
     }
 
     fn encode_prefill_first_token(

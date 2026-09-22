@@ -18,6 +18,7 @@ pub mod ane;
 pub mod ane_attention_layout;
 pub mod ane_ffn_layout;
 pub mod ane_int8_ffn_weights;
+pub mod ane_int8_candidates;
 pub mod ane_lut4_ffn_weights;
 #[cfg(feature = "macos-private-ane-research")]
 pub mod ane_attention;

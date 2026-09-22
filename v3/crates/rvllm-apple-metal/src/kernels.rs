@@ -2580,12 +2580,25 @@ pub fn kernel_source_with_options(
     float_type: MetalFloatType,
     options: crate::MetalKernelOptions,
 ) -> Cow<'static, str> {
-    match float_type {
+    let base = match float_type {
         MetalFloatType::F16 => Cow::Borrowed(KERNEL_SOURCE),
         MetalFloatType::Bf16 => {
             Cow::Owned(bfloat_kernel_source(options.quantized_bf16_accumulation))
         }
+    };
+    let candidate = options.research.source();
+    if candidate.is_empty() {
+        return base;
     }
+    let mut source = base.into_owned();
+    source.push('\n');
+    match float_type {
+        MetalFloatType::F16 => source.push_str(candidate),
+        MetalFloatType::Bf16 => source.push_str(
+            &replace_msl_word(candidate, "half", "bfloat").replace("f16_sat", "bf16_sat")
+        ),
+    }
+    Cow::Owned(source)
 }
 
 fn bfloat_kernel_source(quantized_accumulation: bool) -> String {

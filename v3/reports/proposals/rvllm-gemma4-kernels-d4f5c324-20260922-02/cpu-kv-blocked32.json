@@ -1,0 +1,175 @@
+{
+  "schema": "rvllm.kernel_candidate.NONLIVE_PROPOSAL.v1",
+  "status": "untrusted_unpinned_not_queue_admissible",
+  "job": "rvllm-gemma4-kernels-d4f5c324-20260922-02",
+  "base_commit": "d4f5c324d60875228733132ee78cfe61fd8c9402",
+  "candidate": "cpu-kv-blocked32",
+  "patch": "series/0007-cpu-kv-blocked32.patch",
+  "default_enabled": false,
+  "requires_whole_ordered_series_through": "0008-review-safety-and-evidence-fixes.patch",
+  "hypothesis": "A byte-preserving 32x32 transpose may improve contiguous destination writes during KV packing beyond the existing reusable scratch candidate.",
+  "supported_shapes": "Packed attention QH=16,capacity=1024; slidingKVH=8,HD=256,W=1024 or globalKVH=1,HD=512; tokens1..4096 for sliding, up to1024 global. Full disaggregated route remains prompt+decoded inputs<=1024. Other valid layouts use the existing reusable packer; malformed lengths fail before mutation.",
+  "fallback": "No selection changes production defaults. Unsupported Metal/resource shapes use original kernels; ANE graph APIs reject before private calls and require explicit baseline re-selection; unsupported valid CPU layouts use old reusable packer.",
+  "feature_requirements": {
+    "host_tests": [
+      "rvllm-apple/default-empty",
+      "rvllm-apple-metal/default-empty"
+    ],
+    "full_route": [
+      "rvllm-runtime/macos-private-ane-research"
+    ],
+    "target": "aarch64-apple-darwin",
+    "shipping_private_api_allowed": false
+  },
+  "local_pins_required": {
+    "reviewed_commit": null,
+    "rustc_version": null,
+    "cargo_lock_sha256": null,
+    "xcode_version": null,
+    "metal_compiler_version": null,
+    "executable_path": null,
+    "executable_sha256": null,
+    "candidate_metallib_path": null,
+    "candidate_metallib_sha256": null,
+    "baseline_metallib_path": null,
+    "baseline_metallib_sha256": null,
+    "checkpoint_manifest_sha256": null,
+    "quantized_payload_manifest_sha256": null,
+    "reference_file_paths_and_sha256": null,
+    "power_monitor_identity": null,
+    "diagnostic_journal_path": null,
+    "local_component_adapter_source_sha256": null
+  },
+  "stratum": {
+    "power_source": "battery",
+    "low_power_mode": false,
+    "pmset_mode": 0,
+    "thermal_state": "nominal",
+    "must_observe_not_set": true,
+    "pooling_with_other_strata": false
+  },
+  "additional_strata": "AC, low-power-on, other pmset modes and Fair must be new independent pins/experiments; no conversion or pooling.",
+  "selection": {
+    "environment": {
+      "RVLLM_METAL_PREFILL_GEMM": "mma32",
+      "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup",
+      "RVLLM_METAL_BF16_ACCUM": "native",
+      "RVLLM_METAL_QKV_PREFILL": "off",
+      "RVLLM_METAL_RESEARCH": "off"
+    },
+    "ane_weights": "static-int8-ffn-cached",
+    "kv_import_packing": "cpu-kv-blocked32",
+    "ane_compile_budget": 0,
+    "runtime_worker": false,
+    "interleave": true,
+    "retain_metal": true
+  },
+  "baseline": "--kv-import-packing reuse-scratch, NOT merely the allocating historical default. Retain allocating baseline as a secondary reference, clearly labeled.",
+  "requested_candidate_is_not_dispatch_evidence": true,
+  "required_actual_labels": [
+    "cpu-kv-blocked32",
+    "kv_import_packing",
+    "ane_cache_import_ms"
+  ],
+  "work": {
+    "layer_imports_per_prompt": 48,
+    "new_stack_tiles_bytes": 4096,
+    "retained_payload_bytes_per_layer": "4*retained_tokens*KVH*HD",
+    "sliding_zero_fill_bytes_per_layer": 8523840,
+    "global_zero_fill_bytes_per_layer": 2134080,
+    "all_48_layer_zero_fill_bytes_per_prompt": 358026240,
+    "full_route_context_cap": 1024,
+    "prompt_token_counts_separate_cases": [
+      84,
+      512,
+      1015
+    ],
+    "context_capacity": 1024,
+    "generated_tokens_including_first_metal_token": 10,
+    "ane_steps_per_request": 9,
+    "eos_early_stop": "invalidate unequal-work comparison, retain evidence"
+  },
+  "bounded_schedule": {
+    "kind": "manual A-before / B / A-after, separate owners/processes; not scheduled by these files",
+    "per_arm_warmup_requests": 2,
+    "per_arm_measured_requests": 7,
+    "total_requests_per_case_per_screen": 27,
+    "total_actual_ane_steps_if_no_early_eos": 243,
+    "retry_budget": 0,
+    "baseline_bracket_drift_limit_fraction": 0.05,
+    "drift_action": "reject this block and retain every receipt; no rescaling"
+  },
+  "qualification_before_timing": [
+    "Exact every-byte equality with independent allocating packer, including Q slots, mask row, alignment padding, FP16 NaN payloads, infinities, subnormals and signed zero. Canary prefix/suffix must be untouched.",
+    "Test tokens0,1,31,32,33,84,1023,1024,1027,4096 sliding and0..1024 global; small unsupported layout fallback; incorrect lengths and overflow must leave destination unchanged.",
+    "End-to-end CLI uses finite real KV and unchanged surface writes; exact final token path. Do not call this an ANE/GPU kernel speedup."
+  ],
+  "oracle_contract": {
+    "finite_required": true,
+    "forced_reference_decode": false,
+    "tolerance_change_allowed": false,
+    "failed_evidence_retained": true
+  },
+  "accept_reject": {
+    "scope": "advance to another independently pinned confirmation, never auto-promote production",
+    "accept": [
+      "All host/compiler/component/numerical/token/dispatch gates pass.",
+      "Power/thermal labels remain exactly the pinned stratum and baseline bracket drift is <=5%.",
+      "Candidate target-stage median is at least5% lower than BOTH baseline-arm medians.",
+      "End-to-end request median is no more than2% above the worse baseline-arm median.",
+      "Report raw samples and uncertainty; require a second independent passing block before proposing admission."
+    ],
+    "reject": [
+      "Any oracle mismatch, nonfinite valid-data output, cache miss, driver/compiler error, unexpected dispatch fallback, OOB/canary fault, changed work count, stratum transition, or drift>5%.",
+      "A speed-only win that fails quality is rejected.",
+      "An inconclusive/noisy or <5% target-stage result is not an accepted optimization."
+    ],
+    "no_cpu_cycle_normalization": true
+  },
+  "measurement_target": "CPU packer wall/allocation count first; then ane_cache_import_ms and prefill+KV-import wall",
+  "memory_program_budget": {
+    "extra_stack_bytes": 4096,
+    "new_persistent_heap_allocations": 0,
+    "scratch_capacity_vs_reuse_baseline": "unchanged",
+    "extra_ane_programs": 0,
+    "extra_surface_writes": 0
+  },
+  "risks": [
+    "Extra stack copying may lose to direct writes.",
+    "It deliberately retains full-surface zeroing;341MiB of zero fill per48-layer import is not removed.",
+    "Import wall includes original surface upload overhead; timing only that aggregate cannot isolate CPU transpose.",
+    "Scratch reuse was already implemented in the baseline; no credit for that existing optimization."
+  ],
+  "future_full_route_argv_template": [
+    "${PINNED_EXE}",
+    "--model-dir",
+    "${EXISTING_MODEL_DIR}",
+    "--metallib-bf16",
+    "${PINNED_LIBRARY}",
+    "--hf-reference",
+    "${PINNED_REFERENCE}",
+    "--output-dir",
+    "${NEW_EMPTY_REPORT_DIR}",
+    "--ane-weights",
+    "static-int8-ffn-cached",
+    "--ane-compile-budget",
+    "0",
+    "--kv-import-packing",
+    "cpu-kv-blocked32",
+    "--context-capacity",
+    "1024",
+    "--interleave",
+    "true",
+    "--retain-metal",
+    "true",
+    "--runtime-worker",
+    "false"
+  ],
+  "invocation_limits": [
+    "This array is documentation, not a runnable trial or accepted queue manifest.",
+    "Repeat --hf-reference with explicitly pinned inputs to form each bounded warmup/measured arm. Reference files carry their own token/output budget; --max-new-tokens is not relied on for reference mode.",
+    "No attempt ledger, STOP marker, process allowlist or queue entry is supplied or modified.",
+    "Initialization/compilation is excluded from steady-state timing and reported separately. No auto-download or compile-on-miss.",
+    "Use the same retained-Metal policy in all arms; the supplied historical baseline is not a substitute for these controls."
+  ]
+}

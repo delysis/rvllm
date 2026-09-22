@@ -10,6 +10,7 @@ use crate::ane_prefill::{AnePrefillSnapshot, PrefillLayerShape};
 use half::bf16;
 use half::f16;
 use rvllm_apple::ane_attention::{AneAttention, AneAttentionProgram};
+use rvllm_apple::ane_attention_layout::KvImportPacking;
 use rvllm_apple::ane_dynamic_ffn::{AneDynamicFfn, AneDynamicFfnProgram};
 use rvllm_apple::ane_dynamic_linear::{AneDynamicLinear, AneDynamicLinearProgram};
 use rvllm_apple::ane_int8_ffn_weights::{AneInt8FfnWeights, AneInt8LinearWeights};
@@ -50,8 +51,12 @@ pub enum AneWeightPlan {
     StaticLut4FfnCached,
     /// Experimental per-output-channel INT8 FFNs; other weights remain FP16.
     StaticInt8FfnCached,
+    /// Default-off, single-I/O output-channel chunked INT8 FFN.
+    StaticInt8Chunk4FfnCached,
     /// Experimental INT8 sliding QKV and ordinary INT8 FFNs. Global QKV stays FP16.
     StaticInt8FfnSlidingQkvCached,
+    /// Four output-row tiles, only for the already-experimental INT8 sliding QKV.
+    StaticInt8FfnSlidingQkvTiles4Cached,
     /// Experimental stacked gate/up layout with the same INT8 weights.
     StaticInt8StackedFfnCached,
     /// Qualification only: compare both FFNs on every activation, bit for bit.
@@ -67,7 +72,9 @@ impl AneWeightPlan {
             Self::StaticAllCached => "static-all-cached",
             Self::StaticLut4FfnCached => "static-lut4-ffn-cached",
             Self::StaticInt8FfnCached => "static-int8-ffn-cached",
+            Self::StaticInt8Chunk4FfnCached => "static-int8-chunk4-ffn-cached",
             Self::StaticInt8FfnSlidingQkvCached => "static-int8-ffn-sliding-qkv-cached",
+            Self::StaticInt8FfnSlidingQkvTiles4Cached => "static-int8-ffn-sliding-qkv-tiles4-cached",
             Self::StaticInt8StackedFfnCached => "static-int8-stacked-ffn-cached",
             Self::StaticInt8StackedFfnChecked => "static-int8-stacked-ffn-checked",
         }
@@ -80,7 +87,9 @@ impl AneWeightPlan {
             Self::StaticAllCached
             | Self::StaticLut4FfnCached
             | Self::StaticInt8FfnCached
+            | Self::StaticInt8Chunk4FfnCached
             | Self::StaticInt8FfnSlidingQkvCached
+            | Self::StaticInt8FfnSlidingQkvTiles4Cached
             | Self::StaticInt8StackedFfnCached => 162,
             Self::StaticInt8StackedFfnChecked => 210,
         }
@@ -91,7 +100,9 @@ impl AneWeightPlan {
             Self::StaticAllCached
             | Self::StaticLut4FfnCached
             | Self::StaticInt8FfnCached
+            | Self::StaticInt8Chunk4FfnCached
             | Self::StaticInt8FfnSlidingQkvCached
+            | Self::StaticInt8FfnSlidingQkvTiles4Cached
             | Self::StaticInt8StackedFfnCached
             | Self::StaticInt8StackedFfnChecked => AneProgramCachePolicy::RequireExisting,
             Self::DynamicFfn | Self::StaticFfnDynamicOutput => AneProgramCachePolicy::Compile,
@@ -100,7 +111,9 @@ impl AneWeightPlan {
 
     fn static_ffn_precision(self) -> StaticFfnPrecision {
         match self {
-            Self::StaticInt8FfnCached | Self::StaticInt8FfnSlidingQkvCached => {
+            Self::StaticInt8Chunk4FfnCached => StaticFfnPrecision::Int8Chunk4,
+            Self::StaticInt8FfnCached | Self::StaticInt8FfnSlidingQkvCached
+            | Self::StaticInt8FfnSlidingQkvTiles4Cached => {
                 StaticFfnPrecision::Int8
             }
             Self::StaticInt8StackedFfnCached | Self::StaticInt8StackedFfnChecked => {
@@ -112,7 +125,7 @@ impl AneWeightPlan {
     }
 
     fn quantizes_qkv(self, sliding: bool) -> bool {
-        self == Self::StaticInt8FfnSlidingQkvCached && sliding
+        matches!(self, Self::StaticInt8FfnSlidingQkvCached | Self::StaticInt8FfnSlidingQkvTiles4Cached) && sliding
     }
 }
 
@@ -121,6 +134,7 @@ enum StaticFfnPrecision {
     Fp16,
     Int8,
     Int8Stacked,
+    Int8Chunk4,
     Lut4,
 }
 
@@ -131,11 +145,13 @@ pub enum AneStaticCachePart {
     QueryKeyValue,
     /// Forty INT8 sliding projections and the eight original FP16 global projections.
     QueryKeyValueSlidingInt8,
+    QueryKeyValueSlidingInt8Tiles4,
     Output,
     FeedForward,
     FeedForwardLut4,
     FeedForwardInt8,
     FeedForwardInt8Stacked,
+    FeedForwardInt8Chunk4,
     VocabularyAndAttention,
 }
 
@@ -277,7 +293,8 @@ fn visit_static_cache(
         let shape = layer_shape(&arch, index);
         let q_width = shape.query_heads * shape.head_dim;
         let result = match part {
-            AneStaticCachePart::QueryKeyValue | AneStaticCachePart::QueryKeyValueSlidingInt8 => {
+            AneStaticCachePart::QueryKeyValue | AneStaticCachePart::QueryKeyValueSlidingInt8
+            | AneStaticCachePart::QueryKeyValueSlidingInt8Tiles4 => {
                 let mut weights = load("self_attn.q_proj.weight")?;
                 weights.extend(load("self_attn.k_proj.weight")?);
                 let shared_value = shape.sliding_window.is_none();
@@ -286,13 +303,15 @@ fn visit_static_cache(
                 }
                 let rows =
                     q_width + shape.kv_heads * shape.head_dim * if shared_value { 1 } else { 2 };
-                load_static_qkv(
-                    &weights,
-                    rows,
-                    part == AneStaticCachePart::QueryKeyValueSlidingInt8 && !shared_value,
-                    policy,
-                )
-                .map(drop)
+                if part == AneStaticCachePart::QueryKeyValueSlidingInt8Tiles4 && !shared_value {
+                    load_static_qkv_tiles4(&weights, rows, policy).map(drop)
+                } else {
+                    load_static_qkv(
+                        &weights, rows,
+                        part == AneStaticCachePart::QueryKeyValueSlidingInt8 && !shared_value,
+                        policy,
+                    ).map(drop)
+                }
             }
             AneStaticCachePart::Output => {
                 let weights = load("self_attn.o_proj.weight")?;
@@ -301,7 +320,8 @@ fn visit_static_cache(
             AneStaticCachePart::FeedForward
             | AneStaticCachePart::FeedForwardLut4
             | AneStaticCachePart::FeedForwardInt8
-            | AneStaticCachePart::FeedForwardInt8Stacked => {
+            | AneStaticCachePart::FeedForwardInt8Stacked
+            | AneStaticCachePart::FeedForwardInt8Chunk4 => {
                 let gate = load("mlp.gate_proj.weight")?;
                 let up = load("mlp.up_proj.weight")?;
                 let down = load("mlp.down_proj.weight")?;
@@ -311,6 +331,7 @@ fn visit_static_cache(
                     &down,
                     match part {
                         AneStaticCachePart::FeedForwardInt8 => StaticFfnPrecision::Int8,
+                        AneStaticCachePart::FeedForwardInt8Chunk4 => StaticFfnPrecision::Int8Chunk4,
                         AneStaticCachePart::FeedForwardInt8Stacked => {
                             StaticFfnPrecision::Int8Stacked
                         }
@@ -332,6 +353,16 @@ fn visit_static_cache(
     }
     check_stop()?;
     Ok(results)
+}
+
+fn load_static_qkv_tiles4(
+    weights: &[f16], rows: usize, policy: AneProgramCachePolicy,
+) -> Result<AneLinear, String> {
+    if rows != 8192 {
+        return Err("tiled INT8 QKV supports only the 8192-row sliding projection".into());
+    }
+    let quantized = AneInt8LinearWeights::quantize(weights, HIDDEN, rows)?;
+    AneLinear::compile_int8_tiles4_with_cache_policy(&quantized, policy)
 }
 
 fn load_static_qkv(
@@ -368,6 +399,10 @@ fn load_static_ffn(
         StaticFfnPrecision::Int8 => {
             let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
             AneGatedFfn::compile_int8_with_cache_policy(&weights, policy)
+        }
+        StaticFfnPrecision::Int8Chunk4 => {
+            let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
+            AneGatedFfn::compile_int8_chunk4_with_cache_policy(&weights, policy)
         }
         StaticFfnPrecision::Int8Stacked => {
             let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
@@ -544,6 +579,9 @@ impl GemmaAneDecode {
         weights: AneWeightPlan,
         compile_budget: usize,
     ) -> Result<Self, String> {
+        if matches!(weights, AneWeightPlan::StaticInt8Chunk4FfnCached | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached) && compile_budget != 0 {
+            return Err("candidate inference requires zero compile budget; provision separately".into());
+        }
         if weights == AneWeightPlan::StaticInt8StackedFfnChecked
             && (compile_budget != 0 || std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_none())
         {
@@ -597,12 +635,16 @@ impl GemmaAneDecode {
                 qkv_weights.extend(load("self_attn.v_proj.weight")?);
             }
             let projection_width = q_width + kv_width * if shared_value { 1 } else { 2 };
-            let qkv = load_static_qkv(
-                &qkv_weights,
-                projection_width,
-                weights.quantizes_qkv(!shared_value),
-                cache_policy,
-            )?;
+            let qkv = if weights == AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached && !shared_value {
+                load_static_qkv_tiles4(&qkv_weights, projection_width, cache_policy)?
+            } else {
+                load_static_qkv(
+                    &qkv_weights,
+                    projection_width,
+                    weights.quantizes_qkv(!shared_value),
+                    cache_policy,
+                )?
+            };
             drop(qkv_weights);
             let output_weights = load("self_attn.o_proj.weight")?;
             let output = match &output_programs {
@@ -715,7 +757,7 @@ impl GemmaAneDecode {
     /// A partial import/evaluation failure leaves the decoder unusable until a
     /// complete successful import; layers can never silently resume out of step.
     pub fn import_prefill(&mut self, snapshot: &AnePrefillSnapshot) -> Result<(), String> {
-        self.import_prefill_inner(snapshot, false)
+        self.import_prefill_with_packing(snapshot, KvImportPacking::Baseline)
     }
 
     /// Experimental import reusing one host packing allocation across layers.
@@ -725,13 +767,14 @@ impl GemmaAneDecode {
         &mut self,
         snapshot: &AnePrefillSnapshot,
     ) -> Result<(), String> {
-        self.import_prefill_inner(snapshot, true)
+        self.import_prefill_with_packing(snapshot, KvImportPacking::ReuseScratch)
     }
 
-    fn import_prefill_inner(
+    /// Explicit handoff-only strategy; does not select a Metal or ANE kernel.
+    pub fn import_prefill_with_packing(
         &mut self,
         snapshot: &AnePrefillSnapshot,
-        reuse_scratch: bool,
+        packing: KvImportPacking,
     ) -> Result<(), String> {
         if snapshot.tokens == 0
             || snapshot.tokens > self.capacity
@@ -756,7 +799,11 @@ impl GemmaAneDecode {
         self.next_position = None;
         let mut scratch = Vec::new();
         for (layer, saved) in self.layers.iter_mut().zip(&snapshot.layers) {
-            if reuse_scratch {
+            if packing == KvImportPacking::Blocked32 {
+                layer.attention.import_cache_blocked32_with_scratch(
+                    &saved.keys, &saved.values, snapshot.tokens, &mut scratch,
+                )?;
+            } else if packing == KvImportPacking::ReuseScratch {
                 layer.attention.import_cache_with_scratch(
                     &saved.keys,
                     &saved.values,
@@ -1188,6 +1235,33 @@ mod int8_projection_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tiles4_is_single_variant_sliding_only_and_cached() {
+        let plan = AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached;
+        assert_eq!(plan.program_count(), 162);
+        assert_eq!(plan.cache_policy(), AneProgramCachePolicy::RequireExisting);
+        assert_eq!(plan.static_ffn_precision(), StaticFfnPrecision::Int8);
+        assert!(plan.quantizes_qkv(true));
+        assert!(!plan.quantizes_qkv(false));
+        assert!(matches!(load_static_qkv_tiles4(&[], 8704, plan.cache_policy()),
+            Err(error) if error.contains("8192-row sliding")));
+        assert!(matches!(GemmaAneDecode::load_with_compile_budget(
+            Path::new("/must-not-read-candidate-checkpoint"), 1024, plan, 1),
+            Err(error) if error.contains("zero compile budget")));
+    }
+    #[test]
+    fn chunk4_is_independent_cached_and_never_quantizes_qkv() {
+        let plan = AneWeightPlan::StaticInt8Chunk4FfnCached;
+        assert_eq!(plan.name(), "static-int8-chunk4-ffn-cached");
+        assert_eq!(plan.program_count(), 162);
+        assert_eq!(plan.cache_policy(), AneProgramCachePolicy::RequireExisting);
+        assert_eq!(plan.static_ffn_precision(), StaticFfnPrecision::Int8Chunk4);
+        assert!(!plan.quantizes_qkv(true));
+        assert!(!plan.quantizes_qkv(false));
+        let result = GemmaAneDecode::load_with_compile_budget(
+            Path::new("/must-not-read-candidate-checkpoint"), 1024, plan, 1);
+        assert!(matches!(result, Err(error) if error.contains("zero compile budget")));
+    }
     #[test]
     fn sliding_qkv_candidate_preserves_global_precision_and_ffn_policy() {
         let candidate = AneWeightPlan::StaticInt8FfnSlidingQkvCached;

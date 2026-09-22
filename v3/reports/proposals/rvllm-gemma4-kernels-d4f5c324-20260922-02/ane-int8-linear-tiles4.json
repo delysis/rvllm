@@ -1,0 +1,188 @@
+{
+  "schema": "rvllm.kernel_candidate.NONLIVE_PROPOSAL.v1",
+  "status": "untrusted_unpinned_not_queue_admissible",
+  "job": "rvllm-gemma4-kernels-d4f5c324-20260922-02",
+  "base_commit": "d4f5c324d60875228733132ee78cfe61fd8c9402",
+  "candidate": "ane-int8-linear-tiles4",
+  "patch": "series/0006-ane-int8-linear-tiles4.patch",
+  "default_enabled": false,
+  "requires_whole_ordered_series_through": "0008-review-safety-and-evidence-fixes.patch",
+  "hypothesis": "Four independent row-tiled convs may change ANE placement for a projection while keeping each full-K dot product and output row order intact.",
+  "supported_shapes": "Component API input/output pairs: (3840,8192) slidingQKV, (4096,3840)/(8192,3840) O, (3840,16384) head block. Runtime selector ONLY tiles the already-experimental INT8 slidingQKV. GlobalQKV8704, MetalQKV9216, full-vocabulary262144 and other shapes are rejected.",
+  "fallback": "No selection changes production defaults. Unsupported Metal/resource shapes use original kernels; ANE graph APIs reject before private calls and require explicit baseline re-selection; unsupported valid CPU layouts use old reusable packer.",
+  "feature_requirements": {
+    "host_tests": [
+      "rvllm-apple/default-empty",
+      "rvllm-apple-metal/default-empty"
+    ],
+    "full_route": [
+      "rvllm-runtime/macos-private-ane-research"
+    ],
+    "target": "aarch64-apple-darwin",
+    "shipping_private_api_allowed": false
+  },
+  "local_pins_required": {
+    "reviewed_commit": null,
+    "rustc_version": null,
+    "cargo_lock_sha256": null,
+    "xcode_version": null,
+    "metal_compiler_version": null,
+    "executable_path": null,
+    "executable_sha256": null,
+    "candidate_metallib_path": null,
+    "candidate_metallib_sha256": null,
+    "baseline_metallib_path": null,
+    "baseline_metallib_sha256": null,
+    "checkpoint_manifest_sha256": null,
+    "quantized_payload_manifest_sha256": null,
+    "reference_file_paths_and_sha256": null,
+    "power_monitor_identity": null,
+    "diagnostic_journal_path": null,
+    "local_component_adapter_source_sha256": null
+  },
+  "stratum": {
+    "power_source": "battery",
+    "low_power_mode": false,
+    "pmset_mode": 0,
+    "thermal_state": "nominal",
+    "must_observe_not_set": true,
+    "pooling_with_other_strata": false
+  },
+  "additional_strata": "AC, low-power-on, other pmset modes and Fair must be new independent pins/experiments; no conversion or pooling.",
+  "selection": {
+    "environment": {
+      "RVLLM_METAL_PREFILL_GEMM": "mma32",
+      "RVLLM_METAL_PREFILL_ATTENTION": "simdgroup",
+      "RVLLM_METAL_BF16_ACCUM": "native",
+      "RVLLM_METAL_QKV_PREFILL": "off",
+      "RVLLM_METAL_RESEARCH": "off"
+    },
+    "ane_weights": "static-int8-ffn-sliding-qkv-tiles4-cached",
+    "kv_import_packing": "baseline",
+    "ane_compile_budget": 0,
+    "runtime_worker": false,
+    "interleave": true,
+    "retain_metal": true
+  },
+  "baseline": "Primary layout control: static-int8-ffn-sliding-qkv-cached (untiled INT8 slidingQKV). Separately compare to active static-int8-ffn-cached (FP16 QKV) for quality/end-to-end utility; do not attribute quantization changes to tiling.",
+  "requested_candidate_is_not_dispatch_evidence": true,
+  "required_actual_labels": [
+    "ane-int8-linear-tiles4",
+    "static-int8-ffn-sliding-qkv-tiles4-cached",
+    "qkv-sliding-int8-tiles4"
+  ],
+  "work": {
+    "tiled_program_evaluations_per_decode_step": 40,
+    "unchanged_global_qkv_evaluations_per_step": 8,
+    "tiled_evaluations_per_nine_step_request": 360,
+    "convs_per_tiled_program": 4,
+    "sliding_qkv_macs_per_layer": 31457280,
+    "logical_program_count_total": 162,
+    "new_weight_specific_program_identities": 40,
+    "max_explicit_provision_calls_per_part": 48,
+    "prompt_token_counts_separate_cases": [
+      84,
+      512,
+      1015
+    ],
+    "context_capacity": 1024,
+    "generated_tokens_including_first_metal_token": 10,
+    "ane_steps_per_request": 9,
+    "eos_early_stop": "invalidate unequal-work comparison, retain evidence"
+  },
+  "bounded_schedule": {
+    "kind": "manual A-before / B / A-after, separate owners/processes; not scheduled by these files",
+    "per_arm_warmup_requests": 2,
+    "per_arm_measured_requests": 7,
+    "total_requests_per_case_per_screen": 27,
+    "total_actual_ane_steps_if_no_early_eos": 243,
+    "retry_budget": 0,
+    "baseline_bracket_drift_limit_fraction": 0.05,
+    "drift_action": "reject this block and retain every receipt; no rescaling"
+  },
+  "qualification_before_timing": [
+    "No driver call in this job. After explicit local resumption and compilation, qualify ONE candidate graph first; do not provision/evaluate all48 before one-graph approval.",
+    "One sliding-QKV program first: finite bit-identical outputs versus untiled INT8 using exactly the same quantized bytes/scales. Independent CPU linear tolerance remains 0.002 + 0.01*abs(reference).",
+    "Then every tiled sliding-QKV activation for nine steps (360 vectors), plus unchanged global QKV/raw V behavior and exact final HF/baseline greedy tokens. Reject layout if it fails exact comparison.",
+    "O/head component use is not a full-route candidate here: independently quantized component inputs and new quality evidence are required; runtime O/head remain FP16."
+  ],
+  "oracle_contract": {
+    "finite_required": true,
+    "forced_reference_decode": false,
+    "tolerance_change_allowed": false,
+    "failed_evidence_retained": true
+  },
+  "accept_reject": {
+    "scope": "advance to another independently pinned confirmation, never auto-promote production",
+    "accept": [
+      "All host/compiler/component/numerical/token/dispatch gates pass.",
+      "Power/thermal labels remain exactly the pinned stratum and baseline bracket drift is <=5%.",
+      "Candidate target-stage median is at least5% lower than BOTH baseline-arm medians.",
+      "End-to-end request median is no more than2% above the worse baseline-arm median.",
+      "Report raw samples and uncertainty; require a second independent passing block before proposing admission."
+    ],
+    "reject": [
+      "Any oracle mismatch, nonfinite valid-data output, cache miss, driver/compiler error, unexpected dispatch fallback, OOB/canary fault, changed work count, stratum transition, or drift>5%.",
+      "A speed-only win that fails quality is rejected.",
+      "An inconclusive/noisy or <5% target-stage result is not an accepted optimization."
+    ],
+    "no_cpu_cycle_normalization": true
+  },
+  "measurement_target": "ANE sliding-QKV per-step intervals and nine-step decode wall interval",
+  "memory_program_budget": {
+    "source_blob_bytes_sliding_qkv": 31474240,
+    "source_blob_delta_bytes_per_program": 384,
+    "source_blob_delta_bytes_all_40_sliding_qkv": 15360,
+    "input_surface_bytes_sliding_qkv": 245760,
+    "output_surface_bytes_sliding_qkv": 524288,
+    "logical_program_count_delta": 0,
+    "compiled_peak_memory": "unknown"
+  },
+  "risks": [
+    "Full model is numerically a different branch from active FP16-QKV baseline even before tiling.",
+    "Compiler may fold or serialize row chunks or increase transient memory.",
+    "Global K/raw-V asymmetry is protected by rejecting8704 rows, not reconstructed from a generic QKV rule.",
+    "Do not combine this plan with chunk4 until independent acceptance and a separately named combination."
+  ],
+  "future_full_route_argv_template": [
+    "${PINNED_EXE}",
+    "--model-dir",
+    "${EXISTING_MODEL_DIR}",
+    "--metallib-bf16",
+    "${PINNED_LIBRARY}",
+    "--hf-reference",
+    "${PINNED_REFERENCE}",
+    "--output-dir",
+    "${NEW_EMPTY_REPORT_DIR}",
+    "--ane-weights",
+    "static-int8-ffn-sliding-qkv-tiles4-cached",
+    "--ane-compile-budget",
+    "0",
+    "--kv-import-packing",
+    "baseline",
+    "--context-capacity",
+    "1024",
+    "--interleave",
+    "true",
+    "--retain-metal",
+    "true",
+    "--runtime-worker",
+    "false"
+  ],
+  "invocation_limits": [
+    "This array is documentation, not a runnable trial or accepted queue manifest.",
+    "Repeat --hf-reference with explicitly pinned inputs to form each bounded warmup/measured arm. Reference files carry their own token/output budget; --max-new-tokens is not relied on for reference mode.",
+    "No attempt ledger, STOP marker, process allowlist or queue entry is supplied or modified.",
+    "Initialization/compilation is excluded from steady-state timing and reported separately. No auto-download or compile-on-miss.",
+    "Use the same retained-Metal policy in all arms; the supplied historical baseline is not a substitute for these controls."
+  ],
+  "separate_future_cache_provisioning": {
+    "part": "qkv-sliding-int8-tiles4",
+    "max_new_graphs": 40,
+    "max_compiler_calls_per_fresh_part_process": 48,
+    "requires_one_graph_approval_first": true,
+    "inference_compile_budget": 0,
+    "daemon_cache_or_residency_assumption": "none; inspect with existing cache mechanism only after explicit resumption",
+    "do_not_use_all_int8_alias_for_candidate": "all-int8 remains the existing baseline batch and intentionally does not select this candidate"
+  }
+}
