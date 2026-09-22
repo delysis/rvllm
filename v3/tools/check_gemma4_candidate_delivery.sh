@@ -48,18 +48,79 @@ host_tests() {
     fi
 }
 
+# Validate the whole reviewed scope before checking any source. In particular,
+# lib.rs must not cause rustfmt to traverse unlisted out-of-line modules.
+packet_rust_paths=()
+load_packet_format_paths() {
+    local path part cursor seen=$'\n' count=0
+    local components=()
+    while IFS= read -r path || [[ -n "$path" ]]; do
+        case "$path" in ''|\#*) continue ;; esac
+        if [[ ! "$path" =~ ^crates/[A-Za-z0-9_./-]+\.rs$ ||
+              "/$path/" == *'/../'* || "/$path/" == *'/./'* || "$path" == *'//'* ]]; then
+            echo "invalid packet Rust path: $path" >&2
+            return 2
+        fi
+        if [[ "$seen" == *$'\n'"$path"$'\n'* ]]; then
+            echo "duplicate packet Rust path: $path" >&2
+            return 2
+        fi
+        seen+="$path"$'\n'
+        cursor="$workspace"
+        IFS=/ read -r -a components <<< "$path"
+        for part in "${components[@]}"; do
+            cursor="$cursor/$part"
+            if [[ -L "$cursor" ]]; then
+                echo "symlink in packet Rust path: $path" >&2
+                return 2
+            fi
+        done
+        [[ -f "$cursor" ]] || { echo "missing packet Rust file: $path" >&2; return 2; }
+        packet_rust_paths+=("$path")
+        count=$((count + 1))
+    done < "$1"
+    [[ $count -gt 0 ]] || { echo 'empty packet Rust manifest' >&2; return 2; }
+    printf '%s\n' "${packet_rust_paths[@]}"
+}
+
 run cargo-version cargo --version
 run rustc-version rustc --version
 run rustfmt-version rustfmt --version
 run metal-path xcrun --toolchain Metal --find metal
-run format cargo fmt --all -- --check
+manifest="$workspace/tools/gemma4_candidate_rustfmt.paths"
+[[ -f "$manifest" && ! -L "$manifest" ]] || {
+    echo 'regular checked-in packet Rust manifest required' >&2
+    exit 2
+}
+run format-manifest-copy cp "$manifest" "$out/format-manifest.txt"
+run format-manifest load_packet_format_paths "$out/format-manifest.txt"
+run format-manifest-unchanged cmp "$manifest" "$out/format-manifest.txt"
+run format-source-hashes shasum -a 256 "$manifest" "${packet_rust_paths[@]}"
+printf 'packet-owned-files-only; unlisted source NOT checked\n' > "$out/format-scope.txt"
+index=0
+for path in "${packet_rust_paths[@]}"; do
+    index=$((index + 1))
+    printf -v label 'format-%04d' "$index"
+    printf '%s\t%s\n' "$label" "$path" >> "$out/format-paths.tsv"
+    printf '# stdin=%q cwd=%q\n' "$workspace/$path" "$workspace/${path%/*}" >> "$out/commands.txt"
+    # Stdin disables out-of-line module traversal on stable rustfmt. Preserve
+    # each file's config discovery by using its parent directory as cwd.
+    # Do NOT rely on --check with stdin: compare the emitted bytes ourselves.
+    (
+        cd "${path%/*}"
+        run "$label" rustfmt --edition 2021 --emit stdout < "${path##*/}"
+    )
+    run "$label-compare" cmp "$path" "$out/$label.stdout"
+done
+# Formatting is read-only; reject source/manifest edits during this stage.
+run format-source-unchanged shasum -a 256 -c "$out/format-source-hashes.stdout"
 common=(--offline --locked --release -j 2 --target aarch64-apple-darwin)
 host_tests metal-policy cargo test "${common[@]}" -p rvllm-apple-metal --lib research::tests
 host_tests dispatch-evidence cargo test "${common[@]}" -p rvllm-apple-metal --lib research_evidence::tests
 host_tests ane-candidates cargo test "${common[@]}" -p rvllm-apple \
     --features macos-private-ane-research --lib ane_int8_candidates::tests
 host_tests kv-layout cargo test "${common[@]}" -p rvllm-apple \
-    --features macos-private-ane-research --lib ane_attention_layout::tests::blocked32_
+    --features macos-private-ane-research --lib ane_attention_layout::blocked32_tests
 host_tests prefill-screen cargo test "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --bin rvllm_disaggregated_infer prefill_screen::tests
 run cli-build cargo build "${common[@]}" -p rvllm-runtime \
