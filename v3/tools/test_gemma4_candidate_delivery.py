@@ -27,6 +27,9 @@ elif name == "cargo":
     if args[0] == "fmt" and (os.environ.get("FAKE_FAIL") == "fmt" or os.environ.get("FAKE_WORKSPACE_DRIFT")):
         print("format failure", file=sys.stderr); sys.exit(7)
     if args[0] == "test":
+        mutate = os.environ.get("FAKE_SOURCE_EDIT_DURING_TEST")
+        if mutate:
+            pathlib.Path(mutate).write_text("// edit after formatting\n")
         count = 0 if (os.environ.get("FAKE_FAIL") == "zero-tests" or args[-1] == os.environ.get("FAKE_ZERO_FILTER")) else 4
         print(f"test result: ok. {count} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out")
         if os.environ.get("FAKE_FAIL") == "test-exit":
@@ -41,6 +44,8 @@ elif name == "cargo":
         else:
             file.write_text('#!/bin/sh\necho "INFERENCE MUST NOT RUN" >&2\nexit 99\n')
         file.chmod(0o755)
+        if binary == "rvllm-metal-research-source" and os.environ.get("FAKE_REPLACE_CLI_AT_EXPORTER_BUILD"):
+            (folder / "rvllm_disaggregated_infer").write_text("different CLI after its build\n")
 elif name == "rustfmt" and args != ["--version"]:
     if args != ["--edition", "2021", "--emit", "stdout"]:
         print("unexpected formatter invocation (must be nonrecursive stdin)", file=sys.stderr)
@@ -61,6 +66,14 @@ elif name == "xcrun":
     if "metal" in args and "-c" in args:
         if os.environ.get("FAKE_FAIL") == "metal":
             print("Metal compile failure", file=sys.stderr); sys.exit(9)
+        source = pathlib.Path(args[args.index("-c") + 1])
+        replace_at = os.environ.get("FAKE_REPLACE_EXPORTER_AT")
+        if source.stem == replace_at:
+            exporter = pathlib.Path(os.environ["CARGO_TARGET_DIR"]) / "aarch64-apple-darwin/release/rvllm-metal-research-source"
+            exporter.write_text("#!/bin/sh\nprintf '// replacement exporter\\n'\n")
+        if source.stem == os.environ.get("FAKE_REPLACE_CLI_AT"):
+            cli = pathlib.Path(os.environ["CARGO_TARGET_DIR"]) / "aarch64-apple-darwin/release/rvllm_disaggregated_infer"
+            cli.write_text("different CLI during shader compilation\n")
         pathlib.Path(args[args.index("-o") + 1]).write_bytes(b"fake AIR")
     elif "metallib" in args:
         pathlib.Path(args[args.index("-o") + 1]).write_bytes(b"fake metallib")
@@ -151,7 +164,13 @@ class DeliveryGateTests(unittest.TestCase):
             if call[0] == "cargo" and call[1] in ("test", "build"):
                 for flag in ("--offline", "--locked", "--release", "aarch64-apple-darwin"):
                     self.assertIn(flag, call)
-        self.assertTrue((self.out / "SHA256SUMS").read_text())
+        self.assertEqual((self.out / "SHA256SUMS").read_text(),
+                         (self.out / "built-exporter-hashes.stdout").read_text()
+                         + (self.out / "built-cli-hashes.stdout").read_text()
+                         + (self.out / "metal-artifact-hashes.stdout").read_text())
+        codes = (self.out / "exit-codes.tsv").read_text()
+        self.assertIn("artifact-unchanged\t0\n", codes)
+        self.assertIn("format-source-unchanged-final\t0\n", codes)
         commands = (self.out / "commands.txt").read_text()
         self.assertIn("ane_attention_layout::blocked32_tests", commands)
 
@@ -287,6 +306,53 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertIn("no passing tests recorded for prefill-screen", run.stderr)
         self.assertEqual(len([c for c in self.calls() if c[:2] == ["cargo", "test"]]), 5)
         self.assertFalse(any(c[:2] == ["cargo", "build"] for c in self.calls()))
+
+    def test_source_edit_after_formatting_cannot_receive_success(self):
+        self.env["FAKE_SOURCE_EDIT_DURING_TEST"] = str(self.workspace / self.owned[0])
+        run = self.run_gate()
+        self.assertNotEqual(run.returncode, 0, "gate passed after a checked source changed")
+        self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
+        self.assertIn("format-source-unchanged-final", run.stderr)
+        self.assertIn("FAILED", (self.out / "format-source-unchanged-final.stdout").read_text())
+
+    def test_cli_replacement_by_later_build_cannot_be_repinned_as_success(self):
+        self.env["FAKE_REPLACE_CLI_AT_EXPORTER_BUILD"] = "1"
+        run = self.run_gate()
+        self.assertNotEqual(run.returncode, 0, "gate accepted a CLI replaced after its build")
+        self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
+        self.assertIn("built-cli-unchanged", run.stderr)
+        self.assertTrue((self.out / "built-cli-hashes.stdout").read_text())
+        self.assertFalse(list(self.out.glob("*.metal")))
+
+    def test_exporter_replacement_between_arms_stops_before_next_export(self):
+        self.env["FAKE_REPLACE_EXPORTER_AT"] = "bf16-off"
+        run = self.run_gate()
+        self.assertNotEqual(run.returncode, 0, "gate accepted mixed source exporters")
+        self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
+        self.assertEqual(len(list(self.out.glob("*.metal"))), 1)
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), 1)
+        self.assertIn("bf16-metal-short-mma16x64-exporter-unchanged", run.stderr)
+        self.assertTrue((self.out / "built-exporter-hashes.stdout").read_text())
+
+    def test_replacement_during_last_arm_does_not_get_a_fresh_binary_hash(self):
+        self.env["FAKE_REPLACE_EXPORTER_AT"] = "f16-metal-gqa-kv8"
+        run = self.run_gate()
+        self.assertNotEqual(run.returncode, 0, "gate relabeled an exporter changed in the final arm")
+        self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), 8)
+        self.assertIn("artifact-unchanged", run.stderr)
+        self.assertIn((self.out / "built-exporter-hashes.stdout").read_text(),
+                      (self.out / "artifact-hashes.stdout").read_text())
+
+    def test_cli_replacement_during_metal_compile_is_rejected_at_final_check(self):
+        self.env["FAKE_REPLACE_CLI_AT"] = "bf16-off"
+        run = self.run_gate()
+        self.assertNotEqual(run.returncode, 0, "gate accepted a CLI replaced during Metal compilation")
+        self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), 8)
+        self.assertIn("artifact-unchanged", run.stderr)
+        self.assertIn((self.out / "built-cli-hashes.stdout").read_text(),
+                      (self.out / "artifact-hashes.stdout").read_text())
 
     def test_x86_macos_environment_never_reaches_cargo(self):
         self.env["FAKE_ARCH"] = "x86_64"

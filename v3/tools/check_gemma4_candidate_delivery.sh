@@ -125,13 +125,20 @@ host_tests prefill-screen cargo test "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --bin rvllm_disaggregated_infer prefill_screen::tests
 run cli-build cargo build "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --bin rvllm_disaggregated_infer
+# Anchor each executable immediately after its own build, not after the
+# shared target directory may have been reused by another build.
+cli="$CARGO_TARGET_DIR/aarch64-apple-darwin/release/rvllm_disaggregated_infer"
+run built-cli-hashes shasum -a 256 "$cli"
 run exporter-build cargo build "${common[@]}" -p rvllm-apple-metal --bin rvllm-metal-research-source
 exporter="$CARGO_TARGET_DIR/aarch64-apple-darwin/release/rvllm-metal-research-source"
 [[ -x "$exporter" ]] || { echo "missing built source exporter: $exporter" >&2; exit 1; }
+run built-exporter-hashes shasum -a 256 "$exporter"
+run built-cli-unchanged shasum -a 256 -c "$out/built-cli-hashes.stdout"
 
 for dtype in bf16 f16; do
     for candidate in off metal-short-mma16x64 metal-rounded-gate32 metal-gqa-kv8; do
         stem="$dtype-$candidate"
+        run "$stem-exporter-unchanged" shasum -a 256 -c "$out/built-exporter-hashes.stdout"
         run "$stem-export" "$exporter" "$dtype" "$candidate"
         cp "$out/$stem-export.stdout" "$out/$stem.metal"
         [[ -s "$out/$stem.metal" ]] || { echo "empty source: $stem" >&2; exit 1; }
@@ -142,8 +149,14 @@ for dtype in bf16 f16; do
         [[ -s "$out/$stem.metallib" ]] || { echo "empty library: $stem" >&2; exit 1; }
     done
 done
-run artifact-hashes shasum -a 256 "$exporter" \
-    "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/rvllm_disaggregated_infer" \
-    "$out"/*.metal "$out"/*.metallib
+run metal-artifact-hashes shasum -a 256 "$out"/*.metal "$out"/*.metallib
+# Reuse the early binary hashes. Rehashing mutable target paths here would
+# silently bless a replacement instead of testing identity across the run.
+run artifact-hashes cat "$out/built-exporter-hashes.stdout" \
+    "$out/built-cli-hashes.stdout" "$out/metal-artifact-hashes.stdout"
+run artifact-unchanged shasum -a 256 -c "$out/artifact-hashes.stdout"
+# Extend the original packet-source check through tests/builds/exports. This
+# is bounded consistency evidence, not a lock or a full-workspace source pin.
+run format-source-unchanged-final shasum -a 256 -c "$out/format-source-hashes.stdout"
 cp "$out/artifact-hashes.stdout" "$out/SHA256SUMS"
 printf 'compiled-only; no accelerator acceptance\n' > "$out/status.txt"

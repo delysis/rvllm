@@ -57,3 +57,71 @@ compile/link arms completed. Its status remains
 `compiled-only; no accelerator acceptance`. Prefill, cache, full-route,
 tensor-oracle, timing, and promotion remain separate phases governed by
 `v3/HANDOFF.md`.
+
+## Gate consistency review proposal (base 226dbaad)
+
+Reviewed at `226dbaad8dec9bdd3b9684a224747384b6e47319`. The local owner
+reports that this revision passed the real native delivery gate. The review
+found two reproducible false-pass windows under concurrent edits/rebuilds;
+there is no evidence that either occurred in that completed native run.
+
+Affected files: `v3/tools/check_gemma4_candidate_delivery.sh`,
+`v3/tools/test_gemma4_candidate_delivery.py`, and this handoff. The reviewed
+20-path formatting manifest is unchanged. No Rust or shader changes.
+
+The gate now hashes each executable immediately after its build, checks the
+exporter against that hash before every export, and reuses the early binary
+hashes in the final artifact manifest. A later replacement fails instead of
+receiving a fresh identity. A final packet-source/manifest check extends the
+existing formatting-stage consistency check through tests/builds/exports.
+
+Invariants: retain native-host refusal, offline/locked Cargo, five targeted
+test filters including `ane_attention_layout::blocked32_tests`, eight Metal
+3.1 compile/link arms, fresh output directories, preserved failures and no
+inference. Five new deterministic fake-tool regression tests are integrated
+into the existing contract suite. The native gate is not run by the reviewer.
+
+This is bounded change detection, not atomic attestation: no shared-target
+lock is acquired, transient edits restored between checks are not detected,
+and unlisted sources/configuration/toolchain binaries are not pinned. Keep a
+quiescent checkout and target while running the local gate. The binaries in
+Cargo's target directory remain mutable; verify hashes before later use.
+
+Apply the supplied single patch only after local review; do not reapply older
+packets or rewrite completed receipts. Run the contract suite and real gate
+locally in a fresh output directory. Then continue the existing prefill-only
+qualification order in `v3/HANDOFF.md`; no new kernel or acceptance criterion
+is introduced by this review.
+
+## 2026-09-22 gate-review continuation
+
+The consistency-review patch was applied on top of `226dbaad`. Its 22-test
+contract suite passed in bounded batches (22/22), and the native delivery gate
+passed with `compiled-only; no accelerator acceptance`; the fresh receipt is
+under `/tmp/rvllm-gemma4-review-gate.WkiF9i/output`.
+
+A host-only queue job was submitted as
+`gate-review-226dbaad-delivery-20260922-1` in
+`experiment-queue-20260922-gate-review-2`. It is not an accelerator
+experiment. The queue run was deferred/stopped because free disk was 12.8 GiB,
+below the declared 16 GiB floor. The direct gate passed; rerun the queued job
+only after headroom is restored, without weakening its condition.
+
+### Promotion blockers / to-dos
+
+- [ ] Restore and recheck at least 16 GiB free disk before queued or live work.
+- [ ] Rerun the queued host-only delivery job and retain its receipt.
+- [ ] Re-provision the short-MMA candidate's ANE cache in a fresh serial
+  process; its 6-token full-route attempt reached Metal prefill but failed
+  before decode because the current client cache lacked the compiled model.
+- [ ] Run short-MMA full continuation after cache recovery and require exact
+  continuation equality plus candidate dispatch evidence.
+- [ ] Run positive GQA prefill with a separately pinned >=64-token reference;
+  the 6-token screen remains negative evidence only.
+- [ ] Run candidate tensor/original-driver oracle checks. Token equality alone
+  is not tensor acceptance.
+- [ ] Run the predeclared matched ABBA timing/control campaign with two
+  warmups and seven measured requests per arm, zero compiler calls, stable
+  strata, and the 5% drift gate. Do not pool AC/Fair/battery results.
+- [ ] Promote only after compiler, dispatch, tensor, full-continuation, and
+  matched-timing evidence all pass; otherwise defer with the failed receipt.
