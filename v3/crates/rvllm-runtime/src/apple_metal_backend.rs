@@ -1917,6 +1917,16 @@ impl ModelMetalBackend {
         self.perf.snapshot()
     }
 
+    /// Encoded research dispatches, not proof of GPU completion or accuracy.
+    #[must_use]
+    pub fn probe_research_dispatches(
+        &self,
+    ) -> Option<rvllm_apple_metal::research_evidence::ResearchDispatchSnapshot> {
+        self.pipelines
+            .as_ref()
+            .map(PipelineCache::research_dispatch_snapshot)
+    }
+
     #[must_use]
     pub fn probe_arena_stats(&self) -> Option<MetalProbeArenaStats> {
         self.arena.as_ref().map(|arena| MetalProbeArenaStats {

@@ -4,7 +4,11 @@
 
 The user explicitly resumed controlled candidate work on 2026-09-22 and asked
 that all further extensive work be directed by this file. This section
-supersedes the older pause wording below. It is committed and pushed on
+supersedes the older pause wording below. **Chat Pro Astra must only return
+reviewable patches, analysis, and tests in a packet. It must not claim to run,
+qualify, time, cache, or promote kernels. The local Codex owner alone applies
+packets, runs all builds and host/device tests, performs timing, evaluates
+evidence, and promotes accepted work.** It is committed and pushed on
 `origin/codex/gemma4-kernel-candidates` at
 `ca814876b01d986a28a46bd6c94edeec1a5b6ddb`; work from that exact branch, not
 from an assumed local checkout or an older eight-patch packet.
@@ -75,6 +79,31 @@ not itself authoritative or present in Git.
 Keep the normal CLI continuation path unchanged. Prefill-only is functional
 triage, not performance or tensor acceptance. Instrumented binaries must be
 used on both sides of any future timing comparison.
+
+### Astra packet feedback — resolve before sending another packet
+
+The follow-up packet was applied locally and its four dispatch-ledger tests,
+four prefill-screen tests, and six Python gate-contract tests passed under the
+native arm64 release target. The new Rust files required rustfmt; the local
+owner formatted only packet-owned paths.
+
+The proposed *real* delivery gate then failed before compiling candidates.
+Its `cargo fmt --all -- --check` validates the whole historical workspace,
+which already has unrelated formatting drift in `rvllm-apple-ane-sys`,
+`rvllm-apple-ffi`, `apple_continuous_worker`, and
+`apple_metal_backend_tests`. It therefore cannot establish delivery health for
+this packet. Do not paper over that failure by formatting unrelated source.
+Return a replacement patch that makes the gate check an explicit, reviewed set
+of packet-owned Rust paths (for example, `rustfmt --check --edition 2021` on
+the files listed in a checked-in manifest), while retaining the gate's
+zero-test, preserved-output, native-host and no-inference properties. Include
+a contract test proving unrelated workspace formatting drift neither passes as
+packet formatting nor prevents the packet gate from reaching its targeted
+tests/compiler matrix.
+
+The local owner will apply that packet, run its real gate, perform the
+prefill-only and cache/full-route qualification, and return any further
+evidence. Astra must not perform or claim those operations.
 
 ### Required execution order after the evidence change
 

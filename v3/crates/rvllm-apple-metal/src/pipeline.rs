@@ -4,6 +4,9 @@
 //! function name. No compilation happens during inference.
 
 use crate::context::MetalContext;
+use crate::research_evidence::{
+    ResearchDispatchCounters, ResearchDispatchSnapshot, ResearchKernel,
+};
 use crate::{MetalFloatType, MetalKernelOptions};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -19,6 +22,7 @@ pub struct PipelineCache {
     float_type: Option<MetalFloatType>,
     kernel_options: MetalKernelOptions,
     max_threadgroup_memory: usize,
+    research_dispatches: ResearchDispatchCounters,
 }
 
 impl PipelineCache {
@@ -34,12 +38,24 @@ impl PipelineCache {
             float_type: None,
             kernel_options,
             max_threadgroup_memory: 0,
+            research_dispatches: ResearchDispatchCounters::default(),
         }
     }
 
     #[must_use]
     pub const fn kernel_options(&self) -> MetalKernelOptions {
         self.kernel_options
+    }
+
+    /// Cumulative encoded work. Read only outside active encoding; pair with
+    /// successful command-buffer collection before calling it completed work.
+    #[must_use]
+    pub fn research_dispatch_snapshot(&self) -> ResearchDispatchSnapshot {
+        self.research_dispatches.snapshot()
+    }
+
+    pub(crate) fn record_research_dispatch(&self, kernel: ResearchKernel) {
+        self.research_dispatches.record(kernel);
     }
 
     /// Compile a named function from the context's library into a PSO.

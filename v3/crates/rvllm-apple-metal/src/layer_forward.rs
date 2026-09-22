@@ -1669,6 +1669,13 @@ pub unsafe fn metal_encode_forward_layer(
                 encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
             }
             encoder.endEncoding();
+            if use_research {
+                pipelines.record_research_dispatch(if dims.head_dim == 256 {
+                    crate::research_evidence::ResearchKernel::Gqa256
+                } else {
+                    crate::research_evidence::ResearchKernel::Gqa512
+                });
+            }
         }
     }
     if let Some(trace) = trace {
@@ -5638,6 +5645,13 @@ unsafe fn encode_gemm_with_output(
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
+    if use_short {
+        pipelines.record_research_dispatch(if output_f32 {
+            crate::research_evidence::ResearchKernel::ShortQkv
+        } else {
+            crate::research_evidence::ResearchKernel::ShortGemm
+        });
+    }
     Ok(())
 }
 
@@ -5715,6 +5729,7 @@ unsafe fn try_encode_research_rounded_gate(
         },
     );
     encoder.endEncoding();
+    pipelines.record_research_dispatch(crate::research_evidence::ResearchKernel::RoundedGate);
     tracing::debug!(
         candidate = "metal-rounded-gate32",
         tokens = dims.num_tokens,

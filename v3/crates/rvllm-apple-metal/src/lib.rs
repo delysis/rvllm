@@ -61,6 +61,7 @@ pub mod gemma4_model;
 pub mod kernels;
 pub mod options;
 pub mod research;
+pub mod research_evidence;
 pub use options::{MetalKernelOptions, MetalModelLimits};
 pub use research::MetalResearchCandidate;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
