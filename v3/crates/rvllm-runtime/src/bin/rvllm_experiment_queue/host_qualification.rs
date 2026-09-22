@@ -86,7 +86,7 @@ fn qualify(output: &Path, accelerator_guard: &File, conditions: Conditions) -> R
         )?;
     }
     // The SAME global lease covers setup, all hash work, observation and children.
-    run_locked(output, 0, accelerator_guard)?;
+    run_locked(output, 30, accelerator_guard)?;
     if output.join("results").join(&blocked.id).exists() || !output.join("STOP").is_file() {
         return Err("blocked job ran or dependent stop did not finish".into());
     }
@@ -97,4 +97,67 @@ fn qualify(output: &Path, accelerator_guard: &File, conditions: Conditions) -> R
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(root: &Path) -> PathBuf {
+        let source = root.join("conditions-source.json");
+        atomic_json(
+            &source,
+            &json!({
+                "schema":SCHEMA,"id":"source-command-must-not-run","purpose":"preparation",
+                "command":{"executable":{"path":"/usr/bin/touch","sha256":"0".repeat(64)},
+                    "cwd":root,"args":[root.join("must-not-run")]},
+                "conditions":{"power_source":"unknown","low_power_mode":false,
+                    "pmset_power_mode":0,"thermal_state":0,"minimum_free_bytes":1,"disk_path":root},
+                "stable_seconds":1,"max_wait_seconds":10,"max_run_seconds":10
+            }),
+        )
+        .unwrap();
+        source
+    }
+
+    #[test]
+    fn invalid_conditions_preserve_failure_without_executing_the_source_command() {
+        let root = tempfile::tempdir().unwrap();
+        let source = source(root.path());
+        let output = root.path().join("new-evidence");
+        let global_lock = root.path().join("hardware.lock");
+        let error = run(&output, &global_lock, &source).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("invalid job identity, conditions"));
+        assert_eq!(
+            read_json(&output.join("qualification.json")).unwrap()["status"],
+            "failed"
+        );
+        assert_eq!(
+            fs::read(&source).unwrap(),
+            fs::read(output.join("conditions-job.json")).unwrap()
+        );
+        assert!(!root.path().join("must-not-run").exists());
+        assert_eq!(fs::read_dir(output.join("results")).unwrap().count(), 0);
+        assert!(!fs::read_dir(&output).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("power-")));
+        assert!(lock(&global_lock).is_ok());
+    }
+
+    #[test]
+    fn existing_evidence_directory_is_never_reused_or_modified() {
+        let root = tempfile::tempdir().unwrap();
+        let source = source(root.path());
+        let output = root.path().join("existing-evidence");
+        fs::create_dir(&output).unwrap();
+        fs::write(output.join("STOP"), b"preserved").unwrap();
+        assert!(run(&output, &root.path().join("hardware.lock"), &source).is_err());
+        assert_eq!(fs::read(output.join("STOP")).unwrap(), b"preserved");
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        assert!(!root.path().join("must-not-run").exists());
+    }
 }
