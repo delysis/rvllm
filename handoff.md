@@ -62,6 +62,30 @@ ChatGPT 6 Astra:
 
 Do not add kernels or broaden acceptance criteria in this continuation.
 
+## External wide-research packet audit
+
+The attached `rvllm-gemma4-wide-research-226dbaad-20260922` packet is not
+empty and must not be dismissed as reference-only. Its self-contained host
+qualification passes 35 Python tests locally, covering CPU model properties,
+proposal mutation/staging guards, stage isolation, and source contracts. Its
+catalog validator reports seven candidates as
+`staged-only-not-authorized-not-queued`, and its compile-plan renderer emits
+host commands plus candidate-specific Rust tests and Metal compile arms.
+
+That evidence is CI-relevant but not promotion evidence. The packet's own
+static receipt says 23 Rust test functions were added but not run, native Rust
+tools were unavailable in its construction environment, no Git history was
+created, and the native compile plan was not executed. The packet contains no
+workflow definition. Its candidate source files are absent from this
+checkout, so they must not be elevated to `main` by copying them wholesale.
+
+The next Astra/local-owner decision is therefore to extract a reviewable,
+host-only CI job for the packet's Python qualification and catalog checks, and
+to review the seven proposals one at a time against the existing handoff. Any
+Rust/Metal proposal requires the local delivery gate and the qualification
+sequence in `v3/HANDOFF.md`; no packet receipt alone authorizes merge,
+accelerator execution, timing, or promotion.
+
 ## Local owner responsibilities
 
 The local Codex owner handles all building, testing, native Rust/Metal
