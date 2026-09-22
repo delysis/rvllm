@@ -100,14 +100,14 @@ kernel void research_gqa_kv8_d256(
     constant uint &attention_window [[buffer(16)]], constant uint &num_blocks [[buffer(17)]],
     uint3 group [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]],
     ushort sg [[simdgroup_index_in_threadgroup]], ushort lane [[thread_index_in_simdgroup]],
-    uint threads [[threads_per_threadgroup]]) {
+    uint3 threads [[threads_per_threadgroup]]) {
     threadgroup half kt[8 * 256];
     threadgroup half vt[8 * 256];
     threadgroup uint valid[8];
     research_gqa_kv8_body<256>(q, k_cache, v_cache, output, block_tables, context_lens,
         cu_seqlens, positions, total_q, batch_size, num_heads, num_kv_heads,
         head_dim, block_size, max_blocks, scale, attention_window, num_blocks,
-        group, tid, sg, lane, threads, kt, vt, valid);
+        group, tid, sg, lane, threads.x, kt, vt, valid);
 }
 
 kernel void research_gqa_kv8_d512(
@@ -122,12 +122,12 @@ kernel void research_gqa_kv8_d512(
     constant uint &attention_window [[buffer(16)]], constant uint &num_blocks [[buffer(17)]],
     uint3 group [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]],
     ushort sg [[simdgroup_index_in_threadgroup]], ushort lane [[thread_index_in_simdgroup]],
-    uint threads [[threads_per_threadgroup]]) {
+    uint3 threads [[threads_per_threadgroup]]) {
     threadgroup half kt[8 * 512];
     threadgroup half vt[8 * 512];
     threadgroup uint valid[8];
     research_gqa_kv8_body<512>(q, k_cache, v_cache, output, block_tables, context_lens,
         cu_seqlens, positions, total_q, batch_size, num_heads, num_kv_heads,
         head_dim, block_size, max_blocks, scale, attention_window, num_blocks,
-        group, tid, sg, lane, threads, kt, vt, valid);
+        group, tid, sg, lane, threads.x, kt, vt, valid);
 }
