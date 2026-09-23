@@ -342,3 +342,55 @@ The packet's isolated Linux/source checks were not treated as native evidence.
   tensor-oracle, full-continuation, cache, and timing work. No inference,
   cache recovery, accelerator fixture, queue admission, or timing was run for
   Wave 2.
+
+
+## Unified cffb22da integration — source packet, not promotion
+
+This appendix supersedes the Wave2 runtime-wiring deferral, not the original
+numerical, ownership, power or safety constraints. Exact base:
+`cffb22dabcb57b5f3ecee05acd4ab810d1ce6077`. Preserve all history above.
+
+The completed five-patch packet repairs the orphan module declarations and
+reconciles both waves through one typed catalog/checked projection plan. It
+preserves ten dispatch slots and appends seven, wires four new Metal selectors
+plus cached-only interleaved INT8 FFN, and deletes only the duplicated staged
+Down4 implementation. Existing Down4 and packed32's blocked boundary survive.
+
+Affected areas: Metal catalog/policy/projection/evidence, pipeline/layer-forward,
+three shader ABI/bounds guards and actual-source matrix fixtures; ANE interleaved
+MIL, shared source oracles, cached decoder/CLI and safe ignored real-input FFN
+fixtures; offline tensor audit; host CI/catalog/native compiler inventories;
+five inert proposals and local qualification recipes. Detailed report:
+`v3/reports/gemma4-unified-cffb22da.md`. Local sequence:
+`v3/specs/gemma4-unified-local-qualification.md`.
+
+The historical cff Actions failure is not ambiguous: 63 Python checks passed,
+then Rust compilation failed E0583 (missing research_wave2). It did not execute
+its Rust inventory or source matrix. The earlier next/next_tests spelling repair
+was already in cff and is preserved. Current researcher execution: 108 Python
+checks collected, 107 passed, one skipped for absent rustfmt; nine independent
+packet-verifier mutation tests passed. These are CPU/tool/source checks, not
+Rust or accelerator execution. The prior unfinished 115-test claim is superseded
+by the actual delivered inventory and its disjoint batch receipts.
+
+Apply the COMPLETE new series against cff after read-only preimage checks;
+do not reapply earlier packets or copy whole source snapshots over local work.
+Format only the 32 reviewed paths. Expected local gate scope: 60 named public
+Rust tests, 22 MSL exports, twelve native host-test filters and 22 Metal 3.1
+compile/link arms. No local compilation or formatting is preclaimed by Astra.
+Commit/push reviewed source, tests and this handoff under local-owner authority,
+then inspect CI against that exact resulting head. Do not close integration
+with only another routing document.
+
+Prefill-only is bounded to 1–16 references and requires complete entry-point
+families in v3 receipts; this is not full layer/tensor acceptance. Matrix adapters
+use actual runtime shaders. Three ignored real-input ANE fixtures use existing
+cached programs only, proper controls and at most six evaluations. A separate
+host-only pin preparer uses the existing quantizer and never initializes ANE.
+All remain unrun here. RMS still lacks a direct isolated native oracle and its
+experiment stays blocked. GQA/temporal/full-continuation/cache/driver/timing
+qualification remains required locally before performance promotion.
+
+No production default, feature gate, numerical tolerance, multi-I/O quarantine,
+ignored-device marker, STOP/attempted manifest, or power setting was weakened.
+The researcher made no commits/pushes and ran no device/cache/timing operation.

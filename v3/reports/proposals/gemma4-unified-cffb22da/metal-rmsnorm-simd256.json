@@ -1,0 +1,96 @@
+{
+  "schema": "rvllm.gemma4.unified-proposal.v1",
+  "base_commit": "cffb22dabcb57b5f3ecee05acd4ab810d1ce6077",
+  "candidate": "metal-rmsnorm-simd256",
+  "status": "source-only-unadmitted",
+  "control": "off/post-projection-rms-tree",
+  "selector": {
+    "environment": "RVLLM_METAL_RESEARCH",
+    "value": "metal-rmsnorm-simd256"
+  },
+  "shape": {
+    "hidden": 3840,
+    "intermediate": 15360,
+    "layers": 48,
+    "query_heads": 16,
+    "layer_families": [
+      [
+        8,
+        256,
+        1024
+      ],
+      [
+        1,
+        512,
+        0
+      ]
+    ],
+    "moe": false,
+    "ple": false,
+    "min_tokens": 6,
+    "max_tokens": 1024
+  },
+  "numerical_contract": "reduction-order-change",
+  "compile_budget_in_inference": 0,
+  "component": {
+    "fixture": null,
+    "state": "blocked-missing-direct-native-oracle",
+    "maximum_dispatches": null,
+    "timing_permitted": false,
+    "captured_activations": null
+  },
+  "cache": {
+    "new_programs": 0,
+    "part": null,
+    "strict_inspection_required": true,
+    "inference_program_visits": 162
+  },
+  "pins": {
+    "source_tree": null,
+    "executable": null,
+    "model": null,
+    "reference": null,
+    "metallib": null,
+    "oracle_policy": null,
+    "driver_journal": null,
+    "boot": null,
+    "process_policy": null
+  },
+  "power_stratum": {
+    "source": null,
+    "low_power": null,
+    "pmset_mode": null,
+    "thermal": null
+  },
+  "timing": {
+    "order": [
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "warmup_requests_per_block": 2,
+    "measured_requests_per_block": 7,
+    "requests": 36,
+    "output_tokens_per_request": 10,
+    "decode_steps_per_request": 9,
+    "model_decode_steps": 324,
+    "ane_evaluations_per_step": 208,
+    "maximum_ane_evaluations": 67392,
+    "warmups_in_work_count": true,
+    "early_eos_invalidates_matching": true
+  },
+  "drift_fraction": 0.05,
+  "minimum_free_disk_gib": 16,
+  "acceptance": [
+    "unchanged-original-numerical-gates",
+    "actual-matching-dispatch",
+    "complete-reference-continuation",
+    "driver-lifecycle-and-zero-timing-compiles",
+    "matched-stratum-workload-and-capture",
+    "independent-confirmation"
+  ],
+  "promotion_automatic": false,
+  "retries_automatic": false,
+  "accelerator_time_normalized_by_cpu_cycles": false
+}
