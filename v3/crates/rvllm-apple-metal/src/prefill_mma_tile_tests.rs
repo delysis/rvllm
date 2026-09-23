@@ -150,17 +150,31 @@ fn native_bf16_bk64_checks_precision_and_m84_ffn(
 }
 
 #[test]
-#[ignore = "explicit real-weight Metal wave2 FP32-operand oracle; no ANE access"]
-fn native_wave2_fp32_operands_preserve_existing_oracle_gates(
+#[ignore = "explicit real-weight Metal research FP32-operand oracle; no ANE access"]
+fn native_fp32_operands_preserve_existing_oracle_gates(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    run_matrix_comparison(false, Some(crate::research_wave2::Candidate::Mma32F32))
+    run_matrix_comparison(false, Some(crate::MetalResearchCandidate::Mma32F32))
 }
 
 #[test]
-#[ignore = "explicit real-weight Metal wave2 vector-load oracle; no ANE access"]
-fn native_wave2_vector_loads_preserve_existing_oracle_gates(
+#[ignore = "explicit real-weight Metal research vector-load oracle; no ANE access"]
+fn native_vector_loads_preserve_existing_oracle_gates(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    run_matrix_comparison(false, Some(crate::research_wave2::Candidate::Mma32Load4))
+    run_matrix_comparison(false, Some(crate::MetalResearchCandidate::Mma32Load4))
+}
+
+#[test]
+#[ignore = "explicit real-weight short-tile component oracle; no ANE access"]
+fn native_short_tile_preserves_existing_oracle_gates(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    run_matrix_comparison(false, Some(crate::MetalResearchCandidate::ShortMma16x64))
+}
+
+#[test]
+#[ignore = "explicit real-weight prefetch component oracle; no ANE access"]
+fn native_prefetch_preserves_existing_oracle_gates(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    run_matrix_comparison(false, Some(crate::MetalResearchCandidate::Mma32Prefetch))
 }
 
 fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -169,25 +183,21 @@ fn run_tile_comparison(reduction64: bool) -> std::result::Result<(), Box<dyn std
 
 fn run_matrix_comparison(
     reduction64: bool,
-    wave2: Option<crate::research_wave2::Candidate>,
+    candidate: Option<crate::MetalResearchCandidate>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     // New fixtures are numerical-only. Timing belongs to a separately admitted
     // campaign, not to incidental execution of an ignored component test.
-    let qualify_only =
-        wave2.is_some() || std::env::var_os("RVLLM_METAL_MMA_TILE_QUALIFY_ONLY").is_some();
-    let require_fp32_bits =
-        reduction64 || wave2 == Some(crate::research_wave2::Candidate::Mma32Load4);
+    let qualify_only = candidate.is_some()
+        || std::env::var_os("RVLLM_METAL_MMA_TILE_QUALIFY_ONLY").is_some();
+    let require_fp32_bits = reduction64
+        || candidate == Some(crate::MetalResearchCandidate::Mma32Load4)
+        || candidate == Some(crate::MetalResearchCandidate::Mma32Prefetch);
     let model =
         PathBuf::from(std::env::var_os("RVLLM_METAL_QKV_MODEL_DIR").ok_or("model required")?);
     let tensors = scan_safetensor_tensors(&model)?;
-    let names = if let Some(kind) = wave2 {
-        let kernels = kind.pipeline_names();
-        vec![
-            "qkv_project_f32_mma32",
-            kernels[1],
-            "gemm_f16_mma32",
-            kernels[0],
-        ]
+    let names = if let Some(kind) = candidate {
+        let kernels = kind.kernels();
+        vec!["qkv_project_f32_mma32", kernels[1].name(), "gemm_f16_mma32", kernels[0].name()]
     } else if reduction64 {
         vec![
             "qkv_project_f32_mma32",
@@ -209,22 +219,16 @@ fn run_matrix_comparison(
     let selected = if reduction64 {
         crate::MetalResearchCandidate::Off
     } else {
-        crate::MetalResearchCandidate::Wave2(
-            wave2.unwrap_or(crate::research_wave2::Candidate::LongMma32x64),
-        )
+        candidate.unwrap_or(crate::MetalResearchCandidate::LongMma32x64)
     };
     let mut source = crate::kernels::kernel_source_with_options(
         MetalFloatType::Bf16,
-        crate::MetalKernelOptions {
-            research: selected,
-            ..crate::MetalKernelOptions::default()
-        },
-    )
-    .into_owned();
+        crate::MetalKernelOptions { research: selected, ..crate::MetalKernelOptions::default() },
+    ).into_owned();
     if reduction64 {
         source.push_str(&reduction64_source("float", names[1]));
         source.push_str(&reduction64_source("bfloat", names[3]));
-    } else if wave2.is_none() {
+    } else if candidate.is_none() {
         // Preserve the old 32x64 FP32-operand control; native BF16 operands
         // are no longer duplicated under a test-only source/name.
         source.push_str(&float_tile64_control_source("float", names[2]));
@@ -236,7 +240,10 @@ fn run_matrix_comparison(
     for name in &names {
         pipelines.compile(&ctx, name)?;
         let pso = pipelines.get(name)?;
-        if pso.threadExecutionWidth() != 32
+        let planned = selected.kernels().iter().find(|kernel| kernel.name() == *name)
+            .map(|kernel| kernel.limits().1).unwrap_or(0);
+        if planned > ctx.device().maxThreadgroupMemoryLength()
+            || pso.threadExecutionWidth() != 32
             || pso.maxTotalThreadsPerThreadgroup() < 128
             || pso.staticThreadgroupMemoryLength() > ctx.device().maxThreadgroupMemoryLength()
         {
@@ -245,14 +252,17 @@ fn run_matrix_comparison(
     }
     let resources:Vec<_>=names.iter().map(|name|{let p=pipelines.get(name).unwrap();serde_json::json!({"name":name,"static_shared_bytes":p.staticThreadgroupMemoryLength(),"max_threads":p.maxTotalThreadsPerThreadgroup(),"execution_width":p.threadExecutionWidth()})}).collect();
     let mut reports = Vec::new();
-    let vector_load = wave2 == Some(crate::research_wave2::Candidate::Mma32Load4);
+    let vector_load = candidate == Some(crate::MetalResearchCandidate::Mma32Load4);
+    let short = candidate == Some(crate::MetalResearchCandidate::ShortMma16x64);
+    let small_m = if short { 6 } else { 84 };
+    let large_m = if short { 63 } else { 652 };
     let shapes = if reduction64 {
         vec![
             ("all-tails", 0, 63_u32, 67_u32, 65_u32, vec![]),
             (
                 "gate-up",
                 0,
-                84,
+                small_m,
                 30720,
                 3840,
                 vec!["mlp.gate_proj", "mlp.up_proj"],
@@ -263,18 +273,12 @@ fn run_matrix_comparison(
         vec![
             // Vector loading admits aligned N/K only. Its policy tests reject
             // other N/K; this actual execution still exercises a partial M tile.
-            (
-                "all-tails",
-                0,
-                63_u32,
-                if vector_load { 64_u32 } else { 67_u32 },
-                if vector_load { 64_u32 } else { 35_u32 },
-                vec![],
-            ),
+            ("all-tails", 0, 63_u32, if vector_load { 64_u32 } else { 67_u32 },
+                if vector_load { 64_u32 } else { 35_u32 }, vec![]),
             (
                 "sliding-qkv",
                 0,
-                84,
+                small_m,
                 8192,
                 3840,
                 vec!["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"],
@@ -282,7 +286,7 @@ fn run_matrix_comparison(
             (
                 "global-qkv",
                 5,
-                652,
+                large_m,
                 9216,
                 3840,
                 vec!["self_attn.q_proj", "self_attn.k_proj", "self_attn.k_proj"],
@@ -290,7 +294,7 @@ fn run_matrix_comparison(
             (
                 "gate-up",
                 0,
-                652,
+                large_m,
                 30720,
                 3840,
                 vec!["mlp.gate_proj", "mlp.up_proj"],
@@ -298,12 +302,12 @@ fn run_matrix_comparison(
             (
                 "global-output",
                 5,
-                652,
+                large_m,
                 3840,
                 8192,
                 vec!["self_attn.o_proj"],
             ),
-            ("down", 0, 1024, 3840, 15360, vec!["mlp.down_proj"]),
+            ("down", 0, if short { 64 } else { 1024 }, 3840, 15360, vec!["mlp.down_proj"]),
         ]
     };
     for (label, layer, m, n, k, parts) in shapes {
@@ -391,14 +395,16 @@ fn run_matrix_comparison(
             }
             encoder.dispatchThreadgroups_threadsPerThreadgroup(
                 MTLSize {
-                    width: (m as usize).div_ceil(32),
-                    height: (n as usize).div_ceil(
-                        if reduction64 || wave2.is_some() || path % variant_count == 0 {
-                            32
-                        } else {
-                            64
-                        },
-                    ),
+                    width: (m as usize).div_ceil(if path % variant_count == 0 || reduction64 {
+                        32
+                    } else {
+                        crate::research_projection::projection_tile(selected).ok_or("not a matrix candidate")?.0
+                    }),
+                    height: (n as usize).div_ceil(if path % variant_count == 0 || reduction64 {
+                        32
+                    } else {
+                        crate::research_projection::projection_tile(selected).ok_or("not a matrix candidate")?.1
+                    }),
                     depth: 1,
                 },
                 MTLSize {
@@ -554,10 +560,10 @@ fn run_matrix_comparison(
         let medians: Vec<_> = gpu.iter().map(|v| median(v)).collect();
         reports.push(serde_json::json!({"projection":label,"m":m,"n":n,"k":k,"relative_l2_vs_mma32":l2,"sampled_fp64_max_abs":cpu_max,"bf16_rounding_exact":true,"fp32_bit_parity_required":require_fp32_bits,"guards_intact":true,"commands":names.len()+order.len(),"trial_order":order,"gpu_ms":gpu,"wall_ms":wall,"gpu_median_ms":medians}));
     }
-    let report = serde_json::json!({"schema":"rvllm.metal_tile_comparison.v2","qualification_only":qualify_only,"reduction64":reduction64,"wave2":wave2.map(|kind| kind.name()),"variants":names,"pipeline_resources":resources,"cases":reports,"scope":"Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt."});
+    let report = serde_json::json!({"schema":"rvllm.metal_tile_comparison.v2","qualification_only":qualify_only,"reduction64":reduction64,"candidate":candidate.map(|kind| kind.name()),"variants":names,"pipeline_resources":resources,"cases":reports,"scope":"Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt."});
     if let Some(path) = std::env::var_os("RVLLM_METAL_MMA_TILE_REPORT") {
         let bytes = serde_json::to_vec_pretty(&report)?;
-        if wave2.is_some() {
+        if candidate.is_some() {
             use std::io::Write;
             let mut file = std::fs::File::create_new(path)?;
             file.write_all(&bytes)?;

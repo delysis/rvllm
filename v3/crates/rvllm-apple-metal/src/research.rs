@@ -15,46 +15,23 @@ pub enum MetalResearchCandidate {
     Mma32Prefetch,
     AttentionQ4,
     RmsSimd32,
+    Mma32F32,
+    LongMma32x64,
+    Mma32Load4,
+    RmsnormSimd256,
 }
 
 impl MetalResearchCandidate {
     pub const fn name(self) -> &'static str {
-        match self {
-            Self::Mma32Prefetch => "metal-mma32-prefetch",
-            Self::AttentionQ4 => "metal-attn-q4",
-            Self::RmsSimd32 => "metal-rms-simd32",
-            Self::Off => "off",
-            Self::ShortMma16x64 => "metal-short-mma16x64",
-            Self::RoundedGate32 => "metal-rounded-gate32",
-            Self::GqaKv8 => "metal-gqa-kv8",
-        }
+        self.spec().name
     }
 
-    pub(crate) fn pipeline_names(self) -> &'static [&'static str] {
-        match self {
-            Self::ShortMma16x64 => &["research_gemm_mma16x64", "research_qkv_mma16x64"],
-            Self::RoundedGate32 => &["research_rounded_gate32"],
-            Self::GqaKv8 => &["research_gqa_kv8_d256", "research_gqa_kv8_d512"],
-            Self::Mma32Prefetch => &[
-                "research_gemm_mma32_prefetch",
-                "research_qkv_mma32_prefetch",
-            ],
-            Self::AttentionQ4 => &["research_attn_q4_d256", "research_attn_q4_d512"],
-            Self::RmsSimd32 => &["research_rms_simd32"],
-            Self::Off => &[],
-        }
+    pub const fn kernels(self) -> &'static [crate::research_evidence::ResearchKernel] {
+        self.spec().kernels
     }
 
-    pub(crate) fn source(self) -> &'static str {
-        match self {
-            Self::ShortMma16x64 => include_str!("research_shaders/short_mma16x64.metal"),
-            Self::RoundedGate32 => include_str!("research_shaders/rounded_gate32.metal"),
-            Self::GqaKv8 => include_str!("research_shaders/gqa_kv8.metal"),
-            Self::Mma32Prefetch => include_str!("research_shaders/mma32_prefetch.metal"),
-            Self::AttentionQ4 => include_str!("research_shaders/attn_q4.metal"),
-            Self::RmsSimd32 => include_str!("research_shaders/rms_simd32.metal"),
-            Self::Off => "",
-        }
+    pub(crate) const fn source(self) -> &'static str {
+        self.spec().source
     }
 }
 
@@ -62,16 +39,10 @@ impl FromStr for MetalResearchCandidate {
     type Err = &'static str;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "metal-mma32-prefetch" => Ok(Self::Mma32Prefetch),
-            "metal-attn-q4" => Ok(Self::AttentionQ4),
-            "metal-rms-simd32" => Ok(Self::RmsSimd32),
-            "off" => Ok(Self::Off),
-            "metal-short-mma16x64" => Ok(Self::ShortMma16x64),
-            "metal-rounded-gate32" => Ok(Self::RoundedGate32),
-            "metal-gqa-kv8" => Ok(Self::GqaKv8),
-            _ => Err("unknown RVLLM_METAL_RESEARCH candidate; no candidate selected"),
-        }
+        crate::research_catalog::ALL_CANDIDATES
+            .into_iter()
+            .find(|candidate| candidate.name() == value)
+            .ok_or("unknown RVLLM_METAL_RESEARCH candidate; no candidate selected")
     }
 }
 
@@ -106,18 +77,11 @@ impl Gemma12bResearchShape {
             // Projection tiling is independent of the attention window and
             // follows the existing MMA contract. Attention/FFN experiments
             // retain the exact archived layer-family tuple.
-            && (matches!(candidate, MetalResearchCandidate::ShortMma16x64 | MetalResearchCandidate::Mma32Prefetch | MetalResearchCandidate::RmsSimd32)
+            && (candidate.spec().window_independent
                 || matches!((self.kv_heads, self.head_dim, self.attention_window),
                     (8, 256, 1024) | (1, 512, 0)))
-            && match candidate {
-                MetalResearchCandidate::Mma32Prefetch => (6..=1024).contains(&self.tokens),
-                MetalResearchCandidate::AttentionQ4 => (64..=1024).contains(&self.tokens),
-                MetalResearchCandidate::RmsSimd32 => (6..=1024).contains(&self.tokens),
-                MetalResearchCandidate::Off => false,
-                MetalResearchCandidate::ShortMma16x64 => (6..=64).contains(&self.tokens),
-                MetalResearchCandidate::RoundedGate32 => (6..=1024).contains(&self.tokens),
-                MetalResearchCandidate::GqaKv8 => (64..=1024).contains(&self.tokens),
-            }
+            && candidate != MetalResearchCandidate::Off
+            && (candidate.spec().min_tokens..=candidate.spec().max_tokens).contains(&self.tokens)
     }
 }
 
@@ -133,7 +97,7 @@ pub fn launch_fits(
     planned_bytes: usize,
 ) -> bool {
     execution_width == 32
-        && matches!(threads, 32 | 64 | 128)
+        && matches!(threads, 32 | 64 | 128 | 256)
         && maximum_threads >= threads
         && device_bytes >= planned_bytes
         && device_bytes >= static_bytes

@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
-pub const RESEARCH_KERNEL_COUNT: usize = 10;
+pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
+pub const RESEARCH_KERNEL_COUNT: usize = 17;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -18,21 +19,76 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_attn_q4_d256",
     "research_attn_q4_d512",
     "research_rms_simd32",
+    "wave2_gemm_mma32_f32",
+    "wave2_qkv_mma32_f32",
+    "wave2_gemm_mma32x64",
+    "wave2_qkv_mma32x64",
+    "wave2_gemm_mma32_load4",
+    "wave2_qkv_mma32_load4",
+    "wave2_rmsnorm_simd256",
 ];
 
-#[cfg(any(target_os = "macos", target_os = "ios", test))]
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum ResearchKernel {
-    ShortGemm,
-    ShortQkv,
-    RoundedGate,
-    Gqa256,
-    Gqa512,
-    PrefetchGemm,
-    PrefetchQkv,
-    Temporal256,
-    Temporal512,
-    Rms32,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(usize)]
+pub enum ResearchKernel {
+    ShortGemm = 0,
+    ShortQkv = 1,
+    RoundedGate = 2,
+    Gqa256 = 3,
+    Gqa512 = 4,
+    PrefetchGemm = 5,
+    PrefetchQkv = 6,
+    Temporal256 = 7,
+    Temporal512 = 8,
+    Rms32 = 9,
+    F32Gemm = 10,
+    F32Qkv = 11,
+    LongGemm = 12,
+    LongQkv = 13,
+    Load4Gemm = 14,
+    Load4Qkv = 15,
+    Rms256 = 16,
+}
+
+impl ResearchKernel {
+    pub const fn name(self) -> &'static str { RESEARCH_KERNEL_NAMES[self as usize] }
+    /// Source budgets, checked in addition to queried PSO/device limits.
+    pub const fn limits(self) -> (usize, usize) {
+        match self {
+            Self::ShortGemm => (128, 10496),
+            Self::ShortQkv => (128, 10496),
+            Self::RoundedGate => (128, 14336),
+            Self::Gqa256 => (64, 8224),
+            Self::Gqa512 => (128, 16416),
+            Self::PrefetchGemm => (128, 8192),
+            Self::PrefetchQkv => (128, 8192),
+            Self::Temporal256 => (128, 16448),
+            Self::Temporal512 => (128, 16416),
+            Self::Rms32 => (32, 0),
+            Self::F32Gemm => (128, 12288),
+            Self::F32Qkv => (128, 12288),
+            Self::LongGemm => (128, 14336),
+            Self::LongQkv => (128, 14336),
+            Self::Load4Gemm => (128, 8192),
+            Self::Load4Qkv => (128, 8192),
+            Self::Rms256 => (256, 32),
+        }
+    }
+    pub const fn owner(self) -> crate::research::MetalResearchCandidate {
+        use crate::research::MetalResearchCandidate;
+        match self {
+            Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
+            Self::RoundedGate => MetalResearchCandidate::RoundedGate32,
+            Self::Gqa256 | Self::Gqa512 => MetalResearchCandidate::GqaKv8,
+            Self::PrefetchGemm | Self::PrefetchQkv => MetalResearchCandidate::Mma32Prefetch,
+            Self::Temporal256 | Self::Temporal512 => MetalResearchCandidate::AttentionQ4,
+            Self::Rms32 => MetalResearchCandidate::RmsSimd32,
+            Self::F32Gemm | Self::F32Qkv => MetalResearchCandidate::Mma32F32,
+            Self::LongGemm | Self::LongQkv => MetalResearchCandidate::LongMma32x64,
+            Self::Load4Gemm | Self::Load4Qkv => MetalResearchCandidate::Mma32Load4,
+            Self::Rms256 => MetalResearchCandidate::RmsnormSimd256,
+        }
+    }
 }
 
 /// Sample only at a quiescent owner boundary. These atomics do not synchronize
@@ -94,26 +150,26 @@ impl ResearchDispatchSnapshot {
         if self.overflowed {
             return Err("research dispatch counter overflow");
         }
-        let allowed = match requested {
-            "off" => 0..0,
-            "metal-short-mma16x64" => 0..2,
-            "metal-rounded-gate32" => 2..3,
-            "metal-gqa-kv8" => 3..5,
-            "metal-mma32-prefetch" => 5..7,
-            "metal-attn-q4" => 7..9,
-            "metal-rms-simd32" => 9..10,
-            _ => return Err("unknown research candidate in receipt"),
-        };
+        let candidate: crate::research::MetalResearchCandidate = requested.parse()?;
+        let allowed = candidate.kernels();
         if self
             .counts
             .iter()
             .enumerate()
-            .any(|(i, &n)| n != 0 && !allowed.contains(&i))
+            .any(|(i, &n)| n != 0 && !allowed.iter().any(|kernel| *kernel as usize == i))
         {
             return Err("receipt contains a different candidate's dispatches");
         }
         Ok(requested == "off" || self.counts.iter().any(|&n| n != 0))
     }
+    /// Require every entry point in the explicitly selected family. This is a
+    /// coverage check, NOT tensor accuracy or complete per-layer work accounting.
+    pub fn complete_family_exercised(self, requested: &str) -> Result<bool, &'static str> {
+        if !self.selection_exercised(requested)? { return Ok(false); }
+        let candidate: crate::research::MetalResearchCandidate = requested.parse()?;
+        Ok(candidate.kernels().iter().all(|k| self.counts[*k as usize] != 0))
+    }
+
 }
 
 #[cfg(test)]
@@ -224,4 +280,23 @@ mod tests {
             assert!(got.selection_exercised("metal-gqa-kv8").is_err());
         }
     }
+    #[test]
+    fn incomplete_family_is_not_full_coverage_and_new_slots_do_not_alias() {
+        for candidate in crate::research_catalog::ALL_CANDIDATES {
+            let mut snapshot = ResearchDispatchSnapshot::default();
+            for kernel in candidate.kernels() {
+                snapshot.counts[*kernel as usize] = 1;
+            }
+            assert_eq!(snapshot.complete_family_exercised(candidate.name()), Ok(true));
+            if candidate.kernels().len() > 1 {
+                snapshot.counts[candidate.kernels()[0] as usize] = 0;
+                assert_eq!(snapshot.selection_exercised(candidate.name()), Ok(true));
+                assert_eq!(snapshot.complete_family_exercised(candidate.name()), Ok(false));
+            }
+            if candidate != crate::research::MetalResearchCandidate::Off {
+                assert!(snapshot.complete_family_exercised("off").is_err());
+            }
+        }
+    }
+
 }

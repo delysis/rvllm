@@ -95,16 +95,17 @@ impl PipelineCache {
         // Optional source may be absent from an explicitly supplied metallib.
         // Clear any old PSO before attempting replacement: a caught failure must
         // not leave a previous library's dtype or executable active.
-        for name in self.kernel_options.research.pipeline_names() {
-            self.pipelines.remove(*name);
+        for kernel in self.kernel_options.research.kernels() {
+            let name = kernel.name();
+            self.pipelines.remove(name);
             match self.compile(ctx, name) {
                 Ok(()) => tracing::info!(
                     candidate = self.kernel_options.research.name(),
-                    function = *name,
+                    function = name,
                     "Research PSO compiled; not hardware-qualified"
                 ),
                 Err(error) => tracing::warn!(candidate = self.kernel_options.research.name(),
-                    function = *name, %error, "Research PSO unavailable; known-good fallback retained"),
+                    function = name, %error, "Research PSO unavailable; known-good fallback retained"),
             }
         }
         tracing::info!(count = required.len(), "All required Metal PSOs compiled");
@@ -125,8 +126,9 @@ impl PipelineCache {
             || !self
                 .kernel_options
                 .research
-                .pipeline_names()
-                .contains(&name)
+                .kernels()
+                .iter()
+                .any(|kernel| kernel.name() == name && kernel.limits() == (threads, planned_bytes))
         {
             return None;
         }

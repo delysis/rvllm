@@ -2877,26 +2877,18 @@ unsafe fn encode_rmsnorm_with_policy(
             },
         )
     })?;
-    let research_pso = if full_prefill_projection
-        && pipelines.kernel_options().research == crate::MetalResearchCandidate::RmsSimd32
-        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
-        && !pipelines.kernel_options().quantized_bf16_accumulation
-        && eps == 1.0e-6
-        && crate::research_next::rms32_buffers_fit(
-            [input_offset, output_offset, gamma_offset],
-            num_tokens,
-            hidden,
-            buf.length(),
-        ) {
-        pipelines.research_pso("research_rms_simd32", 32, 0)
-    } else {
-        None
-    };
-    let use_research = research_pso.is_some();
-    let pso = if let Some(pso) = research_pso {
-        encoder.setLabel(Some(&objc2_foundation::NSString::from_str(
-            "research_rms_simd32",
-        )));
+    let decision = crate::research_projection::postnorm_plan(
+        pipelines.kernel_options().research, full_prefill_projection,
+        pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+            && !pipelines.kernel_options().quantized_bf16_accumulation,
+        [input_offset, output_offset, gamma_offset], num_tokens, hidden, eps, buf.length(),
+    );
+    let research = decision.ok().and_then(|plan| {
+        let (threads, shared) = plan.kernel.limits();
+        pipelines.research_pso(plan.kernel.name(), threads, shared).map(|pso| (plan, pso))
+    });
+    let pso = if let Some((plan, pso)) = research {
+        encoder.setLabel(Some(&objc2_foundation::NSString::from_str(plan.kernel.name())));
         pso
     } else {
         pipelines.get("rmsnorm_f16")?
@@ -2915,13 +2907,12 @@ unsafe fn encode_rmsnorm_with_policy(
         4,
         4,
     );
-    if use_research {
+    if research.is_some_and(|(plan, _)| plan.binds_token_count) {
         encoder.setBytes_length_atIndex(std::ptr::NonNull::from(&num_tokens).cast(), 4, 5);
     }
     let tpg = MTLSize {
-        width: if use_research { 32 } else { 256 },
-        height: 1,
-        depth: 1,
+        width: research.map_or(256, |(plan, _)| plan.kernel.limits().0),
+        height: 1, depth: 1,
     };
     let groups = MTLSize {
         width: num_tokens as usize,
@@ -2930,15 +2921,9 @@ unsafe fn encode_rmsnorm_with_policy(
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
-    if use_research {
-        pipelines.record_research_dispatch(crate::research_evidence::ResearchKernel::Rms32);
-        tracing::debug!(
-            candidate = "metal-rms-simd32",
-            num_tokens,
-            hidden,
-            op,
-            "Research dispatch"
-        );
+    if let Some((plan, _)) = research {
+        pipelines.record_research_dispatch(plan.kernel);
+        tracing::debug!(candidate = plan.kernel.owner().name(), num_tokens, hidden, op, "Research dispatch");
     }
     Ok(())
 }
@@ -5577,89 +5562,37 @@ unsafe fn encode_gemm_with_output(
             },
         )
     })?;
-    let prefetch_name = if output_f32 {
-        "research_qkv_mma32_prefetch"
-    } else {
-        "research_gemm_mma32_prefetch"
-    };
-    let prefetch_pso = if allow_prefill_mma
-        && pipelines.kernel_options().research == crate::MetalResearchCandidate::Mma32Prefetch
-        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
-        && alpha == 1.0
-        && beta == 0.0
-        && crate::research_next::prefetch_projection_shape(m, n, k, output_f32)
-        && crate::research::projection_buffers_fit(
-            [a_offset, b_offset, c_offset],
-            [m, n, k],
-            if output_f32 { 4 } else { 2 },
-            buf.length(),
-        ) {
-        pipelines.research_pso(prefetch_name, 128, 8192)
-    } else {
-        None
-    };
-    let use_prefetch = prefetch_pso.is_some();
-    let short_name = if output_f32 {
-        "research_qkv_mma16x64"
-    } else {
-        "research_gemm_mma16x64"
-    };
-    let short_pso = if allow_prefill_mma
-        && pipelines.kernel_options().research == crate::MetalResearchCandidate::ShortMma16x64
-        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
-        && alpha == 1.0
-        && beta == 0.0
-        && crate::research::short_mma_shape(m, n, k, output_f32)
-        && crate::research::projection_buffers_fit(
-            [a_offset, b_offset, c_offset],
-            [m, n, k],
-            if output_f32 { 4 } else { 2 },
-            buf.length(),
-        ) {
-        pipelines.research_pso(short_name, 128, (16 * 40 + 64 * 40) * 2 + 16 * 64 * 4)
-    } else {
-        None
-    };
-    let use_short = short_pso.is_some();
-    let use_mma = !use_prefetch
-        && !use_short
-        && allow_prefill_mma
-        && is_prefill_mma_shape(m, n, k, output_f32);
-    let use_batch8 = !use_prefetch
-        && !use_short
-        && !use_mma
+    let candidate = pipelines.kernel_options().research;
+    let decision = crate::research_projection::ProjectionRequest {
+        candidate,
+        full_prefill: allow_prefill_mma,
+        native_bf16: pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+            && !pipelines.kernel_options().quantized_bf16_accumulation,
+        alpha, beta, shape: [m, n, k], output_f32,
+        offsets: [a_offset, b_offset, c_offset], arena_bytes: buf.length(),
+    }.plan();
+    let research = decision.ok().and_then(|plan| {
+        let (threads, shared) = plan.kernel.limits();
+        pipelines.research_pso(plan.kernel.name(), threads, shared).map(|pso| (plan, pso))
+    });
+    let use_research = research.is_some();
+    if let Err(reason) = decision {
+        if reason != crate::research_projection::FallbackReason::NotThisOperation {
+            tracing::debug!(candidate = candidate.name(), ?reason, m, n, k, "Research projection fallback");
+        }
+    } else if !use_research {
+        tracing::debug!(candidate = candidate.name(), m, n, k,
+            reason = "pso-or-resource-unavailable", "Research projection fallback");
+    }
+    let use_mma = !use_research && allow_prefill_mma && is_prefill_mma_shape(m, n, k, output_f32);
+    let use_batch8 = !use_research && !use_mma
         && (output_f32 || supports_batch8_gemm(pipelines.gpu_family(), m, n, k));
-    let use_vec =
-        !use_prefetch && !use_short && !use_mma && !use_batch8 && supports_vec_gemm(m, n, k);
-    let use_tiled = !use_prefetch
-        && !use_short
-        && !use_mma
-        && !use_batch8
-        && !use_vec
-        && supports_tiled_gemm(m, n, k);
-    let pso = if let Some(pso) = prefetch_pso {
-        encoder.setLabel(Some(&objc2_foundation::NSString::from_str(prefetch_name)));
-        tracing::debug!(
-            candidate = "metal-mma32-prefetch",
-            kernel = prefetch_name,
-            m,
-            n,
-            k,
-            output_f32,
-            "Research dispatch"
-        );
-        pso
-    } else if let Some(pso) = short_pso {
-        encoder.setLabel(Some(&objc2_foundation::NSString::from_str(short_name)));
-        tracing::debug!(
-            candidate = "metal-short-mma16x64",
-            kernel = short_name,
-            m,
-            n,
-            k,
-            output_f32,
-            "Research dispatch"
-        );
+    let use_vec = !use_research && !use_mma && !use_batch8 && supports_vec_gemm(m, n, k);
+    let use_tiled = !use_research && !use_mma && !use_batch8 && !use_vec && supports_tiled_gemm(m, n, k);
+    let pso = if let Some((plan, pso)) = research {
+        encoder.setLabel(Some(&objc2_foundation::NSString::from_str(plan.kernel.name())));
+        tracing::debug!(candidate = candidate.name(), kernel = plan.kernel.name(),
+            m, n, k, output_f32, "Research dispatch");
         pso
     } else {
         pipelines.get(if use_mma && output_f32 {
@@ -5708,20 +5641,13 @@ unsafe fn encode_gemm_with_output(
         7,
     );
 
-    let (groups, tpg) = if use_short {
+    let (groups, tpg) = if let Some((plan, _)) = research {
         (
-            MTLSize {
-                width: (m as usize).div_ceil(16),
-                height: (n as usize).div_ceil(64),
-                depth: 1,
-            },
-            MTLSize {
-                width: 128,
-                height: 1,
-                depth: 1,
-            },
+            MTLSize { width: (m as usize).div_ceil(plan.tile_m),
+                height: (n as usize).div_ceil(plan.tile_n), depth: 1 },
+            MTLSize { width: plan.kernel.limits().0, height: 1, depth: 1 },
         )
-    } else if use_prefetch || use_mma {
+    } else if use_mma {
         (
             MTLSize {
                 width: (m as usize).div_ceil(32),
@@ -5778,19 +5704,8 @@ unsafe fn encode_gemm_with_output(
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
-    if use_prefetch {
-        pipelines.record_research_dispatch(if output_f32 {
-            crate::research_evidence::ResearchKernel::PrefetchQkv
-        } else {
-            crate::research_evidence::ResearchKernel::PrefetchGemm
-        });
-    }
-    if use_short {
-        pipelines.record_research_dispatch(if output_f32 {
-            crate::research_evidence::ResearchKernel::ShortQkv
-        } else {
-            crate::research_evidence::ResearchKernel::ShortGemm
-        });
+    if let Some((plan, _)) = research {
+        pipelines.record_research_dispatch(plan.kernel);
     }
     Ok(())
 }

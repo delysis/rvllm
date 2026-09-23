@@ -48,13 +48,19 @@ kernel void wave2_qkv_mma32_f32(
     constant uint &K [[buffer(5)]],
     constant float &alpha [[buffer(6)]],
     constant float &beta [[buffer(7)]],
-    uint2 group [[threadgroup_position_in_grid]],
+    uint3 group [[threadgroup_position_in_grid]],
     ushort tid [[thread_index_in_threadgroup]],
-    ushort sg [[simdgroup_index_in_threadgroup]]) {
+    ushort sg [[simdgroup_index_in_threadgroup]],
+    uint3 threads [[threads_per_threadgroup]]) {
+    // Uniform guards precede all barriers; the host also checks SIMD/PSO limits.
+    if (threads.x != 128u || threads.y != 1u || threads.z != 1u) return;
+    if (M == 0u || M > 1024u || N == 0u || N > 30720u || K == 0u || K > 16384u) return;
+    if (group.z != 0u || group.x >= (M + 31u) / 32u || group.y >= (N + 31u) / 32u) return;
+
     threadgroup float at[32 * 32];
     threadgroup float bt[32 * 32];
     threadgroup float ct[32 * 32];
-    wave2_mma32_f32_tile(A, B, M, N, K, group, tid, sg, at, bt, ct);
+    wave2_mma32_f32_tile(A, B, M, N, K, group.xy, tid, sg, at, bt, ct);
     const uint mr = group.x * 32u;
     const uint nc = group.y * 32u;
     for (uint index = uint(tid); index < 1024u; index += 128u) {
@@ -78,13 +84,19 @@ kernel void wave2_gemm_mma32_f32(
     constant uint &K [[buffer(5)]],
     constant float &alpha [[buffer(6)]],
     constant float &beta [[buffer(7)]],
-    uint2 group [[threadgroup_position_in_grid]],
+    uint3 group [[threadgroup_position_in_grid]],
     ushort tid [[thread_index_in_threadgroup]],
-    ushort sg [[simdgroup_index_in_threadgroup]]) {
+    ushort sg [[simdgroup_index_in_threadgroup]],
+    uint3 threads [[threads_per_threadgroup]]) {
+    // Uniform guards precede all barriers; the host also checks SIMD/PSO limits.
+    if (threads.x != 128u || threads.y != 1u || threads.z != 1u) return;
+    if (M == 0u || M > 1024u || N == 0u || N > 30720u || K == 0u || K > 16384u) return;
+    if (group.z != 0u || group.x >= (M + 31u) / 32u || group.y >= (N + 31u) / 32u) return;
+
     threadgroup float at[32 * 32];
     threadgroup float bt[32 * 32];
     threadgroup float ct[32 * 32];
-    wave2_mma32_f32_tile(A, B, M, N, K, group, tid, sg, at, bt, ct);
+    wave2_mma32_f32_tile(A, B, M, N, K, group.xy, tid, sg, at, bt, ct);
     const uint mr = group.x * 32u;
     const uint nc = group.y * 32u;
     for (uint index = uint(tid); index < 1024u; index += 128u) {
