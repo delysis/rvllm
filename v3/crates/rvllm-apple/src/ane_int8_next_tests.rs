@@ -2,112 +2,6 @@
 #![forbid(unsafe_code)]
 use super::*;
 
-fn interpret_next(source: &Int8CandidateSource, input: &[f16]) -> TestResult<Vec<f16>> {
-    let weights = decode_constants(&source.mil, &source.blob)?;
-    let mut values = BTreeMap::<String, Vec<f16>>::new();
-    values.insert("x".into(), input.to_vec());
-    for line in source.mil.lines() {
-        let Some((left, expression)) = line.split_once(" = ") else {
-            continue;
-        };
-        let name = left.split_whitespace().last().ok_or("name")?;
-        if let Some((_, after)) = expression.split_once("val = fp16(") {
-            let scalar = after
-                .split(')')
-                .next()
-                .ok_or("scalar")?
-                .parse::<f32>()
-                .map_err(|error| format!("scalar: {error}"))?;
-            values.insert(name.into(), vec![f16::from_f32(scalar)]);
-            continue;
-        }
-        if expression.starts_with("reshape(") {
-            let x = values
-                .get(argument(expression, "x")?)
-                .ok_or("reshape input")?
-                .clone();
-            let dims = dimensions(line)?;
-            let count = dims
-                .iter()
-                .try_fold(1_usize, |n, d| n.checked_mul(*d))
-                .ok_or("reshape element count overflow")?;
-            if count != x.len() {
-                return Err("reshape changes element count".into());
-            }
-            values.insert(name.into(), x);
-        } else if expression.starts_with("conv(") {
-            let w = weights
-                .get(argument(expression, "weight")?)
-                .ok_or("weight lookup")?;
-            let x = values
-                .get(argument(expression, "x")?)
-                .ok_or("input lookup")?;
-            if x.len() != w.1 {
-                return Err("projection input width".into());
-            }
-            values.insert(name.into(), projection(&w.2, x));
-        } else if expression.starts_with("concat(") {
-            if !source.mil.contains("val = int32(1)") || !source.mil.contains("val = bool(false)") {
-                return Err("concat contract".into());
-            }
-            let names = expression
-                .split_once("values = (")
-                .ok_or("concat inputs")?
-                .1
-                .split_once(')')
-                .ok_or("concat inputs end")?
-                .0;
-            let mut output = Vec::new();
-            for input in names.split(',') {
-                output.extend_from_slice(values.get(input.trim()).ok_or("concat lookup")?);
-            }
-            values.insert(name.into(), output);
-        } else if expression.starts_with("mul(")
-            || expression.starts_with("add(")
-            || expression.starts_with("tanh(")
-        {
-            let x = values.get(argument(expression, "x")?).ok_or("x lookup")?;
-            let y = if expression.starts_with("tanh(") {
-                None
-            } else {
-                Some(values.get(argument(expression, "y")?).ok_or("y lookup")?)
-            };
-            if y.is_some_and(|y| y.len() != 1 && y.len() != x.len()) {
-                return Err("broadcast width".into());
-            }
-            let output = x
-                .iter()
-                .enumerate()
-                .map(|(index, x)| {
-                    let x = x.to_f32();
-                    let y = y
-                        .map(|y| y[if y.len() == 1 { 0 } else { index }].to_f32())
-                        .unwrap_or(0.0);
-                    f16::from_f32(if expression.starts_with("mul(") {
-                        x * y
-                    } else if expression.starts_with("add(") {
-                        x + y
-                    } else {
-                        x.tanh()
-                    })
-                })
-                .collect::<Vec<_>>();
-            values.insert(name.into(), output);
-        } else {
-            continue;
-        }
-        let dims = dimensions(line)?;
-        let count = dims
-            .iter()
-            .try_fold(1_usize, |n, d| n.checked_mul(*d))
-            .ok_or("shape product")?;
-        if values.get(name).ok_or("output lookup")?.len() != count {
-            return Err("declared output shape".into());
-        }
-    }
-    values.remove("y").ok_or_else(|| "missing output".into())
-}
-
 #[test]
 fn down4_preserves_full_k_reductions_rows_and_gelu_materializations() -> TestResult {
     let make = |phase: usize| {
@@ -138,7 +32,7 @@ fn down4_preserves_full_k_reductions_rows_and_gelu_materializations() -> TestRes
             .zip(u)
             .map(|(g, u)| activation(g, u))
             .collect::<Vec<_>>();
-        assert_eq!(interpret_next(&source, &input)?, projection(&down, &gated));
+        assert_eq!(interpret(&source, &input)?, projection(&down, &gated));
     }
     assert_eq!(source.budget.convolutions, 6);
     assert_eq!(source.budget.programs, 1);
@@ -201,7 +95,7 @@ fn packed32_graph_keeps_weights_and_every_ffn_rounding() -> TestResult {
             .zip(u)
             .map(|(g, u)| activation(g, u))
             .collect::<Vec<_>>();
-        assert_eq!(interpret_next(&source, &input)?, projection(&down, &gated));
+        assert_eq!(interpret(&source, &input)?, projection(&down, &gated));
     }
     assert_eq!(source.budget.input_surface_bytes, 256);
     assert!(ffn_packed32_source(&weights).is_err());

@@ -13,25 +13,24 @@ fn number(text: &str) -> TestResult<usize> {
 }
 
 fn payload(blob: &[u8], offset: usize, dtype: u32) -> TestResult<&[u8]> {
-    let read = |first: usize, bytes: usize| -> TestResult<&[u8]> {
-        let last = first.checked_add(bytes).ok_or("descriptor overflow")?;
-        blob.get(first..last)
-            .ok_or_else(|| "truncated descriptor".into())
-    };
-    if offset % 64 != 0
-        || read(offset, 4)? != 0xDEAD_BEEF_u32.to_le_bytes()
-        || read(offset + 4, 4)? != dtype.to_le_bytes()
+    let header_end = offset.checked_add(64).ok_or("descriptor overflow")?;
+    let header = blob.get(offset..header_end).ok_or("truncated descriptor")?;
+    if offset < 64 || offset % 64 != 0
+        || header[..4] != 0xDEAD_BEEF_u32.to_le_bytes()
+        || header[4..8] != dtype.to_le_bytes()
+        || header[24..].iter().any(|&b| b != 0)
     {
         return Err("descriptor ABI mismatch".into());
     }
-    let len = u64::from_le_bytes(read(offset + 8, 8)?.try_into().map_err(|_| "length")?);
-    let pos = u64::from_le_bytes(read(offset + 16, 8)?.try_into().map_err(|_| "position")?);
+    let len = u64::from_le_bytes(header[8..16].try_into().map_err(|_| "length")?);
+    let pos = u64::from_le_bytes(header[16..24].try_into().map_err(|_| "position")?);
     let pos = usize::try_from(pos).map_err(|_| "offset overflow")?;
     let len = usize::try_from(len).map_err(|_| "length overflow")?;
-    if pos != offset + 64 || len == 0 || len % 64 != 0 {
+    if pos != header_end || len == 0 || len % 64 != 0 {
         return Err("bad payload".into());
     }
-    read(pos, len)
+    let end = pos.checked_add(len).ok_or("payload overflow")?;
+    blob.get(pos..end).ok_or_else(|| "truncated payload".into())
 }
 
 fn dimensions(line: &str) -> TestResult<Vec<usize>> {
@@ -62,41 +61,63 @@ fn decode_constants(
     mil: &str,
     blob: &[u8],
 ) -> TestResult<BTreeMap<String, (usize, usize, Vec<f16>)>> {
+    let header = blob.get(..64).ok_or("truncated blob header")?;
+    let descriptors = u32::from_le_bytes(header[..4].try_into().map_err(|_| "descriptor count")?) as usize;
+    if descriptors == 0 || descriptors % 2 != 0 || header[4..8] != 2_u32.to_le_bytes()
+        || header[8..].iter().any(|&b| b != 0) {
+        return Err("blob header ABI mismatch".into());
+    }
     let mut result = BTreeMap::new();
-    for line in mil
-        .lines()
-        .filter(|line| line.contains(" = constexpr_affine_dequantize()"))
-    {
-        let (left, _) = line.split_once(" = ").ok_or("assignment")?;
+    let mut regions = BTreeMap::new();
+    for line in mil.lines().filter(|line| line.contains(" = constexpr_affine_dequantize()")) {
+        let (left, _) = line.trim().split_once(" = ").ok_or("assignment")?;
         let name = left.split_whitespace().last().ok_or("constant name")?;
         let shape = dimensions(line)?;
-        if shape.len() != 4 || shape[2..] != [1, 1] {
-            return Err("weight rank".into());
+        if !left.starts_with("tensor<fp16,") || shape.len() != 4 || shape[2..] != [1, 1]
+            || shape[..2].contains(&0) || !line.contains("axis = int32(0)")
+            || !line.contains("zero_point = int8(0)") {
+            return Err("weight dtype, rank or dequantization contract".into());
         }
-        let offsets = line
-            .split("offset = uint64(")
-            .skip(1)
-            .map(|s| number(s.split(')').next().unwrap_or("")))
-            .collect::<Result<Vec<_>, _>>()?;
-        if offsets.len() != 2 {
-            return Err("affine needs two payloads".into());
+        let q_text = line.split_once("quantized_data = tensor<int8,").ok_or("signed INT8 coefficients")?.1;
+        let scale_text = line.split_once("scale = tensor<fp16,").ok_or("FP16 scales")?.1;
+        if dimensions(q_text)? != shape || dimensions(scale_text)? != [shape[0]]
+            || line.matches("@model_path/weights/weight.bin").count() != 2 {
+            return Err("serialized constant shape or path".into());
         }
+        let offsets = line.split("offset = uint64(").skip(1)
+            .map(|s| number(s.split(')').next().unwrap_or(""))).collect::<TestResult<Vec<_>>>()?;
+        if offsets.len() != 2 { return Err("affine needs two payloads".into()); }
         let q = payload(blob, offsets[0], 4)?;
         let scales = payload(blob, offsets[1], 1)?;
-        if q.len() != shape[0] * shape[1] || scales.len() != 2 * shape[0] {
+        if shape[0].checked_mul(shape[1]) != Some(q.len())
+            || shape[0].checked_mul(2) != Some(scales.len()) {
             return Err("constant shape mismatch".into());
         }
-        let values = q
-            .chunks_exact(shape[1])
-            .zip(scales.chunks_exact(2))
-            .flat_map(|(row, scale)| {
-                let scale = f16::from_le_bytes([scale[0], scale[1]]).to_f32();
-                row.iter()
-                    .map(move |byte| f16::from_f32(f32::from(i8::from_le_bytes([*byte])) * scale))
-            })
-            .collect();
-        result.insert(name.into(), (shape[0], shape[1], values));
+        for (offset, len) in [(offsets[0], q.len()), (offsets[1], scales.len())] {
+            let end = offset.checked_add(64).and_then(|x| x.checked_add(len)).ok_or("region overflow")?;
+            if regions.insert(offset, end).is_some() { return Err("duplicate descriptor reference".into()); }
+        }
+        let mut values = Vec::with_capacity(q.len());
+        for (row, scale) in q.chunks_exact(shape[1]).zip(scales.chunks_exact(2)) {
+            let scale = f16::from_le_bytes([scale[0], scale[1]]).to_f32();
+            if !scale.is_finite() || scale <= 0.0 { return Err("scale must be positive and finite".into()); }
+            for byte in row {
+                let value = f16::from_f32(f32::from(i8::from_le_bytes([*byte])) * scale);
+                if !value.is_finite() { return Err("nonfinite reconstruction".into()); }
+                values.push(value);
+            }
+        }
+        if result.insert(name.into(), (shape[0], shape[1], values)).is_some() {
+            return Err("duplicate weight name".into());
+        }
     }
+    if regions.len() != descriptors { return Err("descriptor count mismatch".into()); }
+    let mut end = 64;
+    for (offset, next) in regions {
+        if offset != end { return Err("overlap, gap or unused payload".into()); }
+        end = next;
+    }
+    if end != blob.len() { return Err("unreferenced blob bytes".into()); }
     Ok(result)
 }
 
@@ -113,97 +134,9 @@ fn projection(weights: &[f16], input: &[f16]) -> Vec<f16> {
         .collect()
 }
 
-fn interpret(source: &Int8CandidateSource, input: &[f16]) -> TestResult<Vec<f16>> {
-    let weights = decode_constants(&source.mil, &source.blob)?;
-    let mut values = BTreeMap::<String, Vec<f16>>::new();
-    values.insert("x".into(), input.to_vec());
-    for line in source.mil.lines() {
-        let Some((left, expression)) = line.split_once(" = ") else {
-            continue;
-        };
-        let name = left.split_whitespace().last().ok_or("name")?;
-        if let Some((_, after)) = expression.split_once("val = fp16(") {
-            let scalar = after
-                .split(')')
-                .next()
-                .ok_or("scalar")?
-                .parse::<f32>()
-                .map_err(|error| format!("scalar: {error}"))?;
-            values.insert(name.into(), vec![f16::from_f32(scalar)]);
-            continue;
-        }
-        if expression.starts_with("conv(") {
-            let w = weights
-                .get(argument(expression, "weight")?)
-                .ok_or("weight lookup")?;
-            let x = values
-                .get(argument(expression, "x")?)
-                .ok_or("input lookup")?;
-            if x.len() != w.1 {
-                return Err("projection input width".into());
-            }
-            values.insert(name.into(), projection(&w.2, x));
-        } else if expression.starts_with("concat(") {
-            if !source.mil.contains("val = int32(1)") || !source.mil.contains("val = bool(false)") {
-                return Err("concat contract".into());
-            }
-            let names = expression
-                .split_once("values = (")
-                .ok_or("concat inputs")?
-                .1
-                .split_once(')')
-                .ok_or("concat inputs end")?
-                .0;
-            let mut output = Vec::new();
-            for input in names.split(',') {
-                output.extend_from_slice(values.get(input.trim()).ok_or("concat lookup")?);
-            }
-            values.insert(name.into(), output);
-        } else if expression.starts_with("mul(")
-            || expression.starts_with("add(")
-            || expression.starts_with("tanh(")
-        {
-            let x = values.get(argument(expression, "x")?).ok_or("x lookup")?;
-            let y = if expression.starts_with("tanh(") {
-                None
-            } else {
-                Some(values.get(argument(expression, "y")?).ok_or("y lookup")?)
-            };
-            if y.is_some_and(|y| y.len() != 1 && y.len() != x.len()) {
-                return Err("broadcast width".into());
-            }
-            let output = x
-                .iter()
-                .enumerate()
-                .map(|(index, x)| {
-                    let x = x.to_f32();
-                    let y = y
-                        .map(|y| y[if y.len() == 1 { 0 } else { index }].to_f32())
-                        .unwrap_or(0.0);
-                    f16::from_f32(if expression.starts_with("mul(") {
-                        x * y
-                    } else if expression.starts_with("add(") {
-                        x + y
-                    } else {
-                        x.tanh()
-                    })
-                })
-                .collect::<Vec<_>>();
-            values.insert(name.into(), output);
-        } else {
-            continue;
-        }
-        let dims = dimensions(line)?;
-        let count = dims
-            .iter()
-            .try_fold(1_usize, |n, d| n.checked_mul(*d))
-            .ok_or("shape product")?;
-        if values.get(name).ok_or("output lookup")?.len() != count {
-            return Err("declared output shape".into());
-        }
-    }
-    values.remove("y").ok_or_else(|| "missing output".into())
-}
+#[path = "ane_int8_mil_oracle.rs"]
+mod oracle;
+use oracle::interpret;
 
 // Independent straight-line FP16 oracle; unlike the MIL interpreter it knows
 // neither graph variable names, concat order nor BLOBFILE offsets.
@@ -455,3 +388,9 @@ fn chunking_is_bit_exact_for_quantized_payloads_and_scale_payloads() -> TestResu
 
 #[path = "ane_int8_next_tests.rs"]
 mod next;
+
+#[path = "ane_int8_interleaved_tests.rs"]
+mod interleaved_checks;
+
+#[path = "ane_int8_oracle_tests.rs"]
+mod oracle_checks;

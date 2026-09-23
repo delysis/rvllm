@@ -1113,14 +1113,13 @@ mod tests {
 
 
 impl AneGatedFfn {
-    /// Explicit second-wave INT8 layout experiment. The existing single-I/O
-    /// owner and logical width-one projection boundary are not changed.
-    pub fn compile_int8_wave2_with_cache_policy(
+    /// Paired-row INT8 layout experiment, controlled against existing stacking.
+    /// The existing single-I/O owner and width-one boundary are unchanged.
+    pub fn compile_int8_interleaved_with_cache_policy(
         weights: &AneInt8FfnWeights,
-        variant: crate::ane_int8_candidates::wave2::FfnVariant,
         policy: AneProgramCachePolicy,
     ) -> Result<Self, String> {
-        let source = crate::ane_int8_candidates::wave2::build(weights, variant)?;
+        let source = crate::ane_int8_candidates::interleaved::build(weights)?;
         tracing::debug!(
             candidate = source.name,
             source_blob_bytes = source.blob.len(),
