@@ -26,16 +26,17 @@ class WideSourceTests(unittest.TestCase):
         ledger = source(M+'research_evidence.rs')
         entries = re.findall(r'"([^"]+)"', re.search(
             r'pub const RESEARCH_KERNEL_NAMES:[^=]+=(.*?);', ledger, re.S).group(1))
-        self.assertEqual(entries, [
+        self.assertEqual(entries[:10], [
             'research_gemm_mma16x64', 'research_qkv_mma16x64',
             'research_rounded_gate32', 'research_gqa_kv8_d256', 'research_gqa_kv8_d512',
             'research_gemm_mma32_prefetch', 'research_qkv_mma32_prefetch',
             'research_attn_q4_d256', 'research_attn_q4_d512', 'research_rms_simd32'])
-        self.assertIn('RESEARCH_KERNEL_COUNT: usize = 10;', ledger)
+        self.assertIn('RESEARCH_KERNEL_COUNT: usize = 17;', ledger)
         layer = source(M+'layer_forward.rs')
-        for kernel in ['PrefetchQkv', 'Temporal256', 'Rms32']:
-            position = layer.index('ResearchKernel::'+kernel)
-            self.assertIn('encoder.endEncoding();', layer[max(0, position-600):position])
+        for marker in ['pipelines.record_research_dispatch(plan.kernel)', 'ResearchKernel::Temporal256']:
+            for found in re.finditer(re.escape(marker), layer):
+                position = found.start()
+                self.assertIn('encoder.endEncoding();', layer[max(0, position-600):position])
 
     def test_vector_threadgroup_abi_and_poison_diagnostics_survive(self):
         for name in ['mma32_prefetch', 'attn_q4', 'rms_simd32']:
@@ -53,10 +54,13 @@ class WideSourceTests(unittest.TestCase):
     def test_old_trace_fallback_cannot_stand_in_for_prefetch_or_rms_dispatch(self):
         layer = source(M+'layer_forward.rs')
         self.assertIn('trace.is_none() && supports_gemma4_prefill_mma', layer)
-        self.assertIn('let prefetch_pso = if allow_prefill_mma', layer)
-        self.assertIn('let research_pso = if full_prefill_projection', layer)
-        self.assertIn('prefetch_name, 128, 8192', layer)
-        self.assertIn('research_pso("research_rms_simd32", 32, 0)', layer)
+        self.assertIn('full_prefill: allow_prefill_mma', layer)
+        self.assertIn('postnorm_plan(', layer)
+        self.assertIn('full_prefill_projection,', layer)
+        plan = source(M+'research_projection.rs')
+        self.assertIn('!self.full_prefill', plan)
+        self.assertIn('if !full_prefill', plan)
+        self.assertIn('kernel.limits()', layer)
 
     def test_packed32_has_source_and_codec_but_no_runtime_selector(self):
         self.assertIn('pub fn ffn_packed32_source', source(A+'ane_int8_candidates.rs'))

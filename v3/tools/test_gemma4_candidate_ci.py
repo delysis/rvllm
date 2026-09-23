@@ -69,6 +69,7 @@ class CandidateCiTests(unittest.TestCase):
             (workspace / "tools").mkdir(parents=True)
             inventory = workspace / "tools/gemma4_candidate_host_tests.json"
             inventory.write_bytes((TOOLS / inventory.name).read_bytes())
+            (workspace / "tools/gemma4_metal_catalog.json").write_bytes((TOOLS / "gemma4_metal_catalog.json").read_bytes())
             commands = []
 
             def fake_run(argv, **kwargs):
@@ -77,6 +78,8 @@ class CandidateCiTests(unittest.TestCase):
                     suite = next(s for s in self.suites if s["filter"] in argv)
                     return subprocess.CompletedProcess(argv, 0, self.output(suite).encode(), b"")
                 if argv[:2] == ["cargo", "run"]:
+                    if argv[-1] == "--catalog":
+                        return subprocess.CompletedProcess(argv, 0, (TOOLS / "gemma4_metal_catalog.json").read_bytes(), b"")
                     candidate = argv[-1]
                     source = "\n".join("kernel void " + n + "() {}" for n in ci.EXPORTS[candidate])
                     return subprocess.CompletedProcess(argv, 0, ("// fixture\n" + source).encode(), b"")
@@ -85,7 +88,7 @@ class CandidateCiTests(unittest.TestCase):
             output = root / "output"
             with patch.object(ci.subprocess, "run", side_effect=fake_run):
                 ci.run_checks(workspace, output)
-            self.assertEqual(len([c for c in commands if c[:2] == ["cargo", "run"]]), 14)
+            self.assertEqual(len([c for c in commands if c[:2] == ["cargo", "run"]]), 23)
             self.assertEqual(len([c for c in commands if c[:2] == ["cargo", "test"]]), len(self.suites))
             self.assertTrue(all("rvllm_disaggregated_infer" not in c for c in commands))
             self.assertTrue(all(c[0] not in ["xcrun", "pmset"] for c in commands))
@@ -93,7 +96,7 @@ class CandidateCiTests(unittest.TestCase):
             self.assertEqual(receipt["status"], "host-tests-and-source-export-only")
             self.assertFalse(receipt["metal_compiled"])
             self.assertFalse(receipt["device_qualified"])
-            self.assertEqual(len(list(output.glob("*-export.stdout"))), 14)
+            self.assertEqual(len(list(output.glob("*-export.stdout"))), 22)
             self.assertTrue((output / "source-sha256.json").exists())
             with patch.object(ci.subprocess, "run") as no_process:
                 with self.assertRaises(FileExistsError):
@@ -106,6 +109,7 @@ class CandidateCiTests(unittest.TestCase):
             (root / "v3/tools").mkdir(parents=True)
             (root / "v3/tools/gemma4_candidate_host_tests.json").write_bytes(
                 (TOOLS / "gemma4_candidate_host_tests.json").read_bytes())
+            (root / "v3/tools/gemma4_metal_catalog.json").write_bytes((TOOLS / "gemma4_metal_catalog.json").read_bytes())
             def failure(argv, **kwargs):
                 return subprocess.CompletedProcess(argv, 7, b"partial output", b"intentional host failure")
             with patch.object(ci.subprocess, "run", side_effect=failure) as calls:

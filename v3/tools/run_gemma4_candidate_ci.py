@@ -16,8 +16,12 @@ import re
 import subprocess
 import sys
 
+import gemma4_catalog as catalog
+
 # Labels, packages and filters are review boundaries, not arbitrary JSON argv.
 BOUNDARIES = {
+    "metal-catalog": ("rvllm-apple-metal", "research_catalog::tests::"),
+    "metal-projection": ("rvllm-apple-metal", "research_projection::tests::"),
     "metal-research": ("rvllm-apple-metal", "research::"),
     "metal-dispatch": ("rvllm-apple-metal", "research_evidence::tests::"),
     "metal-next": ("rvllm-apple-metal", "research_next::"),
@@ -26,15 +30,8 @@ BOUNDARIES = {
     "ane-transposes": ("rvllm-apple", "ane_attention_layout::transpose_tests::"),
     "head-ranking": ("rvllm-runtime", "gemma_head_ranking::tests::"),
 }
-EXPORTS = {
-    "off": (),
-    "metal-short-mma16x64": ("research_gemm_mma16x64", "research_qkv_mma16x64"),
-    "metal-rounded-gate32": ("research_rounded_gate32",),
-    "metal-gqa-kv8": ("research_gqa_kv8_d256", "research_gqa_kv8_d512"),
-    "metal-mma32-prefetch": ("research_gemm_mma32_prefetch", "research_qkv_mma32_prefetch"),
-    "metal-attn-q4": ("research_attn_q4_d256", "research_attn_q4_d512"),
-    "metal-rms-simd32": ("research_rms_simd32",),
-}
+EXPORTS = catalog.exports(catalog.load())
+
 COMMON = ["--offline", "--locked", "--release", "-j", "2", "--no-default-features"]
 
 
@@ -87,14 +84,14 @@ def check_test_output(text: str, suite: dict) -> None:
 
 
 def check_export(source: str, candidate: str) -> None:
-    names = re.findall(r"\bkernel\s+void\s+(research_\w+)\s*\(", source)
-    if not source.strip() or len(names) != len(EXPORTS[candidate]) or set(names) != set(EXPORTS[candidate]):
-        raise ValueError(f"wrong research entry points in {candidate} source")
+    catalog.check_source(catalog.load(), candidate, source)
 
 
 def run_checks(workspace: Path, output: Path) -> None:
     workspace = workspace.resolve(strict=True)
     suites = load_suites(workspace / "tools/gemma4_candidate_host_tests.json")
+    reviewed = catalog.load(workspace / "tools/gemma4_metal_catalog.json")
+    export_map = catalog.exports(reviewed)
     output.mkdir(parents=False, exist_ok=False)
     output = output.resolve(strict=True)
     result = {"status": "incomplete", "metal_compiled": False, "device_qualified": False,
@@ -125,13 +122,16 @@ def run_checks(workspace: Path, output: Path) -> None:
         for suite in suites:
             check_test_output(run(suite["label"], test_command(suite)), suite)
             result["rust_tests"] += len(suite["tests"])
-        hashes = {}
+        emitted = run("runtime-catalog", ["cargo", "run", *COMMON, "-p", "rvllm-apple-metal", "--bin",
+                                         "rvllm-metal-research-source", "--", "--catalog"])
+        catalog.verify_exported(reviewed, catalog.decode(emitted))
+        hashes = {"runtime-catalog.stdout": hashlib.sha256(emitted.encode()).hexdigest()}
         for dtype in ("bf16", "f16"):
-            for candidate in EXPORTS:
+            for candidate in export_map:
                 label = f"{dtype}-{candidate}-export"
                 source = run(label, ["cargo", "run", *COMMON, "-p", "rvllm-apple-metal", "--bin",
                                      "rvllm-metal-research-source", "--", dtype, candidate])
-                check_export(source, candidate)
+                catalog.check_source(reviewed, candidate, source)
                 hashes[f"{label}.stdout"] = hashlib.sha256((output / f"{label}.stdout").read_bytes()).hexdigest()
                 result["exports"] += 1
         (output / "source-sha256.json").write_text(json.dumps(hashes, indent=2) + "\n")

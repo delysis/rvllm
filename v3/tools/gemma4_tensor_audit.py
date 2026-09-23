@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import struct
+import stat
 import sys
 from typing import Any
 
@@ -40,11 +41,31 @@ def unique_object(pairs):
 def parse_json(data: bytes):
     if len(data) > MAX_JSON_BYTES:
         raise AuditError('manifest/policy exceeds one MiB')
-    return json.loads(data, object_pairs_hook=unique_object)
+    def nonfinite(text):
+        raise AuditError('nonfinite JSON token: ' + text)
+    return json.loads(data, object_pairs_hook=unique_object, parse_constant=nonfinite)
+
+
+def open_regular(path: Path):
+    # The compared file descriptor, not a pre-open pathname check, must name a
+    # regular file. O_NONBLOCK prevents a FIFO from blocking the offline audit.
+    # Parent-directory aliases remain valid (including macOS /tmp aliases).
+    if path.is_symlink():
+        raise AuditError('symlinked audit input')
+    flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0)
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise AuditError('regular audit input required')
+        handle = os.fdopen(fd, 'rb')
+    except BaseException:
+        os.close(fd)
+        raise
+    return handle
 
 
 def read_json(path: Path):
-    with path.open('rb') as source:
+    with open_regular(path) as source:
         return parse_json(source.read(MAX_JSON_BYTES + 1))
 
 
@@ -98,10 +119,14 @@ def compare(pair: dict, policy: dict, root: Path) -> dict:
         raise AuditError('tensor pair and tolerance policy must be objects')
     if set(policy) != {'max_abs', 'relative_l2', 'bitwise'}:
         raise AuditError('tensor policy must specify exactly max_abs, relative_l2, bitwise')
+    if set(pair) != {'name', 'shape', 'reference', 'candidate'}:
+        raise AuditError('unexpected tensor pair fields')
     count = sample_count(pair.get('shape'))
     reference, candidate = pair['reference'], pair['candidate']
     if not isinstance(reference, dict) or not isinstance(candidate, dict):
         raise AuditError('tensor input pins must be objects')
+    if any(set(pin) != {'path', 'dtype', 'sha256'} for pin in (reference, candidate)):
+        raise AuditError('unexpected tensor input pin fields')
     rt, ct = reference.get('dtype'), candidate.get('dtype')
     if rt not in WIDTH or ct not in WIDTH:
         raise AuditError('only explicit little-endian f16, bf16, and f32 are supported')
@@ -115,8 +140,9 @@ def compare(pair: dict, policy: dict, root: Path) -> dict:
     rp, cp = resolve(root, reference), resolve(root, candidate)
     rh, ch = hashlib.sha256(), hashlib.sha256()
     max_abs, worst, nonfinite, bit_mismatches = 0.0, None, 0, 0
+    worst_reference, worst_candidate = None, None
     reference_squared, error_squared = 0.0, 0.0
-    with rp.open('rb') as rf, cp.open('rb') as cf:
+    with open_regular(rp) as rf, open_regular(cp) as cf:
         for handle, dtype in ((rf, rt), (cf, ct)):
             if os.fstat(handle.fileno()).st_size != count * WIDTH[dtype]:
                 raise AuditError(f'{pair["name"]}: file length differs from declared shape')
@@ -139,6 +165,7 @@ def compare(pair: dict, policy: dict, root: Path) -> dict:
                 delta = c - r
                 if abs(delta) > max_abs:
                     max_abs, worst = abs(delta), index + j
+                    worst_reference, worst_candidate = r, c
                 squared_r.append(r * r)
                 squared_e.append(delta * delta)
             reference_squared = math.fsum((reference_squared, math.fsum(squared_r)))
@@ -148,6 +175,14 @@ def compare(pair: dict, policy: dict, root: Path) -> dict:
             raise AuditError('tensor grew during streaming read')
     relative = (math.sqrt(error_squared / reference_squared) if reference_squared
                 else (0.0 if error_squared == 0.0 else None))
+    coordinates = None
+    if worst is not None:
+        coordinate = worst
+        coordinates = []
+        for dim in reversed(pair['shape']):
+            coordinates.append(coordinate % dim)
+            coordinate //= dim
+        coordinates.reverse()
     hash_r, hash_c = rh.hexdigest(), ch.hexdigest()
     passed = (hash_r == expected_r and hash_c == expected_c and nonfinite == 0
               and max_abs <= max_allowed and relative is not None
@@ -159,6 +194,8 @@ def compare(pair: dict, policy: dict, root: Path) -> dict:
         'reference_hash_matches': hash_r == expected_r,
         'candidate_hash_matches': hash_c == expected_c,
         'max_abs': max_abs, 'worst_index': worst, 'relative_l2': relative,
+        'worst_coordinates': coordinates, 'worst_reference': worst_reference,
+        'worst_candidate': worst_candidate,
         'reference_l2_squared': reference_squared, 'error_l2_squared': error_squared,
         'bit_mismatches': bit_mismatches if rt == ct else None,
         'nonfinite_pairs': nonfinite, 'limits': policy, 'passed': passed,
@@ -166,7 +203,7 @@ def compare(pair: dict, policy: dict, root: Path) -> dict:
 
 
 def run(manifest: dict, root: Path) -> dict:
-    if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
+    if not isinstance(manifest, dict) or set(manifest) != {'schema', 'policy', 'pairs'} or manifest.get('schema') != SCHEMA:
         raise AuditError('unrecognized tensor manifest schema')
     pairs = manifest.get('pairs')
     if not isinstance(pairs, list) or not pairs:
@@ -177,7 +214,9 @@ def run(manifest: dict, root: Path) -> dict:
     if any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(names):
         raise AuditError('tensor names must be nonempty and unique')
     pin = manifest['policy']
-    with resolve(root, pin).open('rb') as source:
+    if not isinstance(pin, dict) or set(pin) != {'path', 'sha256'}:
+        raise AuditError('unexpected policy pin fields')
+    with open_regular(resolve(root, pin)) as source:
         policy_bytes = source.read(MAX_JSON_BYTES + 1)
     policy_sha = hashlib.sha256(policy_bytes).hexdigest()
     if policy_sha != digest_pin(pin.get('sha256')):
@@ -206,8 +245,11 @@ def main() -> int:
     parser.add_argument('new_output', type=Path)
     args = parser.parse_args()
     try:
-        result = run(read_json(args.manifest), args.manifest.resolve().parent)
-    except (AuditError, OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        with open_regular(args.manifest) as source:
+            manifest_bytes = source.read(MAX_JSON_BYTES + 1)
+        result = run(parse_json(manifest_bytes), args.manifest.resolve().parent)
+        result['manifest_sha256'] = hashlib.sha256(manifest_bytes).hexdigest()
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as error:
         result = {'schema': SCHEMA, 'supplied_tensor_policy_passed': False,
                   'hardware_qualification': False, 'performance_acceptance': False,
                   'promotion_authorized': False, 'error': str(error)}

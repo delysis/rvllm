@@ -17,6 +17,11 @@ MODULES = (
     'test_gemma4_wide_models',
     'test_gemma4_wide_source',
     'test_gemma4_wide_ci_wiring',
+    'test_gemma4_tensor_audit',
+    'test_gemma4_catalog',
+    'test_gemma4_unified_integration',
+    'test_gemma4_shader_contracts',
+    'test_gemma4_unified_proposals',
 )
 
 

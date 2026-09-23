@@ -13,6 +13,7 @@ import unittest
 GATE = Path(__file__).with_name("check_gemma4_candidate_delivery.sh")
 MANIFEST = GATE.with_name("gemma4_candidate_rustfmt.paths")
 RUSTFMT = shutil.which("rustfmt")
+CATALOG = json.loads(GATE.with_name("gemma4_metal_catalog.json").read_text())
 
 
 FAKE_TOOL = r'''#!/usr/bin/env python3
@@ -40,7 +41,13 @@ elif name == "cargo":
         folder.mkdir(parents=True, exist_ok=True)
         file = folder / binary
         if binary == "rvllm-metal-research-source":
-            file.write_text('#!/bin/sh\nprintf "// compile-only fixture: %s %s\\n" "$1" "$2"\n')
+            file.write_text("#!" + sys.executable + " -S\n" +
+                "import json,os,sys\n" +
+                "c=json.load(open(os.environ['FAKE_CATALOG']))\n" +
+                "if sys.argv[1:]==['--catalog']: print(json.dumps(c))\n" +
+                "else:\n" +
+                " r=next(r for r in c['candidates'] if r['name']==sys.argv[-1])\n" +
+                " print('// mock compiler input\\n'+'\\n'.join('kernel void '+k+'() {}' for k in r['kernels']))\n")
         else:
             file.write_text('#!/bin/sh\necho "INFERENCE MUST NOT RUN" >&2\nexit 99\n')
         file.chmod(0o755)
@@ -105,8 +112,9 @@ class DeliveryGateTests(unittest.TestCase):
             path.write_text(f"// {relative}\npub fn packet_owned() {{}}\n")
         shaders = self.workspace / "crates/rvllm-apple-metal/src/research_shaders"
         shaders.mkdir(exist_ok=True)
-        for name in ["short_mma16x64", "rounded_gate32", "gqa_kv8",
-                     "mma32_prefetch", "attn_q4", "rms_simd32"]:
+        shutil.copyfile(GATE.with_name("gemma4_catalog.py"), tools / "gemma4_catalog.py")
+        shutil.copyfile(GATE.with_name("gemma4_metal_catalog.json"), tools / "gemma4_metal_catalog.json")
+        for name in [Path(row["source_file"]).stem for row in CATALOG["candidates"] if row["source_file"]]:
             (shaders / (name + ".metal")).write_text("// source fixture: " + name + "\n")
         fake = self.root / "bin"
         fake.mkdir()
@@ -120,7 +128,8 @@ class DeliveryGateTests(unittest.TestCase):
         self.target = self.root / "target"
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("FAKE_")}
         self.env.update(PATH=str(fake) + os.pathsep + os.environ["PATH"],
-                        FAKE_LOG=str(self.trace), FAKE_FORMAT_LOG=str(self.format_trace))
+                        FAKE_LOG=str(self.trace), FAKE_FORMAT_LOG=str(self.format_trace),
+                        FAKE_CATALOG=str(tools / "gemma4_metal_catalog.json"))
 
     def run_gate(self, failure=None):
         if failure:
@@ -142,17 +151,17 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertFalse(any(c[0] == "xcrun" and "-c" in c for c in self.calls()))
         self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
 
-    def test_compile_gate_exports_all_seven_selections_in_both_dtypes(self):
+    def test_compile_gate_exports_all_eleven_selections_in_both_dtypes(self):
         run = self.run_gate()
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         stems = {f"{dtype}-{candidate}" for dtype in ("bf16", "f16")
-                 for candidate in ("off", "metal-short-mma16x64", "metal-rounded-gate32", "metal-gqa-kv8", "metal-mma32-prefetch", "metal-attn-q4", "metal-rms-simd32")}
+                 for candidate in [row["name"] for row in CATALOG["candidates"]]}
         self.assertEqual({p.stem for p in self.out.glob("*.metal")}, stems)
         self.assertEqual({p.stem for p in self.out.glob("*.metallib")}, stems)
         compiles = [c for c in self.calls() if c[0] == "xcrun" and "-c" in c]
         links = [c for c in self.calls() if c[0] == "xcrun" and "metallib" in c]
-        self.assertEqual(len(compiles), 14)
-        self.assertEqual(len(links), 14)
+        self.assertEqual(len(compiles), 22)
+        self.assertEqual(len(links), 22)
         self.assertTrue(all("-std=metal3.1" in c for c in compiles))
         self.assertEqual((self.out / "status.txt").read_text(), "compiled-only; no accelerator acceptance\n")
         commands = (self.out / "commands.txt").read_text()
@@ -164,7 +173,7 @@ class DeliveryGateTests(unittest.TestCase):
         for line in commands.splitlines():
             self.assertFalse(line.startswith(str(self.target / "aarch64-apple-darwin/release/rvllm_disaggregated_infer")))
         self.assertFalse(any(c[:2] == ["cargo", "fmt"] for c in self.calls()))
-        self.assertEqual(len(self.format_calls()), 24)
+        self.assertEqual(len(self.format_calls()), 32)
         for call in self.calls():
             if call[0] == "cargo" and call[1] in ("test", "build"):
                 for flag in ("--offline", "--locked", "--release", "aarch64-apple-darwin"):
@@ -193,7 +202,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual(unlisted.read_bytes(), before)
         self.assertEqual(owner.read_bytes(), owner_before)
         self.assertFalse(any(c[:2] == ["cargo", "fmt"] for c in self.calls()))
-        self.assertEqual(len(list(self.out.glob("*.metallib"))), 14)
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), 22)
         checked = (self.out / "format-manifest.stdout").read_text().splitlines()
         self.assertEqual(checked, self.owned)
         self.assertNotIn(str(unlisted.relative_to(self.workspace)), checked)
@@ -294,7 +303,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.env["FAKE_MUTATE_SOURCE"] = str(earlier)
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0)
-        self.assertEqual(len(self.format_calls()), 24)
+        self.assertEqual(len(self.format_calls()), 32)
         self.assertIn("format-source-unchanged", run.stderr)
         self.assert_no_targeted_work()
 
@@ -309,7 +318,7 @@ class DeliveryGateTests(unittest.TestCase):
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0)
         self.assertIn("no passing tests recorded for prefill-screen", run.stderr)
-        self.assertEqual(len([c for c in self.calls() if c[:2] == ["cargo", "test"]]), 6)
+        self.assertEqual(len([c for c in self.calls() if c[:2] == ["cargo", "test"]]), 8)
         self.assertFalse(any(c[:2] == ["cargo", "build"] for c in self.calls()))
 
     def test_source_edit_after_formatting_cannot_receive_success(self):
@@ -340,11 +349,11 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertTrue((self.out / "built-exporter-hashes.stdout").read_text())
 
     def test_replacement_during_last_arm_does_not_get_a_fresh_binary_hash(self):
-        self.env["FAKE_REPLACE_EXPORTER_AT"] = "f16-metal-rms-simd32"
+        self.env["FAKE_REPLACE_EXPORTER_AT"] = "f16-metal-rmsnorm-simd256"
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0, "gate relabeled an exporter changed in the final arm")
         self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
-        self.assertEqual(len(list(self.out.glob("*.metallib"))), 14)
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), 22)
         self.assertIn("artifact-unchanged", run.stderr)
         self.assertIn((self.out / "built-exporter-hashes.stdout").read_text(),
                       (self.out / "artifact-hashes.stdout").read_text())
@@ -354,17 +363,17 @@ class DeliveryGateTests(unittest.TestCase):
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0, "gate accepted a CLI replaced during Metal compilation")
         self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
-        self.assertEqual(len(list(self.out.glob("*.metallib"))), 14)
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), 22)
         self.assertIn("artifact-unchanged", run.stderr)
         self.assertIn((self.out / "built-cli-hashes.stdout").read_text(),
                       (self.out / "artifact-hashes.stdout").read_text())
 
     def test_final_zero_test_filter_still_blocks_compilation(self):
-        self.env["FAKE_ZERO_FILTER"] = "gemma_ane_decode::tests"
+        self.env["FAKE_ZERO_FILTER"] = "gemma_ane_decode::component_oracles::tests::"
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0)
-        self.assertIn("no passing tests recorded for decode-policy", run.stderr)
-        self.assertEqual(len([c for c in self.calls() if c[:2] == ["cargo", "test"]]), 9)
+        self.assertIn("no passing tests recorded for ffn-oracle-policy", run.stderr)
+        self.assertEqual(len([c for c in self.calls() if c[:2] == ["cargo", "test"]]), 12)
         self.assertFalse(any(c[:2] == ["cargo", "build"] for c in self.calls()))
 
     def test_x86_macos_environment_never_reaches_cargo(self):

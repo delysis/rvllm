@@ -137,4 +137,63 @@ class TensorAuditTests(unittest.TestCase):
         for value in (10**1000, [], {}, 'zero'):
             with self.assertRaises(audit.AuditError): audit.limit(value)
 
+    def test_worst_coordinate_and_values_are_not_flat_index_only(self):
+        r = struct.pack('<6f', 1, 2, 3, 4, 5, 6)
+        c = struct.pack('<6f', 1, 2, 3, 4, -5, 6)
+        m = self.fixture(r, c, 'f32')
+        m['pairs'][0]['shape'] = [2, 3]
+        result = audit.run(m, self.root)['pairs'][0]
+        self.assertEqual(result['worst_coordinates'], [1, 1])
+        self.assertEqual((result['worst_reference'], result['worst_candidate']), (5.0, -5.0))
+
+    def test_extra_or_omitted_policy_tensors_cannot_pass(self):
+        b = struct.pack('<e', 1.0)
+        for value in ({}, {'x': {'max_abs': 0, 'relative_l2': 0, 'bitwise': True}, 'omitted': {}},
+                      {'x': {'max_abs': 0, 'relative_l2': 0, 'bitwise': True, 'override': True}}):
+            m = self.fixture(b, b)
+            m['policy'] = self.pin('policy.json', json.dumps(value).encode())
+            with self.assertRaises(audit.AuditError):
+                audit.run(m, self.root)
+
+    def test_malformed_cli_input_is_preserved_without_overwrite(self):
+        import subprocess
+        import sys
+        for index, data in enumerate((b'\xff', b'{"x":1,"x":2}', b'[' * 2000,
+                                     b'x' * (audit.MAX_JSON_BYTES + 1))):
+            manifest = self.root / f'bad-{index}.json'
+            output = self.root / f'failed-{index}.json'
+            manifest.write_bytes(data)
+            argv = [sys.executable, str(Path(audit.__file__).resolve()), str(manifest), str(output)]
+            result = subprocess.run(argv, capture_output=True, check=False, timeout=10)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            receipt = json.loads(output.read_text())
+            self.assertFalse(receipt['supplied_tensor_policy_passed'])
+            self.assertIn('error', receipt)
+            original = output.read_bytes()
+            self.assertEqual(subprocess.run(argv, capture_output=True, check=False, timeout=10).returncode, 2)
+            self.assertEqual(output.read_bytes(), original)
+
+    def test_special_inputs_do_not_block_or_follow_leaf_symlinks(self):
+        import os
+        b = struct.pack('<e', 1.0)
+        m = self.fixture(b, b)
+        candidate = self.root / 'candidate.bin'
+        candidate.unlink()
+        candidate.symlink_to(self.root / 'reference.bin')
+        with self.assertRaises(audit.AuditError): audit.run(m, self.root)
+        candidate.unlink()
+        if hasattr(os, 'mkfifo'):
+            os.mkfifo(candidate)
+            with self.assertRaises(audit.AuditError): audit.run(m, self.root)
+
+    def test_cross_dtype_numeric_comparison_is_explicit_not_bitwise(self):
+        m = self.fixture(struct.pack('<e', 1), struct.pack('<f', 1))
+        m['pairs'][0]['candidate']['dtype'] = 'f32'
+        with self.assertRaises(audit.AuditError): audit.run(m, self.root)
+        m['policy'] = self.pin('policy.json', json.dumps(
+            {'x': {'max_abs': 0, 'relative_l2': 0, 'bitwise': False}}).encode())
+        result = audit.run(m, self.root)
+        self.assertTrue(result['supplied_tensor_policy_passed'])
+        self.assertIsNone(result['pairs'][0]['bit_mismatches'])
+
 if __name__ == '__main__': unittest.main()

@@ -31,7 +31,8 @@
         "research_evidence::tests::all_stable_slots_match_expected_kernel_names",
         "research_evidence::tests::prefetchgemm_slots_are_selected_individually_and_never_foreign",
         "research_evidence::tests::temporal256_slots_are_selected_individually_and_never_foreign",
-        "research_evidence::tests::rms32_slots_are_selected_individually_and_never_foreign"
+        "research_evidence::tests::rms32_slots_are_selected_individually_and_never_foreign",
+        "research_evidence::tests::incomplete_family_is_not_full_coverage_and_new_slots_do_not_alias"
       ]
     },
     {
@@ -62,7 +63,14 @@
         "ane_int8_candidates::tests::chunking_is_bit_exact_for_quantized_payloads_and_scale_payloads",
         "ane_int8_candidates::tests::next::down4_preserves_full_k_reductions_rows_and_gelu_materializations",
         "ane_int8_candidates::tests::next::packed32_graph_keeps_weights_and_every_ffn_rounding",
-        "ane_int8_candidates::tests::next::packed32_host_codec_is_byte_exact_and_validates_before_writes"
+        "ane_int8_candidates::tests::next::packed32_host_codec_is_byte_exact_and_validates_before_writes",
+        "ane_int8_candidates::tests::interleaved_checks::paired_rows_and_scales_preserve_exact_int8_identity_and_all_output_values",
+        "ane_int8_candidates::tests::interleaved_checks::wrong_pair_slicing_is_observably_wrong_and_out_of_range_slicing_is_rejected",
+        "ane_int8_candidates::tests::interleaved_checks::paired_layout_admits_only_archived_geometry_and_retains_single_io",
+        "ane_int8_candidates::tests::oracle_checks::unsupported_ops_and_duplicate_definitions_cannot_be_silently_skipped",
+        "ane_int8_candidates::tests::oracle_checks::actual_concat_and_convolution_arguments_are_resolved_not_text_presence",
+        "ane_int8_candidates::tests::oracle_checks::reshape_uses_its_bound_shape_constant_and_descriptors_fail_without_panics",
+        "ane_int8_candidates::tests::oracle_checks::declared_dtypes_and_positive_finite_scales_are_part_of_the_graph_contract"
       ]
     },
     {
@@ -93,6 +101,27 @@
         "gemma_head_ranking::tests::every_finite_half_has_a_monotone_rounded_softcap_on_this_host",
         "gemma_head_ranking::tests::ties_signed_zero_negatives_and_stream_errors_are_preserved",
         "gemma_head_ranking::tests::head_experiment_mode_gate_fails_before_model_access"
+      ]
+    },
+    {
+      "label": "metal-catalog",
+      "package": "rvllm-apple-metal",
+      "filter": "research_catalog::tests::",
+      "tests": [
+        "research_catalog::tests::catalog_is_bijective_and_preserves_the_existing_ten_slots",
+        "research_catalog::tests::reviewed_catalog_matches_runtime_and_every_exported_entry",
+        "research_catalog::tests::all_candidates_reject_near_miss_model_identities"
+      ]
+    },
+    {
+      "label": "metal-projection",
+      "package": "rvllm-apple-metal",
+      "filter": "research_projection::tests::",
+      "tests": [
+        "research_projection::tests::old_projection_routes_retain_their_exact_shape_sets",
+        "research_projection::tests::every_projection_requires_identity_precision_scale_and_nonaliasing",
+        "research_projection::tests::long_tile_and_vector_alignment_are_independent_admission_axes",
+        "research_projection::tests::rms_alias_eps_and_full_model_gates_are_shared_by_both_reductions"
       ]
     }
   ]

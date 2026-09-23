@@ -90,7 +90,7 @@ def validate_catalog(cases: list[dict]) -> None:
 
 
 def compile_recipe(workspace: str, target: str, output: str) -> list[dict]:
-    """Print one invocation of the integrated fourteen-arm native gate.
+    """Print one invocation of the integrated twenty-two-arm native gate.
 
     This tool still does not execute the command. There is no second, divergent
     compile pipeline or a second six-arm export after the gate. The gate itself
@@ -102,7 +102,7 @@ def compile_recipe(workspace: str, target: str, output: str) -> list[dict]:
     return [{"label": "integrated-native-delivery-gate", "cwd": workspace,
              "argv": ["bash", str(Path(workspace)/"tools/check_gemma4_candidate_delivery.sh"),
                       output, target],
-             "expected_compile_link_arms": 14,
+             "expected_compile_link_arms": 22,
              "execution_authority": "local-owner-only"}]
 
 

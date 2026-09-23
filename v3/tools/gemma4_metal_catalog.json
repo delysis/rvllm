@@ -1,0 +1,240 @@
+{
+  "schema": "rvllm.metal.research-catalog.v1",
+  "dispatch_schema": "rvllm.metal.research-dispatch.v3",
+  "default": "off",
+  "device_qualified": false,
+  "candidates": [
+    {
+      "name": "off",
+      "kernels": [],
+      "source_file": null,
+      "min_tokens": 0,
+      "max_tokens": 0,
+      "window_independent": false,
+      "numerical_contract": "baseline",
+      "budgets": []
+    },
+    {
+      "name": "metal-short-mma16x64",
+      "kernels": [
+        "research_gemm_mma16x64",
+        "research_qkv_mma16x64"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/short_mma16x64.metal",
+      "min_tokens": 6,
+      "max_tokens": 64,
+      "window_independent": true,
+      "numerical_contract": "storage-boundaries-preserved",
+      "budgets": [
+        {
+          "kernel": "research_gemm_mma16x64",
+          "threads": 128,
+          "source_shared_bytes": 10496
+        },
+        {
+          "kernel": "research_qkv_mma16x64",
+          "threads": 128,
+          "source_shared_bytes": 10496
+        }
+      ]
+    },
+    {
+      "name": "metal-rounded-gate32",
+      "kernels": [
+        "research_rounded_gate32"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/rounded_gate32.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": false,
+      "numerical_contract": "storage-boundaries-preserved",
+      "budgets": [
+        {
+          "kernel": "research_rounded_gate32",
+          "threads": 128,
+          "source_shared_bytes": 14336
+        }
+      ]
+    },
+    {
+      "name": "metal-gqa-kv8",
+      "kernels": [
+        "research_gqa_kv8_d256",
+        "research_gqa_kv8_d512"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/gqa_kv8.metal",
+      "min_tokens": 64,
+      "max_tokens": 1024,
+      "window_independent": false,
+      "numerical_contract": "fp32-online-softmax",
+      "budgets": [
+        {
+          "kernel": "research_gqa_kv8_d256",
+          "threads": 64,
+          "source_shared_bytes": 8224
+        },
+        {
+          "kernel": "research_gqa_kv8_d512",
+          "threads": 128,
+          "source_shared_bytes": 16416
+        }
+      ]
+    },
+    {
+      "name": "metal-mma32-prefetch",
+      "kernels": [
+        "research_gemm_mma32_prefetch",
+        "research_qkv_mma32_prefetch"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/mma32_prefetch.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "same-contraction-order",
+      "budgets": [
+        {
+          "kernel": "research_gemm_mma32_prefetch",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        },
+        {
+          "kernel": "research_qkv_mma32_prefetch",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        }
+      ]
+    },
+    {
+      "name": "metal-attn-q4",
+      "kernels": [
+        "research_attn_q4_d256",
+        "research_attn_q4_d512"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/attn_q4.metal",
+      "min_tokens": 64,
+      "max_tokens": 1024,
+      "window_independent": false,
+      "numerical_contract": "fp32-online-softmax",
+      "budgets": [
+        {
+          "kernel": "research_attn_q4_d256",
+          "threads": 128,
+          "source_shared_bytes": 16448
+        },
+        {
+          "kernel": "research_attn_q4_d512",
+          "threads": 128,
+          "source_shared_bytes": 16416
+        }
+      ]
+    },
+    {
+      "name": "metal-rms-simd32",
+      "kernels": [
+        "research_rms_simd32"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/rms_simd32.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "reduction-order-change",
+      "budgets": [
+        {
+          "kernel": "research_rms_simd32",
+          "threads": 32,
+          "source_shared_bytes": 0
+        }
+      ]
+    },
+    {
+      "name": "metal-mma32-f32",
+      "kernels": [
+        "wave2_gemm_mma32_f32",
+        "wave2_qkv_mma32_f32"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/mma32_f32.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "operand-lowering-change",
+      "budgets": [
+        {
+          "kernel": "wave2_gemm_mma32_f32",
+          "threads": 128,
+          "source_shared_bytes": 12288
+        },
+        {
+          "kernel": "wave2_qkv_mma32_f32",
+          "threads": 128,
+          "source_shared_bytes": 12288
+        }
+      ]
+    },
+    {
+      "name": "metal-long-mma32x64",
+      "kernels": [
+        "wave2_gemm_mma32x64",
+        "wave2_qkv_mma32x64"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/long_mma32x64.metal",
+      "min_tokens": 64,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "storage-boundaries-preserved",
+      "budgets": [
+        {
+          "kernel": "wave2_gemm_mma32x64",
+          "threads": 128,
+          "source_shared_bytes": 14336
+        },
+        {
+          "kernel": "wave2_qkv_mma32x64",
+          "threads": 128,
+          "source_shared_bytes": 14336
+        }
+      ]
+    },
+    {
+      "name": "metal-mma32-load4",
+      "kernels": [
+        "wave2_gemm_mma32_load4",
+        "wave2_qkv_mma32_load4"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/mma32_load4.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "wave2_gemm_mma32_load4",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        },
+        {
+          "kernel": "wave2_qkv_mma32_load4",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        }
+      ]
+    },
+    {
+      "name": "metal-rmsnorm-simd256",
+      "kernels": [
+        "wave2_rmsnorm_simd256"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/rmsnorm_simd256.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "reduction-order-change",
+      "budgets": [
+        {
+          "kernel": "wave2_rmsnorm_simd256",
+          "threads": 256,
+          "source_shared_bytes": 32
+        }
+      ]
+    }
+  ]
+}

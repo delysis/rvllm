@@ -53,7 +53,7 @@ class ProposalTests(unittest.TestCase):
         self.assertEqual(len(steps), 1)
         self.assertEqual(steps[0]['argv'], ['bash',
             '/checkout/v3/tools/check_gemma4_candidate_delivery.sh', '/fresh-output', '/cache'])
-        self.assertEqual(steps[0]['expected_compile_link_arms'], 14)
+        self.assertEqual(steps[0]['expected_compile_link_arms'], 22)
         self.assertEqual(steps[0]['execution_authority'], 'local-owner-only')
         with self.assertRaises(ValueError):
             self.module.compile_recipe('relative', '/cache', '/output')

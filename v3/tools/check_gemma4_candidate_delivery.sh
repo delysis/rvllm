@@ -96,16 +96,19 @@ run format-manifest-copy cp "$manifest" "$out/format-manifest.txt"
 run format-manifest load_packet_format_paths "$out/format-manifest.txt"
 run format-manifest-unchanged cmp "$manifest" "$out/format-manifest.txt"
 run format-source-hashes shasum -a 256 "$manifest" "${packet_rust_paths[@]}"
-# Rust include_str! embeds these candidate shaders at build time. Pin the
-# reviewed six files as well; source edits must not escape the expanded gate.
-shader_paths=(
-    crates/rvllm-apple-metal/src/research_shaders/short_mma16x64.metal
-    crates/rvllm-apple-metal/src/research_shaders/rounded_gate32.metal
-    crates/rvllm-apple-metal/src/research_shaders/gqa_kv8.metal
-    crates/rvllm-apple-metal/src/research_shaders/mma32_prefetch.metal
-    crates/rvllm-apple-metal/src/research_shaders/attn_q4.metal
-    crates/rvllm-apple-metal/src/research_shaders/rms_simd32.metal
-)
+# One reviewed golden supplies names, source paths and kernel ABI budgets.
+# Validation prints data only; never eval a generated command or policy.
+run catalog-input-hashes shasum -a 256 tools/gemma4_metal_catalog.json tools/gemma4_catalog.py
+run catalog-names python3 -S tools/gemma4_catalog.py --names
+run catalog-sources python3 -S tools/gemma4_catalog.py --sources
+candidate_names=()
+shader_paths=()
+while IFS= read -r name; do candidate_names+=("$name"); done < "$out/catalog-names.stdout"
+while IFS= read -r path; do shader_paths+=("$path"); done < "$out/catalog-sources.stdout"
+[[ ${#candidate_names[@]} -gt 1 && ${#shader_paths[@]} -gt 0 ]] || {
+    echo 'empty reviewed catalogue' >&2; exit 2;
+}
+run catalog-input-unchanged shasum -a 256 -c "$out/catalog-input-hashes.stdout"
 run shader-source-hashes shasum -a 256 "${shader_paths[@]}"
 printf 'packet-owned-files-only; unlisted source NOT checked\n' > "$out/format-scope.txt"
 index=0
@@ -128,6 +131,8 @@ run format-source-unchanged shasum -a 256 -c "$out/format-source-hashes.stdout"
 common=(--offline --locked --release -j 2 --target aarch64-apple-darwin)
 host_tests metal-policy cargo test "${common[@]}" -p rvllm-apple-metal --lib research::
 host_tests dispatch-evidence cargo test "${common[@]}" -p rvllm-apple-metal --lib research_evidence::tests
+host_tests metal-catalog cargo test "${common[@]}" -p rvllm-apple-metal --lib research_catalog::tests
+host_tests metal-projection cargo test "${common[@]}" -p rvllm-apple-metal --lib research_projection::tests
 host_tests metal-next cargo test "${common[@]}" -p rvllm-apple-metal --lib research_next::
 host_tests ane-candidates cargo test "${common[@]}" -p rvllm-apple \
     --features macos-private-ane-research --lib ane_int8_candidates::tests
@@ -141,6 +146,8 @@ host_tests head-ranking cargo test "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --lib gemma_head_ranking::tests
 host_tests decode-policy cargo test "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --lib gemma_ane_decode::tests
+host_tests ffn-oracle-policy cargo test "${common[@]}" -p rvllm-runtime \
+    --features macos-private-ane-research --lib gemma_ane_decode::component_oracles::tests::
 run cli-build cargo build "${common[@]}" -p rvllm-runtime \
     --features macos-private-ane-research --bin rvllm_disaggregated_infer
 # Anchor each executable immediately after its own build, not after the
@@ -153,15 +160,18 @@ exporter="$CARGO_TARGET_DIR/aarch64-apple-darwin/release/rvllm-metal-research-so
 run built-exporter-hashes shasum -a 256 "$exporter"
 run built-cli-unchanged shasum -a 256 -c "$out/built-cli-hashes.stdout"
 
+run runtime-catalog "$exporter" --catalog
+run runtime-catalog-verified python3 -S tools/gemma4_catalog.py --verify-exported "$out/runtime-catalog.stdout"
 for dtype in bf16 f16; do
-    for candidate in off metal-short-mma16x64 metal-rounded-gate32 metal-gqa-kv8 \
-        metal-mma32-prefetch metal-attn-q4 metal-rms-simd32; do
+    for candidate in "${candidate_names[@]}"; do
         stem="$dtype-$candidate"
+        run "$stem-catalog-unchanged" shasum -a 256 -c "$out/catalog-input-hashes.stdout"
         run "$stem-exporter-unchanged" shasum -a 256 -c "$out/built-exporter-hashes.stdout"
         run "$stem-shader-source-unchanged" shasum -a 256 -c "$out/shader-source-hashes.stdout"
         run "$stem-export" "$exporter" "$dtype" "$candidate"
         cp "$out/$stem-export.stdout" "$out/$stem.metal"
         [[ -s "$out/$stem.metal" ]] || { echo "empty source: $stem" >&2; exit 1; }
+        run "$stem-entrypoints" python3 -S tools/gemma4_catalog.py --check-source "$candidate" "$out/$stem.metal"
         run "$stem-compile" xcrun --toolchain Metal -sdk macosx metal \
             -std=metal3.1 -c "$out/$stem.metal" -o "$out/$stem.air"
         run "$stem-link" xcrun --toolchain Metal -sdk macosx metallib \
@@ -179,5 +189,6 @@ run artifact-unchanged shasum -a 256 -c "$out/artifact-hashes.stdout"
 # is bounded consistency evidence, not a lock or a full-workspace source pin.
 run format-source-unchanged-final shasum -a 256 -c "$out/format-source-hashes.stdout"
 run shader-source-unchanged-final shasum -a 256 -c "$out/shader-source-hashes.stdout"
+run catalog-input-unchanged-final shasum -a 256 -c "$out/catalog-input-hashes.stdout"
 cp "$out/artifact-hashes.stdout" "$out/SHA256SUMS"
 printf 'compiled-only; no accelerator acceptance\n' > "$out/status.txt"
