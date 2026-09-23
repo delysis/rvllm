@@ -80,7 +80,7 @@ class PrefetchFixtureTests(unittest.TestCase):
     def test_capture_precedes_failure_and_is_create_only(self):
         source=(METAL/'prefill_mma_tile_tests.rs').read_text()
         capture=source.index('write_matrix_artifact(&directory.join(&file), &bytes)?')
-        validation=source.index('let result = validate_fixture_bytes')
+        validation=source.index('let result =\n                validate_fixture_bytes')
         propagation=source.index('for (path, result) in validation.into_iter()')
         self.assertLess(capture,validation)
         self.assertLess(source.index('directory.join("capture.json")'),propagation)

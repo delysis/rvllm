@@ -176,7 +176,9 @@ pub(crate) fn prefetch_fixture_expectation(
         _ => return Err("unknown kernel in prefetch component fixture"),
     };
     let [m, n, k] = shape;
-    Ok(crate::research_next::prefetch_projection_shape(m, n, k, output_f32))
+    Ok(crate::research_next::prefetch_projection_shape(
+        m, n, k, output_f32,
+    ))
 }
 
 /// Inspect all payload and guard bytes. Numerical paths must write finite
@@ -399,7 +401,10 @@ mod tests {
 
     #[test]
     fn prefetch_synthetic_tail_is_a_refusal_not_a_numerical_success() {
-        for name in ["research_gemm_mma32_prefetch", "research_qkv_mma32_prefetch"] {
+        for name in [
+            "research_gemm_mma32_prefetch",
+            "research_qkv_mma32_prefetch",
+        ] {
             assert_eq!(prefetch_fixture_expectation(name, [63, 67, 35]), Ok(false));
         }
         assert!(f32::from_bits(u32::MAX).is_nan());
@@ -418,8 +423,12 @@ mod tests {
         ];
         let mut positive = [0, 0];
         for (shape, expected) in cases {
-            for (index, name) in ["research_gemm_mma32_prefetch", "research_qkv_mma32_prefetch"]
-                .iter().enumerate()
+            for (index, name) in [
+                "research_gemm_mma32_prefetch",
+                "research_qkv_mma32_prefetch",
+            ]
+            .iter()
+            .enumerate()
             {
                 let actual = prefetch_fixture_expectation(name, shape).unwrap();
                 assert_eq!(actual, expected[index]);
@@ -479,7 +488,10 @@ mod tests {
     fn prefetch_fixture_has_no_unknown_or_wrong_role_fallback() {
         assert!(prefetch_fixture_expectation("unreviewed", [84, 8192, 3840]).is_err());
         for m in [0, 1, 5, 1025, u32::MAX] {
-            assert_eq!(prefetch_fixture_expectation("research_qkv_mma32_prefetch", [m, 8192, 3840]), Ok(false));
+            assert_eq!(
+                prefetch_fixture_expectation("research_qkv_mma32_prefetch", [m, 8192, 3840]),
+                Ok(false)
+            );
         }
         for name in ["qkv_project_f32_mma32", "gemm_f16_mma32"] {
             assert_eq!(prefetch_fixture_expectation(name, [63, 67, 35]), Ok(true));

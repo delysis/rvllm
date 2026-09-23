@@ -197,8 +197,10 @@ fn run_matrix_comparison(
     // A fresh companion directory survives an assertion/error without emitting
     // a success receipt. No shader source, admission guard or tolerance changes.
     let evidence_dir = if prefetch {
-        let report = PathBuf::from(std::env::var_os("RVLLM_METAL_MMA_TILE_REPORT")
-            .ok_or("prefetch qualification requires a fresh absolute report path")?);
+        let report = PathBuf::from(
+            std::env::var_os("RVLLM_METAL_MMA_TILE_REPORT")
+                .ok_or("prefetch qualification requires a fresh absolute report path")?,
+        );
         if !report.is_absolute() || std::fs::symlink_metadata(&report).is_ok() {
             return Err("prefetch report path must be absolute and absent".into());
         }
@@ -360,12 +362,22 @@ fn run_matrix_comparison(
     let mut prefetch_positive = [0_usize; 2]; // GEMM, QKV; exclude all refusals.
     let mut prefetch_refusals = 0_usize;
     for (case_index, (label, layer, m, n, k, parts)) in shapes.into_iter().enumerate() {
-        let numerical = names.iter().map(|name| {
-            if prefetch { prefetch_fixture_expectation(name, [m, n, k]) }
-            else { Ok(true) }
-        }).collect::<std::result::Result<Vec<_>, _>>()?;
-        let case_dir = evidence_dir.as_ref().map(|directory| directory.join(format!("case-{case_index:02}-{label}")));
-        if let Some(directory) = &case_dir { std::fs::create_dir(directory)?; }
+        let numerical = names
+            .iter()
+            .map(|name| {
+                if prefetch {
+                    prefetch_fixture_expectation(name, [m, n, k])
+                } else {
+                    Ok(true)
+                }
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let case_dir = evidence_dir
+            .as_ref()
+            .map(|directory| directory.join(format!("case-{case_index:02}-{label}")));
+        if let Some(directory) = &case_dir {
+            std::fs::create_dir(directory)?;
+        }
         eprintln!("matrix case={label} M={m} N={n} K={k} numerical={numerical:?}");
         let mut weights = Vec::new();
         for part in parts {
@@ -485,8 +497,16 @@ fn run_matrix_comparison(
             ))
         };
         for path in 0..names.len() {
-            eprintln!("matrix case={label} kernel={} output_f32={} expected={}",
-                names[path], path < variant_count, if numerical[path] { "numerical" } else { "guard-refusal" });
+            eprintln!(
+                "matrix case={label} kernel={} output_f32={} expected={}",
+                names[path],
+                path < variant_count,
+                if numerical[path] {
+                    "numerical"
+                } else {
+                    "guard-refusal"
+                }
+            );
             run(path).map_err(|error| format!("{label} {}: {error}", names[path]))?;
         }
         let read_raw = |path: usize| -> Vec<u8> {
@@ -506,7 +526,8 @@ fn run_matrix_comparison(
             if let Some(directory) = &case_dir {
                 write_matrix_artifact(&directory.join(&file), &bytes)?;
             }
-            let result = validate_fixture_bytes(&bytes, m, n, path < variant_count, numerical[path]);
+            let result =
+                validate_fixture_bytes(&bytes, m, n, path < variant_count, numerical[path]);
             observations.push(serde_json::json!({"kernel":names[path],"output_f32":path < variant_count,
                 "expected":if numerical[path] {"numerical"} else {"guard-refusal"},
                 "raw_file":case_dir.as_ref().map(|_| &file),"guard_bytes_each_end":32,"bytes":bytes.len(),"validation_error":result.as_ref().err()}));
@@ -516,7 +537,10 @@ fn run_matrix_comparison(
             let capture = serde_json::json!({"schema":"rvllm.matrix-component.capture.v1",
                 "status":"captured-before-numerical-oracle","candidate":selected.name(),
                 "case":label,"shape":[m,n,k],"commands_completed":names.len(),"outputs":observations});
-            write_matrix_artifact(&directory.join("capture.json"), &serde_json::to_vec_pretty(&capture)?)?;
+            write_matrix_artifact(
+                &directory.join("capture.json"),
+                &serde_json::to_vec_pretty(&capture)?,
+            )?;
         }
         for (path, result) in validation.into_iter().enumerate() {
             result.map_err(|error| format!("{label} {}: {error}", names[path]))?;
@@ -669,7 +693,10 @@ fn run_matrix_comparison(
         reports.push(serde_json::json!({"projection":label,"m":m,"n":n,"k":k,"relative_l2_vs_mma32":l2,"sampled_fp64_max_abs":cpu_max,"bf16_rounding_exact":true,"rounding_reference":if prefetch { "candidate FP32 where admitted; otherwise qualified baseline FP32; refused stored outputs excluded" } else { "corresponding FP32 entry" },"fp32_bit_parity_required":require_fp32_bits,"guards_intact":true,"output_expectations":observations,"commands":names.len()+order.len(),"trial_order":order,"gpu_ms":gpu,"wall_ms":wall,"gpu_median_ms":medians}));
     }
     if prefetch && (prefetch_positive != [3, 2] || prefetch_refusals != 7 || reports.len() != 6) {
-        return Err("incomplete prefetch role coverage; guard refusals cannot replace numerical work".into());
+        return Err(
+            "incomplete prefetch role coverage; guard refusals cannot replace numerical work"
+                .into(),
+        );
     }
     let report = serde_json::json!({"schema":if prefetch { "rvllm.metal_tile_comparison.v3" } else { "rvllm.metal_tile_comparison.v2" },"prefetch_numerical_gemm":prefetch_positive[0],"prefetch_numerical_qkv":prefetch_positive[1],"prefetch_guard_refusals":prefetch_refusals,"qualification_only":qualify_only,"reduction64":reduction64,"candidate":candidate.map(|kind| kind.name()),"variants":names,"pipeline_resources":resources,"cases":reports,"scope":"Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt."});
     if let Some(path) = std::env::var_os("RVLLM_METAL_MMA_TILE_REPORT") {

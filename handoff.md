@@ -501,3 +501,37 @@ Current blockers and next actions:
   correctness/full-route evidence; then use only the predeclared ABBA design.
 
 Detailed execution summary: `v3/reports/gemma4-hardware-qualification-execution-20260923.md`.
+
+## Prefetch fixture repair and corrected qualification (2026-09-23)
+
+Applied the two-patch packet targeting `6a79af7c81900572ee6a6f39a46280fc1f35e865`
+after checkout and isolated replay verification. The first replay attempt used
+an already-created directory and was refused; a fresh nonexistent replay path
+then passed with two patches, six changed paths, restored preimages, and zero
+source execution. Both mboxes applied cleanly. Rustfmt was run only on the two
+changed Rust files. A supplied Python regression had a whitespace-sensitive
+source lookup; it was corrected to match the actual multiline Rust statement,
+without changing the production fixture contract.
+
+Host/native results:
+
+- all 116 Python tests passed with `--require-rustfmt`;
+- the public runner completed 66 named Rust tests and 22 source exports;
+- the compiled-only native delivery gate passed with
+  `compiled-only; no accelerator acceptance`;
+- the original prefetch receipt remains failed and preserved.
+
+The corrected exact device command was run once with the full
+`layer_forward::prefill_mma_tile_tests::` path, qualification-only mode, the
+pinned Gemma 4 snapshot, and a fresh report path. Receipt:
+`/tmp/rvllm-gemma4-prefetch-qualified-20260923-1.json`. It passed one exact
+ignored test with six cases and 24 dispatches: 3 numerical GEMM, 2 numerical
+QKV, and 7 guard-refusal controls. Guards and canaries were intact, FP32 bit
+parity passed, and the numerical relative-L2 gates passed. No timing or
+promotion claim is made; the fixture is qualification-only.
+
+This repairs the fixture defect; it does not change shader guards, runtime
+selection, tolerances, defaults, or ignored markers. Baseline cache inspection/
+recovery and complete short-reference continuation remain the next local tasks.
+They are independent of the >=64-token long-screen requirement, but still
+require their own cache, lifecycle, tensor, driver, and provenance receipts.
