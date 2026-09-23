@@ -1,7 +1,7 @@
 //! Receipt and mode policy only. No model load, device access, or ANE call.
 #![forbid(unsafe_code)]
 
-use rvllm_apple_metal::research_evidence::{ResearchDispatchSnapshot, RESEARCH_KERNEL_NAMES};
+use rvllm_apple_metal::research_evidence::{ResearchDispatchSnapshot, RESEARCH_DISPATCH_SCHEMA, RESEARCH_KERNEL_NAMES};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::Path;
@@ -28,9 +28,9 @@ impl PrefillScreenOptions {
         if !self.enabled {
             return Ok(());
         }
-        if self.reference_count == 0 || !self.output_requested || self.text_input {
+        if !(1..=16).contains(&self.reference_count) || !self.output_requested || self.text_input {
             return Err(
-                "prefill-only requires --hf-reference and a fresh --output-dir; no text input",
+                "prefill-only requires 1..=16 --hf-reference inputs and a fresh --output-dir; no text input",
             );
         }
         if self.interactive
@@ -78,14 +78,17 @@ pub(super) fn dispatch_report(
 ) -> Result<Value, &'static str> {
     let delta = after.checked_since(before)?;
     let exercised = delta.selection_exercised(requested)?;
+    let complete_family = delta.complete_family_exercised(requested)?;
     let counts: serde_json::Map<String, Value> = RESEARCH_KERNEL_NAMES
         .iter()
         .zip(delta.counts)
         .map(|(&name, count)| (name.to_owned(), json!(count)))
         .collect();
     Ok(json!({
+        "schema": RESEARCH_DISPATCH_SCHEMA,
         "requested": requested,
         "selection_exercised": exercised,
+        "complete_family_exercised": complete_family,
         "encoded_dispatches": counts,
         "counting_boundary": "post-encode counters bracketed around synchronous prefill collection",
         "all_eligible_layers_exercised": null,
@@ -128,6 +131,14 @@ mod tests {
         for bad in [
             PrefillScreenOptions {
                 reference_count: 0,
+                ..valid_options()
+            },
+            PrefillScreenOptions {
+                reference_count: 17,
+                ..valid_options()
+            },
+            PrefillScreenOptions {
+                reference_count: usize::MAX,
                 ..valid_options()
             },
             PrefillScreenOptions {
@@ -194,6 +205,21 @@ mod tests {
         assert_eq!(report["encoded_dispatches"]["research_gqa_kv8_d512"], 8);
         assert!(dispatch_report("metal-rounded-gate32", zero, gqa).is_err());
         assert!(dispatch_report("metal-gqa-kv8", gqa, zero).is_err());
+    }
+
+    #[test]
+    fn partial_family_is_preserved_as_partial_not_full_coverage() {
+        let zero = ResearchDispatchSnapshot::default();
+        let mut partial = zero;
+        partial.counts[10] = 48;
+        let report = dispatch_report("metal-mma32-f32", zero, partial).unwrap();
+        assert_eq!(report["selection_exercised"], true);
+        assert_eq!(report["complete_family_exercised"], false);
+        assert_eq!(report["schema"], RESEARCH_DISPATCH_SCHEMA);
+        assert!(report["all_eligible_layers_exercised"].is_null());
+        assert!(report["tensor_oracle_passed"].is_null());
+        partial.counts[11] = 48;
+        assert_eq!(dispatch_report("metal-mma32-f32", zero, partial).unwrap()["complete_family_exercised"], true);
     }
 
     #[test]

@@ -58,6 +58,7 @@ pub enum AneWeightPlan {
     /// Default-off, single-I/O output-channel chunked INT8 FFN.
     StaticInt8Chunk4FfnCached,
     StaticInt8Down4FfnCached,
+    StaticInt8InterleavedFfnCached,
     StaticInt8FfnTransposeAttentionCached,
     /// Experimental INT8 sliding QKV and ordinary INT8 FFNs. Global QKV stays FP16.
     StaticInt8FfnSlidingQkvCached,
@@ -80,6 +81,7 @@ impl AneWeightPlan {
             Self::StaticInt8FfnCached => "static-int8-ffn-cached",
             Self::StaticInt8Chunk4FfnCached => "static-int8-chunk4-ffn-cached",
             Self::StaticInt8Down4FfnCached => "static-int8-down4-ffn-cached",
+            Self::StaticInt8InterleavedFfnCached => "static-int8-interleaved-ffn-cached",
             Self::StaticInt8FfnTransposeAttentionCached => {
                 "static-int8-ffn-transpose-attention-cached"
             }
@@ -101,6 +103,7 @@ impl AneWeightPlan {
             | Self::StaticInt8FfnCached
             | Self::StaticInt8Chunk4FfnCached
             | Self::StaticInt8Down4FfnCached
+            | Self::StaticInt8InterleavedFfnCached
             | Self::StaticInt8FfnTransposeAttentionCached
             | Self::StaticInt8FfnSlidingQkvCached
             | Self::StaticInt8FfnSlidingQkvTiles4Cached
@@ -116,6 +119,7 @@ impl AneWeightPlan {
             | Self::StaticInt8FfnCached
             | Self::StaticInt8Chunk4FfnCached
             | Self::StaticInt8Down4FfnCached
+            | Self::StaticInt8InterleavedFfnCached
             | Self::StaticInt8FfnTransposeAttentionCached
             | Self::StaticInt8FfnSlidingQkvCached
             | Self::StaticInt8FfnSlidingQkvTiles4Cached
@@ -129,6 +133,7 @@ impl AneWeightPlan {
         match self {
             Self::StaticInt8Chunk4FfnCached => StaticFfnPrecision::Int8Chunk4,
             Self::StaticInt8Down4FfnCached => StaticFfnPrecision::Int8Down4,
+            Self::StaticInt8InterleavedFfnCached => StaticFfnPrecision::Int8Interleaved,
             Self::StaticInt8FfnTransposeAttentionCached => StaticFfnPrecision::Int8,
             Self::StaticInt8FfnCached
             | Self::StaticInt8FfnSlidingQkvCached
@@ -156,6 +161,7 @@ enum StaticFfnPrecision {
     Int8Stacked,
     Int8Chunk4,
     Int8Down4,
+    Int8Interleaved,
     Lut4,
 }
 
@@ -174,6 +180,7 @@ pub enum AneStaticCachePart {
     FeedForwardInt8Stacked,
     FeedForwardInt8Chunk4,
     FeedForwardInt8Down4,
+    FeedForwardInt8Interleaved,
     VocabularyAndAttention,
     AttentionTransposeFlags,
 }
@@ -373,7 +380,8 @@ fn visit_static_cache(
             | AneStaticCachePart::FeedForwardInt8
             | AneStaticCachePart::FeedForwardInt8Stacked
             | AneStaticCachePart::FeedForwardInt8Chunk4
-            | AneStaticCachePart::FeedForwardInt8Down4 => {
+            | AneStaticCachePart::FeedForwardInt8Down4
+            | AneStaticCachePart::FeedForwardInt8Interleaved => {
                 let gate = load("mlp.gate_proj.weight")?;
                 let up = load("mlp.up_proj.weight")?;
                 let down = load("mlp.down_proj.weight")?;
@@ -385,6 +393,9 @@ fn visit_static_cache(
                         AneStaticCachePart::FeedForwardInt8 => StaticFfnPrecision::Int8,
                         AneStaticCachePart::FeedForwardInt8Chunk4 => StaticFfnPrecision::Int8Chunk4,
                         AneStaticCachePart::FeedForwardInt8Down4 => StaticFfnPrecision::Int8Down4,
+                        AneStaticCachePart::FeedForwardInt8Interleaved => {
+                            StaticFfnPrecision::Int8Interleaved
+                        }
                         AneStaticCachePart::FeedForwardInt8Stacked => {
                             StaticFfnPrecision::Int8Stacked
                         }
@@ -463,6 +474,10 @@ fn load_static_ffn(
         StaticFfnPrecision::Int8Down4 => {
             let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
             AneGatedFfn::compile_int8_down4_with_cache_policy(&weights, policy)
+        }
+        StaticFfnPrecision::Int8Interleaved => {
+            let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
+            AneGatedFfn::compile_int8_interleaved_with_cache_policy(&weights, policy)
         }
         StaticFfnPrecision::Int8Stacked => {
             let weights = AneInt8FfnWeights::quantize(gate, up, down, HIDDEN, INTERMEDIATE)?;
@@ -679,6 +694,7 @@ impl GemmaAneDecode {
             AneWeightPlan::StaticInt8Chunk4FfnCached
                 | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached
                 | AneWeightPlan::StaticInt8Down4FfnCached
+                | AneWeightPlan::StaticInt8InterleavedFfnCached
                 | AneWeightPlan::StaticInt8FfnTransposeAttentionCached
         ) && compile_budget != 0
         {
@@ -1398,6 +1414,20 @@ mod int8_projection_tests;
 #[cfg(test)]
 mod tests {
     #[test]
+    fn interleaved_is_cached_only_and_does_not_change_projection_precision() {
+        let plan = super::AneWeightPlan::StaticInt8InterleavedFfnCached;
+        assert_eq!(plan.program_count(), 162);
+        assert_eq!(plan.cache_policy(), super::AneProgramCachePolicy::RequireExisting);
+        assert_eq!(plan.static_ffn_precision(), super::StaticFfnPrecision::Int8Interleaved);
+        assert!(!plan.quantizes_qkv(true));
+        assert!(!plan.quantizes_qkv(false));
+        let result = super::GemmaAneDecode::load_with_compile_budget(
+            std::path::Path::new("/must-not-read-interleaved-model"), 1024, plan, 1,
+        );
+        assert!(matches!(result, Err(error) if error.contains("zero compile budget")));
+    }
+
+    #[test]
     fn transpose_attention_does_not_change_weights_program_count_or_compile_policy() {
         let plan = super::AneWeightPlan::StaticInt8FfnTransposeAttentionCached;
         assert_eq!(plan.program_count(), 162);
@@ -1675,3 +1705,7 @@ mod tests {
         assert!(decode_f16(&[0], DType::F16, &mut output).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "gemma_ane_ffn_oracle_tests.rs"]
+mod component_oracles;

@@ -105,6 +105,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
             println!("  --ane-weights static-int8-chunk4-ffn-cached (zero compile budget)");
             println!("  PART=ffn-int8-down4; --ane-weights static-int8-down4-ffn-cached (zero compile budget)");
+            println!("  PART=ffn-int8-interleaved; --ane-weights static-int8-interleaved-ffn-cached (zero compile budget; control is stacked INT8)");
             println!("  PART=attention-transpose-flags; --ane-weights static-int8-ffn-transpose-attention-cached (zero compile budget)");
             println!("  PART=ffn-int8-stacked          Prepare/inspect the experimental stacked INT8 FFNs");
             println!(
@@ -160,6 +161,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "ffn-int8" => AneStaticCachePart::FeedForwardInt8,
                     "ffn-int8-chunk4" => AneStaticCachePart::FeedForwardInt8Chunk4,
                     "ffn-int8-down4" => AneStaticCachePart::FeedForwardInt8Down4,
+                    "ffn-int8-interleaved" => AneStaticCachePart::FeedForwardInt8Interleaved,
                     "attention-transpose-flags" => AneStaticCachePart::AttentionTransposeFlags,
                     "ffn-int8-stacked" => AneStaticCachePart::FeedForwardInt8Stacked,
                     "head-attention" => AneStaticCachePart::VocabularyAndAttention,
@@ -186,6 +188,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     "static-int8-chunk4-ffn-cached" => AneWeightPlan::StaticInt8Chunk4FfnCached,
                     "static-int8-down4-ffn-cached" => AneWeightPlan::StaticInt8Down4FfnCached,
+                    "static-int8-interleaved-ffn-cached" => AneWeightPlan::StaticInt8InterleavedFfnCached,
                     "static-int8-ffn-transpose-attention-cached" => {
                         AneWeightPlan::StaticInt8FfnTransposeAttentionCached
                     }
@@ -235,6 +238,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         AneWeightPlan::StaticInt8Chunk4FfnCached
             | AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached
             | AneWeightPlan::StaticInt8Down4FfnCached
+            | AneWeightPlan::StaticInt8InterleavedFfnCached
             | AneWeightPlan::StaticInt8FfnTransposeAttentionCached
     ) && compile_budget != 0
     {
@@ -514,7 +518,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 },
             )?;
             all_selections_exercised &=
-                completed.receipt["research_dispatch"]["selection_exercised"] == true;
+                completed.receipt["research_dispatch"]["complete_family_exercised"] == true;
             cases.push(completed.receipt);
             // Drop each owned KV snapshot here: the screen never queues ANE
             // work and does not retain N prompt caches while screening N cases.
