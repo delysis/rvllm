@@ -443,3 +443,61 @@ was started. Full details are recorded in
   executable/library identities and cache state in a fresh receipt.
 - [ ] Then run the exact named Metal fixtures, baseline prefill/full-route
   checks, independent FFN oracle fixtures, and only qualified ABBA timing jobs.
+
+## Controlled qualification execution update (2026-09-23)
+
+The disk prerequisite was repaired without deleting databases, reports, models,
+queue state, locks, STOP markers, or raw evidence: `cargo clean` removed only
+the rebuildable `v3/target` artifacts (20.7 GiB). A fresh prerequisite check
+now reports 18 GiB free, AC/battery state unchanged, no thermal or pmset
+warnings, the unrelated llama-server still running, and the historical owner
+lock/STOP state preserved. The rebuilt delivery gate passed with the required
+`compiled-only; no accelerator acceptance` boundary. Current source is
+`ac06b9962b0b8fadcee8d37eee6e599a77183185`, a descendant of the requested
+`5043d03be1841b973db1c2be2da14a53e38eb46b`.
+
+The first filter invocation omitted the harness prefix and ran zero tests; it
+is rejected as evidence. The corrected exact paths used
+`layer_forward::prefill_mma_tile_tests::<fixture>` and ran one ignored test at
+a time. Receipts and logs are under
+`/tmp/rvllm-gemma4-hardware-20260923/`:
+
+- `native-short-tile.json`: passed, 6 cases/24 commands, all guards and
+  relative-L2 gates passed.
+- `native-prefetch.log`: failed on the existing finite-output assertion at
+  `prefill_mma_tile_tests.rs:483`; no successful report was emitted. Candidate
+  stopped; no blind retry.
+- `native-fp32-operands.json`: passed, 6 cases/24 commands, all guards and
+  relative-L2 gates passed.
+- `native-vector-loads.json`: passed, 6 cases/24 commands, FP32 bit-parity
+  required and passed, all guards and relative-L2 gates passed.
+- `native-bf16-tile64.json`: passed, 6 cases/36 commands, both output ABIs and
+  operand paths covered, all guards and relative-L2 gates passed.
+
+The pinned baseline reference has 21 prompt tokens, so it is valid for the
+bounded functional screen but not for the required >=64-token GQA/temporal/
+long-tile positive screen. Baseline prefill and short-MMA prefill were each
+run into fresh output directories with `--ane-compile-budget 0`; both matched
+the expected first token, exercised complete prefill entry-point families,
+and recorded zero ANE compiler calls and zero ANE decode steps. They remain
+`correctness passed / performance unmeasured`: first-token-only receipts are
+not full-route, tensor, cache, driver, or timing acceptance, and their power
+stratum was battery with sampled-control eligibility false.
+
+Current blockers and next actions:
+
+- [ ] Obtain or identify an independently pinned >=64-token reference before
+  GQA/temporal/long-tile positive screens; do not pad the 21-token reference.
+- [ ] Keep prefetch deferred after its non-finite-output failure; preserve its
+  exact log and source assertion.
+- [ ] Inspect/provision the unchanged baseline cache only through the bounded
+  fresh-process mechanism, then separately require 162 visits, zero inspection
+  compiler calls, and lifecycle evidence before full continuation.
+- [ ] Run the host FFN pin preparer and separately admitted cached-only FFN
+  fixtures only after cache prerequisites pass; RMS remains blocked for lack of
+  its direct native oracle, multi-I/O remains quarantined, and packed32 remains
+  blocked.
+- [ ] Do not create timing jobs until baseline and each candidate have complete
+  correctness/full-route evidence; then use only the predeclared ABBA design.
+
+Detailed execution summary: `v3/reports/gemma4-hardware-qualification-execution-20260923.md`.
