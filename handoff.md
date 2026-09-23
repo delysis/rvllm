@@ -535,3 +535,377 @@ selection, tolerances, defaults, or ignored markers. Baseline cache inspection/
 recovery and complete short-reference continuation remain the next local tasks.
 They are independent of the >=64-token long-screen requirement, but still
 require their own cache, lifecycle, tensor, driver, and provenance receipts.
+
+## 2026-09-23 process review: stop manual qualification and design the game
+
+This section is the next handoff for ChatGPT Pro 6 Astra. It supersedes the
+immediate instruction to continue running candidates by hand. The user has
+identified the central problem correctly: a person or interactive agent
+selecting commands, waiting on the machine, transcribing results and deciding
+what to try next is not an acceptable long-term optimization process. It is
+slow, inconsistent, difficult to audit, and gives candidate authors too many
+ways to benefit from accidental differences in controls. The next substantive
+work is to specify the standard that defines the game, then design a durable
+asynchronous local daemon around that standard. Do not respond with another
+one-off shell sweep or a larger hand-written checklist.
+
+The user asked only for a detailed, epistemically careful problem statement at
+this point. No daemon or queue changes were made in this continuation. Astra
+should first return a reviewable design/specification and an implementation
+plan grounded in the current source. Remote Astra must not claim local device,
+power, cache, timing, launchd, GitHub-write or promotion evidence.
+
+### Exact source and local mutation boundary
+
+- Reviewed source head: `df305b1c84f75cc8c7e3358b482461fe0253a843`
+  on `codex/gemma4-kernel-candidates`, matching the remote branch at the start
+  of this pass. The worktree was clean before this handoff edit.
+- The existing queue implementation is
+  `v3/crates/rvllm-runtime/src/bin/rvllm_experiment_queue/queue.rs`; its current
+  contract is in `v3/specs/apple-experiment-queue.md`. Reuse its typed Rust,
+  immutable-job, ownership and STOP semantics where they are sound. Do not
+  build an unrelated second queue beside it without first explaining why the
+  current queue cannot be evolved.
+- Current candidate inventories are split across the Metal typed catalog,
+  runtime ANE enums, proposal JSON under `v3/reports/proposals/`, host-test
+  inventory, compiler gate and historical queue manifests. These disagree in
+  freshness and status. There is no single authoritative cross-backend
+  candidate registry today.
+- The supervised llama-server on port 8093 was stopped at the user's explicit
+  request by booting out launchd service
+  `com.openai.codex.fiction.v15-critic`; it did not respawn afterward.
+- At the user's explicit request, Hugging Face's cache manager removed exactly
+  `model/ggml-org/gpt-oss-120b-GGUF`,
+  `model/ggml-org/gemma-4-26B-A4B-it-GGUF`, and
+  `model/unsloth/Qwen3.5-27B-GGUF`. It reported 121.0 GiB reclaimed. The pinned
+  raw Gemma 4 12B snapshot and 12B QAT GGUF were preserved.
+
+### What this pass actually established
+
+These results are useful evidence about the candidates, but they are also an
+example of why the process needs to be replaced. All receipts below are local
+`/tmp` artifacts unless already tracked in the repository. They are not durable
+GitHub evidence, are not signed, and do not by themselves authorize promotion.
+
+Host and compiler gates at `df305b1c`:
+
+- `python3 tools/run_gemma4_python_checks.py --require-rustfmt`: **116/116**
+  passed in 40.082 seconds. NumPy emitted its expected warnings while iterating
+  non-finite half patterns; the tests passed.
+- Fresh public host runner:
+  `/tmp/rvllm-gemma4-review-host-parent.XYyd78/output/result.json`: **66 named
+  Rust tests and 22 source exports** passed. Its declared status is
+  `host-tests-and-source-export-only`.
+- Fresh native delivery gate:
+  `/tmp/rvllm-gemma4-review-native-parent.T5Ov9b/output`: passed 32 scoped
+  formatting paths, native host filters and **22 BF16/FP16 Metal 3.1
+  compile/link arms**. Its status is exactly
+  `compiled-only; no accelerator acceptance`.
+
+Five current-head direct Metal matrix fixtures were each selected by one exact
+ignored-test name and run in qualification-only mode against the pinned raw
+Gemma 4 12B model. No timing samples were requested:
+
+| candidate / fixture family | cases | commands | direct result | receipt |
+| --- | ---: | ---: | --- | --- |
+| `metal-short-mma16x64` | 6 | 24 | guards passed; maximum reported relative L2 0 | `/tmp/rvllm-review-df305b1c-short.json` |
+| `metal-mma32-prefetch` | 6 | 24 | 3 GEMM and 2 QKV numerical arms passed; 7 refusal controls stayed byte-poisoned; maximum relative L2 0 | `/tmp/rvllm-review-df305b1c-prefetch.json` |
+| `metal-mma32-f32` | 6 | 24 | guards and operand-path oracle passed; maximum relative L2 0 | `/tmp/rvllm-review-df305b1c-f32.json` |
+| `metal-mma32-load4` | 6 | 24 | guards, FP32 bit parity and vector-load oracle passed; maximum relative L2 0 | `/tmp/rvllm-review-df305b1c-load4.json` |
+| `metal-long-mma32x64` fixture | 6 | 36 | both output ABIs and operand paths passed; maximum relative L2 0 | `/tmp/rvllm-review-df305b1c-long.json` |
+
+The repository already contained an independently pinned 84-token CPU
+reference at
+`v3/reports/gemma4-12b-evidence-20260914/long-context-cpu-oracle/copy96.json`.
+It has model revision `707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7`, 84 prompt tokens
+and ten expected generated tokens. Therefore the preceding handoff's claim that
+no >=64-token reference had been identified was stale. This is an important
+process failure: the necessary asset existed in the tree, but the manual plan
+did not derive its prerequisites from an indexed authoritative registry.
+
+Using that unchanged 84-token reference, and the 21-token reference only for
+short-MMA's declared <=64-token range, a fresh prefill-only screen passed for
+the baseline and every one of the ten non-default Metal selectors. Every
+candidate matched its expected first token and its receipt reported
+`complete_family_exercised=true` with no foreign candidate slots:
+
+| selector | positive encoded dispatches | single-screen Metal GPU ms |
+| --- | --- | ---: |
+| `off` | none | 1678.059 |
+| `metal-short-mma16x64` | GEMM 144, QKV 48 | 1272.260 |
+| `metal-rounded-gate32` | rounded gate 48 | 1494.256 |
+| `metal-gqa-kv8` | D256 40, D512 8 | 2959.946 |
+| `metal-mma32-prefetch` | GEMM 144, QKV 48 | 732.397 |
+| `metal-attn-q4` | D256 40, D512 8 | 1689.232 |
+| `metal-rms-simd32` | RMS 96 | 2385.902 |
+| `metal-mma32-f32` | GEMM 144, QKV 48 | 2275.794 |
+| `metal-long-mma32x64` | GEMM 144, QKV 48 | 3532.037 |
+| `metal-mma32-load4` | GEMM 144, QKV 48 | 1038.481 |
+| `metal-rmsnorm-simd256` | RMS 96 | 1722.446 |
+
+These are single cold-screen observations, not a benchmark. Although the
+screens reported an eligible sampled AC/low-power/pmset-mode-1/thermal-0
+stratum, there was no matched ordering, warmup policy, drift gate or independent
+confirmation. It would be statistically and operationally wrong to rank the
+candidates from this column.
+
+The unchanged baseline ANE cache initially inspected as 0/162 available with
+zero compiler calls. The established bounded preparation path then created
+48 QKV, 48 output, 48 INT8 FFN and 18 vocabulary/attention entries, exactly 162
+compiler calls and zero evaluations. A separate fresh inspection observed
+**162/162 available, zero compiler calls**. Receipts:
+
+- `/tmp/rvllm-review-df305b1c-cache-prepare-all-int8/report.json`
+- `/tmp/rvllm-review-df305b1c-cache-inspect-all-int8-after/report.json`
+
+After that inspection, the baseline and all ten Metal candidates completed a
+full pinned continuation with cached ANE decode and zero compile budget. The
+84-token reference produced all ten expected tokens with nine ANE decode steps;
+short-MMA used the unchanged six-token/16-output reference because 84 is outside
+its selector and completed all 16 expected outputs with 15 ANE steps. Every
+report says `matches_reference=true`. The separate prefill-only receipts prove
+candidate-family dispatch; the normal full-route reports do **not** include the
+dispatch ledger, so the two facts cannot honestly be collapsed into a claim
+that a single receipt proves both candidate dispatch and full continuation.
+
+The normal full-route reports exposed a second evidence-design gap: they name
+`metal_research_candidate`, model path, ANE plan and config hash, but do not
+record the executable SHA-256 or metallib SHA-256. The delivery gate hashed the
+build products separately, but a manual operator supplied the paths. A future
+daemon must create an immutable run bundle whose source, executable, libraries,
+model, reference, policy and result identities are joined in one receipt.
+
+For completeness, the following speed-shaped numbers were observed in those
+single full-route runs. They are deliberately labeled **diagnostic and
+unrankable**. Decode is the sum of the per-step wall times; tokens/s is derived
+from those same steps. There were no warmups, no ABBA pairing and no drift
+test. Owner preparation was cold on every arm. Three late arms were explicitly
+ineligible because sampled thermal state was 1 rather than 0.
+
+| selector | prefill capture ms | decode ms | decode steps/s | sampled eligibility |
+| --- | ---: | ---: | ---: | --- |
+| `off` | 2723.975 | 2154.280 | 4.178 | single AC/LPM/mode-1/thermal-0 run only |
+| `metal-short-mma16x64` | 1900.167 | 4614.535 | 3.251 | different 6-token/15-step workload; not comparable to 84-token arms |
+| `metal-rounded-gate32` | 2397.435 | 1999.014 | 4.502 | single eligible sample only |
+| `metal-gqa-kv8` | 4280.625 | 2839.778 | 3.169 | single eligible sample only |
+| `metal-mma32-prefetch` | 3738.890 | 2261.956 | 3.979 | single eligible sample only |
+| `metal-attn-q4` | 2134.388 | 2441.348 | 3.686 | single eligible sample only |
+| `metal-rms-simd32` | 3438.396 | 2595.493 | 3.468 | single eligible sample only |
+| `metal-mma32-f32` | 4065.705 | 1997.316 | 4.506 | single eligible sample only |
+| `metal-long-mma32x64` | 3603.202 | 2281.130 | 3.945 | **ineligible: thermal state 1** |
+| `metal-mma32-load4` | 1555.179 | 2611.105 | 3.447 | **ineligible: thermal state 1** |
+| `metal-rmsnorm-simd256` | 3733.866 | 4334.185 | 2.077 | **ineligible: thermal state 1** |
+
+The contradiction between some attractive single prefill numbers and the noisy
+full-route numbers is not a puzzle to explain after the fact; it is evidence
+that this collection method cannot answer the speed question. No speedup,
+slowdown, winner or promotion is established.
+
+ANE candidate work was stopped when the user redirected the task toward the
+process design:
+
+- `ffn-int8-chunk4` prepared 48/48 programs with 48 compiler calls and zero
+  evaluations, then separately inspected 48/48 available with zero compiles.
+- `ffn-int8-down4` prepared 48/48 programs with 48 compiler calls and zero
+  evaluations. Its separate inspection had just started when the manual sweep
+  was interrupted at the user's request; no inspection report exists, so cache
+  availability and lifecycle completion are **unknown**, not failed.
+- Interleaved FFN, transpose-flags attention, stacked control, tiled sliding
+  QKV and ordinary sliding INT8 QKV were not prepared or inspected in this
+  continuation.
+- No ANE candidate was evaluated, compared, timed or promoted here.
+- Packed32 remains deliberately blocked because it lacks a compiled I/O
+  descriptor and runnable single-I/O route. It must receive a rejection result,
+  not be coerced into the tournament.
+
+### Why the current process is structurally inadequate
+
+The problem is larger than shell ergonomics.
+
+1. **No authoritative game state.** Candidate identity, selector, control,
+   source, cache parts, oracle, workload, status and promotion boundary live in
+   several Rust enums and multiple generations of JSON proposals. The same
+   candidate can appear as `untrusted`, `PROPOSAL_NOT_ADMITTED`, integrated, or
+   tested depending on which file an agent reads.
+2. **Admission is reconstructed by the operator.** The operator currently
+   chooses a model path, reference, binary, metallib, cache part, feature set,
+   exact test filter and output location by reading prose. One wrong path can
+   create a valid-looking but irrelevant receipt. Earlier work already ran a
+   zero-test filter once and initially missed the existing 84-token reference.
+3. **Evidence is split across incomparable receipts.** Compile evidence,
+   component arithmetic, dispatch, first-token behavior, full continuation,
+   cache lifecycle and timing are separate for good reasons, but there is no
+   machine-owned evidence graph joining their immutable identities. The normal
+   full route currently omits dispatch counts and executable/metallib hashes.
+4. **The environment changes while a human waits.** This pass began on battery,
+   moved to AC, and later crossed thermal state 0 to 1. Manual sequencing makes
+   it easy to compare unlike strata or notice the mismatch only afterward.
+5. **The output is volatile.** Important results live under `/tmp`; prose then
+   points at them. A reboot, cleanup or another operator can remove the only raw
+   evidence. GitHub does not receive a canonical machine-readable result that
+   candidate-generating agents can consume.
+6. **Retry incentives are underspecified.** A human can rerun an unlucky arm,
+   change ordering, choose a more favorable reference, or silently replace an
+   attempted manifest. Even with good intentions, this creates selection bias.
+7. **Candidates do not share one valid workload.** Short-MMA admits at most 64
+   prompt tokens; GQA, temporal attention and long tiles require at least 64.
+   ANE and CPU candidates affect decode rather than Metal prefill. A single
+   scalar leaderboard would reward workload choice rather than engineering.
+8. **Missing prerequisites are confused with candidate failures.** An absent
+   cache, missing direct oracle, blocked I/O descriptor, insufficient disk or
+   ineligible power state are infrastructure/admission outcomes. They must not
+   count as numerical or speed losses.
+9. **The queue is not yet a learning loop.** Existing Rust queue work handles
+   many important launch invariants, but submissions, typed qualification,
+   GitHub-visible results and agent feedback are not one closed system.
+
+### Required standard: define the game before implementing the daemon
+
+Astra should propose a versioned, checked-in standard with the following
+properties. Names and exact schemas may change after source review; weakening
+the properties may not.
+
+#### 1. One typed candidate submission
+
+Every submission must be immutable and content-addressed. At minimum it binds:
+
+- submission schema/version, candidate ID and revision;
+- exact parent Git SHA and patch/tree digest;
+- backend and candidate class (Metal projection, Metal attention, Metal norm,
+  ANE single-I/O graph/layout, or CPU transform);
+- selector and the exact independent control;
+- owned source paths and expected entry points;
+- model/checkpoint, prompt/reference, tensor policy and oracle digests;
+- required positive dispatch slots and exact work counts;
+- shape/admission domain and explicit fallback/refusal expectations;
+- compiler feature set, toolchain identity, compile budget and cache parts;
+- memory/disk/resource ceilings and prohibited process interactions;
+- benchmark design, warmups, repetitions, order, drift gate, practical effect
+  threshold and independent-confirmation rule;
+- promotion scope and incompatibilities with other candidates.
+
+Null executable/model/oracle/cache pins mean proposal-only. Metadata must never
+turn such a proposal into a runnable job. Duplicate JSON keys, unknown fields,
+ambiguous defaults, symlink scope expansion and mutable file identities must be
+rejected before build or device access.
+
+#### 2. A monotonic evidence state machine
+
+Suggested conceptual states are `submitted`, `host-rejected`, `source-ready`,
+`compiled`, `component-qualified`, `dispatch-qualified`, `cache-ready`,
+`full-route-qualified`, `timing-screened`, `independently-confirmed`, and a
+terminal `promoted`, `deferred`, `failed` or `blocked` outcome. The exact graph
+must be typed per candidate class; ANE cache readiness is nonsensical for a CPU
+candidate, and a Metal norm cannot borrow a matrix oracle.
+
+Transitions consume immutable receipts and produce a new immutable receipt.
+No stage may infer evidence from a later stage or turn a missing prerequisite
+into a pass. Failure attempts remain first-class history. A source, workload,
+policy or threshold change creates a new candidate revision; it does not edit
+or retry the old attempt in place.
+
+#### 3. Lexicographic scoring and anti-gaming incentives
+
+Correctness and safety are hard prerequisites, not terms that can be traded for
+speed. A candidate with a compiler, guard, tensor, dispatch, continuation,
+driver-lifecycle or cache-policy failure has no speed score. Static source
+counts and compilation alone score nothing.
+
+Performance should be reported within candidate class and exact workload, not
+as one misleading global leaderboard. Use paired effects from a predeclared
+order, reject control drift beyond the fixed gate, retain every repetition,
+and require independent confirmation before promotion. Never pool power modes,
+AC/battery, thermal states, prompt lengths, cache states or controls. Include
+resource regressions (compile time, program count, compiled bytes, resident
+memory, scratch, startup and failure rate) beside steady-state latency rather
+than allowing a narrow kernel win to hide a system loss.
+
+Candidate authors must not control the acceptance oracle, work counts, timing
+order or favorable retry policy. Consider a locally held-out deterministic
+challenge set whose digest and generation contract are committed before a
+campaign but whose individual cases are not selected by the submitting agent.
+This is not secrecy for its own sake; it prevents optimizing only the visible
+fixture while retaining reproducibility after the attempt closes.
+
+#### 4. A persistent local scheduler, not an interactive babysitter
+
+The daemon should be safe idiomatic Rust and should evolve the existing queue
+where practical. It should run under a reviewable macOS service definition,
+survive restart, and keep durable state in an append-only journal or transactional
+database. It must never depend on a Codex/ChatGPT turn remaining open.
+
+It should distinguish host-only work from hardware-owner work. Host/source
+validation may run when safe; Metal/ANE execution must acquire the one hardware
+owner lock and recheck STOP, source head, pins, free disk, process policy, power,
+low-power setting, pmset mode, thermal state, cache state and deadline immediately
+before spawning. Ineligible conditions cause a quiet wait/defer result, not an
+environment mutation. The daemon must not change OS power settings, kill
+unrelated services, clear STOP, erase evidence or interrupt a synchronous
+accelerator call. Cancellation takes effect only at declared safe boundaries.
+
+Build products used in device work must be copied into an immutable attempt
+bundle and hashed. Do not execute a mutable Cargo target path after merely
+hashing it. Each output directory is create-only. Cache preparation and strict
+zero-compile inspection are distinct attempts. Timing jobs require already
+inspected caches and must reject compiler calls.
+
+#### 5. Durable GitHub feedback for candidate-generating agents
+
+Define how the Mac publishes results without making Git history the lock or
+putting bulky tensors/models in Git. A likely design is one GitHub Check or
+small result commit per immutable submission, backed by durable external/local
+artifacts whose hashes and retention state are in the check. The summary should
+be machine-readable and human-readable, and should link source SHA, attempt ID,
+state transition, exact controls, receipts and terminal blockers.
+
+Agents proposing the next candidate must consume the authoritative result
+schema, not scrape prose. Network or GitHub failure cannot erase a completed
+local attempt; publication is an idempotent later transition. Conversely, a
+GitHub comment must never be treated as device evidence unless its receipt
+chain verifies against the registered local machine/run identity.
+
+Promotion should remain a separate explicit reviewed action. The daemon may
+recommend a candidate that satisfied the standard; it must not silently change
+production defaults or merge its own code.
+
+#### 6. Test the referee more aggressively than the contestants
+
+The daemon and schema need deterministic tests for malformed/duplicate
+submissions, altered controls, zero-test filters, source or binary replacement,
+wrong model/reference, missing and partial caches, compiler calls during timing,
+foreign/partial dispatch, output collisions, power transitions, thermal drift,
+disk-floor changes, lock contention, STOP arrival, deadline expiry, crash and
+restart, orphan process recovery, interrupted safe boundaries, duplicate GitHub
+delivery, network outage and attempted replay of a completed/failed job.
+
+Provide fake sensors, fake compiler/device commands and a model-free integration
+harness so CI can exercise the entire state machine without pretending to be
+native acceptance. Then provide a narrowly staged local rollout proving that
+the real daemon reproduces already-known receipts before it is allowed to
+consume new candidate submissions.
+
+### Astra's requested deliverable
+
+Return a reviewable design packet, not claims of execution. It should contain:
+
+1. A source-grounded audit of the current queue, proposal/catalog formats,
+   receipts and GitHub workflows, identifying which pieces can be retained.
+2. A normative `MUST`/`MUST NOT` game specification with versioned schemas for
+   candidate submission, attempt, evidence transition and published result.
+3. A threat/incentive model covering accidental operator error, benchmark
+   gaming, favorable retries, stale/mutable artifacts, candidate-controlled
+   oracles, unsafe private-API work and GitHub publication failure.
+4. A typed Rust architecture and migration plan for the existing queue,
+   including durable state, launchd/service lifecycle, sensors, locks, cache
+   operations, runner adapters and GitHub publisher.
+5. A test matrix for the referee plus a conservative staged deployment plan.
+6. A precise reconciliation of the current candidate inventory. Preserve the
+   evidence above, but do not promote from it and do not invent results for the
+   unfinished ANE candidates.
+
+The standard should make the correct action the easiest action for both the
+daemon and candidate-generating agents. Its success criterion is not that it
+can run these ten kernels once. It is that a new candidate can be submitted,
+rejected or qualified asynchronously with no interactive operator choosing
+favorable commands, and that another agent can derive its next proposal from a
+complete, immutable, correctly scoped result.
