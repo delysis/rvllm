@@ -1,6 +1,7 @@
 //! Isolated tile/operand experiment; no production dispatch selects these probes.
 use super::*;
 use crate::arena::MetalRegion;
+use crate::research_projection::{prefetch_fixture_expectation, validate_fixture_bytes};
 use crate::weight_loader::{load_safetensor_entry_bf16, scan_safetensor_tensors};
 use crate::MetalFloatType;
 use half::bf16;
@@ -192,6 +193,23 @@ fn run_matrix_comparison(
     let require_fp32_bits = reduction64
         || candidate == Some(crate::MetalResearchCandidate::Mma32Load4)
         || candidate == Some(crate::MetalResearchCandidate::Mma32Prefetch);
+    let prefetch = candidate == Some(crate::MetalResearchCandidate::Mma32Prefetch);
+    // A fresh companion directory survives an assertion/error without emitting
+    // a success receipt. No shader source, admission guard or tolerance changes.
+    let evidence_dir = if prefetch {
+        let report = PathBuf::from(std::env::var_os("RVLLM_METAL_MMA_TILE_REPORT")
+            .ok_or("prefetch qualification requires a fresh absolute report path")?);
+        if !report.is_absolute() || std::fs::symlink_metadata(&report).is_ok() {
+            return Err("prefetch report path must be absolute and absent".into());
+        }
+        let mut companion = report.as_os_str().to_os_string();
+        companion.push(".artifacts");
+        let directory = PathBuf::from(companion);
+        std::fs::create_dir(&directory)?;
+        Some(directory)
+    } else {
+        None
+    };
     let model =
         PathBuf::from(std::env::var_os("RVLLM_METAL_QKV_MODEL_DIR").ok_or("model required")?);
     let tensors = scan_safetensor_tensors(&model)?;
@@ -242,6 +260,9 @@ fn run_matrix_comparison(
         // are no longer duplicated under a test-only source/name.
         source.push_str(&float_tile64_control_source("float", names[2]));
         source.push_str(&float_tile64_control_source("bfloat", names[5]));
+    }
+    if let Some(directory) = &evidence_dir {
+        write_matrix_artifact(&directory.join("source.metal"), source.as_bytes())?;
     }
     let mut ctx = MetalContext::new()?;
     ctx.compile_library(&source)?;
@@ -336,7 +357,16 @@ fn run_matrix_comparison(
             ),
         ]
     };
-    for (label, layer, m, n, k, parts) in shapes {
+    let mut prefetch_positive = [0_usize; 2]; // GEMM, QKV; exclude all refusals.
+    let mut prefetch_refusals = 0_usize;
+    for (case_index, (label, layer, m, n, k, parts)) in shapes.into_iter().enumerate() {
+        let numerical = names.iter().map(|name| {
+            if prefetch { prefetch_fixture_expectation(name, [m, n, k]) }
+            else { Ok(true) }
+        }).collect::<std::result::Result<Vec<_>, _>>()?;
+        let case_dir = evidence_dir.as_ref().map(|directory| directory.join(format!("case-{case_index:02}-{label}")));
+        if let Some(directory) = &case_dir { std::fs::create_dir(directory)?; }
+        eprintln!("matrix case={label} M={m} N={n} K={k} numerical={numerical:?}");
         let mut weights = Vec::new();
         for part in parts {
             let entry = tensors
@@ -455,13 +485,44 @@ fn run_matrix_comparison(
             ))
         };
         for path in 0..names.len() {
-            run(path)?;
+            eprintln!("matrix case={label} kernel={} output_f32={} expected={}",
+                names[path], path < variant_count, if numerical[path] { "numerical" } else { "guard-refusal" });
+            run(path).map_err(|error| format!("{label} {}: {error}", names[path]))?;
         }
-        let read = |path: usize| -> Vec<f32> {
+        let read_raw = |path: usize| -> Vec<u8> {
             let region = &outputs[path];
             // SAFETY: every submission above completed synchronously; bounded
             // read of each guarded allocation with no outstanding GPU use.
-            let bytes = unsafe { std::slice::from_raw_parts(arena.host_ptr(region), region.size) };
+            unsafe { std::slice::from_raw_parts(arena.host_ptr(region), region.size) }.to_vec()
+        };
+        // Capture all raw outputs before any finite/guard/numerical assertion.
+        // The all-tails and wrong-output-role dispatches are retained as explicit
+        // negative controls; they must leave all output poison untouched.
+        let mut validation = Vec::new();
+        let mut observations = Vec::new();
+        for path in 0..names.len() {
+            let bytes = read_raw(path);
+            let file = format!("output-{path}.guarded.bin");
+            if let Some(directory) = &case_dir {
+                write_matrix_artifact(&directory.join(&file), &bytes)?;
+            }
+            let result = validate_fixture_bytes(&bytes, m, n, path < variant_count, numerical[path]);
+            observations.push(serde_json::json!({"kernel":names[path],"output_f32":path < variant_count,
+                "expected":if numerical[path] {"numerical"} else {"guard-refusal"},
+                "raw_file":case_dir.as_ref().map(|_| &file),"guard_bytes_each_end":32,"bytes":bytes.len(),"validation_error":result.as_ref().err()}));
+            validation.push(result);
+        }
+        if let Some(directory) = &case_dir {
+            let capture = serde_json::json!({"schema":"rvllm.matrix-component.capture.v1",
+                "status":"captured-before-numerical-oracle","candidate":selected.name(),
+                "case":label,"shape":[m,n,k],"commands_completed":names.len(),"outputs":observations});
+            write_matrix_artifact(&directory.join("capture.json"), &serde_json::to_vec_pretty(&capture)?)?;
+        }
+        for (path, result) in validation.into_iter().enumerate() {
+            result.map_err(|error| format!("{label} {}: {error}", names[path]))?;
+        }
+        let read = |path: usize| -> Vec<f32> {
+            let bytes = read_raw(path);
             assert!(bytes[..32]
                 .iter()
                 .chain(bytes[bytes.len() - 32..].iter())
@@ -480,14 +541,13 @@ fn run_matrix_comparison(
             }
         };
         let float_outputs: Vec<_> = (0..variant_count).map(read).collect();
-        assert!(float_outputs.iter().flatten().all(|x| x.is_finite()));
         let baseline = &float_outputs[0];
         let mut l2 = Vec::new();
         let mut cpu_max = Vec::new();
         for path in 0..variant_count {
             let output = &float_outputs[path];
             let packed = read(path + variant_count);
-            if require_fp32_bits {
+            if require_fp32_bits && numerical[path] {
                 assert!(
                     baseline
                         .iter()
@@ -496,12 +556,23 @@ fn run_matrix_comparison(
                     "{label} layout-only variant must preserve every FP32 accumulator result"
                 );
             }
-            for (&value, &actual) in output.iter().zip(&packed) {
-                assert_eq!(
-                    bf16::from_f32(value).to_f32().to_bits(),
-                    actual.to_bits(),
-                    "{label} variant{path} must round exactly once"
-                );
+            if numerical[path + variant_count] {
+                // Prefetch has no FP32 entry for GEMM shapes. The unchanged
+                // baseline FP32 oracle is the exact control for these stored
+                // results; do not invent a second, test-only candidate shader.
+                let rounding_reference = if numerical[path] { output } else { baseline };
+                for (&value, &actual) in rounding_reference.iter().zip(&packed) {
+                    assert_eq!(
+                        bf16::from_f32(value).to_f32().to_bits(),
+                        actual.to_bits(),
+                        "{label} variant{path} must round exactly once"
+                    );
+                }
+            }
+            if !numerical[path] {
+                l2.push(None);
+                cpu_max.push(None);
+                continue; // Already verified *all* refusal bytes; not a numerical pass.
             }
             let relative = (baseline
                 .iter()
@@ -511,7 +582,7 @@ fn run_matrix_comparison(
                 / baseline.iter().map(|&v| f64::from(v).powi(2)).sum::<f64>())
             .sqrt();
             assert!(relative < 0.0001, "{label} path{path} L2 {relative}");
-            l2.push(relative);
+            l2.push(Some(relative));
             let bf = |bytes: &[u8], i: usize| {
                 bf16::from_le_bytes(bytes[2 * i..2 * i + 2].try_into().unwrap()).to_f64()
             };
@@ -532,7 +603,14 @@ fn run_matrix_comparison(
                     );
                 }
             }
-            cpu_max.push(max_error);
+            cpu_max.push(Some(max_error));
+        }
+        if prefetch {
+            // The exact two candidate positions come from the declared pair
+            // above, not from a positive total that could count baseline work.
+            prefetch_positive[0] += usize::from(numerical[3]);
+            prefetch_positive[1] += usize::from(numerical[1]);
+            prefetch_refusals += usize::from(!numerical[1]) + usize::from(!numerical[3]);
         }
         let expected_outputs: Vec<_> = (0..names.len()).map(read).collect();
         drop(float_outputs);
@@ -588,9 +666,12 @@ fn run_matrix_comparison(
             Some((v[2] + v[3]) * 0.5)
         };
         let medians: Vec<_> = gpu.iter().map(|v| median(v)).collect();
-        reports.push(serde_json::json!({"projection":label,"m":m,"n":n,"k":k,"relative_l2_vs_mma32":l2,"sampled_fp64_max_abs":cpu_max,"bf16_rounding_exact":true,"fp32_bit_parity_required":require_fp32_bits,"guards_intact":true,"commands":names.len()+order.len(),"trial_order":order,"gpu_ms":gpu,"wall_ms":wall,"gpu_median_ms":medians}));
+        reports.push(serde_json::json!({"projection":label,"m":m,"n":n,"k":k,"relative_l2_vs_mma32":l2,"sampled_fp64_max_abs":cpu_max,"bf16_rounding_exact":true,"rounding_reference":if prefetch { "candidate FP32 where admitted; otherwise qualified baseline FP32; refused stored outputs excluded" } else { "corresponding FP32 entry" },"fp32_bit_parity_required":require_fp32_bits,"guards_intact":true,"output_expectations":observations,"commands":names.len()+order.len(),"trial_order":order,"gpu_ms":gpu,"wall_ms":wall,"gpu_median_ms":medians}));
     }
-    let report = serde_json::json!({"schema":"rvllm.metal_tile_comparison.v2","qualification_only":qualify_only,"reduction64":reduction64,"candidate":candidate.map(|kind| kind.name()),"variants":names,"pipeline_resources":resources,"cases":reports,"scope":"Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt."});
+    if prefetch && (prefetch_positive != [3, 2] || prefetch_refusals != 7 || reports.len() != 6) {
+        return Err("incomplete prefetch role coverage; guard refusals cannot replace numerical work".into());
+    }
+    let report = serde_json::json!({"schema":if prefetch { "rvllm.metal_tile_comparison.v3" } else { "rvllm.metal_tile_comparison.v2" },"prefetch_numerical_gemm":prefetch_positive[0],"prefetch_numerical_qkv":prefetch_positive[1],"prefetch_guard_refusals":prefetch_refusals,"qualification_only":qualify_only,"reduction64":reduction64,"candidate":candidate.map(|kind| kind.name()),"variants":names,"pipeline_resources":resources,"cases":reports,"scope":"Real checkpoint weights and synthetic BF16 inputs including values outside FP16 range; FP32 and once-rounded BF16 outputs; isolated tile comparison. No production routing or ANE calls. Timing requires an independently eligible experiment-queue receipt."});
     if let Some(path) = std::env::var_os("RVLLM_METAL_MMA_TILE_REPORT") {
         let bytes = serde_json::to_vec_pretty(&report)?;
         if candidate.is_some() {
@@ -605,4 +686,13 @@ fn run_matrix_comparison(
     }
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+// Safe host artifact writing after GPU collection; never overwrite a previous
+// attempt, including an incomplete capture. Failure remains a fixture failure.
+fn write_matrix_artifact(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::File::create_new(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }

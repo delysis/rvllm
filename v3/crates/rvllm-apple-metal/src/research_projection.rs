@@ -160,6 +160,76 @@ pub fn postnorm_plan(
     })
 }
 
+/// Component-fixture expectation for the *unchanged* role-specific prefetch
+/// entry points. A refused dispatch is a negative control, not arithmetic
+/// coverage. This helper exists only in test builds; runtime admission above
+/// and the shader's early-return guards remain unchanged.
+#[cfg(test)]
+pub(crate) fn prefetch_fixture_expectation(
+    kernel: &str,
+    shape: [u32; 3],
+) -> Result<bool, &'static str> {
+    let output_f32 = match kernel {
+        "research_gemm_mma32_prefetch" => false,
+        "research_qkv_mma32_prefetch" => true,
+        "qkv_project_f32_mma32" | "gemm_f16_mma32" => return Ok(true),
+        _ => return Err("unknown kernel in prefetch component fixture"),
+    };
+    let [m, n, k] = shape;
+    Ok(crate::research_next::prefetch_projection_shape(m, n, k, output_f32))
+}
+
+/// Inspect all payload and guard bytes. Numerical paths must write finite
+/// results; expected refusals must leave *every* poison byte untouched. Caller
+/// must save diagnostic bytes before propagating an error from this function.
+#[cfg(test)]
+pub(crate) fn validate_fixture_bytes(
+    guarded: &[u8],
+    rows: u32,
+    columns: u32,
+    output_f32: bool,
+    numerical: bool,
+) -> Result<(), String> {
+    let width = if output_f32 { 4 } else { 2 };
+    let bytes = matrix_bytes(rows, columns, width)
+        .and_then(|n| n.checked_add(64))
+        .ok_or("invalid fixture output size")?;
+    if guarded.len() != bytes {
+        return Err("fixture output byte count mismatch".into());
+    }
+    if guarded[..32]
+        .iter()
+        .chain(&guarded[bytes - 32..])
+        .any(|&byte| byte != 0xa5)
+    {
+        return Err("fixture guard bytes changed".into());
+    }
+    let payload = &guarded[32..bytes - 32];
+    if !numerical {
+        return if payload.iter().all(|&byte| byte == 0xff) {
+            Ok(())
+        } else {
+            Err("guard-refused dispatch modified its output".into())
+        };
+    }
+    for (index, raw) in payload.chunks_exact(width).enumerate() {
+        let value = if output_f32 {
+            f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
+        } else {
+            half::bf16::from_le_bytes([raw[0], raw[1]]).to_f32()
+        };
+        if !value.is_finite() {
+            return Err(format!(
+                "non-finite numerical output at [{},{}], raw={raw:02x?}, entire_payload_untouched={}",
+                index / columns as usize,
+                index % columns as usize,
+                payload.iter().all(|&byte| byte == 0xff),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,6 +394,95 @@ mod tests {
             assert!(
                 postnorm_plan(candidate, true, false, [0, 0, bytes], 6, 3840, 1e-6, end).is_err()
             );
+        }
+    }
+
+    #[test]
+    fn prefetch_synthetic_tail_is_a_refusal_not_a_numerical_success() {
+        for name in ["research_gemm_mma32_prefetch", "research_qkv_mma32_prefetch"] {
+            assert_eq!(prefetch_fixture_expectation(name, [63, 67, 35]), Ok(false));
+        }
+        assert!(f32::from_bits(u32::MAX).is_nan());
+        assert!(half::bf16::from_bits(u16::MAX).is_nan());
+    }
+
+    #[test]
+    fn prefetch_production_roles_have_five_positive_and_seven_negative_arms() {
+        let cases = [
+            ([63, 67, 35], [false, false]),
+            ([84, 8192, 3840], [false, true]),
+            ([652, 9216, 3840], [false, true]),
+            ([652, 30720, 3840], [true, false]),
+            ([652, 3840, 8192], [true, false]),
+            ([1024, 3840, 15360], [true, false]),
+        ];
+        let mut positive = [0, 0];
+        for (shape, expected) in cases {
+            for (index, name) in ["research_gemm_mma32_prefetch", "research_qkv_mma32_prefetch"]
+                .iter().enumerate()
+            {
+                let actual = prefetch_fixture_expectation(name, shape).unwrap();
+                assert_eq!(actual, expected[index]);
+                positive[index] += usize::from(actual);
+            }
+        }
+        assert_eq!(positive, [3, 2]);
+        assert_eq!(12 - positive.iter().sum::<usize>(), 7);
+    }
+
+    #[test]
+    fn refusal_validation_rejects_even_one_written_byte() {
+        for output_f32 in [false, true] {
+            let size = if output_f32 { 8 } else { 4 };
+            let mut raw = vec![0xa5; 64 + size];
+            raw[32..32 + size].fill(0xff);
+            assert!(validate_fixture_bytes(&raw, 1, 2, output_f32, false).is_ok());
+            for byte in 32..32 + size {
+                raw[byte] = 0;
+                assert!(validate_fixture_bytes(&raw, 1, 2, output_f32, false).is_err());
+                raw[byte] = 0xff;
+            }
+        }
+    }
+
+    #[test]
+    fn numerical_validation_never_accepts_untouched_or_partial_poison() {
+        for output_f32 in [false, true] {
+            let width = if output_f32 { 4 } else { 2 };
+            let mut raw = vec![0xa5; 64 + 2 * width];
+            raw[32..32 + 2 * width].fill(0xff);
+            assert!(validate_fixture_bytes(&raw, 1, 2, output_f32, true).is_err());
+            raw[32..32 + width].fill(0);
+            let error = validate_fixture_bytes(&raw, 1, 2, output_f32, true).unwrap_err();
+            assert!(error.contains("[0,1]"));
+            assert!(error.contains("entire_payload_untouched=false"));
+            raw[32..32 + 2 * width].fill(0);
+            assert!(validate_fixture_bytes(&raw, 1, 2, output_f32, true).is_ok());
+        }
+    }
+
+    #[test]
+    fn fixture_size_and_canaries_are_checked_before_decoding() {
+        assert!(validate_fixture_bytes(&[], 0, 1, true, true).is_err());
+        assert!(validate_fixture_bytes(&[], u32::MAX, u32::MAX, true, true).is_err());
+        let mut raw = vec![0xa5; 68];
+        raw[32..36].fill(0);
+        assert!(validate_fixture_bytes(&raw[..67], 1, 1, true, true).is_err());
+        for byte in [0, 31, 36, 67] {
+            raw[byte] = 0;
+            assert!(validate_fixture_bytes(&raw, 1, 1, true, true).is_err());
+            raw[byte] = 0xa5;
+        }
+    }
+
+    #[test]
+    fn prefetch_fixture_has_no_unknown_or_wrong_role_fallback() {
+        assert!(prefetch_fixture_expectation("unreviewed", [84, 8192, 3840]).is_err());
+        for m in [0, 1, 5, 1025, u32::MAX] {
+            assert_eq!(prefetch_fixture_expectation("research_qkv_mma32_prefetch", [m, 8192, 3840]), Ok(false));
+        }
+        for name in ["qkv_project_f32_mma32", "gemm_f16_mma32"] {
+            assert_eq!(prefetch_fixture_expectation(name, [63, 67, 35]), Ok(true));
         }
     }
 }

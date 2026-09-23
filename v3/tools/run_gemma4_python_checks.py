@@ -22,6 +22,7 @@ MODULES = (
     'test_gemma4_unified_integration',
     'test_gemma4_shader_contracts',
     'test_gemma4_unified_proposals',
+    'test_gemma4_prefetch_fixture',
 )
 
 
