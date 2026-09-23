@@ -418,3 +418,28 @@ qualification remains required locally before performance promotion.
 No production default, feature gate, numerical tolerance, multi-I/O quarantine,
 ignored-device marker, STOP/attempted manifest, or power setting was weakened.
 The researcher made no commits/pushes and ran no device/cache/timing operation.
+
+## Controlled local hardware qualification transition (2026-09-23)
+
+The user explicitly resumed execution ownership from
+`5043d03be1841b973db1c2be2da14a53e38eb46b`. The local owner is authorized to
+apply/build/run the committed fixtures and measure evidence; Astra remains
+responsible only for missing kernel/oracle implementation. All numerical,
+provenance, safety, ownership, single-I/O, packed32, STOP-marker and tolerance
+rules remain in force.
+
+The phase is currently blocked before device work: read-only prerequisite checks
+found **1.1 GiB free**, below the required 16 GiB floor. AC power and thermal
+state were acceptable, the unrelated llama-server was left running, and the
+historical hardware lock and STOP markers were preserved. No Metal fixture,
+cache inspection/preparation, inference, FFN oracle, queue job, or timing arm
+was started. Full details are recorded in
+`v3/reports/gemma4-unified-hardware-qualification-20260923.md`.
+
+### Hardware-phase blocker
+
+- [ ] Restore at least 16 GiB free without deleting evidence or unrelated work.
+- [ ] Recheck boot, owner/lock, process policy, AC/pmset/thermal state, model,
+  executable/library identities and cache state in a fresh receipt.
+- [ ] Then run the exact named Metal fixtures, baseline prefill/full-route
+  checks, independent FFN oracle fixtures, and only qualified ABBA timing jobs.
