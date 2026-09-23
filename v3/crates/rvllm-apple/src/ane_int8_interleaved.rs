@@ -3,9 +3,8 @@
 #![forbid(unsafe_code)]
 
 use super::{
-    append_rows, begin_blob, convolution, descriptor, gelu_branch, graph_header,
-    AneInt8FfnWeights, AneInt8MatrixView, Int8CandidateBudget, Int8CandidateSource,
-    GELU_CONSTANTS,
+    append_rows, begin_blob, convolution, descriptor, gelu_branch, graph_header, AneInt8FfnWeights,
+    AneInt8MatrixView, Int8CandidateBudget, Int8CandidateSource, GELU_CONSTANTS,
 };
 
 pub const NAME: &str = "ane-int8-ffn-interleaved";
@@ -26,7 +25,10 @@ fn build_aligned(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, Str
     if hidden == 0 || hidden % 32 != 0 || intermediate == 0 || intermediate % 32 != 0 {
         return Err("interleaved FFN requires nonempty aligned channels".into());
     }
-    let bytes = weights.source_blob_bytes().checked_sub(128).ok_or("source underflow")?;
+    let bytes = weights
+        .source_blob_bytes()
+        .checked_sub(128)
+        .ok_or("source underflow")?;
     let io = hidden.checked_mul(64).ok_or("surface overflow")?;
     let doubled = intermediate.checked_mul(2).ok_or("GU width overflow")?;
     let mut blob = begin_blob(4, bytes)?;
@@ -75,18 +77,30 @@ fn append_interleaved(
 ) -> Result<(), String> {
     let rows = gate.scales.len();
     let columns = gate.columns;
-    if rows == 0 || rows % 32 != 0 || columns == 0 || columns % 32 != 0
-        || up.columns != columns || up.scales.len() != rows
+    if rows == 0
+        || rows % 32 != 0
+        || columns == 0
+        || columns % 32 != 0
+        || up.columns != columns
+        || up.scales.len() != rows
         || rows.checked_mul(columns) != Some(gate.values.len())
         || up.values.len() != gate.values.len()
     {
         return Err("interleaved GU shape mismatch".into());
     }
     let doubled = rows.checked_mul(2).ok_or("interleaved row overflow")?;
-    let q_bytes = doubled.checked_mul(columns).ok_or("interleaved payload overflow")?;
-    let scale_bytes = doubled.checked_mul(2).ok_or("interleaved scales overflow")?;
+    let q_bytes = doubled
+        .checked_mul(columns)
+        .ok_or("interleaved payload overflow")?;
+    let scale_bytes = doubled
+        .checked_mul(2)
+        .ok_or("interleaved scales overflow")?;
     let q = descriptor(blob, 4, q_bytes)?;
-    for (g, u) in gate.values.chunks_exact(columns).zip(up.values.chunks_exact(columns)) {
+    for (g, u) in gate
+        .values
+        .chunks_exact(columns)
+        .zip(up.values.chunks_exact(columns))
+    {
         blob.extend(g.iter().chain(u).map(|value| value.to_le_bytes()[0]));
     }
     let scale = descriptor(blob, 1, scale_bytes)?;
@@ -101,6 +115,8 @@ fn append_interleaved(
 }
 
 #[cfg(test)]
-pub(crate) fn build_for_host_test(weights: &AneInt8FfnWeights) -> Result<Int8CandidateSource, String> {
+pub(crate) fn build_for_host_test(
+    weights: &AneInt8FfnWeights,
+) -> Result<Int8CandidateSource, String> {
     build_aligned(weights)
 }

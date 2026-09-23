@@ -1417,12 +1417,21 @@ mod tests {
     fn interleaved_is_cached_only_and_does_not_change_projection_precision() {
         let plan = super::AneWeightPlan::StaticInt8InterleavedFfnCached;
         assert_eq!(plan.program_count(), 162);
-        assert_eq!(plan.cache_policy(), super::AneProgramCachePolicy::RequireExisting);
-        assert_eq!(plan.static_ffn_precision(), super::StaticFfnPrecision::Int8Interleaved);
+        assert_eq!(
+            plan.cache_policy(),
+            super::AneProgramCachePolicy::RequireExisting
+        );
+        assert_eq!(
+            plan.static_ffn_precision(),
+            super::StaticFfnPrecision::Int8Interleaved
+        );
         assert!(!plan.quantizes_qkv(true));
         assert!(!plan.quantizes_qkv(false));
         let result = super::GemmaAneDecode::load_with_compile_budget(
-            std::path::Path::new("/must-not-read-interleaved-model"), 1024, plan, 1,
+            std::path::Path::new("/must-not-read-interleaved-model"),
+            1024,
+            plan,
+            1,
         );
         assert!(matches!(result, Err(error) if error.contains("zero compile budget")));
     }

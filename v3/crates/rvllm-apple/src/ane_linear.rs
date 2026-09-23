@@ -1111,7 +1111,6 @@ mod tests {
     }
 }
 
-
 impl AneGatedFfn {
     /// Paired-row INT8 layout experiment, controlled against existing stacking.
     /// The existing single-I/O owner and width-one boundary are unchanged.

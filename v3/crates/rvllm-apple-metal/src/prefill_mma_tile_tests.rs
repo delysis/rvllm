@@ -187,8 +187,8 @@ fn run_matrix_comparison(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     // New fixtures are numerical-only. Timing belongs to a separately admitted
     // campaign, not to incidental execution of an ignored component test.
-    let qualify_only = candidate.is_some()
-        || std::env::var_os("RVLLM_METAL_MMA_TILE_QUALIFY_ONLY").is_some();
+    let qualify_only =
+        candidate.is_some() || std::env::var_os("RVLLM_METAL_MMA_TILE_QUALIFY_ONLY").is_some();
     let require_fp32_bits = reduction64
         || candidate == Some(crate::MetalResearchCandidate::Mma32Load4)
         || candidate == Some(crate::MetalResearchCandidate::Mma32Prefetch);
@@ -197,7 +197,12 @@ fn run_matrix_comparison(
     let tensors = scan_safetensor_tensors(&model)?;
     let names = if let Some(kind) = candidate {
         let kernels = kind.kernels();
-        vec!["qkv_project_f32_mma32", kernels[1].name(), "gemm_f16_mma32", kernels[0].name()]
+        vec![
+            "qkv_project_f32_mma32",
+            kernels[1].name(),
+            "gemm_f16_mma32",
+            kernels[0].name(),
+        ]
     } else if reduction64 {
         vec![
             "qkv_project_f32_mma32",
@@ -223,8 +228,12 @@ fn run_matrix_comparison(
     };
     let mut source = crate::kernels::kernel_source_with_options(
         MetalFloatType::Bf16,
-        crate::MetalKernelOptions { research: selected, ..crate::MetalKernelOptions::default() },
-    ).into_owned();
+        crate::MetalKernelOptions {
+            research: selected,
+            ..crate::MetalKernelOptions::default()
+        },
+    )
+    .into_owned();
     if reduction64 {
         source.push_str(&reduction64_source("float", names[1]));
         source.push_str(&reduction64_source("bfloat", names[3]));
@@ -240,8 +249,12 @@ fn run_matrix_comparison(
     for name in &names {
         pipelines.compile(&ctx, name)?;
         let pso = pipelines.get(name)?;
-        let planned = selected.kernels().iter().find(|kernel| kernel.name() == *name)
-            .map(|kernel| kernel.limits().1).unwrap_or(0);
+        let planned = selected
+            .kernels()
+            .iter()
+            .find(|kernel| kernel.name() == *name)
+            .map(|kernel| kernel.limits().1)
+            .unwrap_or(0);
         if planned > ctx.device().maxThreadgroupMemoryLength()
             || pso.threadExecutionWidth() != 32
             || pso.maxTotalThreadsPerThreadgroup() < 128
@@ -273,8 +286,14 @@ fn run_matrix_comparison(
         vec![
             // Vector loading admits aligned N/K only. Its policy tests reject
             // other N/K; this actual execution still exercises a partial M tile.
-            ("all-tails", 0, 63_u32, if vector_load { 64_u32 } else { 67_u32 },
-                if vector_load { 64_u32 } else { 35_u32 }, vec![]),
+            (
+                "all-tails",
+                0,
+                63_u32,
+                if vector_load { 64_u32 } else { 67_u32 },
+                if vector_load { 64_u32 } else { 35_u32 },
+                vec![],
+            ),
             (
                 "sliding-qkv",
                 0,
@@ -307,7 +326,14 @@ fn run_matrix_comparison(
                 8192,
                 vec!["self_attn.o_proj"],
             ),
-            ("down", 0, if short { 64 } else { 1024 }, 3840, 15360, vec!["mlp.down_proj"]),
+            (
+                "down",
+                0,
+                if short { 64 } else { 1024 },
+                3840,
+                15360,
+                vec!["mlp.down_proj"],
+            ),
         ]
     };
     for (label, layer, m, n, k, parts) in shapes {
@@ -398,12 +424,16 @@ fn run_matrix_comparison(
                     width: (m as usize).div_ceil(if path % variant_count == 0 || reduction64 {
                         32
                     } else {
-                        crate::research_projection::projection_tile(selected).ok_or("not a matrix candidate")?.0
+                        crate::research_projection::projection_tile(selected)
+                            .ok_or("not a matrix candidate")?
+                            .0
                     }),
                     height: (n as usize).div_ceil(if path % variant_count == 0 || reduction64 {
                         32
                     } else {
-                        crate::research_projection::projection_tile(selected).ok_or("not a matrix candidate")?.1
+                        crate::research_projection::projection_tile(selected)
+                            .ok_or("not a matrix candidate")?
+                            .1
                     }),
                     depth: 1,
                 },

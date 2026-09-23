@@ -18,10 +18,10 @@ inline void wave2_mma32_load4_tile(device const half *A, device const half *B,
             threadgroup vec<half, 4> *bv = (threadgroup vec<half, 4> *)bt;
             av[v] = mr + row < M
                 ? *((device const vec<half, 4> *)(A + size_t(mr + row) * K + kb + col))
-                : vec<half, 4>(0.0f);
+                : vec<half, 4>(half(0.0f));
             bv[v] = nc + row < N
                 ? *((device const vec<half, 4> *)(B + size_t(nc + row) * K + kb + col))
-                : vec<half, 4>(0.0f);
+                : vec<half, 4>(half(0.0f));
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         for (uint kk = 0; kk < 32u; kk += 8u) {

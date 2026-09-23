@@ -1,7 +1,9 @@
 //! Receipt and mode policy only. No model load, device access, or ANE call.
 #![forbid(unsafe_code)]
 
-use rvllm_apple_metal::research_evidence::{ResearchDispatchSnapshot, RESEARCH_DISPATCH_SCHEMA, RESEARCH_KERNEL_NAMES};
+use rvllm_apple_metal::research_evidence::{
+    ResearchDispatchSnapshot, RESEARCH_DISPATCH_SCHEMA, RESEARCH_KERNEL_NAMES,
+};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::Path;
@@ -219,7 +221,10 @@ mod tests {
         assert!(report["all_eligible_layers_exercised"].is_null());
         assert!(report["tensor_oracle_passed"].is_null());
         partial.counts[11] = 48;
-        assert_eq!(dispatch_report("metal-mma32-f32", zero, partial).unwrap()["complete_family_exercised"], true);
+        assert_eq!(
+            dispatch_report("metal-mma32-f32", zero, partial).unwrap()["complete_family_exercised"],
+            true
+        );
     }
 
     #[test]

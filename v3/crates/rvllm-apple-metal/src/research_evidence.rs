@@ -51,7 +51,9 @@ pub enum ResearchKernel {
 }
 
 impl ResearchKernel {
-    pub const fn name(self) -> &'static str { RESEARCH_KERNEL_NAMES[self as usize] }
+    pub const fn name(self) -> &'static str {
+        RESEARCH_KERNEL_NAMES[self as usize]
+    }
     /// Source budgets, checked in addition to queried PSO/device limits.
     pub const fn limits(self) -> (usize, usize) {
         match self {
@@ -165,11 +167,15 @@ impl ResearchDispatchSnapshot {
     /// Require every entry point in the explicitly selected family. This is a
     /// coverage check, NOT tensor accuracy or complete per-layer work accounting.
     pub fn complete_family_exercised(self, requested: &str) -> Result<bool, &'static str> {
-        if !self.selection_exercised(requested)? { return Ok(false); }
+        if !self.selection_exercised(requested)? {
+            return Ok(false);
+        }
         let candidate: crate::research::MetalResearchCandidate = requested.parse()?;
-        Ok(candidate.kernels().iter().all(|k| self.counts[*k as usize] != 0))
+        Ok(candidate
+            .kernels()
+            .iter()
+            .all(|k| self.counts[*k as usize] != 0))
     }
-
 }
 
 #[cfg(test)]
@@ -287,16 +293,21 @@ mod tests {
             for kernel in candidate.kernels() {
                 snapshot.counts[*kernel as usize] = 1;
             }
-            assert_eq!(snapshot.complete_family_exercised(candidate.name()), Ok(true));
+            assert_eq!(
+                snapshot.complete_family_exercised(candidate.name()),
+                Ok(true)
+            );
             if candidate.kernels().len() > 1 {
                 snapshot.counts[candidate.kernels()[0] as usize] = 0;
                 assert_eq!(snapshot.selection_exercised(candidate.name()), Ok(true));
-                assert_eq!(snapshot.complete_family_exercised(candidate.name()), Ok(false));
+                assert_eq!(
+                    snapshot.complete_family_exercised(candidate.name()),
+                    Ok(false)
+                );
             }
             if candidate != crate::research::MetalResearchCandidate::Off {
                 assert!(snapshot.complete_family_exercised("off").is_err());
             }
         }
     }
-
 }

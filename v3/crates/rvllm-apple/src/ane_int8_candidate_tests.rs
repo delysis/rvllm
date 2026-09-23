@@ -15,7 +15,8 @@ fn number(text: &str) -> TestResult<usize> {
 fn payload(blob: &[u8], offset: usize, dtype: u32) -> TestResult<&[u8]> {
     let header_end = offset.checked_add(64).ok_or("descriptor overflow")?;
     let header = blob.get(offset..header_end).ok_or("truncated descriptor")?;
-    if offset < 64 || offset % 64 != 0
+    if offset < 64
+        || offset % 64 != 0
         || header[..4] != 0xDEAD_BEEF_u32.to_le_bytes()
         || header[4..8] != dtype.to_le_bytes()
         || header[24..].iter().any(|&b| b != 0)
@@ -62,62 +63,105 @@ fn decode_constants(
     blob: &[u8],
 ) -> TestResult<BTreeMap<String, (usize, usize, Vec<f16>)>> {
     let header = blob.get(..64).ok_or("truncated blob header")?;
-    let descriptors = u32::from_le_bytes(header[..4].try_into().map_err(|_| "descriptor count")?) as usize;
-    if descriptors == 0 || descriptors % 2 != 0 || header[4..8] != 2_u32.to_le_bytes()
-        || header[8..].iter().any(|&b| b != 0) {
+    let descriptors =
+        u32::from_le_bytes(header[..4].try_into().map_err(|_| "descriptor count")?) as usize;
+    if descriptors == 0
+        || descriptors % 2 != 0
+        || header[4..8] != 2_u32.to_le_bytes()
+        || header[8..].iter().any(|&b| b != 0)
+    {
         return Err("blob header ABI mismatch".into());
     }
     let mut result = BTreeMap::new();
     let mut regions = BTreeMap::new();
-    for line in mil.lines().filter(|line| line.contains(" = constexpr_affine_dequantize()")) {
+    for line in mil
+        .lines()
+        .filter(|line| line.contains(" = constexpr_affine_dequantize()"))
+    {
         let (left, _) = line.trim().split_once(" = ").ok_or("assignment")?;
         let name = left.split_whitespace().last().ok_or("constant name")?;
         let shape = dimensions(line)?;
-        if !left.starts_with("tensor<fp16,") || shape.len() != 4 || shape[2..] != [1, 1]
-            || shape[..2].contains(&0) || !line.contains("axis = int32(0)")
-            || !line.contains("zero_point = int8(0)") {
+        if !left.starts_with("tensor<fp16,")
+            || shape.len() != 4
+            || shape[2..] != [1, 1]
+            || shape[..2].contains(&0)
+            || !line.contains("axis = int32(0)")
+            || !line.contains("zero_point = int8(0)")
+        {
             return Err("weight dtype, rank or dequantization contract".into());
         }
-        let q_text = line.split_once("quantized_data = tensor<int8,").ok_or("signed INT8 coefficients")?.1;
-        let scale_text = line.split_once("scale = tensor<fp16,").ok_or("FP16 scales")?.1;
-        if dimensions(q_text)? != shape || dimensions(scale_text)? != [shape[0]]
-            || line.matches("@model_path/weights/weight.bin").count() != 2 {
+        let q_text = line
+            .split_once("quantized_data = tensor<int8,")
+            .ok_or("signed INT8 coefficients")?
+            .1;
+        let scale_text = line
+            .split_once("scale = tensor<fp16,")
+            .ok_or("FP16 scales")?
+            .1;
+        if dimensions(q_text)? != shape
+            || dimensions(scale_text)? != [shape[0]]
+            || line.matches("@model_path/weights/weight.bin").count() != 2
+        {
             return Err("serialized constant shape or path".into());
         }
-        let offsets = line.split("offset = uint64(").skip(1)
-            .map(|s| number(s.split(')').next().unwrap_or(""))).collect::<TestResult<Vec<_>>>()?;
-        if offsets.len() != 2 { return Err("affine needs two payloads".into()); }
+        let offsets = line
+            .split("offset = uint64(")
+            .skip(1)
+            .map(|s| number(s.split(')').next().unwrap_or("")))
+            .collect::<TestResult<Vec<_>>>()?;
+        if offsets.len() != 2 {
+            return Err("affine needs two payloads".into());
+        }
         let q = payload(blob, offsets[0], 4)?;
         let scales = payload(blob, offsets[1], 1)?;
         if shape[0].checked_mul(shape[1]) != Some(q.len())
-            || shape[0].checked_mul(2) != Some(scales.len()) {
+            || shape[0].checked_mul(2) != Some(scales.len())
+        {
             return Err("constant shape mismatch".into());
         }
         for (offset, len) in [(offsets[0], q.len()), (offsets[1], scales.len())] {
-            let end = offset.checked_add(64).and_then(|x| x.checked_add(len)).ok_or("region overflow")?;
-            if regions.insert(offset, end).is_some() { return Err("duplicate descriptor reference".into()); }
+            let end = offset
+                .checked_add(64)
+                .and_then(|x| x.checked_add(len))
+                .ok_or("region overflow")?;
+            if regions.insert(offset, end).is_some() {
+                return Err("duplicate descriptor reference".into());
+            }
         }
         let mut values = Vec::with_capacity(q.len());
         for (row, scale) in q.chunks_exact(shape[1]).zip(scales.chunks_exact(2)) {
             let scale = f16::from_le_bytes([scale[0], scale[1]]).to_f32();
-            if !scale.is_finite() || scale <= 0.0 { return Err("scale must be positive and finite".into()); }
+            if !scale.is_finite() || scale <= 0.0 {
+                return Err("scale must be positive and finite".into());
+            }
             for byte in row {
                 let value = f16::from_f32(f32::from(i8::from_le_bytes([*byte])) * scale);
-                if !value.is_finite() { return Err("nonfinite reconstruction".into()); }
+                if !value.is_finite() {
+                    return Err("nonfinite reconstruction".into());
+                }
                 values.push(value);
             }
         }
-        if result.insert(name.into(), (shape[0], shape[1], values)).is_some() {
+        if result
+            .insert(name.into(), (shape[0], shape[1], values))
+            .is_some()
+        {
             return Err("duplicate weight name".into());
         }
     }
-    if regions.len() != descriptors { return Err("descriptor count mismatch".into()); }
+    if regions.len() != descriptors {
+        return Err("descriptor count mismatch".into());
+    }
     let mut end = 64;
     for (offset, next) in regions {
-        if offset != end { return Err("overlap, gap or unused payload".into()); }
+        if offset != end {
+            return Err("overlap, gap or unused payload".into());
+        }
         end = next;
     }
-    if end != blob.len() { return Err("unreferenced blob bytes".into()); }
+    if end != blob.len() {
+        return Err("unreferenced blob bytes".into());
+    }
     Ok(result)
 }
 

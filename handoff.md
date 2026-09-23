@@ -309,6 +309,30 @@ with dispatch evidence. Do not promote from host/compiler receipts alone.
 
 Integration commit: **e52cbb549967e17e3d7f266b7d1f9d2f1efdf800**.
 
+## Unified cffb22da continuation integration (2026-09-22)
+
+Packet verification passed: 459 checksums, 33 exact preimages, and isolated
+five-patch replay with no source execution or commits. All five mboxes applied
+in order to the cffb22da base. Exactly 32 listed Rust paths were formatted.
+
+Qualification receipts: Python checks **108/108** passed; the unified proposal
+validator reported five source-only, unadmitted candidates with zero jobs and
+zero hardware execution; the public host runner passed **60 named Rust tests
+and 22 source exports** at `/tmp/rvllm-gemma4-unified-host.IRliEk/output`.
+
+The native gate reached all 32 formatting checks and the catalog/evidence host
+filters, then failed at `prefill-screen` compilation because rustc exhausted
+the filesystem while writing artifacts (`No space left on device`). Receipt:
+`/private/tmp/rvllm-gemma4-unified-native.lDh1vJ/output`. Restore disk space
+and rerun the native gate in a fresh output directory. No accelerator,
+inference, cache, ignored fixture, queue, power, or timing work ran.
+
+The disk-headroom rerun exposed and fixed one genuine Metal 3.1 issue in
+`mma32_load4.metal`: BF16 source rewriting rejected `vec<bfloat,4>(0.0f)`.
+Both guarded vector initializers now construct the scalar element explicitly.
+The fresh rerun passed with `compiled-only; no accelerator acceptance` at
+`/tmp/rvllm-gemma4-unified-native-rerun2.Y71g3q/output`.
+
 ## Wave 2 packet intake and deferral (2026-09-22)
 
 Wave 2 archive `rvllm-gemma4-wave2-faa75336-20260922.tar` was checksum

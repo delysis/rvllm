@@ -62,9 +62,9 @@ pub mod kernels;
 pub mod options;
 pub mod research;
 pub mod research_catalog;
-pub mod research_projection;
 pub mod research_evidence;
 pub mod research_next;
+pub mod research_projection;
 pub use options::{MetalKernelOptions, MetalModelLimits};
 pub use research::MetalResearchCandidate;
 #[cfg(any(target_os = "macos", target_os = "ios"))]

@@ -188,7 +188,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     "static-int8-chunk4-ffn-cached" => AneWeightPlan::StaticInt8Chunk4FfnCached,
                     "static-int8-down4-ffn-cached" => AneWeightPlan::StaticInt8Down4FfnCached,
-                    "static-int8-interleaved-ffn-cached" => AneWeightPlan::StaticInt8InterleavedFfnCached,
+                    "static-int8-interleaved-ffn-cached" => {
+                        AneWeightPlan::StaticInt8InterleavedFfnCached
+                    }
                     "static-int8-ffn-transpose-attention-cached" => {
                         AneWeightPlan::StaticInt8FfnTransposeAttentionCached
                     }

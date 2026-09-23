@@ -11,7 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("--catalog accepts no additional arguments".into());
         }
         let mut output = std::io::stdout().lock();
-        serde_json::to_writer_pretty(&mut output, &rvllm_apple_metal::research_catalog::catalog_json())?;
+        serde_json::to_writer_pretty(
+            &mut output,
+            &rvllm_apple_metal::research_catalog::catalog_json(),
+        )?;
         output.write_all(b"\n")?;
         return Ok(());
     }
