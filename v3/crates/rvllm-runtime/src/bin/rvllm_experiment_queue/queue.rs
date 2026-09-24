@@ -133,8 +133,7 @@ impl Job {
             || !valid_id(&self.id)
             || !matches!(c.power_source.as_str(), "ac" | "battery")
             || c.pmset_power_mode > 2
-            || c.thermal_state.is_some_and(|state| state > 1)
-            || (self.purpose == Purpose::Timing && c.thermal_state.is_none())
+            || c.thermal_state.is_some_and(|state| state > 3)
             || !c.disk_path.is_absolute()
             || !c.disk_path.is_dir()
             || !(1..=600).contains(&self.stable_seconds)
@@ -329,7 +328,9 @@ fn controls_match(observation: &Value, c: &Conditions) -> bool {
         && controls["power_source"] == c.power_source
         && controls["low_power_mode"] == c.low_power_mode
         && controls["pmset_power_mode"] == c.pmset_power_mode
-        && matches!(controls["thermal_state"].as_u64(), Some(0 | 1))
+        && controls["thermal_state"]
+            .as_u64()
+            .is_some_and(|state| state <= 3)
         && c.thermal_state
             .map_or(true, |state| controls["thermal_state"] == state)
         && ["cpu_speed_limit_percent", "scheduler_limit_percent"]
@@ -1098,14 +1099,16 @@ mod tests {
     }
 
     #[test]
-    fn preparation_can_accept_benign_thermals_but_never_unknown_or_serious() {
+    fn unpinned_jobs_accept_every_known_thermal_state_but_never_unknown() {
         let mut c = conditions();
         c.thermal_state = None;
         let mut value = observation();
         assert!(controls_match(&value, &c));
-        value["sample"]["controls"]["thermal_state"] = json!(1);
-        assert!(controls_match(&value, &c));
-        for state in [json!(2), json!(3), Value::Null] {
+        for state in [json!(1), json!(2), json!(3)] {
+            value["sample"]["controls"]["thermal_state"] = state;
+            assert!(controls_match(&value, &c));
+        }
+        for state in [json!(4), Value::Null] {
             value["sample"]["controls"]["thermal_state"] = state;
             assert!(!controls_match(&value, &c));
         }

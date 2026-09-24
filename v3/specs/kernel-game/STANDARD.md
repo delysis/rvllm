@@ -32,13 +32,21 @@ Timing MUST use a predeclared plan. The current helper supports repeated ABBA
 blocks. Every measured sample MUST:
 
 - follow the declared arm order;
-- remain in one AC/battery, low-power, pmset, and thermal stratum;
+- remain in one AC/battery, low-power, and pmset stratum;
+- record thermal state for every sample; a campaign MAY admit multiple known
+  thermal states only when comparisons remain local to complete ABBA blocks,
+  each block reports its observed thermal sequence, and blocks are never pooled
+  as if they shared one thermal stratum;
 - have finite positive duration;
 - perform zero compilation.
 
-Control drift above the declared ceiling invalidates the campaign. All samples
-are retained. The practical-effect threshold is policy supplied by the task; it
-is not inferred after seeing results.
+Control drift above the declared ceiling invalidates its ABBA block. A campaign
+that predeclares a single thermal stratum is invalidated by a stratum change;
+  an any-known-thermal campaign instead keeps complete locally matched blocks as
+separate strata and aggregates their paired candidate/control effects. All
+samples are retained. The practical-effect threshold and cross-stratum
+aggregation rule are policy supplied by the task; neither is inferred after
+seeing results.
 
 Independent confirmation is required before a result can be marked promotable.
 
