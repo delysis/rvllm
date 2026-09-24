@@ -1,7 +1,8 @@
 # MLX Gemma 4 Q4/256 generated-Metal capture
 
 This lane captures exactly one MLX-LM normal-route request: affine Q4 g64,
-256 pseudo-random prompt tokens, batch one, and 64 generated tokens. It uses
+256 pseudo-random prompt tokens, batch one, and two generated tokens. The first
+token is sampled from prefill and the second exercises one decode step. It uses
 upstream `mx.metal.start_capture(path)` and `stop_capture()` and produces an
 Xcode `.gputrace` package. Model loading and parameter materialization occur
 before capture begins.
@@ -13,6 +14,12 @@ GPU work because pinned MLX-LM commit
 `87b7b583a697537aa68f47130b40884700b5f55f` declares `mlx>=0.32.2` and calls
 `new_thread_local_stream`, which that older core does not expose. Preserve the
 v1 failure receipt as incompatibility evidence.
+
+The compatible v2 attempt was deliberately terminated after its partial Xcode
+trace reached 6.3 GiB while the 64-token capture was still running. Its queue
+failure receipt is retained; the incomplete reproducible trace was deleted to
+recover space. v3 narrows the capture to the minimum normal-route window that
+still exercises both prefill and decode.
 
 The v2 queue job instead builds official MLX tag `v0.32.2`, commit
 `1f8e74e3f12f31365464a6867c6579f0e9b29d85`, into a fresh dedicated

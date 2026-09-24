@@ -23,7 +23,9 @@ BUILD_SCHEMA = "rvllm.mlx_metal_debug_build.v1"
 PINNED_MLX_LM_COMMIT = "87b7b583a697537aa68f47130b40884700b5f55f"
 BUILD_FLAGS = ["-DMLX_METAL_DEBUG=ON"]
 PROMPT_TOKENS = 256
-GENERATION_TOKENS = 64
+# The token sampled from prefill plus one decode step cover both normal-route
+# phases without recording dozens of repetitive decode command buffers.
+GENERATION_TOKENS = 2
 WEIGHT_BITS = 4
 
 

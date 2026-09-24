@@ -1,0 +1,84 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "mlx-gemma4-q4-pp256-gputrace-20260924-v3",
+  "purpose": "preparation",
+  "after": [],
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 600,
+  "stable_seconds": 5,
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 25769803776,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [],
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "mlx_lm.benchmark",
+      "mlx_gemma4_stage_bench.py"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/tools/mlx_gemma4_gputrace_capture.py",
+      "sha256": "0978e0f82407e5949836c9581c707c0d063b23d76776092df82aee99220f7f84"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-metal-debug-v0.32.2-build.json",
+      "sha256": "f88dbd87abe5d7ace25fa3eb1ebd8672db755d5119616ca219ea2be158558e84"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-metal-debug-v0.32.2/mlx/core.cpython-314-darwin.so",
+      "sha256": "db084517c78208e6ad74506a663c5bcb70faa7b7343544c3364cec7fbaa5178e"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-gemma4-12b-affine4-g64-20260924/config.json",
+      "sha256": "1ad49b8a789471a952702d7e1aac290313a3dd2af27e47de4054ccbfb496b5b4"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-gemma4-12b-affine4-g64-20260924/model.safetensors.index.json",
+      "sha256": "0352c33d9baee674195c874b42687e0afa0fb68b42f5c2e1a8a2fff44b125b7a"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/models/gemma4_text.py",
+      "sha256": "73ffa75e9069ce7b2f864ccd8f0267bb80c5b5d4e2b73102b8a2a93fe03f936d"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/generate.py",
+      "sha256": "4a3bf57f5679dac73791f069268866ab5b9336e58582d436b31133984e4b6971"
+    }
+  ],
+  "command": {
+    "executable": {
+      "path": "/Users/george/christian_mystics/venv/bin/python",
+      "sha256": "695fc18cdb9a699c6b1ea88ce4027854782ed704eb34cc3200e6f8380155b6a8"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "tools/mlx_gemma4_gputrace_capture.py",
+      "--mlx-source",
+      "/Users/george/.cache/rvllm-mlx-source-v0.32.2",
+      "--expected-mlx-commit",
+      "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "--mlx-lm-source",
+      "/Users/george/.cache/rvllm-mlx-lm-87b7b583",
+      "--model",
+      "/Users/george/.cache/rvllm-mlx-gemma4-12b-affine4-g64-20260924",
+      "--capture",
+      "/Users/george/.cache/rvllm-mlx-gemma4-q4-pp256-20260924-v3.gputrace",
+      "--build-receipt",
+      "/Users/george/.cache/rvllm-mlx-metal-debug-v0.32.2-build.json"
+    ],
+    "env": {
+      "MTL_CAPTURE_ENABLED": "1",
+      "MLX_METAL_PREWARM": "1",
+      "PYTHONPATH": "/Users/george/.cache/rvllm-mlx-metal-debug-v0.32.2:/Users/george/.cache/rvllm-mlx-lm-87b7b583"
+    }
+  },
+  "validator": null,
+  "kernel_game_submission": null
+}
