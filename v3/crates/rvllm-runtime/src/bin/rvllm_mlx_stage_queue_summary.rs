@@ -129,13 +129,13 @@ fn summarize(results_directory: &Path) -> Result<Summary, String> {
         .collect::<Result<Vec<_>, _>>()?;
     directories.retain(|path| path.is_dir());
     directories.sort();
-    if directories.is_empty() {
-        return Err("results directory contains no job directories".to_owned());
-    }
 
-    let mut evidence = Vec::with_capacity(directories.len());
+    let mut evidence = Vec::new();
     let mut grouped = ByBits::new();
     for directory in directories {
+        if !is_stage_job(&directory)? {
+            continue;
+        }
         let (job_evidence, cases, iterations) = summarize_job(&directory)?;
         let bits = job_evidence.weight_bits.to_string();
         for case in cases {
@@ -165,6 +165,9 @@ fn summarize(results_directory: &Path) -> Result<Summary, String> {
         }
         evidence.push(job_evidence);
     }
+    if evidence.is_empty() {
+        return Err("results directory contains no stage-microbenchmark jobs".to_owned());
+    }
     Ok(Summary {
         schema: OUTPUT_SCHEMA,
         claim: "Validated isolated MLX operator timings only; not end-to-end inference, framework comparison, or promotion evidence.",
@@ -172,6 +175,11 @@ fn summarize(results_directory: &Path) -> Result<Summary, String> {
         evidence,
         grouped,
     })
+}
+
+fn is_stage_job(directory: &Path) -> Result<bool, String> {
+    let job = read_strict(&directory.join("job.json"))?;
+    Ok(job.pointer("/command/args/0").and_then(Value::as_str) == Some(STAGE_TOOL))
 }
 
 fn summarize_job(directory: &Path) -> Result<(QueueEvidence, Vec<ParsedCase>, u64), String> {
