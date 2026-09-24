@@ -68,9 +68,10 @@ and are intentionally not committed.
 ## Evidence boundary and next round
 
 This rejects current Chunk4 under the game’s exact-output rule and establishes
-source-to-device layer-0 component correctness for Interleaved. It does not
-establish whole-model parity, speed, cache portability, compression, or
-promotion. Interleaved should next receive exact-tree full-route qualification
-and only then warm counterbalanced timing. Chunk4 needs a numerical-ordering fix
-or a separately justified contract change; the tolerance must not be silently
-widened to admit it.
+source-to-device layer-0 component correctness for Interleaved. A subsequent
+exact-tree full-route run also matched the pinned two-token reference with
+actual ANE execution and zero compiler calls; that receipt is reported
+separately. Neither run establishes speed, cache portability, compression, or
+promotion. Interleaved now requires warm counterbalanced timing. Chunk4 needs a
+numerical-ordering fix or a separately justified contract change; the tolerance
+must not be silently widened to admit it.
