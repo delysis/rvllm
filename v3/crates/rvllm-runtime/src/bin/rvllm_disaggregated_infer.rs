@@ -15,6 +15,9 @@ use rvllm_runtime::gemma_ane_decode::{
     AneStaticCachePart, AneWeightPlan, GemmaAneDecode,
 };
 use rvllm_runtime::gemma_head_ranking::{validate_head_ranking_mode, HeadRankingPlan};
+use rvllm_runtime::kernel_game::{
+    parse_strict_json, RouteEvidence, SealedSubmission, Sha256Digest, EVIDENCE_SCHEMA,
+};
 use rvllm_runtime::text_generation::{encode_gemma4_user_prompt, IncrementalTextDecoder};
 use rvllm_runtime::{BatchPlan, PagedKvConfig, PagedKvPool};
 use sha2::{Digest, Sha256};
@@ -70,6 +73,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut model_dir = None;
     let mut output_dir = None;
     let mut metallib_bf16 = None;
+    let mut kernel_game_submission = None;
+    let mut kernel_game_source_tree = None;
+    let mut kernel_game_oracle = None;
     let mut paths = Vec::new();
     let mut prompts = Vec::new();
     let mut max_new_tokens = 64_usize;
@@ -99,6 +105,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
             println!("  --head-ranking baseline|cpu-head-softcap-prune (default baseline)");
             println!("  --head-ranking-timing BOOL   CPU softcap/ranking only; default false; same setting on both timing arms");
+            println!(
+                "  --kernel-game-submission PATH  Bind referee evidence to a sealed submission"
+            );
+            println!("  --kernel-game-source-tree PATH Pinned source-tree archive or manifest");
+            println!("  --kernel-game-oracle PATH       Pinned oracle implementation");
             println!("  PART=all-int8                  Visit qkv, output, ffn-int8 and head-attention in fresh serial processes");
             println!(
                 "  PART=ffn-int8-chunk4           Explicit single-I/O FFN output-channel chunking"
@@ -128,6 +139,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--output-dir" => output_dir = Some(PathBuf::from(value)),
             "--metallib-bf16" => metallib_bf16 = Some(PathBuf::from(value)),
             "--hf-reference" => paths.push(PathBuf::from(value)),
+            "--kernel-game-submission" => kernel_game_submission = Some(PathBuf::from(value)),
+            "--kernel-game-source-tree" => kernel_game_source_tree = Some(PathBuf::from(value)),
+            "--kernel-game-oracle" => kernel_game_oracle = Some(PathBuf::from(value)),
             "--prompt" => prompts.push(value),
             "--prompt-file" => prompts.push(std::fs::read_to_string(value)?),
             "--max-new-tokens" => max_new_tokens = value.parse()?,
@@ -428,13 +442,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let generated_msl_sha256 = format!(
         "{:x}",
         Sha256::digest(
-            rvllm_apple_metal::kernels::kernel_source_with_options(
-                MetalFloatType::Bf16,
-                kernels,
-            )
-            .as_bytes(),
+            rvllm_apple_metal::kernels::kernel_source_with_options(MetalFloatType::Bf16, kernels,)
+                .as_bytes(),
         )
     );
+    let model_config_sha256 = format!("{:x}", Sha256::digest(&config));
+    let kernel_game_binding = match (
+        kernel_game_submission,
+        kernel_game_source_tree,
+        kernel_game_oracle,
+    ) {
+        (None, None, None) => None,
+        (Some(submission_path), Some(source_tree_path), Some(oracle_path)) => {
+            let bytes = std::fs::read(&submission_path)?;
+            let submission: SealedSubmission = parse_strict_json(&bytes)?;
+            submission.validate()?;
+            let source_tree_sha256 = sha256_file(&source_tree_path)?;
+            let oracle_sha256 = sha256_file(&oracle_path)?;
+            let fixed_identities_match = submission.candidate == kernels.research.name()
+                && submission.source_tree.as_str() == source_tree_sha256
+                && submission.executable.sha256.as_str() == executable_sha256
+                && submission.metallib.as_ref().map(|a| a.sha256.as_str())
+                    == Some(metallib_sha256.as_str())
+                && submission.generated_source.as_str() == generated_msl_sha256
+                && submission.model.as_str() == model_config_sha256
+                && submission.oracle.as_str() == oracle_sha256;
+            if !fixed_identities_match {
+                return Err(
+                    "kernel-game submission differs from observed runtime artifacts".into(),
+                );
+            }
+            Some(submission)
+        }
+        _ => {
+            return Err(
+                "kernel-game submission, source tree, and oracle must be provided together".into(),
+            )
+        }
+    };
     if runtime_worker {
         let qualified = MetalKernelOptions {
             prefill_mma32: true,
@@ -501,11 +546,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         model_layout_hash: layout_hash,
         weights_path: Some(model_dir.clone()),
     };
-    let mut metal = ModelMetalBackend::with_options(
-        model_dir.clone(),
-        metallib_bf16.clone(),
-        metal_options,
-    );
+    let mut metal =
+        ModelMetalBackend::with_options(model_dir.clone(), metallib_bf16.clone(), metal_options);
     let power_journal = output_dir
         .as_ref()
         .map(|dir| dir.join("power-observations.jsonl"));
@@ -678,11 +720,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         };
         let index = completed_requests;
         let compiler_calls_before = rvllm_apple::ane_linear::compile_budget_used();
-        let reference_sha256 = reference
-            .path
-            .as_deref()
-            .map(sha256_file)
-            .transpose()?;
+        let reference_sha256 = reference.path.as_deref().map(sha256_file).transpose()?;
         let workload_sha256 = format!(
             "{:x}",
             Sha256::digest(serde_json::to_vec(&reference.prompt)?)
@@ -852,20 +890,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .decode(&generated, true)
             .map_err(|e| e.to_string())?;
         let compiler_calls_after = rvllm_apple::ane_linear::compile_budget_used();
-        let compiler_calls_this_request = compiler_calls_after
-            .checked_sub(compiler_calls_before)
-            .ok_or("ANE compiler call counter reset during request")?;
-        let route_evidence = serde_json::json!({
-            "schema":"rvllm.kernel_game.route_evidence.v1",
+        let compiler_calls_this_request =
+            compiler_calls_after
+                .checked_sub(compiler_calls_before)
+                .ok_or("ANE compiler call counter reset during request")?;
+        let route_observation = serde_json::json!({
+            "schema":"rvllm.kernel_game.route_observation.v1",
             "candidate":kernels.research.name(),
             "command_completed":true,
             "reference_match":matched,
             "executable":{"path":executable_path.display().to_string(),"sha256":executable_sha256.clone()},
             "metallib":{"path":metallib_bf16.display().to_string(),"sha256":metallib_sha256.clone()},
             "generated_msl_sha256":generated_msl_sha256.clone(),
-            "model_config_sha256":format!("{:x}",Sha256::digest(&config)),
-            "reference_sha256":reference_sha256,
-            "workload_sha256":workload_sha256,
+            "model_config_sha256":model_config_sha256.clone(),
+            "reference_sha256":reference_sha256.clone(),
+            "workload_sha256":workload_sha256.clone(),
             "compiler_calls_before":compiler_calls_before,
             "compiler_calls_after":compiler_calls_after,
             "compiler_calls_this_request":compiler_calls_this_request,
@@ -877,6 +916,38 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "counting_boundary":"compiler counter brackets full request; research dispatch counters bracket synchronous Metal prefill",
             "promotion_claim":false,
         });
+        let route_evidence = if let Some(submission) = &kernel_game_binding {
+            let reference_sha256 = reference_sha256
+                .as_deref()
+                .ok_or("kernel-game evidence requires a file-backed reference")?;
+            let dispatch_counts = serde_json::from_value(
+                prefill_receipt["research_dispatch"]["encoded_dispatches"].clone(),
+            )?;
+            let evidence = RouteEvidence {
+                schema: EVIDENCE_SCHEMA.into(),
+                submission_id: submission.id.clone(),
+                task_id: submission.task_id.clone(),
+                candidate: kernels.research.name().into(),
+                source_tree_sha256: submission.source_tree.clone(),
+                executable_sha256: Sha256Digest::parse(executable_sha256.clone())?,
+                metallib_sha256: Some(Sha256Digest::parse(metallib_sha256.clone())?),
+                generated_source_sha256: Sha256Digest::parse(generated_msl_sha256.clone())?,
+                model_sha256: Sha256Digest::parse(model_config_sha256.clone())?,
+                reference_sha256: Sha256Digest::parse(reference_sha256)?,
+                workload_sha256: Sha256Digest::parse(workload_sha256.clone())?,
+                oracle_sha256: submission.oracle.clone(),
+                command_completed: true,
+                matches_reference: matched == Some(true),
+                compiler_calls: u64::try_from(compiler_calls_this_request)?,
+                dispatch_counts,
+                output_tokens: u64::try_from(generated.len())?,
+                decode_steps: u64::try_from(steps.len())?,
+            };
+            evidence.validate_against(submission)?;
+            Some(evidence)
+        } else {
+            None
+        };
         if text_mode {
             let tail = generated_text
                 .strip_prefix(&streamed_text)
@@ -892,6 +963,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "metal_gpu_execution_ms":prefill_times.gpu_execution_ms,
             "prefill_measurement":prefill_measurement,"ane_import_measurement":import_measurement,
             "metal_prefill_receipt":prefill_receipt,
+            "kernel_game_route_observation":route_observation,
             "kernel_game_route_evidence":route_evidence,
             "prefill_command_buffers":1,"metal_decode_steps":0,"ane_decode_steps":steps.len(),"steps":steps,
         });

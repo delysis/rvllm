@@ -14,6 +14,7 @@ use std::path::Path;
 
 pub const SUBMISSION_SCHEMA: &str = "rvllm.kernel_game.submission.v1";
 pub const EVIDENCE_SCHEMA: &str = "rvllm.kernel_game.evidence.v1";
+pub const CONFIRMATION_SCHEMA: &str = "rvllm.kernel_game.confirmation.v1";
 pub const RESULT_SCHEMA: &str = "rvllm.kernel_game.result.v1";
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -165,6 +166,7 @@ pub struct RouteEvidence {
     pub submission_id: String,
     pub task_id: String,
     pub candidate: String,
+    pub source_tree_sha256: Sha256Digest,
     pub executable_sha256: Sha256Digest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metallib_sha256: Option<Sha256Digest>,
@@ -172,6 +174,7 @@ pub struct RouteEvidence {
     pub model_sha256: Sha256Digest,
     pub reference_sha256: Sha256Digest,
     pub workload_sha256: Sha256Digest,
+    pub oracle_sha256: Sha256Digest,
     pub command_completed: bool,
     pub matches_reference: bool,
     pub compiler_calls: u64,
@@ -188,12 +191,14 @@ impl RouteEvidence {
         let identities_match = self.submission_id == submission.id
             && self.task_id == submission.task_id
             && self.candidate == submission.candidate
+            && self.source_tree_sha256 == submission.source_tree
             && self.executable_sha256 == submission.executable.sha256
             && self.metallib_sha256 == submission.metallib.as_ref().map(|a| a.sha256.clone())
             && self.generated_source_sha256 == submission.generated_source
             && self.model_sha256 == submission.model
             && self.reference_sha256 == submission.reference
-            && self.workload_sha256 == submission.workload;
+            && self.workload_sha256 == submission.workload
+            && self.oracle_sha256 == submission.oracle;
         if !identities_match {
             return Err(KernelGameError::IdentityMismatch);
         }
@@ -413,11 +418,40 @@ pub struct PublishedResult {
     pub timing: Option<TimingScore>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndependentConfirmation {
+    pub schema: String,
+    pub submission_id: String,
+    pub task_id: String,
+    pub candidate: String,
+    pub primary_evidence_sha256: Sha256Digest,
+    pub confirmation_evidence_sha256: Sha256Digest,
+}
+
+impl IndependentConfirmation {
+    pub fn validate_against(&self, submission: &SealedSubmission) -> Result<(), KernelGameError> {
+        if self.schema != CONFIRMATION_SCHEMA {
+            return Err(KernelGameError::WrongSchema(self.schema.clone()));
+        }
+        if self.submission_id != submission.id
+            || self.task_id != submission.task_id
+            || self.candidate != submission.candidate
+        {
+            return Err(KernelGameError::IdentityMismatch);
+        }
+        if self.primary_evidence_sha256 == self.confirmation_evidence_sha256 {
+            return Err(KernelGameError::ConfirmationNotIndependent);
+        }
+        Ok(())
+    }
+}
+
 pub fn reduce_result(
     submission: &SealedSubmission,
     route: Option<&RouteEvidence>,
     timing: Option<(&TimingPlan, &[TimingSample])>,
-    independently_confirmed: bool,
+    confirmation: Option<&IndependentConfirmation>,
 ) -> Result<PublishedResult, KernelGameError> {
     submission.validate()?;
     let Some(route) = route else {
@@ -453,7 +487,7 @@ pub fn reduce_result(
             timing: Some(score),
         });
     }
-    if !independently_confirmed {
+    let Some(confirmation) = confirmation else {
         return Ok(PublishedResult {
             schema: RESULT_SCHEMA,
             submission_id: submission.id.clone(),
@@ -462,7 +496,8 @@ pub fn reduce_result(
             blockers: vec!["independent_confirmation_required".into()],
             timing: Some(score),
         });
-    }
+    };
+    confirmation.validate_against(submission)?;
     Ok(PublishedResult {
         schema: RESULT_SCHEMA,
         submission_id: submission.id.clone(),
@@ -548,8 +583,8 @@ pub fn parse_strict_json<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, KernelG
     }
 
     let mut de = serde_json::Deserializer::from_slice(bytes);
-    let value = StrictValue::deserialize(&mut de)
-        .map_err(|e| KernelGameError::Json(e.to_string()))?;
+    let value =
+        StrictValue::deserialize(&mut de).map_err(|e| KernelGameError::Json(e.to_string()))?;
     de.end().map_err(|e| KernelGameError::Json(e.to_string()))?;
     serde_json::from_value(value.0).map_err(|e| KernelGameError::Json(e.to_string()))
 }
@@ -575,6 +610,7 @@ pub enum KernelGameError {
     WrongTimingSampleCount,
     TimingOrderMismatch,
     ControlDrift { observed: f64, allowed: f64 },
+    ConfirmationNotIndependent,
 }
 
 impl fmt::Display for KernelGameError {
@@ -587,8 +623,12 @@ impl fmt::Display for KernelGameError {
             Self::InvalidIdentity(v) => write!(f, "invalid identity field: {v}"),
             Self::CandidateEqualsControl => f.write_str("candidate must differ from control"),
             Self::InvalidDispatchContract => f.write_str("invalid positive dispatch contract"),
-            Self::IdentityMismatch => f.write_str("route evidence does not match sealed submission"),
-            Self::RouteNotQualified => f.write_str("route did not complete, match, or remain compile-free"),
+            Self::IdentityMismatch => {
+                f.write_str("route evidence does not match sealed submission")
+            }
+            Self::RouteNotQualified => {
+                f.write_str("route did not complete, match, or remain compile-free")
+            }
             Self::InvalidWorkCount => f.write_str("route work counts are impossible"),
             Self::DispatchMismatch(v) => write!(f, "dispatch count mismatch for {v}"),
             Self::ForeignDispatch => f.write_str("route contains foreign candidate dispatch"),
@@ -600,6 +640,9 @@ impl fmt::Display for KernelGameError {
             Self::TimingOrderMismatch => f.write_str("timing sample order differs from plan"),
             Self::ControlDrift { observed, allowed } => {
                 write!(f, "control drift {observed:.6} exceeds {allowed:.6}")
+            }
+            Self::ConfirmationNotIndependent => {
+                f.write_str("confirmation and primary evidence must be distinct artifacts")
             }
         }
     }
@@ -631,8 +674,14 @@ mod tests {
             candidate: "metal-mma32-prefetch".into(),
             control: "off".into(),
             source_tree: digest(1),
-            executable: ArtifactIdentity { sha256: digest(2), path: None },
-            metallib: Some(ArtifactIdentity { sha256: digest(3), path: None }),
+            executable: ArtifactIdentity {
+                sha256: digest(2),
+                path: None,
+            },
+            metallib: Some(ArtifactIdentity {
+                sha256: digest(3),
+                path: None,
+            }),
             generated_source: digest(4),
             model: digest(5),
             reference: digest(6),
@@ -652,12 +701,14 @@ mod tests {
             submission_id: s.id,
             task_id: s.task_id,
             candidate: s.candidate,
+            source_tree_sha256: digest(1),
             executable_sha256: digest(2),
             metallib_sha256: Some(digest(3)),
             generated_source_sha256: digest(4),
             model_sha256: digest(5),
             reference_sha256: digest(6),
             workload_sha256: digest(7),
+            oracle_sha256: digest(8),
             command_completed: true,
             matches_reference: true,
             compiler_calls: 0,
@@ -667,6 +718,18 @@ mod tests {
             ]),
             output_tokens: 10,
             decode_steps: 9,
+        }
+    }
+
+    fn confirmation() -> IndependentConfirmation {
+        let s = submission();
+        IndependentConfirmation {
+            schema: CONFIRMATION_SCHEMA.into(),
+            submission_id: s.id,
+            task_id: s.task_id,
+            candidate: s.candidate,
+            primary_evidence_sha256: digest(20),
+            confirmation_evidence_sha256: digest(21),
         }
     }
 
@@ -681,6 +744,9 @@ mod tests {
         let s = submission();
         let mut r = route();
         assert!(r.validate_against(&s).is_ok());
+        let encoded = serde_json::to_vec(&r).unwrap();
+        let decoded: RouteEvidence = parse_strict_json(&encoded).unwrap();
+        assert_eq!(decoded, r);
         r.executable_sha256 = digest(99);
         assert!(matches!(
             r.validate_against(&s),
@@ -692,6 +758,12 @@ mod tests {
         assert!(matches!(
             r.validate_against(&s),
             Err(KernelGameError::DispatchMismatch(_))
+        ));
+        let mut r = route();
+        r.oracle_sha256 = digest(99);
+        assert!(matches!(
+            r.validate_against(&s),
+            Err(KernelGameError::IdentityMismatch)
         ));
     }
 
@@ -747,16 +819,27 @@ mod tests {
             sample(TimingArm::Candidate, 91.0),
             sample(TimingArm::Control, 101.0),
         ];
-        let unconfirmed = reduce_result(&s, Some(&r), Some((&plan, &samples)), false).unwrap();
+        let unconfirmed = reduce_result(&s, Some(&r), Some((&plan, &samples)), None).unwrap();
         assert_eq!(unconfirmed.outcome, TerminalOutcome::Deferred);
-        let confirmed = reduce_result(&s, Some(&r), Some((&plan, &samples)), true).unwrap();
+        let confirmation = confirmation();
+        let confirmed =
+            reduce_result(&s, Some(&r), Some((&plan, &samples)), Some(&confirmation)).unwrap();
         assert_eq!(confirmed.outcome, TerminalOutcome::Promotable);
-        assert_eq!(confirmed.highest_stage, EvidenceStage::IndependentlyConfirmed);
+        assert_eq!(
+            confirmed.highest_stage,
+            EvidenceStage::IndependentlyConfirmed
+        );
+        let mut forged = confirmation;
+        forged.confirmation_evidence_sha256 = forged.primary_evidence_sha256.clone();
+        assert!(matches!(
+            reduce_result(&s, Some(&r), Some((&plan, &samples)), Some(&forged)),
+            Err(KernelGameError::ConfirmationNotIndependent)
+        ));
     }
 
     #[test]
     fn missing_route_is_blocked_not_a_candidate_failure() {
-        let result = reduce_result(&submission(), None, None, false).unwrap();
+        let result = reduce_result(&submission(), None, None, None).unwrap();
         assert_eq!(result.outcome, TerminalOutcome::Blocked);
         assert_eq!(result.blockers, ["missing_full_route_evidence"]);
     }

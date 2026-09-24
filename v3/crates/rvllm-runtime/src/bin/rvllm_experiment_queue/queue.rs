@@ -210,7 +210,24 @@ impl Job {
         {
             return Err("kernel-game executable identity differs from queued executable".into());
         }
+        let has_arg = |flag: &str, path: &Path| {
+            self.command
+                .args
+                .windows(2)
+                .any(|pair| pair[0] == flag && Path::new(&pair[1]) == path)
+        };
+        if !has_arg("--kernel-game-submission", &pin.path)
+            || self
+                .command
+                .env
+                .get("RVLLM_METAL_RESEARCH")
+                .map(String::as_str)
+                != Some(submission.candidate.as_str())
+        {
+            return Err("queued command is not bound to the sealed kernel-game candidate".into());
+        }
         let mut required = vec![
+            submission.source_tree.as_str(),
             submission.generated_source.as_str(),
             submission.model.as_str(),
             submission.reference.as_str(),
@@ -231,6 +248,21 @@ impl Job {
                 )
                 .into());
             }
+        }
+        let pinned_path = |digest: &str| {
+            self.inputs
+                .iter()
+                .find(|input| input.sha256.eq_ignore_ascii_case(digest))
+                .map(|input| input.path.as_path())
+        };
+        let source_tree_path = pinned_path(submission.source_tree.as_str())
+            .ok_or("required source-tree pin disappeared")?;
+        let oracle_path =
+            pinned_path(submission.oracle.as_str()).ok_or("required oracle pin disappeared")?;
+        if !has_arg("--kernel-game-source-tree", source_tree_path)
+            || !has_arg("--kernel-game-oracle", oracle_path)
+        {
+            return Err("queued command omits its pinned source-tree or oracle binding".into());
         }
         Ok(())
     }
