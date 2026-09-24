@@ -54,6 +54,11 @@ impl MetalPlatformCapabilities {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod arena;
+pub mod attention_global_decode;
+#[cfg(all(test, target_os = "macos"))]
+mod attention_global_decode_device_tests;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub mod attention_global_decode_metal;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod context;
 #[cfg(any(target_os = "macos", target_os = "ios"))]

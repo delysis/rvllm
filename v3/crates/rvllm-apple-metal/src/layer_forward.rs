@@ -1418,82 +1418,106 @@ pub unsafe fn metal_encode_forward_layer(
     // 7. Attention
     match phase {
         MetalPhase::Decode => {
-            let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-                rvllm_core::RvllmError::apple(
-                    rvllm_core::AppleError::MetalUnavailable,
-                    rvllm_core::AppleCtx {
-                        backend: "metal",
-                        op: "attn_decode",
-                        device: "apple-silicon",
-                    },
-                )
-            })?;
-            let use_online = supports_attention_decode_online(dims);
-            let pso = pipelines.get(if use_online {
-                "attention_decode_online_f16"
-            } else {
-                "attention_decode_f16"
-            })?;
-            encoder.setComputePipelineState(pso);
-            encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
-            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
-            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_v_offset, 2);
-            encoder.setBuffer_offset_atIndex(Some(buf), scratch.attn_out, 3);
-            encoder.setBuffer_offset_atIndex(Some(buf), meta.block_tables_offset, 4);
-            encoder.setBuffer_offset_atIndex(Some(buf), meta.context_lens_offset, 5);
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
-                4,
-                6,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
-                4,
-                7,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
-                4,
-                8,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
-                4,
-                9,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
-                4,
-                10,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _),
-                4,
-                11,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
-                4,
-                12,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.attention_window as *const _ as *mut _),
-                4,
-                13,
-            );
-            let total_heads = num_tokens * dims.num_heads;
-            let groups = MTLSize {
-                width: total_heads as usize,
-                height: 1,
-                depth: 1,
-            };
-            let tpg = MTLSize {
-                width: if use_online { 32 } else { 1 },
-                height: 1,
-                depth: 1,
-            };
-            encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
-            encoder.endEncoding();
+            // Explicit opt-in only; unsupported requests retain the unchanged
+            // incumbent route. The adapter records only actual candidate encodes.
+            if crate::attention_global_decode_metal::try_encode_global_decode(
+                pipelines,
+                cmd_buf,
+                buf,
+                dims,
+                phase,
+                crate::attention_global_decode::DecodeBuffers {
+                    q: scratch.q_offset,
+                    k: attention_kv_cache_k_offset,
+                    v: attention_kv_cache_v_offset,
+                    output: scratch.attn_out,
+                    block_tables: meta.block_tables_offset,
+                    context_lens: meta.context_lens_offset,
+                    positions: meta.positions_offset,
+                },
+                crate::attention_global_decode::DecodeOutput::Bf16,
+            )?
+            .is_none()
+            {
+                let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+                    rvllm_core::RvllmError::apple(
+                        rvllm_core::AppleError::MetalUnavailable,
+                        rvllm_core::AppleCtx {
+                            backend: "metal",
+                            op: "attn_decode",
+                            device: "apple-silicon",
+                        },
+                    )
+                })?;
+                let use_online = supports_attention_decode_online(dims);
+                let pso = pipelines.get(if use_online {
+                    "attention_decode_online_f16"
+                } else {
+                    "attention_decode_f16"
+                })?;
+                encoder.setComputePipelineState(pso);
+                encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
+                encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
+                encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_v_offset, 2);
+                encoder.setBuffer_offset_atIndex(Some(buf), scratch.attn_out, 3);
+                encoder.setBuffer_offset_atIndex(Some(buf), meta.block_tables_offset, 4);
+                encoder.setBuffer_offset_atIndex(Some(buf), meta.context_lens_offset, 5);
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+                    4,
+                    6,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
+                    4,
+                    7,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
+                    4,
+                    8,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
+                    4,
+                    9,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
+                    4,
+                    10,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(
+                        &dims.max_blocks_per_seq as *const _ as *mut _,
+                    ),
+                    4,
+                    11,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
+                    4,
+                    12,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.attention_window as *const _ as *mut _),
+                    4,
+                    13,
+                );
+                let total_heads = num_tokens * dims.num_heads;
+                let groups = MTLSize {
+                    width: total_heads as usize,
+                    height: 1,
+                    depth: 1,
+                };
+                let tpg = MTLSize {
+                    width: if use_online { 32 } else { 1 },
+                    height: 1,
+                    depth: 1,
+                };
+                encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+                encoder.endEncoding();
+            }
         }
         MetalPhase::Prefill {
             max_seqlen_q: _,

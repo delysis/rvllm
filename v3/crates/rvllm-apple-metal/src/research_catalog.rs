@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 18] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 26] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -35,6 +35,14 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 18] = [
     MetalResearchCandidate::Load4M32N64K64,
     MetalResearchCandidate::Load4M32N64K128,
     MetalResearchCandidate::Load4M64N64K64,
+    MetalResearchCandidate::GlobalD512R8P64T64,
+    MetalResearchCandidate::GlobalD512R8P64T128,
+    MetalResearchCandidate::GlobalD512R8P128T64,
+    MetalResearchCandidate::GlobalD512R8P128T128,
+    MetalResearchCandidate::GlobalD512R16P64T64,
+    MetalResearchCandidate::GlobalD512R16P64T128,
+    MetalResearchCandidate::GlobalD512R16P128T64,
+    MetalResearchCandidate::GlobalD512R16P128T128,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -61,10 +69,48 @@ macro_rules! load4_tile_spec {
     };
 }
 
+// One named entry point per opt-in family member; common source is included
+// in the generated-MSL receipt, not loaded or concatenated during encoding.
+macro_rules! global_decode_spec {
+    ($suffix:literal, $kernel:ident) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-", $suffix),
+            kernels: &[ResearchKernel::$kernel],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: "bf16-fp32-fixed64-tree-online-once-rounded",
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
+
 impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
         match self {
+            Self::GlobalD512R8P64T64 => global_decode_spec!("r8p64t64", GlobalD512R8P64T64),
+            Self::GlobalD512R8P64T128 => global_decode_spec!("r8p64t128", GlobalD512R8P64T128),
+            Self::GlobalD512R8P128T64 => global_decode_spec!("r8p128t64", GlobalD512R8P128T64),
+            Self::GlobalD512R8P128T128 => global_decode_spec!("r8p128t128", GlobalD512R8P128T128),
+            Self::GlobalD512R16P64T64 => global_decode_spec!("r16p64t64", GlobalD512R16P64T64),
+            Self::GlobalD512R16P64T128 => global_decode_spec!("r16p64t128", GlobalD512R16P64T128),
+            Self::GlobalD512R16P128T64 => global_decode_spec!("r16p128t64", GlobalD512R16P128T64),
+            Self::GlobalD512R16P128T128 => {
+                global_decode_spec!("r16p128t128", GlobalD512R16P128T128)
+            }
             Self::Off => CandidateSpec {
                 name: "off",
                 kernels: &[],
@@ -286,7 +332,30 @@ mod tests {
     fn reviewed_catalog_matches_runtime_and_every_exported_entry() {
         let reviewed: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
-        assert_eq!(reviewed, catalog_json());
+        let mut legacy = catalog_json();
+        let all = legacy["candidates"].as_array_mut().unwrap();
+        assert_eq!(all.len(), 26);
+        let additions = all.split_off(18);
+        let reviewed_global: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
+        assert_eq!(reviewed_global["candidates"], serde_json::json!(additions));
+        assert_eq!(reviewed, legacy);
+        // The additive family must have all eight source-defined specializations.
+        assert_eq!(
+            ALL_CANDIDATES[18..].len(),
+            crate::attention_global_decode::DECODE_TILES.len()
+        );
+        for (candidate, tile) in ALL_CANDIDATES[18..]
+            .iter()
+            .zip(crate::attention_global_decode::DECODE_TILES)
+        {
+            assert_eq!(candidate.global_decode_tile(), Some(tile));
+            assert_eq!(candidate.kernels().len(), 1);
+            assert_eq!(
+                candidate.kernels()[0].limits(),
+                (tile.threads as usize, tile.threadgroup_bytes())
+            );
+        }
         for candidate in ALL_CANDIDATES {
             for dtype in [MetalFloatType::Bf16, MetalFloatType::F16] {
                 let source = crate::kernels::kernel_source_with_options(
@@ -330,6 +399,21 @@ mod tests {
         for candidate in ALL_CANDIDATES {
             let good = Gemma12bResearchShape {
                 tokens: candidate.spec().min_tokens,
+                kv_heads: if candidate.global_decode_tile().is_some() {
+                    1
+                } else {
+                    8
+                },
+                head_dim: if candidate.global_decode_tile().is_some() {
+                    512
+                } else {
+                    256
+                },
+                attention_window: if candidate.global_decode_tile().is_some() {
+                    0
+                } else {
+                    1024
+                },
                 ..good
             };
             assert_eq!(

@@ -85,6 +85,7 @@ struct Job {
 enum Purpose {
     Timing,
     ExploratoryTiming,
+    Correctness,
     Preparation,
 }
 
@@ -660,7 +661,10 @@ fn phase_eligible(phase: &Value, c: &Conditions) -> bool {
 }
 
 fn purpose_accepts_ineligible(purpose: Purpose) -> bool {
-    matches!(purpose, Purpose::Preparation | Purpose::ExploratoryTiming)
+    matches!(
+        purpose,
+        Purpose::Preparation | Purpose::Correctness | Purpose::ExploratoryTiming
+    )
 }
 
 fn execute(
@@ -1238,6 +1242,7 @@ mod tests {
     #[test]
     fn exploratory_timing_retains_ineligible_data_without_weakening_timing() {
         assert!(purpose_accepts_ineligible(Purpose::ExploratoryTiming));
+        assert!(purpose_accepts_ineligible(Purpose::Correctness));
         assert!(purpose_accepts_ineligible(Purpose::Preparation));
         assert!(!purpose_accepts_ineligible(Purpose::Timing));
     }

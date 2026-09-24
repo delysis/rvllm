@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 31;
+pub const RESEARCH_KERNEL_COUNT: usize = 39;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -40,6 +40,14 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_qkv_load4_m32n64k128",
     "research_gemm_load4_m64n64k64",
     "research_qkv_load4_m64n64k64",
+    "research_global_d512_r8p64t64",
+    "research_global_d512_r8p64t128",
+    "research_global_d512_r8p128t64",
+    "research_global_d512_r8p128t128",
+    "research_global_d512_r16p64t64",
+    "research_global_d512_r16p64t128",
+    "research_global_d512_r16p128t64",
+    "research_global_d512_r16p128t128",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +84,14 @@ pub enum ResearchKernel {
     Tile32x64K128Qkv = 28,
     Tile64x64K64Gemm = 29,
     Tile64x64K64Qkv = 30,
+    GlobalD512R8P64T64 = 31,
+    GlobalD512R8P64T128 = 32,
+    GlobalD512R8P128T64 = 33,
+    GlobalD512R8P128T128 = 34,
+    GlobalD512R16P64T64 = 35,
+    GlobalD512R16P64T128 = 36,
+    GlobalD512R16P128T64 = 37,
+    GlobalD512R16P128T128 = 38,
 }
 
 impl ResearchKernel {
@@ -85,6 +101,14 @@ impl ResearchKernel {
     /// Source budgets, checked in addition to queried PSO/device limits.
     pub const fn limits(self) -> (usize, usize) {
         match self {
+            Self::GlobalD512R8P64T64 => (64, 10016),
+            Self::GlobalD512R8P64T128 => (128, 10016),
+            Self::GlobalD512R8P128T64 => (64, 11040),
+            Self::GlobalD512R8P128T128 => (128, 11040),
+            Self::GlobalD512R16P64T64 => (64, 18976),
+            Self::GlobalD512R16P64T128 => (128, 18976),
+            Self::GlobalD512R16P128T64 => (64, 20000),
+            Self::GlobalD512R16P128T128 => (128, 20000),
             Self::ShortGemm => (128, 10496),
             Self::ShortQkv => (128, 10496),
             Self::RoundedGate => (128, 14336),
@@ -114,6 +138,14 @@ impl ResearchKernel {
     pub const fn owner(self) -> crate::research::MetalResearchCandidate {
         use crate::research::MetalResearchCandidate;
         match self {
+            Self::GlobalD512R8P64T64 => MetalResearchCandidate::GlobalD512R8P64T64,
+            Self::GlobalD512R8P64T128 => MetalResearchCandidate::GlobalD512R8P64T128,
+            Self::GlobalD512R8P128T64 => MetalResearchCandidate::GlobalD512R8P128T64,
+            Self::GlobalD512R8P128T128 => MetalResearchCandidate::GlobalD512R8P128T128,
+            Self::GlobalD512R16P64T64 => MetalResearchCandidate::GlobalD512R16P64T64,
+            Self::GlobalD512R16P64T128 => MetalResearchCandidate::GlobalD512R16P64T128,
+            Self::GlobalD512R16P128T64 => MetalResearchCandidate::GlobalD512R16P128T64,
+            Self::GlobalD512R16P128T128 => MetalResearchCandidate::GlobalD512R16P128T128,
             Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
             Self::RoundedGate => MetalResearchCandidate::RoundedGate32,
             Self::Gqa256 | Self::Gqa512 => MetalResearchCandidate::GqaKv8,
@@ -152,10 +184,20 @@ impl ResearchKernel {
 /// Sample only at a quiescent owner boundary. These atomics do not synchronize
 /// Metal resources or establish that a command buffer completed successfully.
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct ResearchDispatchCounters {
     counts: [AtomicU64; RESEARCH_KERNEL_COUNT],
     overflowed: AtomicBool,
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios", test))]
+impl Default for ResearchDispatchCounters {
+    fn default() -> Self {
+        Self {
+            counts: std::array::from_fn(|_| AtomicU64::new(0)),
+            overflowed: AtomicBool::new(false),
+        }
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
@@ -178,10 +220,19 @@ impl ResearchDispatchCounters {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResearchDispatchSnapshot {
     pub counts: [u64; RESEARCH_KERNEL_COUNT],
     pub overflowed: bool,
+}
+
+impl Default for ResearchDispatchSnapshot {
+    fn default() -> Self {
+        Self {
+            counts: [0; RESEARCH_KERNEL_COUNT],
+            overflowed: false,
+        }
+    }
 }
 
 impl ResearchDispatchSnapshot {

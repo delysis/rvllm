@@ -26,9 +26,38 @@ pub enum MetalResearchCandidate {
     Load4M32N64K64,
     Load4M32N64K128,
     Load4M64N64K64,
+    GlobalD512R8P64T64,
+    GlobalD512R8P64T128,
+    GlobalD512R8P128T64,
+    GlobalD512R8P128T128,
+    GlobalD512R16P64T64,
+    GlobalD512R16P64T128,
+    GlobalD512R16P128T64,
+    GlobalD512R16P128T128,
 }
 
 impl MetalResearchCandidate {
+    /// Explicit decode family, never inferred from a coincidentally matching shape.
+    pub const fn global_decode_tile(self) -> Option<crate::attention_global_decode::DecodeTile> {
+        use crate::attention_global_decode::DecodeTile;
+        let (rows, panel, threads) = match self {
+            Self::GlobalD512R8P64T64 => (8, 64, 64),
+            Self::GlobalD512R8P64T128 => (8, 64, 128),
+            Self::GlobalD512R8P128T64 => (8, 128, 64),
+            Self::GlobalD512R8P128T128 => (8, 128, 128),
+            Self::GlobalD512R16P64T64 => (16, 64, 64),
+            Self::GlobalD512R16P64T128 => (16, 64, 128),
+            Self::GlobalD512R16P128T64 => (16, 128, 64),
+            Self::GlobalD512R16P128T128 => (16, 128, 128),
+            _ => return None,
+        };
+        Some(DecodeTile {
+            rows,
+            panel,
+            threads,
+        })
+    }
+
     pub const fn name(self) -> &'static str {
         self.spec().name
     }
@@ -87,6 +116,9 @@ impl Gemma12bResearchShape {
             && (candidate.spec().window_independent
                 || matches!((self.kv_heads, self.head_dim, self.attention_window),
                     (8, 256, 1024) | (1, 512, 0)))
+            && (candidate.global_decode_tile().is_none()
+                || (self.tokens == 1 && self.kv_heads == 1
+                    && self.head_dim == 512 && self.attention_window == 0))
             && candidate != MetalResearchCandidate::Off
             && (candidate.spec().min_tokens..=candidate.spec().max_tokens).contains(&self.tokens)
     }

@@ -21,10 +21,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dtype = match first.as_deref() {
         Some("bf16") => MetalFloatType::Bf16,
         Some("f16") => MetalFloatType::F16,
-        _ => return Err("usage: rvllm-metal-research-source bf16|f16 off|CANDIDATE".into()),
+        _ => return Err(
+            "usage: rvllm-metal-research-source bf16|f16 off|CANDIDATE [--global-decode-oracle]"
+                .into(),
+        ),
     };
     let research: MetalResearchCandidate =
         args.next().ok_or("explicit candidate required")?.parse()?;
+    let oracle = match args.next().as_deref() {
+        None => false,
+        Some("--global-decode-oracle")
+            if dtype == MetalFloatType::Bf16 && research.global_decode_tile().is_some() =>
+        {
+            true
+        }
+        _ => return Err("unexpected argument or unsupported global decode oracle selector".into()),
+    };
     if args.next().is_some() {
         return Err("unexpected extra argument".into());
     }
@@ -35,6 +47,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..MetalKernelOptions::default()
         },
     );
-    std::io::stdout().lock().write_all(source.as_bytes())?;
+    let mut output = std::io::stdout().lock();
+    output.write_all(source.as_bytes())?;
+    if oracle {
+        output.write_all(b"\n")?;
+        output.write_all(include_bytes!(
+            "../research_shaders/global_decode_oracle.metal"
+        ))?;
+    }
     Ok(())
 }
