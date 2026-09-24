@@ -2,17 +2,17 @@
 #![forbid(unsafe_code)]
 
 use rvllm_runtime::apple_measurement::PowerMonitor;
-use rvllm_runtime::kernel_game::{parse_strict_json, SealedSubmission};
+use rvllm_runtime::kernel_game::{SealedSubmission, parse_strict_json};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -39,13 +39,15 @@ struct Invocation {
 #[serde(deny_unknown_fields)]
 struct Conditions {
     power_source: String,
-    low_power_mode: bool,
-    pmset_power_mode: u64,
+    low_power_mode: Option<bool>,
+    pmset_power_mode: Option<u64>,
     thermal_state: Option<u64>,
     minimum_free_bytes: u64,
     disk_path: PathBuf,
     #[serde(default)]
     quiet_process_names: Vec<String>,
+    #[serde(default)]
+    observe_process_names: Vec<String>,
     #[serde(default)]
     idle_llama_servers: Vec<IdleLlamaServer>,
 }
@@ -132,7 +134,7 @@ impl Job {
         if self.schema != SCHEMA
             || !valid_id(&self.id)
             || !matches!(c.power_source.as_str(), "ac" | "battery")
-            || c.pmset_power_mode > 2
+            || c.pmset_power_mode.is_some_and(|mode| mode > 2)
             || c.thermal_state.is_some_and(|state| state > 3)
             || !c.disk_path.is_absolute()
             || !c.disk_path.is_dir()
@@ -141,6 +143,9 @@ impl Job {
             || self.max_wait_seconds > 86400
             || !(1..=3600).contains(&self.max_run_seconds)
             || c.quiet_process_names
+                .iter()
+                .any(|s| s.is_empty() || s.contains('/'))
+            || c.observe_process_names
                 .iter()
                 .any(|s| s.is_empty() || s.contains('/'))
             || c.idle_llama_servers.len() > 4
@@ -326,8 +331,14 @@ fn controls_match(observation: &Value, c: &Conditions) -> bool {
         && (0.0..=2500.0).contains(&age)
         && observation.get("observer_journal_error") == Some(&Value::Null)
         && controls["power_source"] == c.power_source
-        && controls["low_power_mode"] == c.low_power_mode
-        && controls["pmset_power_mode"] == c.pmset_power_mode
+        && controls["low_power_mode"]
+            .as_bool()
+            .is_some_and(|value| c.low_power_mode.map_or(true, |required| value == required))
+        && controls["pmset_power_mode"].as_u64().is_some_and(|value| {
+            value <= 2
+                && c.pmset_power_mode
+                    .map_or(true, |required| value == required)
+        })
         && controls["thermal_state"]
             .as_u64()
             .is_some_and(|state| state <= 3)
@@ -464,7 +475,7 @@ impl ProbeCache {
         &mut self,
         c: &Conditions,
         child: Option<u32>,
-    ) -> Result<(Instant, Vec<Value>, Vec<Value>)> {
+    ) -> Result<(Instant, Vec<Value>, Vec<Value>, Vec<Value>)> {
         if self.processes.is_none() {
             let started = Instant::now();
             let result = Command::new("/bin/ps")
@@ -493,12 +504,13 @@ impl ProbeCache {
             checks.push(value.clone());
         }
         let mut competing = blockers(processes, &c.quiet_process_names, child);
+        let observed = blockers(processes, &c.observe_process_names, child);
         competing.retain(|p| {
             !checks
                 .iter()
                 .any(|s| s["idle"] == true && s["pid"] == p["pid"])
         });
-        Ok((oldest, competing, checks))
+        Ok((oldest, competing, observed, checks))
     }
 }
 
@@ -528,11 +540,12 @@ fn probe_shared(
     if !controls_match(&initial_power, c) || available < c.minimum_free_bytes {
         return Ok(
             json!({"ready":false,"power":initial_power,"free_bytes":available,
-            "competing_processes":[],"idle_server_checks":[],"activity_sampled":false,
+            "competing_processes":[],"observed_processes":[],"idle_server_checks":[],
+            "activity_sampled":false,
             "probe_ms":started.elapsed().as_secs_f64()*1000.0}),
         );
     }
-    let (activity_observed, competing, idle_checks) = cache.activity(c, child)?;
+    let (activity_observed, competing, observed, idle_checks) = cache.activity(c, child)?;
     let observation = monitor.latest_observation();
     let probe_ms = started.elapsed().as_secs_f64() * 1000.0;
     let raw_sample_age_ms = sample_age_ms(disk_observed.min(activity_observed), Instant::now());
@@ -540,6 +553,7 @@ fn probe_shared(
         && available >= c.minimum_free_bytes && competing.is_empty()
         && idle_checks.iter().all(|s|s["idle"]==true) && probe_ms<=2500.0 && raw_sample_age_ms.is_some(),
         "power":observation,"free_bytes":available,"competing_processes":competing,
+        "observed_processes":observed,
         "idle_server_checks":idle_checks,"activity_sampled":true,"probe_ms":probe_ms,
         "raw_sample_age_ms":raw_sample_age_ms}))
 }
@@ -909,7 +923,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 Some(false) => {
                     return Err(
                         format!("job {} failed; queue stopped without retry", job.id).into(),
-                    )
+                    );
                 }
                 Some(true) => {
                     waiting.remove(&job.id);
@@ -950,7 +964,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
 
 pub(super) fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    let usage="usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | daemon QUEUE GLOBAL_LOCK | status QUEUE | stop QUEUE";
+    let usage = "usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | daemon QUEUE GLOBAL_LOCK | status QUEUE | stop QUEUE";
     if args.len() < 2 {
         return Err(usage.into());
     }
@@ -1047,12 +1061,13 @@ mod tests {
     fn conditions() -> Conditions {
         Conditions {
             power_source: "ac".into(),
-            low_power_mode: true,
-            pmset_power_mode: 1,
+            low_power_mode: Some(true),
+            pmset_power_mode: Some(1),
             thermal_state: Some(0),
             minimum_free_bytes: 1,
             disk_path: PathBuf::from("/"),
             quiet_process_names: vec!["cargo".into()],
+            observe_process_names: vec![],
             idle_llama_servers: vec![],
         }
     }
@@ -1132,6 +1147,28 @@ mod tests {
             assert!(!controls_match(&value, &c));
         }
     }
+
+    #[test]
+    fn unpinned_power_modes_accept_known_values_but_never_unknown() {
+        let mut c = conditions();
+        c.low_power_mode = None;
+        c.pmset_power_mode = None;
+        let mut value = observation();
+        for low_power_mode in [false, true] {
+            value["sample"]["controls"]["low_power_mode"] = json!(low_power_mode);
+            for mode in 0..=2 {
+                value["sample"]["controls"]["pmset_power_mode"] = json!(mode);
+                assert!(controls_match(&value, &c));
+            }
+        }
+        for mode in [json!(3), Value::Null] {
+            value["sample"]["controls"]["pmset_power_mode"] = mode;
+            assert!(!controls_match(&value, &c));
+        }
+        value["sample"]["controls"]["pmset_power_mode"] = json!(1);
+        value["sample"]["controls"]["low_power_mode"] = Value::Null;
+        assert!(!controls_match(&value, &c));
+    }
     #[test]
     fn only_owned_trial_descendants_are_exempt_from_activity_gate() {
         let processes = parse_processes(
@@ -1156,6 +1193,7 @@ mod tests {
         };
         let mut c = conditions();
         c.quiet_process_names = vec!["cargo".into(), "llama-server".into()];
+        c.observe_process_names = vec!["cargo".into(), "llama-server".into()];
         c.idle_llama_servers = vec![IdleLlamaServer {
             pid: 22,
             port: 8093,
@@ -1164,6 +1202,7 @@ mod tests {
             cache.activity(&c, None).unwrap().1,
             vec![json!({"pid":11,"name":"cargo"})]
         );
+        assert_eq!(cache.activity(&c, None).unwrap().2.len(), 2);
         c.idle_llama_servers.clear();
         assert_eq!(
             cache.activity(&c, Some(11)).unwrap().1,
@@ -1172,6 +1211,7 @@ mod tests {
         assert_eq!(cache.activity(&c, None).unwrap().1.len(), 2);
         c.quiet_process_names.clear();
         assert!(cache.activity(&c, None).unwrap().1.is_empty());
+        assert_eq!(cache.activity(&c, None).unwrap().2.len(), 2);
         assert_eq!(cache.processes.as_ref().unwrap().0, now);
     }
 
@@ -1216,10 +1256,12 @@ mod tests {
             assert!(!valid_id(id));
         }
         assert!(valid_id("02-baseline_A"));
-        assert!(serde_json::from_value::<Conditions>(json!({
+        assert!(
+            serde_json::from_value::<Conditions>(json!({
             "power_source":"ac","low_power_mode":true,"pmset_power_mode":1,"thermal_state":0,
             "minimum_free_bytes":1,"disk_path":"/","unknown":true}))
-        .is_err());
+            .is_err()
+        );
     }
     #[test]
     fn idle_server_exception_requires_all_explicit_slots_idle() {
@@ -1367,10 +1409,12 @@ mod tests {
         );
         assert_eq!(fs::read(dir.path().join("STOP")).unwrap(), b"preserved");
         assert_eq!(fs::read_dir(dir.path().join("results")).unwrap().count(), 0);
-        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with("power-")));
+        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("power-")
+        }));
     }
 }
