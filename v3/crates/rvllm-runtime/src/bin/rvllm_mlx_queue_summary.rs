@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,11 +26,21 @@ struct JobSummary {
     sampled_controls_eligible: Option<bool>,
     comparison_stratum: Option<Value>,
     observed_strata: Vec<Value>,
+    condition_samples: usize,
+    condition_samples_with_observed_processes: usize,
+    observed_processes: Vec<ObservedProcess>,
     exit_code: Option<i64>,
     trials: Vec<Trial>,
     reported_averages: Option<ReportedAverages>,
     statistics: Option<Statistics>,
     errors: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+struct ObservedProcess {
+    name: String,
+    sample_count: u64,
+    max_instances: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -133,6 +144,9 @@ fn summarize_job(directory: &Path) -> JobSummary {
         sampled_controls_eligible: None,
         comparison_stratum: None,
         observed_strata: Vec::new(),
+        condition_samples: 0,
+        condition_samples_with_observed_processes: 0,
+        observed_processes: Vec::new(),
         exit_code: None,
         trials: Vec::new(),
         reported_averages: None,
@@ -162,8 +176,92 @@ fn summarize_job(directory: &Path) -> JobSummary {
         }
         Err(error) => summary.errors.push(format!("read trial.stdout: {error}")),
     }
+    match fs::read_to_string(directory.join("conditions.jsonl")) {
+        Ok(jsonl) => match parse_conditions_jsonl(&jsonl) {
+            Ok(activity) => {
+                summary.condition_samples = activity.samples;
+                summary.condition_samples_with_observed_processes =
+                    activity.samples_with_observed_processes;
+                summary.observed_processes = activity.observed_processes;
+            }
+            Err(error) => summary
+                .errors
+                .push(format!("parse conditions.jsonl: {error}")),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            summary.errors.push("missing conditions.jsonl".to_owned());
+        }
+        Err(error) => summary
+            .errors
+            .push(format!("read conditions.jsonl: {error}")),
+    }
     validate_summary(&mut summary);
     summary
+}
+
+#[derive(Debug)]
+struct ConditionActivity {
+    samples: usize,
+    samples_with_observed_processes: usize,
+    observed_processes: Vec<ObservedProcess>,
+}
+
+fn parse_conditions_jsonl(jsonl: &str) -> Result<ConditionActivity, String> {
+    let mut samples = 0_usize;
+    let mut samples_with_observed_processes = 0_usize;
+    let mut counts = BTreeMap::<String, (u64, u64)>::new();
+    for (index, line) in jsonl.lines().enumerate() {
+        if line.trim().is_empty() {
+            return Err(format!("blank line at {}", index + 1));
+        }
+        let value: Value = serde_json::from_str(line)
+            .map_err(|error| format!("line {} is invalid JSON: {error}", index + 1))?;
+        let observed = match value.get("observed_processes") {
+            None => Vec::new(),
+            Some(value) => value
+                .as_array()
+                .cloned()
+                .ok_or_else(|| format!("line {} observed_processes is not an array", index + 1))?,
+        };
+        let mut names = BTreeMap::<String, u64>::new();
+        for process in observed {
+            let name = process
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .ok_or_else(|| format!("line {} has an invalid process name", index + 1))?;
+            process
+                .get("pid")
+                .and_then(Value::as_u64)
+                .filter(|pid| *pid > 0)
+                .ok_or_else(|| format!("line {} has an invalid process pid", index + 1))?;
+            *names.entry(name.to_owned()).or_default() += 1;
+        }
+        if !names.is_empty() {
+            samples_with_observed_processes += 1;
+        }
+        for (name, instances) in names {
+            let (sample_count, max_instances) = counts.entry(name).or_default();
+            *sample_count += 1;
+            *max_instances = (*max_instances).max(instances);
+        }
+        samples += 1;
+    }
+    if samples == 0 {
+        return Err("no condition samples".to_owned());
+    }
+    Ok(ConditionActivity {
+        samples,
+        samples_with_observed_processes,
+        observed_processes: counts
+            .into_iter()
+            .map(|(name, (sample_count, max_instances))| ObservedProcess {
+                name,
+                sample_count,
+                max_instances,
+            })
+            .collect(),
+    })
 }
 
 fn validate_summary(summary: &mut JobSummary) {
@@ -522,6 +620,46 @@ Averages: prompt_tps=84.225, generation_tps=2.985, peak_memory=24.067
     }
 
     #[test]
+    fn summarizes_observed_process_overlap_without_treating_it_as_a_gate() {
+        let jsonl = concat!(
+            "{\"ready\":true,\"observed_processes\":[]}\n",
+            "{\"ready\":true,\"observed_processes\":[{\"pid\":7,\"name\":\"cargo\"}]}\n",
+            "{\"ready\":true,\"observed_processes\":[{\"pid\":8,\"name\":\"cargo\"},{\"pid\":9,\"name\":\"rustc\"}]}\n"
+        );
+        let activity = parse_conditions_jsonl(jsonl).unwrap();
+        assert_eq!(activity.samples, 3);
+        assert_eq!(activity.samples_with_observed_processes, 2);
+        assert_eq!(
+            activity.observed_processes,
+            vec![
+                ObservedProcess {
+                    name: "cargo".to_owned(),
+                    sample_count: 2,
+                    max_instances: 1,
+                },
+                ObservedProcess {
+                    name: "rustc".to_owned(),
+                    sample_count: 1,
+                    max_instances: 1,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_condition_activity_and_counts_concurrency() {
+        assert!(
+            parse_conditions_jsonl("\n")
+                .unwrap_err()
+                .contains("blank line")
+        );
+        let duplicate = "{\"observed_processes\":[{\"pid\":1,\"name\":\"cargo\"},{\"pid\":2,\"name\":\"cargo\"}]}\n";
+        let activity = parse_conditions_jsonl(duplicate).unwrap();
+        assert_eq!(activity.observed_processes[0].sample_count, 1);
+        assert_eq!(activity.observed_processes[0].max_instances, 2);
+    }
+
+    #[test]
     fn validates_required_identity_trial_count_and_terminal_averages() {
         let mut summary = empty_job_summary();
         summary.status = "rejected".to_owned();
@@ -562,6 +700,9 @@ Averages: prompt_tps=84.225, generation_tps=2.985, peak_memory=24.067
             sampled_controls_eligible: None,
             comparison_stratum: None,
             observed_strata: Vec::new(),
+            condition_samples: 0,
+            condition_samples_with_observed_processes: 0,
+            observed_processes: Vec::new(),
             exit_code: None,
             trials: Vec::new(),
             reported_averages: None,

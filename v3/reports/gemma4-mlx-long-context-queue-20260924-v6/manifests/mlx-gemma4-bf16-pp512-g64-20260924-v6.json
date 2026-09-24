@@ -1,0 +1,79 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "mlx-gemma4-bf16-pp512-g64-20260924-v6",
+  "purpose": "exploratory_timing",
+  "after": [
+    "mlx-gemma4-q8-pp512-g64-20260924-v6"
+  ],
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600,
+  "stable_seconds": 5,
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [],
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--mlx-community--gemma-4-12B-bf16/snapshots/e61ef6842dc9407c3ceba8800b7200c0b07f816f/config.json",
+      "sha256": "95ac51f934f85c9243f970e6077ad5ff6056b50de7bb4c4be866205f4a7901b6"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--mlx-community--gemma-4-12B-bf16/snapshots/e61ef6842dc9407c3ceba8800b7200c0b07f816f/model.safetensors.index.json",
+      "sha256": "5a2037525ab516767d2a213bf7cb74f7d05940bbccb64e1de281f93b40953577"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/benchmark.py",
+      "sha256": "0ef83adbe09c75873fd69435cdeef559656a85f4dae5d607927931edba1d16b3"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/models/gemma4.py",
+      "sha256": "7301367b6ffcfb125f036186650c6f56cb55be6d1e0893edae8308d27049eb47"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/utils.py",
+      "sha256": "0b62f9990ef65d6346ee5ceaccbbd50b3e973bcf9aba91fd0df4c8fc8596f473"
+    }
+  ],
+  "command": {
+    "executable": {
+      "path": "/Users/george/christian_mystics/venv/bin/python",
+      "sha256": "695fc18cdb9a699c6b1ea88ce4027854782ed704eb34cc3200e6f8380155b6a8"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "-m",
+      "mlx_lm.benchmark",
+      "--model",
+      "/Users/george/.cache/huggingface/hub/models--mlx-community--gemma-4-12B-bf16/snapshots/e61ef6842dc9407c3ceba8800b7200c0b07f816f",
+      "--prompt-tokens",
+      "512",
+      "--generation-tokens",
+      "64",
+      "--batch-size",
+      "1",
+      "--num-trials",
+      "7"
+    ],
+    "env": {
+      "MLX_METAL_PREWARM": "1",
+      "PYTHONPATH": "/Users/george/.cache/rvllm-mlx-lm-87b7b583"
+    }
+  },
+  "validator": null,
+  "kernel_game_submission": null
+}

@@ -84,6 +84,7 @@ struct Job {
 #[serde(rename_all = "snake_case")]
 enum Purpose {
     Timing,
+    ExploratoryTiming,
     Preparation,
 }
 
@@ -643,6 +644,10 @@ fn phase_eligible(phase: &Value, c: &Conditions) -> bool {
     }
 }
 
+fn purpose_accepts_ineligible(purpose: Purpose) -> bool {
+    matches!(purpose, Purpose::Preparation | Purpose::ExploratoryTiming)
+}
+
 fn execute(
     job: &Job,
     queue: &Path,
@@ -759,7 +764,7 @@ fn execute(
     let mut accepted = exit.success()
         && !overdue
         && files_unchanged.is_ok()
-        && (job.purpose == Purpose::Preparation || eligible);
+        && (purpose_accepts_ineligible(job.purpose) || eligible);
     if accepted {
         if let Some(call) = &job.validator {
             verify_pin(&call.executable)?;
@@ -789,7 +794,7 @@ fn execute(
         "validation":validation,"measurement":measurement,
         "kernel_game_submission_sha256":job.kernel_game_submission.as_ref().map(|pin|pin.sha256.to_ascii_lowercase()),
         "stop_requested":stopped(queue,stop),
-        "claim":"Preparation success does not qualify performance. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work."});
+        "claim":"Preparation and exploratory-timing success do not qualify performance promotion. Exploratory timing may succeed when sampled_conditions_eligible is false; retain and stratify all observations. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work."});
     atomic_json(&output.join("report.json"), &report)?;
     eprintln!("experiment {}: {}", job.id, report["status"]);
     Ok(Some(accepted || rejected))
@@ -1168,6 +1173,13 @@ mod tests {
         value["sample"]["controls"]["pmset_power_mode"] = json!(1);
         value["sample"]["controls"]["low_power_mode"] = Value::Null;
         assert!(!controls_match(&value, &c));
+    }
+
+    #[test]
+    fn exploratory_timing_retains_ineligible_data_without_weakening_timing() {
+        assert!(purpose_accepts_ineligible(Purpose::ExploratoryTiming));
+        assert!(purpose_accepts_ineligible(Purpose::Preparation));
+        assert!(!purpose_accepts_ineligible(Purpose::Timing));
     }
     #[test]
     fn only_owned_trial_descendants_are_exempt_from_activity_gate() {
