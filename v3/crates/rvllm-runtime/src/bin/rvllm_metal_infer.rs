@@ -1705,6 +1705,62 @@ fn run_direct_session(
             max_supported_total_tokens: case.max_supported_total_tokens,
             comparison,
         });
+
+        // Persist each completed case. Long-context sessions can take minutes per
+        // case; withholding all evidence until the final case makes a bounded
+        // timeout erase otherwise valid measurements. The checkpoint uses the
+        // normal report schema and explicitly declares that it is incomplete.
+        if args.report.is_some() {
+            let checkpoint_status = if case_reports
+                .iter()
+                .any(|case| matches!(&case.comparison, Some(comparison) if !comparison.matched))
+            {
+                "fail"
+            } else {
+                "pass"
+            };
+            let checkpoint_stats = backend.probe_perf_stats();
+            let checkpoint_dispatch = backend
+                .probe_research_dispatches()
+                .map(research_dispatch_value)
+                .unwrap_or(serde_json::Value::Null);
+            let checkpoint_arena_bytes = backend
+                .probe_arena_stats()
+                .map(|arena| arena.capacity_bytes)
+                .unwrap_or(0);
+            let mut checkpoint = session_report_value(
+                args,
+                SessionBackend::Direct,
+                checkpoint_status,
+                prepare_ms,
+                case_reports.iter().map(|case| case.prefill_ms).sum(),
+                case_reports.iter().map(|case| case.decode_ms).sum(),
+                ms(total_start.elapsed()),
+                &case_reports,
+                checkpoint_stats,
+                checkpoint_arena_bytes,
+                backend.metal_debug_sync_enabled(),
+                effective_large_opt_in,
+                max_supported_total_tokens,
+                &metal_compute_dtype,
+                &metal_weight_dtype,
+                &metal_moe_router_weight_dtype,
+                checkpoint_dispatch,
+            );
+            let object = checkpoint
+                .as_object_mut()
+                .expect("session report must be a JSON object");
+            object.insert(
+                "checkpoint_completed_cases".to_owned(),
+                serde_json::json!(case_reports.len()),
+            );
+            object.insert(
+                "checkpoint_total_cases".to_owned(),
+                serde_json::json!(cases.len()),
+            );
+            object.insert("checkpoint_complete".to_owned(), serde_json::json!(false));
+            write_report_if_requested(args.report.as_ref(), &checkpoint)?;
+        }
     }
     let status = if case_reports
         .iter()
@@ -1723,7 +1779,7 @@ fn run_direct_session(
         .probe_arena_stats()
         .map(|arena| arena.capacity_bytes)
         .unwrap_or(0);
-    Ok(session_report_value(
+    let mut report = session_report_value(
         args,
         SessionBackend::Direct,
         status,
@@ -1741,7 +1797,20 @@ fn run_direct_session(
         &metal_weight_dtype,
         &metal_moe_router_weight_dtype,
         research_dispatch,
-    ))
+    );
+    let object = report
+        .as_object_mut()
+        .expect("session report must be a JSON object");
+    object.insert(
+        "checkpoint_completed_cases".to_owned(),
+        serde_json::json!(case_reports.len()),
+    );
+    object.insert(
+        "checkpoint_total_cases".to_owned(),
+        serde_json::json!(cases.len()),
+    );
+    object.insert("checkpoint_complete".to_owned(), serde_json::json!(true));
+    Ok(report)
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]

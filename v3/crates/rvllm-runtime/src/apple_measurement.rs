@@ -2,9 +2,9 @@
 #![forbid(unsafe_code)]
 
 use std::collections::VecDeque;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -14,6 +14,8 @@ use objc2_foundation::NSProcessInfo;
 use serde_json::{json, Value};
 
 const INTERVAL: Duration = Duration::from_secs(1);
+const PMSET_TIMEOUT: Duration = Duration::from_secs(2);
+const PMSET_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const MAX_AGE_MS: f64 = 2500.0;
 const HISTORY: usize = 4096;
 
@@ -67,12 +69,49 @@ fn pmset(query: &str) -> String {
     if !query.is_empty() {
         command.arg(query);
     }
-    match command.output() {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).into_owned()
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => return format!("unavailable: {error}"),
+    };
+    let deadline = Instant::now() + PMSET_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                if let Some(mut pipe) = child.stdout.take() {
+                    let _ = pipe.read_to_end(&mut stdout);
+                }
+                if let Some(mut pipe) = child.stderr.take() {
+                    let _ = pipe.read_to_end(&mut stderr);
+                }
+                return if status.success() {
+                    String::from_utf8_lossy(&stdout).into_owned()
+                } else {
+                    format!("unavailable: {}", String::from_utf8_lossy(&stderr))
+                };
+            }
+            Ok(None) if Instant::now() < deadline => thread::sleep(PMSET_POLL_INTERVAL),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return format!(
+                    "unavailable: pmset -g{} timed out after {} ms",
+                    if query.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {query}")
+                    },
+                    PMSET_TIMEOUT.as_millis()
+                );
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return format!("unavailable: {error}");
+            }
         }
-        Ok(output) => format!("unavailable: {}", String::from_utf8_lossy(&output.stderr)),
-        Err(error) => format!("unavailable: {error}"),
     }
 }
 
