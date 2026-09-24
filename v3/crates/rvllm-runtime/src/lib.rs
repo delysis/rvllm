@@ -36,8 +36,8 @@ pub mod gemma_ane_decode;
 ))]
 pub mod gemma_disaggregated_worker;
 pub mod gemma_head_ranking;
-pub mod layer_exec;
 pub mod kernel_game;
+pub mod layer_exec;
 pub mod paged_kv;
 pub mod paged_prompt_cache;
 pub mod persistent_prompt_cache;

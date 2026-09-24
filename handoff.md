@@ -1,5 +1,23 @@
 # Gemma 4 delivery handoff
 
+## 2026-09-23 live candidate campaign
+
+The current native campaign is summarized in
+`v3/reports/gemma4-kernel-campaign-20260923.md`.  On the merged kernel-game
+vertical slice (`360a00fc`), all ten Metal candidates passed their pinned
+first-token and dispatch-family screens.  The exploratory ordering makes
+`metal-mma32-load4` the first controlled-timing candidate, followed by
+`metal-mma32-prefetch` and `metal-rounded-gate32`; no ABBA result or speed claim
+exists yet.
+
+For ANE, the baseline, chunk4, and down4 plans completed a zero-compile
+two-token full route and matched the pinned reference.  Sliding-QKV (both
+variants), interleaved FFN, transpose-attention, and stacked FFN were blocked by
+absent compiled-cache programs and were not repaired or retried in place.  The
+delivery gate and its ANE host contracts passed, but that is not a substitute
+for the missing device runs.  Preserve the raw queue directories and follow the
+next-experiment order in the campaign report.  Nothing was promoted.
+
 Date: 2026-09-22
 Repository: `/Users/george/Downloads/rvllm`
 Base reviewed: `b394d8ea5af412224d9cc28b20a16d72d9e9d2fe`
