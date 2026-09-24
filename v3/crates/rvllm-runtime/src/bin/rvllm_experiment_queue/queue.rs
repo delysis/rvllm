@@ -1211,6 +1211,7 @@ mod tests {
             },
             validator: None,
             inputs: vec![],
+            kernel_game_submission: None,
             after: vec!["first".into()],
             conditions: conditions(),
             stable_seconds: 1,
