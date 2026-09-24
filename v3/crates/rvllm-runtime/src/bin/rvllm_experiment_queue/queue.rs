@@ -795,7 +795,7 @@ fn dependencies_ready(job: &Job, queue: &Path) -> Result<bool> {
     Ok(true)
 }
 
-fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
+fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -> Result<()> {
     let _queue_lock = lock(&queue.join("worker.lock"))?;
     let result = run_owned(queue, accelerator_lock, idle_seconds);
     if let Err(error) = &result {
@@ -807,7 +807,7 @@ fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
     result
 }
 
-fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
+fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -> Result<()> {
     let _accelerator_lock = lock(accelerator_lock)?;
     // A stopped queue needs neither a power observer nor a signal handler.
     // This also permits a real executable smoke without sampling hardware.
@@ -928,7 +928,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
             if !pending.is_empty() {
                 idle = Instant::now();
             }
-            if idle.elapsed() >= Duration::from_secs(idle_seconds) {
+            if idle_seconds.is_some_and(|seconds| idle.elapsed() >= Duration::from_secs(seconds)) {
                 return Ok(());
             }
             std::thread::sleep(Duration::from_secs(1));
@@ -938,7 +938,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
 
 pub(super) fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    let usage="usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | status QUEUE | stop QUEUE";
+    let usage="usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | daemon QUEUE GLOBAL_LOCK | status QUEUE | stop QUEUE";
     if args.len() < 2 {
         return Err(usage.into());
     }
@@ -988,7 +988,14 @@ pub(super) fn main() -> Result<()> {
             if idle > 86400 {
                 return Err("idle time must be <= 86400 seconds".into());
             }
-            run(&queue, &lock_path, idle)
+            run(&queue, &lock_path, Some(idle))
+        }
+        Some("daemon") if args.len() == 3 => {
+            let lock_path = PathBuf::from(&args[2]);
+            if !lock_path.is_absolute() {
+                return Err("global lock must be absolute".into());
+            }
+            run(&queue, &lock_path, None)
         }
         Some("stop") if args.len() == 2 => {
             File::create_new(queue.join("STOP"))?;
@@ -1307,7 +1314,7 @@ mod tests {
         fs::create_dir(dir.path().join("results")).unwrap();
         fs::write(dir.path().join("jobs/must-not-read.json"), b"invalid").unwrap();
         fs::write(dir.path().join("STOP"), b"preserved").unwrap();
-        run_owned(dir.path(), &dir.path().join("hardware.lock"), 0).unwrap();
+        run_owned(dir.path(), &dir.path().join("hardware.lock"), Some(0)).unwrap();
         assert_eq!(
             read_json(&dir.path().join("state.json")).unwrap()["status"],
             "stopped"
