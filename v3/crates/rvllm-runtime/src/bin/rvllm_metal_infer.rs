@@ -1709,7 +1709,7 @@ fn run_direct_session(
         // Persist each completed case. Long-context sessions can take minutes per
         // case; withholding all evidence until the final case makes a bounded
         // timeout erase otherwise valid measurements. The checkpoint uses the
-        // normal report schema and explicitly declares that it is incomplete.
+        // normal report schema and explicitly declares whether more cases remain.
         if args.report.is_some() {
             let checkpoint_status = if case_reports
                 .iter()
@@ -1758,7 +1758,10 @@ fn run_direct_session(
                 "checkpoint_total_cases".to_owned(),
                 serde_json::json!(cases.len()),
             );
-            object.insert("checkpoint_complete".to_owned(), serde_json::json!(false));
+            object.insert(
+                "checkpoint_complete".to_owned(),
+                serde_json::json!(case_reports.len() == cases.len()),
+            );
             write_report_if_requested(args.report.as_ref(), &checkpoint)?;
         }
     }
