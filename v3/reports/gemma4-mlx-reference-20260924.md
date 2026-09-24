@@ -1,10 +1,11 @@
 # Gemma 4 12B current-MLX reference, 2026-09-24
 
 This is a local reference measurement and implementation audit, not an rvLLM
-candidate qualification.  It records the current MLX-LM BF16 model on the same
-M4 Max host used by the kernel game.  It must not be ratioed directly against
-the existing llama.cpp Q4_0 measurements: the stored precision, implementation,
-and benchmark harness differ.
+candidate qualification.  It records current MLX-LM BF16 plus locally derived
+affine 4-bit and 8-bit models on the same M4 Max host used by the kernel game.
+It must not be ratioed directly against the existing llama.cpp Q4_0
+measurements: even the nominally 4-bit stored representations and benchmark
+harnesses differ.
 
 ## Sealed identities
 
@@ -17,6 +18,12 @@ and benchmark harness differ.
   `95ac51f934f85c9243f970e6077ad5ff6056b50de7bb4c4be866205f4a7901b6`
 - `model.safetensors.index.json` SHA-256:
   `5a2037525ab516767d2a213bf7cb74f7d05940bbccb64e1de281f93b40953577`
+- local Q4: MLX affine, group size 64, reported 4.501 bits/weight, 6.3 GB;
+  config/index SHA-256 `1ad49b8a789471a952702d7e1aac290313a3dd2af27e47de4054ccbfb496b5b4`
+  and `0352c33d9baee674195c874b42687e0afa0fb68b42f5c2e1a8a2fff44b125b7a`
+- local Q8: MLX affine, group size 64, reported 8.500 bits/weight, 12 GB;
+  config/index SHA-256 `2b419be9d2f003d34a38f32efe88bc7dc7435d5735f39dbbd53635af1953b29c`
+  and `ce4b07209d9468b021934541e3ccd5979d2e34675ab6740c8edfbdf5137d4d98`
 - host state after the samples: AC power, battery charging at 60%; `pmset`
   reported no recorded thermal or performance warning level.
 
@@ -24,7 +31,7 @@ The benchmark command was `mlx_lm.benchmark` with batch size one, one generated
 token, five trials, one second between trials, and `MLX_METAL_PREWARM=1`.  Each
 prompt length ran in a fresh process and included the tool's own warmup.
 
-## Prefill observations
+## BF16 prefill observations
 
 | Prompt tokens | Trial prompt tok/s | Mean | Median | Range | Peak memory reported (GB) |
 | ---: | --- | ---: | ---: | ---: | ---: |
@@ -43,6 +50,29 @@ The reported single-token `generation_tps` values ranged from roughly 10,700 to
 throughput; the numerator is one token and the timed region is dominated by the
 benchmark's synchronization/timer boundary.  They are deliberately excluded
 from performance claims.
+
+## Quantized prefill observations
+
+Both models were produced from the sealed BF16 snapshot by the pinned
+`mlx_lm.convert`.  These measurements establish execution and observed timing;
+they do not establish model-quality equivalence to the source checkpoint or to
+rvLLM's eventual quantizers.
+
+| Weight format | Prompt tokens | Trial prompt tok/s | Mean | Median | Range | Peak memory reported (GB) |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| affine Q4 g64 | 21 | 39.617, 50.090, 12.072, 12.011, 25.548 | 27.868 | 25.548 | 12.011–50.090 | 6.835 |
+| affine Q4 g64 | 84 | 70.062, 67.002, 61.275, 73.114, 67.995 | 67.889 | 67.995 | 61.275–73.114 | 6.951 |
+| affine Q4 g64 | 652 | 132.829, 136.526, 119.199, 152.087, 174.222 | 142.973 | 136.526 | 119.199–174.222 | 7.617 |
+| affine Q8 g64 | 21 | 14.618, 22.981, 130.765, 135.968, 25.655 | 65.997 | 25.655 | 14.618–135.968 | 12.776 |
+| affine Q8 g64 | 84 | 64.937, 58.221, 63.727, 27.572, 35.016 | 49.895 | 58.221 | 27.572–64.937 | 12.818 |
+| affine Q8 g64 | 652 | 145.304, 60.706, 117.642, 153.604, 161.908 | 127.833 | 145.304 | 60.706–161.908 | 13.545 |
+
+Q4 was comparatively coherent at 84 tokens, but its 21- and 652-token samples
+still varied materially.  Q8 was extremely variable at every length, including
+a nearly 10x span at 21 tokens.  The arithmetic means are therefore especially
+misleading.  These are useful framework-dispatch observations, not
+promotion-quality timings; the queue must compare candidates in interleaved
+blocks with drift rejection.
 
 For context only, the separately recorded llama.cpp Q4_0 means were 49.215,
 114.544, and 153.351 prompt tok/s at 21, 84, and 652 tokens.  Precision and
@@ -87,6 +117,19 @@ treated as generated-MSL source: MLX ships template Metal sources and creates
 these named specializations, while Instruments reports the compiled function
 identity rather than reconstructing source text.
 
+Separate real Q4 and Q8 traces at 84 tokens show that MLX does not merely
+dequantize the whole model and reuse BF16 GEMM.  Q4 selected
+`affine_qmm_t_splitk_bfloat16_t_gs_64_b_4_alN_true`,
+`affine_qmm_t_bfloat16_t_gs_64_b_4_alN_true_batch_0`,
+`affine_qmv_bfloat16_t_gs_64_b_4_batch_0`, and
+`affine_qmv_fast_bfloat16_t_gs_64_b_4_batch_0`, with an observed
+`affine_dequantize_bfloat16_t_gs_64_b_4` helper.  Q8 selected the corresponding
+`b_8` split-K/QMM kernels and `affine_qmv_fast_bfloat16_t_gs_64_b_8_batch_0`,
+plus `affine_dequantize_bfloat16_t_gs_64_b_8`.  Both retained BF16 attention,
+normalization, RoPE, and some ordinary Steel GEMMs for non-quantized or
+ineligible operations.  The traced Q4 and Q8 trials reported 59.795 and 51.310
+prompt tok/s respectively; tracing overhead excludes them from the tables.
+
 ## Consequences for the kernel campaign
 
 The most relevant current-MLX prefill baseline uses 64x64x16 fused BF16 tiles,
@@ -96,8 +139,8 @@ were 32–128 and whose best measured candidates still lost to rvLLM's existing
 `metal-mma32-load4`.  This is a design clue, not permission to copy a tile or a
 claim that tile geometry alone explains the framework gap.
 
-Next framework work should capture per-function GPU duration or counter samples,
-separate warmup/compiler work from steady execution, and repeat with matched
-4-bit and 8-bit models.  Kernel-game promotion still requires exact route and
+Next framework work should capture per-function GPU duration or counter samples
+and separate warmup/compiler work from steady execution.  Kernel-game promotion
+still requires exact route and
 dispatch evidence, independent numerical oracles, zero unexpected compile calls,
 thermal-stratified ABBA timing, and independent confirmation.
