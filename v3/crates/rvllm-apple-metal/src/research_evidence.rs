@@ -124,15 +124,27 @@ impl ResearchKernel {
             Self::LongGemm | Self::LongQkv => MetalResearchCandidate::LongMma32x64,
             Self::Load4Gemm | Self::Load4Qkv => MetalResearchCandidate::Mma32Load4,
             Self::Rms256 => MetalResearchCandidate::RmsnormSimd256,
-            Self::Tile16x32K64Gemm | Self::Tile16x32K64Qkv => MetalResearchCandidate::Load4M16N32K64,
-            Self::Tile16x64K64Gemm | Self::Tile16x64K64Qkv => MetalResearchCandidate::Load4M16N64K64,
-            Self::Tile32x32K64Gemm | Self::Tile32x32K64Qkv => MetalResearchCandidate::Load4M32N32K64,
-            Self::Tile32x64K32Gemm | Self::Tile32x64K32Qkv => MetalResearchCandidate::Load4M32N64K32,
-            Self::Tile32x64K64Gemm | Self::Tile32x64K64Qkv => MetalResearchCandidate::Load4M32N64K64,
+            Self::Tile16x32K64Gemm | Self::Tile16x32K64Qkv => {
+                MetalResearchCandidate::Load4M16N32K64
+            }
+            Self::Tile16x64K64Gemm | Self::Tile16x64K64Qkv => {
+                MetalResearchCandidate::Load4M16N64K64
+            }
+            Self::Tile32x32K64Gemm | Self::Tile32x32K64Qkv => {
+                MetalResearchCandidate::Load4M32N32K64
+            }
+            Self::Tile32x64K32Gemm | Self::Tile32x64K32Qkv => {
+                MetalResearchCandidate::Load4M32N64K32
+            }
+            Self::Tile32x64K64Gemm | Self::Tile32x64K64Qkv => {
+                MetalResearchCandidate::Load4M32N64K64
+            }
             Self::Tile32x64K128Gemm | Self::Tile32x64K128Qkv => {
                 MetalResearchCandidate::Load4M32N64K128
             }
-            Self::Tile64x64K64Gemm | Self::Tile64x64K64Qkv => MetalResearchCandidate::Load4M64N64K64,
+            Self::Tile64x64K64Gemm | Self::Tile64x64K64Qkv => {
+                MetalResearchCandidate::Load4M64N64K64
+            }
         }
     }
 }

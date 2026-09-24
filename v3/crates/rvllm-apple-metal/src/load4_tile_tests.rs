@@ -246,9 +246,7 @@ fn native_load4_tile_preserves_projection_contracts() -> TestResult {
                 .queue()
                 .commandBuffer()
                 .ok_or("command buffer missing")?;
-            let encoder = command
-                .computeCommandEncoder()
-                .ok_or("encoder missing")?;
+            let encoder = command.computeCommandEncoder().ok_or("encoder missing")?;
             encoder.setComputePipelineState(pipelines.get(names[path])?);
             // SAFETY: live aligned inputs and independently guarded output allocations;
             // dimensions are the bounded fixtures above. Unsupported candidate roles
@@ -360,8 +358,7 @@ fn native_load4_tile_preserves_projection_contracts() -> TestResult {
             for col in [0, 31, 32, 63, 64, n - 1].into_iter().filter(|&c| c < n) {
                 let expected = (0..k)
                     .map(|i| {
-                        bf(&input, (row * k + i) as usize)
-                            * bf(&weights, (col * k + i) as usize)
+                        bf(&input, (row * k + i) as usize) * bf(&weights, (col * k + i) as usize)
                     })
                     .sum::<f64>();
                 let index = (row * n + col) as usize * 4;
@@ -392,9 +389,11 @@ fn native_load4_tile_preserves_projection_contracts() -> TestResult {
         positive[0] += usize::from(case.gemm);
         positive[1] += usize::from(case.qkv);
         refusals += usize::from(!case.gemm) + usize::from(!case.qkv);
-        reports.push(serde_json::json!({"case":case.label,"shape":case.shape,"numerical":numerical,
+        reports.push(
+            serde_json::json!({"case":case.label,"shape":case.shape,"numerical":numerical,
             "fp32_bits_exact":case.qkv,"bf16_bits_exact":case.gemm,"guards_intact":true,
-            "sampled_fp64_max_abs":maximum_cpu_error,"commands_completed":12}));
+            "sampled_fp64_max_abs":maximum_cpu_error,"commands_completed":12}),
+        );
     }
     assert_eq!(positive, [4, 2]);
     assert_eq!(refusals, 10);

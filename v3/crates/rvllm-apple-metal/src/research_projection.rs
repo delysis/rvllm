@@ -535,7 +535,9 @@ mod tests {
                 continue;
             };
             let spec = candidate.spec();
-            for m in [0, 1, 5, 6, 15, 16, 17, 21, 31, 32, 33, 63, 64, 65, 84, 652, 1024, 1025] {
+            for m in [
+                0, 1, 5, 6, 15, 16, 17, 21, 31, 32, 33, 63, 64, 65, 84, 652, 1024, 1025,
+            ] {
                 for (n, k, fp32) in [
                     (8192, 3840, true),
                     (9216, 3840, true),
@@ -579,7 +581,10 @@ mod tests {
                     assert_eq!(bad.plan(), Err(FallbackReason::Alignment));
                 }
             }
-            for offsets in [[0, good.offsets[1], 2], [0, good.offsets[1], good.offsets[1]]] {
+            for offsets in [
+                [0, good.offsets[1], 2],
+                [0, good.offsets[1], good.offsets[1]],
+            ] {
                 assert_eq!(
                     ProjectionRequest { offsets, ..good }.plan(),
                     Err(FallbackReason::BufferOrAlias)
@@ -604,8 +609,17 @@ mod tests {
             let bytes = (2 * (t.m + t.n) * t.k).max(4 * t.m * t.n);
             for kernel in candidate.kernels() {
                 assert_eq!(kernel.limits(), (threads, bytes));
-                assert!(crate::research::launch_fits(32, threads, bytes, bytes, threads, bytes));
-                assert!(!crate::research::launch_fits(32, threads, bytes, bytes - 1, threads, bytes));
+                assert!(crate::research::launch_fits(
+                    32, threads, bytes, bytes, threads, bytes
+                ));
+                assert!(!crate::research::launch_fits(
+                    32,
+                    threads,
+                    bytes,
+                    bytes - 1,
+                    threads,
+                    bytes
+                ));
             }
             for rows in [t.m, t.n] {
                 let mut writes = vec![0_u8; rows * t.k];
@@ -665,7 +679,10 @@ mod tests {
             assert!(extra.contains("simdgroup_matrix<bfloat, 8, 8>"));
             assert!(extra.contains("simdgroup_float8x8 acc[RM][RN]"));
             assert!(extra.contains("device const vec<bfloat, 4>"));
-            assert!(extra.contains("else C[output] = bf16_sat(value)"));
+            assert!(extra.contains("inline void load4_tiled_store(device float *C"));
+            assert!(extra.contains("inline void load4_tiled_store(device bfloat *C"));
+            assert!(extra.contains("C[output] = bf16_sat(value);"));
+            assert!(extra.contains("load4_tiled_store(C, output, value);"));
             assert!(extra.contains("device float *C [[buffer(2)]]"));
             assert_eq!(extra.matches("kernel void ").count(), 2);
         }

@@ -82,6 +82,14 @@ inline void load4_tiled_accumulate(
     threadgroup_barrier(mem_flags::mem_threadgroup);
 }
 
+inline void load4_tiled_store(device float *C, size_t output, float value) {
+    C[output] = value;
+}
+
+inline void load4_tiled_store(device half *C, size_t output, float value) {
+    C[output] = f16_sat(value);
+}
+
 template <uint BM, uint BN, uint BK, uint GM, uint GN, uint MIN_M, bool FP32, typename OUT>
 inline void load4_tiled_run(
     device const half *A, device const half *B, device OUT *C,
@@ -109,8 +117,7 @@ inline void load4_tiled_run(
             const size_t output = size_t(row) * N + col;
             const float prior = beta == 0.0f ? 0.0f : beta * float(C[output]);
             const float value = alpha * ct[index] + prior;
-            if (FP32) C[output] = value;
-            else C[output] = f16_sat(value);
+            load4_tiled_store(C, output, value);
         }
     }
 }
