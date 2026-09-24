@@ -58,7 +58,7 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/python-tests.log"
       - name: Run kernel-game referee contracts
         run: |
-          cargo test --locked -p rvllm-runtime kernel_game::tests:: -- --exact \
+          cargo test --locked -p rvllm-runtime kernel_game::tests:: -- --nocapture \
             2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/kernel-game-tests.log"
       - name: Run exact reviewed public Rust tests and twenty-two source exports
         run: |
