@@ -34,9 +34,17 @@ impl Sha256Digest {
     }
 
     pub fn file(path: &Path) -> Result<Self, KernelGameError> {
+        use std::io::Read as _;
         let mut file = std::fs::File::open(path)?;
         let mut hasher = Sha256::new();
-        std::io::copy(&mut file, &mut hasher)?;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
         Ok(Self(format!("{:x}", hasher.finalize())))
     }
 
