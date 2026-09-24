@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 use rvllm_runtime::apple_measurement::PowerMonitor;
+use rvllm_runtime::kernel_game::{parse_strict_json, SealedSubmission};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -67,6 +68,8 @@ struct Job {
     validator: Option<Invocation>,
     #[serde(default)]
     inputs: Vec<Pin>,
+    #[serde(default)]
+    kernel_game_submission: Option<Pin>,
     #[serde(default)]
     after: Vec<String>,
     conditions: Conditions,
@@ -182,12 +185,55 @@ impl Job {
                 return Err("invalid executable pin".into());
             }
         }
-        for pin in &self.inputs {
+        for pin in self
+            .inputs
+            .iter()
+            .chain(self.kernel_game_submission.iter())
+        {
             if !pin.path.is_absolute()
                 || pin.sha256.len() != 64
                 || !pin.sha256.bytes().all(|c| c.is_ascii_hexdigit())
             {
                 return Err("invalid input pin".into());
+            }
+        }
+        Ok(())
+    }
+
+    fn verify_kernel_game_submission(&self) -> Result<()> {
+        let Some(pin) = &self.kernel_game_submission else {
+            return Ok(());
+        };
+        verify_pin(pin)?;
+        let bytes = fs::read(&pin.path)?;
+        let submission: SealedSubmission =
+            parse_strict_json(&bytes).map_err(|error| format!("invalid kernel-game submission: {error}"))?;
+        submission.validate()?;
+        if submission.executable.sha256.as_str()
+            != self.command.executable.sha256.to_ascii_lowercase()
+        {
+            return Err("kernel-game executable identity differs from queued executable".into());
+        }
+        let mut required = vec![
+            submission.generated_source.as_str(),
+            submission.model.as_str(),
+            submission.reference.as_str(),
+            submission.workload.as_str(),
+            submission.oracle.as_str(),
+        ];
+        if let Some(metallib) = &submission.metallib {
+            required.push(metallib.sha256.as_str());
+        }
+        for digest in required {
+            if !self
+                .inputs
+                .iter()
+                .any(|input| input.sha256.eq_ignore_ascii_case(digest))
+            {
+                return Err(format!(
+                    "kernel-game required artifact {digest} is not a queued input pin"
+                )
+                .into());
             }
         }
         Ok(())
@@ -201,6 +247,7 @@ impl Job {
         for pin in &self.inputs {
             verify_pin(pin)?;
         }
+        self.verify_kernel_game_submission()?;
         Ok(())
     }
 
@@ -208,6 +255,7 @@ impl Job {
         for pin in std::iter::once(&self.command.executable)
             .chain(self.validator.iter().map(|call| &call.executable))
             .chain(self.inputs.iter())
+            .chain(self.kernel_game_submission.iter())
         {
             pin_present(pin)?;
         }
@@ -684,6 +732,7 @@ fn execute(
         "sampled_conditions_eligible":eligible,"violations":violations,"overdue":overdue,
         "files_unchanged":files_unchanged.is_ok(),"file_error":files_unchanged.err(),
         "validation":validation,"measurement":measurement,
+        "kernel_game_submission_sha256":job.kernel_game_submission.as_ref().map(|pin|pin.sha256.to_ascii_lowercase()),
         "stop_requested":stopped(queue,stop),
         "claim":"Preparation success does not qualify performance. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work."});
     atomic_json(&output.join("report.json"), &report)?;
