@@ -1147,9 +1147,17 @@ fn elapsed_ms(start: Instant) -> f64 {
 }
 
 fn sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Read as _;
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher)?;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
     Ok(format!("{:x}", hasher.finalize()))
 }
 
