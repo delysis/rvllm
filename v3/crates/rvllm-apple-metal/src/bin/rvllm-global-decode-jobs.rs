@@ -188,8 +188,16 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
     std::fs::create_dir(root)?;
     std::fs::create_dir(root.join("jobs"))?;
     let executable = std::env::current_exe()?;
+    let retainer = executable
+        .parent()
+        .ok_or("generator has no parent directory")?
+        .join("rvllm-retain-abba");
+    let exploratory = policy["low_power_mode"].is_null()
+        || policy["pmset_power_mode"].is_null()
+        || policy["thermal_state"].is_null();
     let config = json!({"schema":"rvllm.global-decode.campaign.v1","campaign":campaign,
         "queue":queue,"test_executable":pin(test)?,"job_generator":pin(&executable)?,
+        "abba_retainer":pin(&retainer)?,"exploratory":exploratory,
         "conditions":policy,"conditions_input":pin(conditions)?,
         "lengths":[256,512,1024,2048,4096],"split_kv":false,"local_prefill":false,
         "promotion":false,"status":"proposed_unqualified"});
@@ -256,6 +264,19 @@ fn generate(root: &Path, timing: bool) -> Result {
     {
         return Err("test/generator executable identity drift".into());
     }
+    let retainer = if timing {
+        let path = absolute(
+            config["abba_retainer"]["path"]
+                .as_str()
+                .ok_or("ABBA retainer missing")?,
+        )?;
+        if pin(&path)? != config["abba_retainer"] {
+            return Err("ABBA retainer identity drift".into());
+        }
+        Some(path)
+    } else {
+        None
+    };
     let mut all = Vec::new();
     // Never prune the family from partial results. A failed compile/oracle stops
     // generation; revised families require a new explicit campaign identity.
@@ -286,6 +307,7 @@ fn generate(root: &Path, timing: bool) -> Result {
         env[format!("{PREFIX}METALLIB")] = json!(library);
         env[format!("{PREFIX}BUILD_RECEIPT")] = json!(build_path);
         if timing {
+            inputs.push(pin(&test)?);
             let oracle_id = id(&config, candidate, "oracle")?;
             let oracle_path = succeeded(&queue, &oracle_id)?.join("native/oracle.json");
             let oracle = read(&oracle_path)?;
@@ -330,19 +352,36 @@ fn generate(root: &Path, timing: bool) -> Result {
             if let Some(n) = length {
                 env[format!("{PREFIX}LENGTH")] = json!(n.to_string());
             }
+            let mut args = vec![
+                "--ignored".into(),
+                "--exact".into(),
+                format!("attention_global_decode_device_tests::{test_name}"),
+                "--test-threads=1".into(),
+                "--nocapture".into(),
+            ];
+            let command = if let Some(retainer) = &retainer {
+                let test_sha = config["test_executable"]["sha256"]
+                    .as_str()
+                    .ok_or("test executable SHA-256 missing")?;
+                args.insert(0, test_sha.into());
+                args.insert(0, test.to_string_lossy().into_owned());
+                retainer
+            } else {
+                &test
+            };
             job(
                 &config,
                 root,
                 &job_id,
-                if timing { "timing" } else { "correctness" },
-                &test,
-                vec![
-                    "--ignored".into(),
-                    "--exact".into(),
-                    format!("attention_global_decode_device_tests::{test_name}"),
-                    "--test-threads=1".into(),
-                    "--nocapture".into(),
-                ],
+                if timing && config["exploratory"] == true {
+                    "exploratory_timing"
+                } else if timing {
+                    "timing"
+                } else {
+                    "correctness"
+                },
+                command,
+                args,
                 env.clone(),
                 inputs.clone(),
                 after.clone(),
