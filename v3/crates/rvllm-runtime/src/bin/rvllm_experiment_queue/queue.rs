@@ -185,11 +185,7 @@ impl Job {
                 return Err("invalid executable pin".into());
             }
         }
-        for pin in self
-            .inputs
-            .iter()
-            .chain(self.kernel_game_submission.iter())
-        {
+        for pin in self.inputs.iter().chain(self.kernel_game_submission.iter()) {
             if !pin.path.is_absolute()
                 || pin.sha256.len() != 64
                 || !pin.sha256.bytes().all(|c| c.is_ascii_hexdigit())
@@ -206,8 +202,8 @@ impl Job {
         };
         verify_pin(pin)?;
         let bytes = fs::read(&pin.path)?;
-        let submission: SealedSubmission =
-            parse_strict_json(&bytes).map_err(|error| format!("invalid kernel-game submission: {error}"))?;
+        let submission: SealedSubmission = parse_strict_json(&bytes)
+            .map_err(|error| format!("invalid kernel-game submission: {error}"))?;
         submission.validate()?;
         if submission.executable.sha256.as_str()
             != self.command.executable.sha256.to_ascii_lowercase()
