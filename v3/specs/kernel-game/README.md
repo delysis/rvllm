@@ -31,8 +31,14 @@ run.
   with a sealed submission plus its pinned source-tree and oracle files; the typed
   receipt is validated against the submission before it is written.
 
-This PR does **not** install a daemon, change a production selector, clear STOP,
-prepare caches, run private accelerator work, or promote any candidate.
+`rvllm_experiment_queue daemon QUEUE GLOBAL_LOCK` is an opt-in resident worker.
+It uses the same single-owner lock, immutable result directories, STOP behavior,
+condition gates, and no-retry semantics as `run`; it differs only by waiting for
+new submissions instead of exiting after an idle timeout. The binary does not
+install or enable a service by itself.
+
+This PR does **not** change a production selector, clear STOP, prepare caches,
+or promote any candidate.
 
 ## Promotion boundary
 
