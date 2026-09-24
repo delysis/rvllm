@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 17;
+pub const RESEARCH_KERNEL_COUNT: usize = 31;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -26,6 +26,20 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "wave2_gemm_mma32_load4",
     "wave2_qkv_mma32_load4",
     "wave2_rmsnorm_simd256",
+    "research_gemm_load4_m16n32k64",
+    "research_qkv_load4_m16n32k64",
+    "research_gemm_load4_m16n64k64",
+    "research_qkv_load4_m16n64k64",
+    "research_gemm_load4_m32n32k64",
+    "research_qkv_load4_m32n32k64",
+    "research_gemm_load4_m32n64k32",
+    "research_qkv_load4_m32n64k32",
+    "research_gemm_load4_m32n64k64",
+    "research_qkv_load4_m32n64k64",
+    "research_gemm_load4_m32n64k128",
+    "research_qkv_load4_m32n64k128",
+    "research_gemm_load4_m64n64k64",
+    "research_qkv_load4_m64n64k64",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,6 +62,20 @@ pub enum ResearchKernel {
     Load4Gemm = 14,
     Load4Qkv = 15,
     Rms256 = 16,
+    Tile16x32K64Gemm = 17,
+    Tile16x32K64Qkv = 18,
+    Tile16x64K64Gemm = 19,
+    Tile16x64K64Qkv = 20,
+    Tile32x32K64Gemm = 21,
+    Tile32x32K64Qkv = 22,
+    Tile32x64K32Gemm = 23,
+    Tile32x64K32Qkv = 24,
+    Tile32x64K64Gemm = 25,
+    Tile32x64K64Qkv = 26,
+    Tile32x64K128Gemm = 27,
+    Tile32x64K128Qkv = 28,
+    Tile64x64K64Gemm = 29,
+    Tile64x64K64Qkv = 30,
 }
 
 impl ResearchKernel {
@@ -74,6 +102,13 @@ impl ResearchKernel {
             Self::Load4Gemm => (128, 8192),
             Self::Load4Qkv => (128, 8192),
             Self::Rms256 => (256, 32),
+            Self::Tile16x32K64Gemm | Self::Tile16x32K64Qkv => (64, 6144),
+            Self::Tile16x64K64Gemm | Self::Tile16x64K64Qkv => (128, 10240),
+            Self::Tile32x32K64Gemm | Self::Tile32x32K64Qkv => (128, 8192),
+            Self::Tile32x64K32Gemm | Self::Tile32x64K32Qkv => (128, 8192),
+            Self::Tile32x64K64Gemm | Self::Tile32x64K64Qkv => (128, 12288),
+            Self::Tile32x64K128Gemm | Self::Tile32x64K128Qkv => (128, 24576),
+            Self::Tile64x64K64Gemm | Self::Tile64x64K64Qkv => (128, 16384),
         }
     }
     pub const fn owner(self) -> crate::research::MetalResearchCandidate {
@@ -89,6 +124,15 @@ impl ResearchKernel {
             Self::LongGemm | Self::LongQkv => MetalResearchCandidate::LongMma32x64,
             Self::Load4Gemm | Self::Load4Qkv => MetalResearchCandidate::Mma32Load4,
             Self::Rms256 => MetalResearchCandidate::RmsnormSimd256,
+            Self::Tile16x32K64Gemm | Self::Tile16x32K64Qkv => MetalResearchCandidate::Load4M16N32K64,
+            Self::Tile16x64K64Gemm | Self::Tile16x64K64Qkv => MetalResearchCandidate::Load4M16N64K64,
+            Self::Tile32x32K64Gemm | Self::Tile32x32K64Qkv => MetalResearchCandidate::Load4M32N32K64,
+            Self::Tile32x64K32Gemm | Self::Tile32x64K32Qkv => MetalResearchCandidate::Load4M32N64K32,
+            Self::Tile32x64K64Gemm | Self::Tile32x64K64Qkv => MetalResearchCandidate::Load4M32N64K64,
+            Self::Tile32x64K128Gemm | Self::Tile32x64K128Qkv => {
+                MetalResearchCandidate::Load4M32N64K128
+            }
+            Self::Tile64x64K64Gemm | Self::Tile64x64K64Qkv => MetalResearchCandidate::Load4M64N64K64,
         }
     }
 }

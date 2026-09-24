@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 11] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 18] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -28,7 +28,38 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 11] = [
     MetalResearchCandidate::LongMma32x64,
     MetalResearchCandidate::Mma32Load4,
     MetalResearchCandidate::RmsnormSimd256,
+    MetalResearchCandidate::Load4M16N32K64,
+    MetalResearchCandidate::Load4M16N64K64,
+    MetalResearchCandidate::Load4M32N32K64,
+    MetalResearchCandidate::Load4M32N64K32,
+    MetalResearchCandidate::Load4M32N64K64,
+    MetalResearchCandidate::Load4M32N64K128,
+    MetalResearchCandidate::Load4M64N64K64,
 ];
+
+// Compile exactly one specialization pair with the shared implementation.
+// The delivery source manifest also hashes load4_tiled_common.metal.
+macro_rules! load4_tile_spec {
+    ($suffix:literal, $gemm:ident, $qkv:ident, $min:literal) => {
+        CandidateSpec {
+            name: concat!("metal-load4-", $suffix),
+            kernels: &[ResearchKernel::$gemm, ResearchKernel::$qkv],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/load4_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: $min,
+            max_tokens: 1024,
+            window_independent: true,
+            numerical_contract: "layout-only-bitwise-fp32-gate",
+            source: concat!(
+                include_str!("research_shaders/load4_tiled_common.metal"),
+                include_str!(concat!("research_shaders/load4_", $suffix, ".metal"))
+            ),
+        }
+    };
+}
 
 impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
@@ -156,6 +187,27 @@ impl MetalResearchCandidate {
                 numerical_contract: "reduction-order-change",
                 source: include_str!("research_shaders/rmsnorm_simd256.metal"),
             },
+            Self::Load4M16N32K64 => {
+                load4_tile_spec!("m16n32k64", Tile16x32K64Gemm, Tile16x32K64Qkv, 6)
+            }
+            Self::Load4M16N64K64 => {
+                load4_tile_spec!("m16n64k64", Tile16x64K64Gemm, Tile16x64K64Qkv, 6)
+            }
+            Self::Load4M32N32K64 => {
+                load4_tile_spec!("m32n32k64", Tile32x32K64Gemm, Tile32x32K64Qkv, 6)
+            }
+            Self::Load4M32N64K32 => {
+                load4_tile_spec!("m32n64k32", Tile32x64K32Gemm, Tile32x64K32Qkv, 6)
+            }
+            Self::Load4M32N64K64 => {
+                load4_tile_spec!("m32n64k64", Tile32x64K64Gemm, Tile32x64K64Qkv, 6)
+            }
+            Self::Load4M32N64K128 => {
+                load4_tile_spec!("m32n64k128", Tile32x64K128Gemm, Tile32x64K128Qkv, 6)
+            }
+            Self::Load4M64N64K64 => {
+                load4_tile_spec!("m64n64k64", Tile64x64K64Gemm, Tile64x64K64Qkv, 64)
+            }
         }
     }
 }

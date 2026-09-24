@@ -69,6 +69,8 @@ pub use options::{MetalKernelOptions, MetalModelLimits};
 pub use research::MetalResearchCandidate;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod layer_forward;
+#[cfg(all(test, target_os = "macos"))]
+mod load4_tile_tests;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod low_bit_metal;
 pub mod memory_budget;

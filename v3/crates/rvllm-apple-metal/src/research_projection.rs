@@ -24,6 +24,38 @@ pub struct ProjectionPlan {
     pub tile_n: usize,
 }
 
+/// Compile-time geometry of the vector-loaded, scratch-reusing tile family.
+/// This describes source layout only; it is not a measured occupancy claim.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Load4Tile {
+    pub m: usize,
+    pub n: usize,
+    pub k: usize,
+    pub groups_m: usize,
+    pub groups_n: usize,
+}
+
+pub const fn load4_tile(candidate: MetalResearchCandidate) -> Option<Load4Tile> {
+    use MetalResearchCandidate::*;
+    let [m, n, k, groups_m, groups_n] = match candidate {
+        Load4M16N32K64 => [16, 32, 64, 1, 2],
+        Load4M16N64K64 => [16, 64, 64, 1, 4],
+        Load4M32N32K64 => [32, 32, 64, 2, 2],
+        Load4M32N64K32 => [32, 64, 32, 2, 2],
+        Load4M32N64K64 => [32, 64, 64, 2, 2],
+        Load4M32N64K128 => [32, 64, 128, 2, 2],
+        Load4M64N64K64 => [64, 64, 64, 2, 2],
+        _ => return None,
+    };
+    Some(Load4Tile {
+        m,
+        n,
+        k,
+        groups_m,
+        groups_n,
+    })
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ProjectionRequest {
     pub candidate: MetalResearchCandidate,
@@ -42,13 +74,10 @@ pub struct ProjectionRequest {
 impl ProjectionRequest {
     pub fn plan(self) -> Result<ProjectionPlan, FallbackReason> {
         use MetalResearchCandidate::*;
-        let pair = match self.candidate {
-            ShortMma16x64 => [ResearchKernel::ShortGemm, ResearchKernel::ShortQkv],
-            Mma32Prefetch => [ResearchKernel::PrefetchGemm, ResearchKernel::PrefetchQkv],
-            Mma32F32 => [ResearchKernel::F32Gemm, ResearchKernel::F32Qkv],
-            LongMma32x64 => [ResearchKernel::LongGemm, ResearchKernel::LongQkv],
-            Mma32Load4 => [ResearchKernel::Load4Gemm, ResearchKernel::Load4Qkv],
-            _ => return Err(FallbackReason::NotThisOperation),
+        let (tile_m, tile_n) =
+            projection_tile(self.candidate).ok_or(FallbackReason::NotThisOperation)?;
+        let [gemm, qkv] = self.candidate.kernels() else {
+            return Err(FallbackReason::NotThisOperation);
         };
         if !self.full_prefill {
             return Err(FallbackReason::ModelPhaseOrTrace);
@@ -66,7 +95,13 @@ impl ProjectionRequest {
         {
             return Err(FallbackReason::Shape);
         }
-        if self.candidate == Mma32Load4 && (self.offsets[0] % 8 != 0 || self.offsets[1] % 8 != 0) {
+        let tile = load4_tile(self.candidate);
+        if tile.is_some_and(|t| k as usize % t.k != 0 || n as usize % t.n != 0) {
+            return Err(FallbackReason::Shape);
+        }
+        if (self.candidate == Mma32Load4 || tile.is_some())
+            && (self.offsets[0] % 8 != 0 || self.offsets[1] % 8 != 0)
+        {
             return Err(FallbackReason::Alignment);
         }
         if !projection_buffers_fit(
@@ -77,10 +112,8 @@ impl ProjectionRequest {
         ) {
             return Err(FallbackReason::BufferOrAlias);
         }
-        let (tile_m, tile_n) =
-            projection_tile(self.candidate).ok_or(FallbackReason::NotThisOperation)?;
         Ok(ProjectionPlan {
-            kernel: pair[usize::from(self.output_f32)],
+            kernel: if self.output_f32 { *qkv } else { *gemm },
             tile_m,
             tile_n,
         })
@@ -95,7 +128,7 @@ pub fn projection_tile(candidate: MetalResearchCandidate) -> Option<(usize, usiz
         ShortMma16x64 => Some((16, 64)),
         LongMma32x64 => Some((32, 64)),
         Mma32Prefetch | Mma32F32 | Mma32Load4 => Some((32, 32)),
-        _ => None,
+        _ => load4_tile(candidate).map(|tile| (tile.m, tile.n)),
     }
 }
 
@@ -287,13 +320,10 @@ mod tests {
 
     #[test]
     fn every_projection_requires_identity_precision_scale_and_nonaliasing() {
-        for candidate in [
-            MetalResearchCandidate::ShortMma16x64,
-            MetalResearchCandidate::Mma32Prefetch,
-            MetalResearchCandidate::Mma32F32,
-            MetalResearchCandidate::LongMma32x64,
-            MetalResearchCandidate::Mma32Load4,
-        ] {
+        for candidate in crate::research_catalog::ALL_CANDIDATES
+            .into_iter()
+            .filter(|&c| projection_tile(c).is_some())
+        {
             let good = request(candidate, 64, 8192, 3840, true);
             let plan = good.plan().unwrap();
             assert_eq!(plan.kernel.owner(), candidate);
@@ -495,6 +525,149 @@ mod tests {
         }
         for name in ["qkv_project_f32_mma32", "gemm_f16_mma32"] {
             assert_eq!(prefetch_fixture_expectation(name, [63, 67, 35]), Ok(true));
+        }
+    }
+
+    #[test]
+    fn load4_tiles_admit_exact_roles_and_mask_only_the_prompt_tail() {
+        for candidate in crate::research_catalog::ALL_CANDIDATES {
+            let Some(tile) = load4_tile(candidate) else {
+                continue;
+            };
+            let spec = candidate.spec();
+            for m in [0, 1, 5, 6, 15, 16, 17, 21, 31, 32, 33, 63, 64, 65, 84, 652, 1024, 1025] {
+                for (n, k, fp32) in [
+                    (8192, 3840, true),
+                    (9216, 3840, true),
+                    (30720, 3840, false),
+                    (3840, 4096, false),
+                    (3840, 8192, false),
+                    (3840, 15360, false),
+                ] {
+                    assert_eq!(n as usize % tile.n, 0);
+                    assert_eq!(k as usize % tile.k, 0);
+                    assert_eq!(
+                        request(candidate, m, n, k, fp32).plan().is_ok(),
+                        (spec.min_tokens..=1024).contains(&m)
+                    );
+                    assert_eq!(
+                        request(candidate, m, n, k, !fp32).plan(),
+                        Err(FallbackReason::Shape)
+                    );
+                }
+            }
+            for (n, k) in [(67, 35), (8191, 3840), (8192, 3839)] {
+                assert_eq!(
+                    request(candidate, 84, n, k, true).plan(),
+                    Err(FallbackReason::Shape)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn load4_tiles_check_each_vector_pointer_and_every_byte_of_the_output() {
+        for candidate in crate::research_catalog::ALL_CANDIDATES {
+            if load4_tile(candidate).is_none() {
+                continue;
+            }
+            let good = request(candidate, 84, 8192, 3840, true);
+            for input in 0..2 {
+                for residue in [2, 4, 6] {
+                    let mut bad = good;
+                    bad.offsets[input] += residue;
+                    assert_eq!(bad.plan(), Err(FallbackReason::Alignment));
+                }
+            }
+            for offsets in [[0, good.offsets[1], 2], [0, good.offsets[1], good.offsets[1]]] {
+                assert_eq!(
+                    ProjectionRequest { offsets, ..good }.plan(),
+                    Err(FallbackReason::BufferOrAlias)
+                );
+            }
+            for beta in [f32::NAN, f32::INFINITY, -1.0] {
+                assert_eq!(
+                    ProjectionRequest { beta, ..good }.plan(),
+                    Err(FallbackReason::ProjectionScale)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn load4_staging_and_fragment_ownership_are_bijective_with_bounded_scratch() {
+        for candidate in crate::research_catalog::ALL_CANDIDATES {
+            let Some(t) = load4_tile(candidate) else {
+                continue;
+            };
+            let threads = 32 * t.groups_m * t.groups_n;
+            let bytes = (2 * (t.m + t.n) * t.k).max(4 * t.m * t.n);
+            for kernel in candidate.kernels() {
+                assert_eq!(kernel.limits(), (threads, bytes));
+                assert!(crate::research::launch_fits(32, threads, bytes, bytes, threads, bytes));
+                assert!(!crate::research::launch_fits(32, threads, bytes, bytes - 1, threads, bytes));
+            }
+            for rows in [t.m, t.n] {
+                let mut writes = vec![0_u8; rows * t.k];
+                for tid in 0..threads {
+                    for v in (tid..rows * t.k / 4).step_by(threads) {
+                        let row = v / (t.k / 4);
+                        let col = 4 * (v % (t.k / 4));
+                        for lane in 0..4 {
+                            writes[row * t.k + col + lane] += 1;
+                        }
+                    }
+                }
+                assert!(writes.iter().all(|&n| n == 1));
+            }
+            let mut writes = vec![0_u8; t.m * t.n];
+            let sm = t.m / t.groups_m;
+            let sn = t.n / t.groups_n;
+            for sg in 0..t.groups_m * t.groups_n {
+                for i in 0..sm / 8 {
+                    for j in 0..sn / 8 {
+                        for row in 0..8 {
+                            for col in 0..8 {
+                                let r = (sg / t.groups_n) * sm + i * 8 + row;
+                                let c = (sg % t.groups_n) * sn + j * 8 + col;
+                                writes[r * t.n + c] += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            assert!(writes.iter().all(|&n| n == 1));
+            for k in [3840, 4096, 8192, 15360] {
+                let order: Vec<_> = (0..k)
+                    .step_by(t.k)
+                    .flat_map(|kb| (0..t.k).step_by(8).map(move |kk| kb + kk))
+                    .collect();
+                assert_eq!(order, (0..k).step_by(8).collect::<Vec<_>>());
+            }
+        }
+    }
+
+    #[test]
+    fn load4_export_preserves_native_operands_and_both_output_storage_contracts() {
+        for candidate in crate::research_catalog::ALL_CANDIDATES {
+            if load4_tile(candidate).is_none() {
+                continue;
+            }
+            let source = crate::kernels::kernel_source_with_options(
+                crate::MetalFloatType::Bf16,
+                crate::MetalKernelOptions {
+                    research: candidate,
+                    ..crate::MetalKernelOptions::default()
+                },
+            );
+            let extra = source.split("// load4-tiled:").nth(1).unwrap();
+            assert!(!extra.contains("half"));
+            assert!(extra.contains("simdgroup_matrix<bfloat, 8, 8>"));
+            assert!(extra.contains("simdgroup_float8x8 acc[RM][RN]"));
+            assert!(extra.contains("device const vec<bfloat, 4>"));
+            assert!(extra.contains("else C[output] = bf16_sat(value)"));
+            assert!(extra.contains("device float *C [[buffer(2)]]"));
+            assert_eq!(extra.matches("kernel void ").count(), 2);
         }
     }
 }

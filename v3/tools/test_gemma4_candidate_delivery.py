@@ -10,10 +10,13 @@ import sys
 import tempfile
 import unittest
 
+from gemma4_catalog import sources
+
 GATE = Path(__file__).with_name("check_gemma4_candidate_delivery.sh")
 MANIFEST = GATE.with_name("gemma4_candidate_rustfmt.paths")
 RUSTFMT = shutil.which("rustfmt")
 CATALOG = json.loads(GATE.with_name("gemma4_metal_catalog.json").read_text())
+ARMS = 2 * len(CATALOG["candidates"])
 
 
 FAKE_TOOL = r'''#!/usr/bin/env python3
@@ -110,12 +113,12 @@ class DeliveryGateTests(unittest.TestCase):
             path = self.workspace / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"// {relative}\npub fn packet_owned() {{}}\n")
-        shaders = self.workspace / "crates/rvllm-apple-metal/src/research_shaders"
-        shaders.mkdir(exist_ok=True)
         shutil.copyfile(GATE.with_name("gemma4_catalog.py"), tools / "gemma4_catalog.py")
         shutil.copyfile(GATE.with_name("gemma4_metal_catalog.json"), tools / "gemma4_metal_catalog.json")
-        for name in [Path(row["source_file"]).stem for row in CATALOG["candidates"] if row["source_file"]]:
-            (shaders / (name + ".metal")).write_text("// source fixture: " + name + "\n")
+        for relative in sources(CATALOG):
+            path = self.workspace / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("// source fixture: " + path.stem + "\n")
         fake = self.root / "bin"
         fake.mkdir()
         for name in ("uname", "cargo", "rustc", "rustfmt", "xcrun"):
@@ -151,7 +154,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertFalse(any(c[0] == "xcrun" and "-c" in c for c in self.calls()))
         self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
 
-    def test_compile_gate_exports_all_eleven_selections_in_both_dtypes(self):
+    def test_compile_gate_exports_all_catalog_selections_in_both_dtypes(self):
         run = self.run_gate()
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         stems = {f"{dtype}-{candidate}" for dtype in ("bf16", "f16")
@@ -160,8 +163,8 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual({p.stem for p in self.out.glob("*.metallib")}, stems)
         compiles = [c for c in self.calls() if c[0] == "xcrun" and "-c" in c]
         links = [c for c in self.calls() if c[0] == "xcrun" and "metallib" in c]
-        self.assertEqual(len(compiles), 22)
-        self.assertEqual(len(links), 22)
+        self.assertEqual(len(compiles), ARMS)
+        self.assertEqual(len(links), ARMS)
         self.assertTrue(all("-std=metal3.1" in c for c in compiles))
         self.assertEqual((self.out / "status.txt").read_text(), "compiled-only; no accelerator acceptance\n")
         commands = (self.out / "commands.txt").read_text()
@@ -173,7 +176,7 @@ class DeliveryGateTests(unittest.TestCase):
         for line in commands.splitlines():
             self.assertFalse(line.startswith(str(self.target / "aarch64-apple-darwin/release/rvllm_disaggregated_infer")))
         self.assertFalse(any(c[:2] == ["cargo", "fmt"] for c in self.calls()))
-        self.assertEqual(len(self.format_calls()), 32)
+        self.assertEqual(len(self.format_calls()), len(self.owned))
         for call in self.calls():
             if call[0] == "cargo" and call[1] in ("test", "build"):
                 for flag in ("--offline", "--locked", "--release", "aarch64-apple-darwin"):
@@ -202,7 +205,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual(unlisted.read_bytes(), before)
         self.assertEqual(owner.read_bytes(), owner_before)
         self.assertFalse(any(c[:2] == ["cargo", "fmt"] for c in self.calls()))
-        self.assertEqual(len(list(self.out.glob("*.metallib"))), 22)
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), ARMS)
         checked = (self.out / "format-manifest.stdout").read_text().splitlines()
         self.assertEqual(checked, self.owned)
         self.assertNotIn(str(unlisted.relative_to(self.workspace)), checked)
@@ -303,7 +306,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.env["FAKE_MUTATE_SOURCE"] = str(earlier)
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0)
-        self.assertEqual(len(self.format_calls()), 32)
+        self.assertEqual(len(self.format_calls()), len(self.owned))
         self.assertIn("format-source-unchanged", run.stderr)
         self.assert_no_targeted_work()
 
@@ -349,11 +352,11 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertTrue((self.out / "built-exporter-hashes.stdout").read_text())
 
     def test_replacement_during_last_arm_does_not_get_a_fresh_binary_hash(self):
-        self.env["FAKE_REPLACE_EXPORTER_AT"] = "f16-metal-rmsnorm-simd256"
+        self.env["FAKE_REPLACE_EXPORTER_AT"] = "f16-" + CATALOG["candidates"][-1]["name"]
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0, "gate relabeled an exporter changed in the final arm")
         self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
-        self.assertEqual(len(list(self.out.glob("*.metallib"))), 22)
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), ARMS)
         self.assertIn("artifact-unchanged", run.stderr)
         self.assertIn((self.out / "built-exporter-hashes.stdout").read_text(),
                       (self.out / "artifact-hashes.stdout").read_text())
@@ -363,7 +366,7 @@ class DeliveryGateTests(unittest.TestCase):
         run = self.run_gate()
         self.assertNotEqual(run.returncode, 0, "gate accepted a CLI replaced during Metal compilation")
         self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
-        self.assertEqual(len(list(self.out.glob("*.metallib"))), 22)
+        self.assertEqual(len(list(self.out.glob("*.metallib"))), ARMS)
         self.assertIn("artifact-unchanged", run.stderr)
         self.assertIn((self.out / "built-cli-hashes.stdout").read_text(),
                       (self.out / "artifact-hashes.stdout").read_text())
@@ -414,6 +417,21 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertNotEqual((self.out / "status.txt").read_text(),
                             "compiled-only; no accelerator acceptance\n")
         self.assertTrue((self.out / "shader-source-hashes.stdout").is_file())
+
+    def test_shared_load4_source_is_pinned_and_mutation_invalidates_the_gate(self):
+        shader = self.workspace / "crates/rvllm-apple-metal/src/research_shaders/load4_tiled_common.metal"
+        self.env["FAKE_SOURCE_EDIT_DURING_TEST"] = str(shader)
+        run = self.run_gate()
+        self.assertNotEqual(run.returncode, 0)
+        self.assertEqual((self.out / "status.txt").read_text(), "incomplete\n")
+        self.assertIn(shader.name, (self.out / "shader-source-hashes.stdout").read_text())
+
+    def test_missing_shared_load4_source_stops_before_any_cargo_work(self):
+        shader = self.workspace / "crates/rvllm-apple-metal/src/research_shaders/load4_tiled_common.metal"
+        shader.unlink()
+        run = self.run_gate()
+        self.assertNotEqual(run.returncode, 0)
+        self.assert_no_targeted_work()
 
     def test_non_macos_environment_never_reaches_cargo(self):
         self.env["FAKE_OS"] = "Linux"
