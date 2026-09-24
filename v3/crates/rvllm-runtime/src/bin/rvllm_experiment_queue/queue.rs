@@ -2,17 +2,17 @@
 #![forbid(unsafe_code)]
 
 use rvllm_runtime::apple_measurement::PowerMonitor;
-use rvllm_runtime::kernel_game::{SealedSubmission, parse_strict_json};
+use rvllm_runtime::kernel_game::{parse_strict_json, SealedSubmission};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -573,8 +573,23 @@ impl StableGate {
             controls: None,
         }
     }
-    fn observe(&mut self, probe: &Value, now: Instant, required: Duration) -> bool {
-        let controls = &probe["power"]["sample"]["controls"];
+    fn observe(
+        &mut self,
+        probe: &Value,
+        conditions: &Conditions,
+        now: Instant,
+        required: Duration,
+    ) -> bool {
+        let observed = &probe["power"]["sample"]["controls"];
+        // Only controls constrained by this job define its stable stratum.
+        // Unconstrained thermal/power-mode changes remain in every raw probe
+        // and phase receipt, but may not starve an any-thermal campaign.
+        let controls = json!({
+            "power_source": observed["power_source"],
+            "low_power_mode": conditions.low_power_mode.map(|_| observed["low_power_mode"].clone()),
+            "pmset_power_mode": conditions.pmset_power_mode.map(|_| observed["pmset_power_mode"].clone()),
+            "thermal_state": conditions.thermal_state.map(|_| observed["thermal_state"].clone()),
+        });
         if probe["ready"] != true {
             *self = Self::new();
             return false;
@@ -583,8 +598,8 @@ impl StableGate {
             .last_observed
             .and_then(|last| now.checked_duration_since(last))
             .is_some_and(|gap| gap <= Duration::from_millis(2500));
-        if !continuous || self.controls.as_ref() != Some(controls) {
-            self.controls = Some(controls.clone());
+        if !continuous || self.controls.as_ref() != Some(&controls) {
+            self.controls = Some(controls);
             self.since = Some(now);
         }
         self.last_observed = Some(now);
@@ -680,6 +695,7 @@ fn execute(
         }
         Ok(gate.observe(
             &current,
+            &job.conditions,
             Instant::now(),
             Duration::from_secs(job.stable_seconds),
         ))
@@ -905,6 +921,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
             );
             if gate.observe(
                 &observation,
+                &job.conditions,
                 Instant::now(),
                 Duration::from_secs(job.stable_seconds),
             ) {
@@ -932,10 +949,15 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 }
                 Some(true) => {
                     waiting.remove(&job.id);
-                    // Running this trial interrupts every other job's quiet
-                    // window, even when the child finishes between samples.
-                    for (_, gate) in waiting.values_mut() {
-                        *gate = StableGate::new();
+                    // Preparation work does not touch the accelerator. Preserve
+                    // another preparation job's sampled window when the child
+                    // completed inside the 2.5 s observation budget; the gate
+                    // itself will still reject a real sampling gap. Accelerator
+                    // trials invalidate every other quiet window explicitly.
+                    if job.purpose != Purpose::Preparation {
+                        for (_, gate) in waiting.values_mut() {
+                            *gate = StableGate::new();
+                        }
                     }
                 }
                 None => {
@@ -1105,17 +1127,45 @@ mod tests {
         let now = Instant::now();
         let needed = Duration::from_secs(5);
         let mut p = json!({"ready":true,"power":observation()});
-        assert!(!gate.observe(&p, now, needed));
+        assert!(!gate.observe(&p, &conditions(), now, needed));
         for seconds in 1..5 {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
+            assert!(!gate.observe(
+                &p,
+                &conditions(),
+                now + Duration::from_secs(seconds),
+                needed
+            ));
         }
-        assert!(gate.observe(&p, now + needed, needed));
+        assert!(gate.observe(&p, &conditions(), now + needed, needed));
         p["ready"] = json!(false);
-        assert!(!gate.observe(&p, now + needed, needed));
+        assert!(!gate.observe(&p, &conditions(), now + needed, needed));
         p["ready"] = json!(true);
-        assert!(!gate.observe(&p, now + needed, needed));
+        assert!(!gate.observe(&p, &conditions(), now + needed, needed));
         p["power"]["sample"]["controls"]["available_cpus"] = json!(16);
-        assert!(!gate.observe(&p, now + needed + Duration::from_secs(1), needed));
+        assert!(!gate.observe(
+            &p,
+            &conditions(),
+            now + needed + Duration::from_secs(1),
+            needed
+        ));
+    }
+
+    #[test]
+    fn stable_window_ignores_unconstrained_control_changes() {
+        let mut c = conditions();
+        c.low_power_mode = None;
+        c.pmset_power_mode = None;
+        c.thermal_state = None;
+        let mut gate = StableGate::new();
+        let now = Instant::now();
+        let needed = Duration::from_secs(2);
+        let mut p = json!({"ready":true,"power":observation()});
+        assert!(!gate.observe(&p, &c, now, needed));
+        p["power"]["sample"]["controls"]["low_power_mode"] = json!(false);
+        p["power"]["sample"]["controls"]["pmset_power_mode"] = json!(2);
+        p["power"]["sample"]["controls"]["thermal_state"] = json!(1);
+        assert!(!gate.observe(&p, &c, now + Duration::from_secs(1), needed));
+        assert!(gate.observe(&p, &c, now + needed, needed));
     }
 
     #[test]
@@ -1125,16 +1175,26 @@ mod tests {
         let needed = Duration::from_secs(5);
         let p = json!({"ready":true,"power":observation()});
         for seconds in [0, 2, 4] {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
+            assert!(!gate.observe(
+                &p,
+                &conditions(),
+                now + Duration::from_secs(seconds),
+                needed
+            ));
         }
-        assert!(gate.observe(&p, now + Duration::from_secs(5), needed));
+        assert!(gate.observe(&p, &conditions(), now + Duration::from_secs(5), needed));
         // Equal controls on either side of an unobserved interval do not
         // establish uninterrupted quiet. The whole window must start again.
         for seconds in [8, 10, 12] {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
+            assert!(!gate.observe(
+                &p,
+                &conditions(),
+                now + Duration::from_secs(seconds),
+                needed
+            ));
         }
-        assert!(gate.observe(&p, now + Duration::from_secs(13), needed));
-        assert!(!gate.observe(&p, now + Duration::from_secs(12), needed));
+        assert!(gate.observe(&p, &conditions(), now + Duration::from_secs(13), needed));
+        assert!(!gate.observe(&p, &conditions(), now + Duration::from_secs(12), needed));
     }
 
     #[test]
@@ -1268,12 +1328,10 @@ mod tests {
             assert!(!valid_id(id));
         }
         assert!(valid_id("02-baseline_A"));
-        assert!(
-            serde_json::from_value::<Conditions>(json!({
+        assert!(serde_json::from_value::<Conditions>(json!({
             "power_source":"ac","low_power_mode":true,"pmset_power_mode":1,"thermal_state":0,
             "minimum_free_bytes":1,"disk_path":"/","unknown":true}))
-            .is_err()
-        );
+        .is_err());
     }
     #[test]
     fn idle_server_exception_requires_all_explicit_slots_idle() {
@@ -1366,16 +1424,26 @@ mod tests {
         let needed = Duration::from_secs(5);
         let p = json!({"ready":true,"power":observation()});
         for seconds in 0..5 {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
+            assert!(!gate.observe(
+                &p,
+                &conditions(),
+                now + Duration::from_secs(seconds),
+                needed
+            ));
         }
-        assert!(gate.observe(&p, now + needed, needed));
+        assert!(gate.observe(&p, &conditions(), now + needed, needed));
         let mut observations = 0;
         let accepted = super::super::prelaunch::verify(
             || Ok(()),
             || {
                 observations += 1;
                 let seconds = if observations == 1 { 5 } else { 8 };
-                Ok(gate.observe(&p, now + Duration::from_secs(seconds), needed))
+                Ok(gate.observe(
+                    &p,
+                    &conditions(),
+                    now + Duration::from_secs(seconds),
+                    needed,
+                ))
             },
         )
         .unwrap();
