@@ -431,10 +431,30 @@ fn native_interleaved_matches_stacked_cached_ffn() -> Result<(), String> {
 }
 
 #[test]
+#[ignore = "explicit queued ANE Chunk4 provision plus real-input comparison; at most two compiles"]
+fn native_chunk4_bounded_provision_matches_plain_ffn() -> Result<(), String> {
+    run(
+        Candidate::Chunk4,
+        AneProgramCachePolicy::ReuseOrCompileUpTo(2),
+        "ReuseOrCompileUpTo(2)",
+    )
+}
+
+#[test]
 #[ignore = "explicit queued ANE Down4 provision plus real-input comparison; at most two compiles"]
 fn native_down4_bounded_provision_matches_plain_ffn() -> Result<(), String> {
     run(
         Candidate::Down4,
+        AneProgramCachePolicy::ReuseOrCompileUpTo(2),
+        "ReuseOrCompileUpTo(2)",
+    )
+}
+
+#[test]
+#[ignore = "explicit queued ANE interleaved provision plus real-input comparison; at most two compiles"]
+fn native_interleaved_bounded_provision_matches_stacked_ffn() -> Result<(), String> {
+    run(
+        Candidate::Interleaved,
         AneProgramCachePolicy::ReuseOrCompileUpTo(2),
         "ReuseOrCompileUpTo(2)",
     )

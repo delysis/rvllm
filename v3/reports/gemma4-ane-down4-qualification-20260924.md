@@ -56,10 +56,11 @@ INT8 coefficient/FP16-scale matrices.
 This establishes source-to-device component correctness, bounded compilation,
 and complete lifecycle for Down4 at layer 0. It does not establish a speedup,
 whole-model token parity, cache portability, physical ANE weight compression,
-or promotion. The next Down4 gates are full-route cached inference followed by
-matched, counterbalanced timing against ordinary INT8. Chunk4 and interleaved
-remain cache-blocked in their strict component executables and require their own
-bounded provision-and-compare passes; no result here transfers to them.
+or promotion. The next Down4 gates are an exact-tree full-route cached inference
+repeat followed by matched, counterbalanced timing against ordinary INT8.
+Subsequent bounded passes independently rejected Chunk4 on bit-exact correctness
+and qualified Interleaved at this same component boundary; those results are
+recorded separately and do not widen this Down4 claim.
 
 Raw concise receipts are in
 `v3/reports/gemma4-ane-down4-qualification-20260924/`. Large queue power logs,
