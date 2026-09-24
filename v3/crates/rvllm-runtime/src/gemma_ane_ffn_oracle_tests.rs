@@ -201,7 +201,11 @@ fn load_component_weights(
     Ok(weights)
 }
 
-fn run(candidate: Candidate) -> Result<(), String> {
+fn run(
+    candidate: Candidate,
+    policy: AneProgramCachePolicy,
+    cache_policy: &'static str,
+) -> Result<(), String> {
     let variable = |name| std::env::var(name).map_err(|_| format!("explicit {name} required"));
     let model_dir = PathBuf::from(variable("RVLLM_ANE_FFN_ORACLE_MODEL_DIR")?);
     let manifest = PathBuf::from(variable("RVLLM_ANE_FFN_ORACLE_MANIFEST")?);
@@ -243,11 +247,10 @@ fn run(candidate: Candidate) -> Result<(), String> {
         "candidate":candidate.name(), "control":candidate.control(), "layer":input.layer,
         "manifest_sha256":expected, "quantized_matrix_sha256":observed,
         "samples":samples.len(), "maximum_program_evaluations":2*samples.len(),
-        "cache_policy":"RequireExisting", "timing":false,
+        "cache_policy":cache_policy, "timing":false,
         "driver_journal":journal, "driver_lifecycle_validation":"required-separately"}),
     )?;
     let result = (|| -> Result<(), String> {
-        let policy = AneProgramCachePolicy::RequireExisting;
         record(
             &mut events,
             serde_json::json!({"event":"load-control-begin"}),
@@ -309,6 +312,7 @@ fn run(candidate: Candidate) -> Result<(), String> {
         &mut events,
         serde_json::json!({"event":"end", "matched_all_inputs":result.is_ok(),
         "error":result.as_ref().err(), "promotion":false,
+        "compiler_calls":rvllm_apple::ane_linear::compile_budget_used(),
         "driver_lifecycle_validation":"required-separately", "performance_qualified":false}),
     )?;
     result
@@ -399,19 +403,41 @@ fn host_prepare_ffn_component_pins() -> Result<(), String> {
 #[test]
 #[ignore = "explicit cached-only real-input ANE chunk4 component oracle; no timing"]
 fn native_chunk4_matches_plain_cached_ffn() -> Result<(), String> {
-    run(Candidate::Chunk4)
+    run(
+        Candidate::Chunk4,
+        AneProgramCachePolicy::RequireExisting,
+        "RequireExisting",
+    )
 }
 
 #[test]
 #[ignore = "explicit cached-only real-input ANE down4 component oracle; no timing"]
 fn native_down4_matches_plain_cached_ffn() -> Result<(), String> {
-    run(Candidate::Down4)
+    run(
+        Candidate::Down4,
+        AneProgramCachePolicy::RequireExisting,
+        "RequireExisting",
+    )
 }
 
 #[test]
 #[ignore = "explicit cached-only real-input ANE interleaved component oracle; no timing"]
 fn native_interleaved_matches_stacked_cached_ffn() -> Result<(), String> {
-    run(Candidate::Interleaved)
+    run(
+        Candidate::Interleaved,
+        AneProgramCachePolicy::RequireExisting,
+        "RequireExisting",
+    )
+}
+
+#[test]
+#[ignore = "explicit queued ANE Down4 provision plus real-input comparison; at most two compiles"]
+fn native_down4_bounded_provision_matches_plain_ffn() -> Result<(), String> {
+    run(
+        Candidate::Down4,
+        AneProgramCachePolicy::ReuseOrCompileUpTo(2),
+        "ReuseOrCompileUpTo(2)",
+    )
 }
 
 #[cfg(test)]
