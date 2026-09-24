@@ -418,9 +418,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if kernels.quantized_bf16_accumulation {
         return Err("disaggregated inference requires FP32 accumulation".into());
     }
+    let executable_path = std::env::current_exe()?.canonicalize()?;
+    let executable_sha256 = sha256_file(&executable_path)?;
     let metallib_bf16 = metallib_bf16
         .or_else(|| std::env::var_os("RVLLM_METAL_METALLIB_BF16").map(PathBuf::from))
-        .ok_or("provide --metallib-bf16 or RVLLM_METAL_METALLIB_BF16")?;
+        .ok_or("provide --metallib-bf16 or RVLLM_METAL_METALLIB_BF16")?
+        .canonicalize()?;
+    let metallib_sha256 = sha256_file(&metallib_bf16)?;
+    let generated_msl_sha256 = format!(
+        "{:x}",
+        Sha256::digest(
+            rvllm_apple_metal::kernels::kernel_source_with_options(
+                MetalFloatType::Bf16,
+                kernels,
+            )
+            .as_bytes(),
+        )
+    );
     if runtime_worker {
         let qualified = MetalKernelOptions {
             prefill_mma32: true,
@@ -487,8 +501,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         model_layout_hash: layout_hash,
         weights_path: Some(model_dir.clone()),
     };
-    let mut metal =
-        ModelMetalBackend::with_options(model_dir.clone(), metallib_bf16, metal_options);
+    let mut metal = ModelMetalBackend::with_options(
+        model_dir.clone(),
+        metallib_bf16.clone(),
+        metal_options,
+    );
     let power_journal = output_dir
         .as_ref()
         .map(|dir| dir.join("power-observations.jsonl"));
@@ -660,6 +677,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             break;
         };
         let index = completed_requests;
+        let compiler_calls_before = rvllm_apple::ane_linear::compile_budget_used();
+        let reference_sha256 = reference
+            .path
+            .as_deref()
+            .map(sha256_file)
+            .transpose()?;
+        let workload_sha256 = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&reference.prompt)?)
+        );
         let case_dir = output_dir
             .as_ref()
             .map(|dir| dir.join(format!("case-{index}")));
@@ -824,6 +851,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let generated_text = tokenizer
             .decode(&generated, true)
             .map_err(|e| e.to_string())?;
+        let compiler_calls_after = rvllm_apple::ane_linear::compile_budget_used();
+        let compiler_calls_this_request = compiler_calls_after
+            .checked_sub(compiler_calls_before)
+            .ok_or("ANE compiler call counter reset during request")?;
+        let route_evidence = serde_json::json!({
+            "schema":"rvllm.kernel_game.route_evidence.v1",
+            "candidate":kernels.research.name(),
+            "command_completed":true,
+            "reference_match":matched,
+            "executable":{"path":executable_path,"sha256":executable_sha256},
+            "metallib":{"path":metallib_bf16,"sha256":metallib_sha256},
+            "generated_msl_sha256":generated_msl_sha256,
+            "model_config_sha256":format!("{:x}",Sha256::digest(&config)),
+            "reference_sha256":reference_sha256,
+            "workload_sha256":workload_sha256,
+            "compiler_calls_before":compiler_calls_before,
+            "compiler_calls_after":compiler_calls_after,
+            "compiler_calls_this_request":compiler_calls_this_request,
+            "compile_free_request":compiler_calls_this_request==0,
+            "prefill_dispatch":prefill_receipt["research_dispatch"].clone(),
+            "output_tokens":generated.len(),
+            "ane_decode_steps":steps.len(),
+            "expected_output_tokens":reference.generated.as_ref().map(Vec::len),
+            "counting_boundary":"compiler counter brackets full request; research dispatch counters bracket synchronous Metal prefill",
+            "promotion_claim":false,
+        });
         if text_mode {
             let tail = generated_text
                 .strip_prefix(&streamed_text)
@@ -839,6 +892,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "metal_gpu_execution_ms":prefill_times.gpu_execution_ms,
             "prefill_measurement":prefill_measurement,"ane_import_measurement":import_measurement,
             "metal_prefill_receipt":prefill_receipt,
+            "kernel_game_route_evidence":route_evidence,
             "prefill_command_buffers":1,"metal_decode_steps":0,"ane_decode_steps":steps.len(),"steps":steps,
         });
         if let Some(directory) = &case_dir {
@@ -1092,6 +1146,13 @@ fn elapsed_ms(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
 }
 
+fn sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn export_seed(
     directory: &Path,
     model_dir: &Path,
@@ -1146,6 +1207,18 @@ fn write_f16(path: &Path, values: &[f16]) -> Result<String, Box<dyn std::error::
 #[cfg(test)]
 mod tests {
     use super::validate_text_budget;
+    use sha2::Digest as _;
+
+    #[test]
+    fn file_identity_hashes_exact_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("artifact");
+        std::fs::write(&path, b"kernel-game").unwrap();
+        assert_eq!(
+            super::sha256_file(&path).unwrap(),
+            format!("{:x}", sha2::Sha256::digest(b"kernel-game"))
+        );
+    }
 
     #[test]
     fn output_budget_counts_only_tokens_consumed_by_decode() {
