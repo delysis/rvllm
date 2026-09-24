@@ -1,0 +1,38 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "mlx-metal-debug-build-c215b6f-20260924-v1",
+  "purpose": "preparation",
+  "after": [],
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600,
+  "stable_seconds": 5,
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [],
+    "observe_process_names": ["cargo", "rustc", "mlx_lm.benchmark"]
+  },
+  "inputs": [
+    {"path":"/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/tools/build_mlx_metal_debug.py","sha256":"c14b9eb1343f4b30f960df57e9e5832d85d42a32122a0f0b2e477739d139d991"},
+    {"path":"/Users/george/osaurus/Packages/swift_convert/.build/checkouts/mlx-swift/Source/Cmlx/mlx/CMakeLists.txt","sha256":"f3abd0f1a1c59ef2ee2ee98de17d38a12b46d4862f960f0079447982f629e4a3"},
+    {"path":"/Users/george/osaurus/Packages/swift_convert/.build/checkouts/mlx-swift/Source/Cmlx/mlx/setup.py","sha256":"84c83cc8127fedf4a242d41bfeaac8e00c98c36dcb74175c6f67e958bf07712e"}
+  ],
+  "command": {
+    "executable": {"path":"/Users/george/christian_mystics/venv/bin/python","sha256":"695fc18cdb9a699c6b1ea88ce4027854782ed704eb34cc3200e6f8380155b6a8"},
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "tools/build_mlx_metal_debug.py",
+      "--mlx-source", "/Users/george/osaurus/Packages/swift_convert/.build/checkouts/mlx-swift/Source/Cmlx/mlx",
+      "--target", "/Users/george/.cache/rvllm-mlx-metal-debug-c215b6f",
+      "--receipt", "/Users/george/.cache/rvllm-mlx-metal-debug-c215b6f-build.json"
+    ],
+    "env": {}
+  },
+  "validator": null,
+  "kernel_game_submission": null
+}
