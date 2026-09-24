@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 SCHEMA = "rvllm.mlx_metal_debug_build.v1"
-PINNED_COMMIT = "c215b6f88cf0fee0b0895623e4046cda797ef397"
 CMAKE_ARGS = ["-DMLX_METAL_DEBUG=ON"]
 
 
@@ -24,15 +23,15 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def source_identity(source: Path) -> dict[str, str]:
+def source_identity(source: Path, expected_commit: str) -> dict[str, str]:
     commit = subprocess.run(
         ["git", "-C", str(source), "rev-parse", "HEAD"],
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
-    if commit != PINNED_COMMIT:
-        raise ValueError(f"expected MLX {PINNED_COMMIT}, got {commit}")
+    if commit != expected_commit:
+        raise ValueError(f"expected MLX {expected_commit}, got {commit}")
     status = subprocess.run(
         ["git", "-C", str(source), "status", "--porcelain"],
         check=True,
@@ -51,13 +50,14 @@ def source_identity(source: Path) -> dict[str, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mlx-source", required=True, type=Path)
+    parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--target", required=True, type=Path)
     parser.add_argument("--receipt", required=True, type=Path)
     parser.add_argument("--plan-only", action="store_true")
     args = parser.parse_args()
     try:
         source = args.mlx_source.resolve()
-        identity = source_identity(source)
+        identity = source_identity(source, args.expected_commit)
         plan = {
             "schema": SCHEMA,
             "status": "planned_not_built",
