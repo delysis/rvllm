@@ -215,11 +215,13 @@ fn native_load4_tile_preserves_projection_contracts() -> TestResult {
         let a = upload("A", &input)?;
         let b = upload("B", &weights)?;
         let mut outputs = Vec::new();
+        let mut poisoned_outputs = Vec::new();
         for (path, name) in names.iter().enumerate() {
             let bytes = elements * if path < 2 { 4 } else { 2 };
             let mut raw = vec![0xa5; bytes + 64];
             raw[32..bytes + 32].fill(0xff);
             outputs.push(upload(name, &raw)?);
+            poisoned_outputs.push(raw);
         }
         drop(upload);
         for path in [1, 3] {
@@ -241,6 +243,19 @@ fn native_load4_tile_preserves_projection_contracts() -> TestResult {
                 case.label
             );
         }
+        let read = |path: usize| -> Vec<u8> {
+            let region = &outputs[path];
+            // SAFETY: callers only read after the relevant command has completed.
+            unsafe { std::slice::from_raw_parts(arena.host_ptr(region), region.size) }.to_vec()
+        };
+        let poison = |path: usize| -> TestResult {
+            // SAFETY: callers only overwrite a live, exact-size output region after
+            // the preceding command has completed and before the next submission.
+            unsafe {
+                arena.write_region(&outputs[path], &poisoned_outputs[path])?;
+            }
+            Ok(())
+        };
         let run = |path: usize| -> TestResult {
             let command = context
                 .queue()
@@ -299,13 +314,24 @@ fn native_load4_tile_preserves_projection_contracts() -> TestResult {
             Ok(())
         };
         for path in 0..4 {
-            run(path)?;
+            if let Err(error) = run(path) {
+                let bytes = read(path);
+                write_new(
+                    &case_dir.join(format!("command-error-{path}.guarded.bin")),
+                    &bytes,
+                )?;
+                write_new(
+                    &case_dir.join(format!("command-error-{path}.json")),
+                    &serde_json::to_vec_pretty(&serde_json::json!({
+                        "status":"command-error",
+                        "shape":case.shape,
+                        "kernel":names[path],
+                        "error":error.to_string()
+                    }))?,
+                )?;
+                return Err(error);
+            }
         }
-        let read = |path: usize| -> Vec<u8> {
-            let region = &outputs[path];
-            // SAFETY: every command has completed; bounded reads of live arena regions.
-            unsafe { std::slice::from_raw_parts(arena.host_ptr(region), region.size) }.to_vec()
-        };
         let raw: Vec<_> = (0..4).map(read).collect();
         // Preserve diagnostic bytes even when a subsequent numerical assertion fails.
         for (path, bytes) in raw.iter().enumerate() {
@@ -371,18 +397,25 @@ fn native_load4_tile_preserves_projection_contracts() -> TestResult {
                 );
             }
         }
-        for path in [3, 2, 1, 0, 0, 1, 2, 3] {
+        for (repeat, path) in [3, 2, 1, 0, 0, 1, 2, 3].into_iter().enumerate() {
+            poison(path)?;
             run(path)?;
-        }
-        for (path, expected) in raw.iter().enumerate() {
             let repeated = read(path);
             write_new(
-                &case_dir.join(format!("repeat-{path}.guarded.bin")),
+                &case_dir.join(format!("repeat-{repeat:02}-path-{path}.guarded.bin")),
                 &repeated,
             )?;
+            validate_fixture_bytes(&repeated, m, n, path < 2, numerical[path]).map_err(
+                |error| {
+                    format!(
+                        "{} repeated invocation {repeat} {}: {error}",
+                        case.label, names[path]
+                    )
+                },
+            )?;
             assert_eq!(
-                &repeated, expected,
-                "{} repeated use {}",
+                &repeated, &raw[path],
+                "{} repeated invocation {repeat} {}",
                 case.label, names[path]
             );
         }

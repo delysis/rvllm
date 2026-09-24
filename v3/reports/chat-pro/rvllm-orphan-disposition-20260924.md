@@ -80,3 +80,19 @@ two-layer mixed W4/W8 package. The second executes real multi-token Metal layer
 work for both W4A16 and W8A16, compares device output to the CPU low-bit
 reference, and exercises both hybrid and replacement residency policies.
 These are correctness and route receipts, not full-model speed evidence.
+
+## Recovered-review hardening
+
+The review's repeated-use and command-error evidence findings were applied to
+`load4_tile_tests.rs`. Each of the eight repeat invocations now begins from a
+freshly poisoned payload, is captured under an invocation-specific filename,
+and is validated immediately. A skipped write cannot inherit a prior success,
+and an early corruption cannot be repaired by a later invocation before it is
+observed. Initial command-buffer errors now save the guarded output and a
+structured error record before the test returns failure.
+
+The hardened oracle was executed with real Google Gemma 4 12B BF16 checkpoint
+weights for `metal-load4-m32n32k64`. It passed all eight cases, four numerical
+GEMM roles, two numerical QKV roles, ten refused-role guards, 96 total command
+invocations, exact baseline bits, once-rounded BF16 bits, canaries, and sampled
+FP64 dots. This requalification is component evidence, not speed evidence.
