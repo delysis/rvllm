@@ -130,10 +130,37 @@ normalization, RoPE, and some ordinary Steel GEMMs for non-quantized or
 ineligible operations.  The traced Q4 and Q8 trials reported 59.795 and 51.310
 prompt tok/s respectively; tracing overhead excludes them from the tables.
 
+The installed pinned MLX Metal template `quantized.h` has SHA-256
+`2a007016da606afe569adb9adcc05e00f14558ad2e094bcb4f8974beb53c316f`.
+Inspection of that exact source explains the observed names:
+
+- the affine QMM defaults to a 32x32x32 block, two-by-two SIMD-group MMA
+  arrangement, and 128 threads;
+- a `QuantizedBlockLoader` cooperatively reads packed bytes plus the group's
+  scale and bias, dequantizes directly into a padded BF16 threadgroup tile, and
+  feeds the existing Steel `BlockMMA`; it does not materialize a full decoded
+  weight matrix in device memory;
+- the split-K entry offsets packed weights, scale/bias groups, activations, and
+  partial outputs before invoking the same QMM implementation on a K partition;
+- each K block has a barrier before cooperative loads and another before MMA;
+  only the final result store adds the third barrier outside the loop;
+- the fast QMV uses two SIMD groups, four output rows per SIMD group, two packed
+  words per lane for 4/8-bit cases, FP32 partial accumulators, `simd_sum`, and
+  one result store from lane zero.
+
+These details identify actionable hypotheses for rvLLM: fuse group decoding
+with tile staging, keep separate prefill QMM and decode QMV dispatch, test a
+32-element K tile before deeper K blocks, and consider bounded split-K for the
+large projections.  They do **not** establish that MLX's exact layout or
+barrier schedule is optimal for rvLLM's storage format, numerical contract, or
+M4 Max workload.
+
 ## Consequences for the kernel campaign
 
-The most relevant current-MLX prefill baseline uses 64x64x16 fused BF16 tiles,
-with split-K 32x32x16 and 16x32x16 variants where its dispatcher chooses them.
+The most relevant current-MLX BF16 prefill baseline uses 64x64x16 fused tiles,
+with split-K 32x32x16 and 16x32x16 variants where its dispatcher chooses them;
+its affine quantized QMM instead defaults to 32x32x32 and fused threadgroup
+dequantization.
 That is materially different from the rejected rvLLM load4 batch, whose K tiles
 were 32–128 and whose best measured candidates still lost to rvLLM's existing
 `metal-mma32-load4`.  This is a design clue, not permission to copy a tile or a
