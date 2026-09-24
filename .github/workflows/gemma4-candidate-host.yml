@@ -56,6 +56,10 @@ jobs:
         run: |
           "$RUNNER_TEMP/gemma4-candidate-venv/bin/python" tools/run_gemma4_python_checks.py --require-rustfmt \
             2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/python-tests.log"
+      - name: Run kernel-game referee contracts
+        run: |
+          cargo test --locked -p rvllm-runtime kernel_game::tests:: -- --exact \
+            2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/kernel-game-tests.log"
       - name: Run exact reviewed public Rust tests and twenty-two source exports
         run: |
           "$RUNNER_TEMP/gemma4-candidate-venv/bin/python" tools/run_gemma4_candidate_ci.py \
