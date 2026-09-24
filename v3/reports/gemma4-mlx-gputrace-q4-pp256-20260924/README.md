@@ -47,6 +47,7 @@ Lightweight inspection only:
 /Users/george/christian_mystics/venv/bin/python \
   tools/mlx_gemma4_gputrace_capture.py \
   --mlx-source /Users/george/.cache/rvllm-mlx-source-v0.32.2 \
+  --expected-mlx-commit 1f8e74e3f12f31365464a6867c6579f0e9b29d85 \
   --mlx-lm-source /Users/george/.cache/rvllm-mlx-lm-87b7b583 \
   --model /Users/george/.cache/rvllm-mlx-gemma4-12b-affine4-g64-20260924 \
   --capture /Users/george/.cache/rvllm-mlx-gemma4-q4-pp256-20260924.gputrace \

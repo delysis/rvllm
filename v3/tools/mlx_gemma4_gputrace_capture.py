@@ -20,7 +20,6 @@ from typing import Any
 
 SCHEMA = "rvllm.mlx_gemma4_gputrace.v1"
 BUILD_SCHEMA = "rvllm.mlx_metal_debug_build.v1"
-PINNED_MLX_COMMIT = "c215b6f88cf0fee0b0895623e4046cda797ef397"
 PINNED_MLX_LM_COMMIT = "87b7b583a697537aa68f47130b40884700b5f55f"
 BUILD_FLAGS = ["-DMLX_METAL_DEBUG=ON"]
 PROMPT_TOKENS = 256
@@ -101,13 +100,15 @@ def git_identity(root: Path, expected: str) -> dict[str, Any]:
     return {"root": str(root.resolve()), "commit": commit, "working_tree_clean": True}
 
 
-def validate_build_receipt(path: Path, core_path: Path, mlx_source: Path) -> dict[str, Any]:
+def validate_build_receipt(
+    path: Path, core_path: Path, mlx_source: Path, expected_mlx_commit: str
+) -> dict[str, Any]:
     value = strict_json(path)
     if value.get("schema") != BUILD_SCHEMA:
         raise ValueError("unrecognized MLX debug-build receipt schema")
     if value.get("status") != "built_mlx_metal_debug":
         raise ValueError("MLX debug-build receipt is not a successful build")
-    if value.get("mlx_commit") != PINNED_MLX_COMMIT:
+    if value.get("mlx_commit") != expected_mlx_commit:
         raise ValueError("debug-build receipt does not bind the pinned MLX commit")
     if value.get("cmake_args") != BUILD_FLAGS:
         raise ValueError("debug-build receipt does not prove MLX_METAL_DEBUG=ON")
@@ -128,7 +129,7 @@ def plan(args: argparse.Namespace) -> dict[str, Any]:
         "evidence_class": "generated_source_and_dispatch_trace_not_timing",
         "required_environment": {"MTL_CAPTURE_ENABLED": "1"},
         "required_build_flags": BUILD_FLAGS,
-        "mlx": git_identity(args.mlx_source, PINNED_MLX_COMMIT),
+        "mlx": git_identity(args.mlx_source, args.expected_mlx_commit),
         "mlx_lm": git_identity(args.mlx_lm_source, PINNED_MLX_LM_COMMIT),
         "model": str(args.model.resolve()),
         "workload": {
@@ -156,7 +157,9 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     from mlx_lm import load, stream_generate
 
     core_path = Path(mx.__file__).resolve()
-    build = validate_build_receipt(args.build_receipt, core_path, args.mlx_source)
+    build = validate_build_receipt(
+        args.build_receipt, core_path, args.mlx_source, args.expected_mlx_commit
+    )
     base = plan(args)
     config = strict_json(args.model / "config.json")
     quantization = config.get("quantization")
@@ -231,6 +234,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--mlx-source", required=True, type=Path)
+    result.add_argument("--expected-mlx-commit", required=True)
     result.add_argument("--mlx-lm-source", required=True, type=Path)
     result.add_argument("--model", required=True, type=Path)
     result.add_argument("--capture", required=True, type=Path)

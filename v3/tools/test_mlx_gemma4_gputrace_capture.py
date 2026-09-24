@@ -15,6 +15,8 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CaptureReceiptTests(unittest.TestCase):
+    EXPECTED_MLX_COMMIT = "1f8e74e3f12f31365464a6867c6579f0e9b29d85"
+
     def test_strict_json_rejects_duplicate_keys(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "receipt.json"
@@ -46,7 +48,7 @@ class CaptureReceiptTests(unittest.TestCase):
             value = {
                 "schema": MODULE.BUILD_SCHEMA,
                 "status": "built_mlx_metal_debug",
-                "mlx_commit": MODULE.PINNED_MLX_COMMIT,
+                "mlx_commit": self.EXPECTED_MLX_COMMIT,
                 "cmake_args": MODULE.BUILD_FLAGS,
                 "mlx_source": str(source.resolve()),
                 "core_path": str(core.resolve()),
@@ -54,12 +56,17 @@ class CaptureReceiptTests(unittest.TestCase):
             }
             receipt.write_text(json.dumps(value), encoding="utf-8")
             self.assertEqual(
-                MODULE.validate_build_receipt(receipt, core, source), value
+                MODULE.validate_build_receipt(
+                    receipt, core, source, self.EXPECTED_MLX_COMMIT
+                ),
+                value,
             )
             value["cmake_args"] = []
             receipt.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "MLX_METAL_DEBUG"):
-                MODULE.validate_build_receipt(receipt, core, source)
+                MODULE.validate_build_receipt(
+                    receipt, core, source, self.EXPECTED_MLX_COMMIT
+                )
 
 
 if __name__ == "__main__":
