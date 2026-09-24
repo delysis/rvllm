@@ -76,6 +76,10 @@ struct InferReport {
     decode_ms: f64,
     tok_per_s: f64,
     arena_bytes: usize,
+    library_compiles: u64,
+    pipeline_state_compiles: u64,
+    last_step_gpu_execution_ns: Option<u64>,
+    research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
     embedding_encoders: u64,
@@ -663,6 +667,10 @@ fn report_value(
         "decode_ms": report.decode_ms,
         "tok_per_s": report.tok_per_s,
         "arena_bytes": report.arena_bytes,
+        "library_compiles": report.library_compiles,
+        "pipeline_state_compiles": report.pipeline_state_compiles,
+        "last_step_gpu_execution_ns": report.last_step_gpu_execution_ns,
+        "research_dispatch": report.research_dispatch,
         "command_buffers": report.command_buffers,
         "encoders": report.encoders,
         "embedding_encoders": report.embedding_encoders,
@@ -800,6 +808,10 @@ struct SessionCaseReport {
     prefill_ms: f64,
     decode_ms: f64,
     tok_per_s: f64,
+    library_compiles: u64,
+    pipeline_state_compiles: u64,
+    last_step_gpu_execution_ns: Option<u64>,
+    research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
     embedding_encoders: u64,
@@ -1222,6 +1234,23 @@ fn stats_delta(
     }
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn research_dispatch_value(
+    snapshot: rvllm_apple_metal::research_evidence::ResearchDispatchSnapshot,
+) -> serde_json::Value {
+    let counts = rvllm_apple_metal::research_evidence::RESEARCH_KERNEL_NAMES
+        .iter()
+        .copied()
+        .zip(snapshot.counts)
+        .filter(|(_, count)| *count != 0)
+        .collect::<std::collections::BTreeMap<_, _>>();
+    serde_json::json!({
+        "schema": rvllm_apple_metal::research_evidence::RESEARCH_DISPATCH_SCHEMA,
+        "counts": counts,
+        "overflowed": snapshot.overflowed,
+    })
+}
+
 fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
     let status = match &report.comparison {
         Some(comparison) if !comparison.matched => "fail",
@@ -1241,6 +1270,10 @@ fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
         "prefill_ms": report.prefill_ms,
         "decode_ms": report.decode_ms,
         "tok_per_s": report.tok_per_s,
+        "library_compiles": report.library_compiles,
+        "pipeline_state_compiles": report.pipeline_state_compiles,
+        "last_step_gpu_execution_ns": report.last_step_gpu_execution_ns,
+        "research_dispatch": report.research_dispatch,
         "command_buffers": report.command_buffers,
         "encoders": report.encoders,
         "embedding_encoders": report.embedding_encoders,
@@ -1371,6 +1404,7 @@ fn session_report_value(
     metal_compute_dtype: &str,
     metal_weight_dtype: &str,
     metal_moe_router_weight_dtype: &str,
+    research_dispatch: serde_json::Value,
 ) -> serde_json::Value {
     let generated_tokens: usize = case_reports
         .iter()
@@ -1398,6 +1432,10 @@ fn session_report_value(
         "generated_tokens": generated_tokens,
         "tok_per_s": tok_per_s,
         "arena_bytes": arena_bytes,
+        "library_compiles": final_stats.library_compiles,
+        "pipeline_state_compiles": final_stats.pipeline_state_compiles,
+        "last_step_gpu_execution_ns": final_stats.last_step_gpu_execution_ns,
+        "research_dispatch": research_dispatch,
         "command_buffers": final_stats.command_buffers,
         "encoders": final_stats.encoders,
         "embedding_encoders": final_stats.embedding_encoders,
@@ -1517,6 +1555,12 @@ fn run_direct_session(
     for (idx, case) in cases.iter().enumerate() {
         let case_start = std::time::Instant::now();
         let before = backend.probe_perf_stats();
+        let dispatch_before = backend.probe_research_dispatches().ok_or_else(|| {
+            format!(
+                "session case {} research counters unavailable",
+                case.spec.name
+            )
+        })?;
         let req_id = ReqId((idx + 1) as u64);
         let prompt_tokens = case
             .prompt_token_ids
@@ -1595,6 +1639,16 @@ fn run_direct_session(
         let decode_ms = ms(decode_start.elapsed());
         let after = backend.probe_perf_stats();
         let delta = stats_delta(before, after);
+        let dispatch_after = backend.probe_research_dispatches().ok_or_else(|| {
+            format!(
+                "session case {} research counters unavailable",
+                case.spec.name
+            )
+        })?;
+        let research_dispatch = dispatch_after
+            .checked_since(dispatch_before)
+            .map(research_dispatch_value)
+            .map_err(|error| format!("session case {}: {error}", case.spec.name))?;
         let mut output_token_ids = case.prompt_token_ids.clone();
         output_token_ids.extend(generated_token_ids.iter().copied());
         let generated_text = decode_text(tokenizer, &generated_token_ids, "generated")?;
@@ -1625,6 +1679,10 @@ fn run_direct_session(
             prefill_ms,
             decode_ms,
             tok_per_s,
+            library_compiles: delta.library_compiles,
+            pipeline_state_compiles: delta.pipeline_state_compiles,
+            last_step_gpu_execution_ns: delta.last_step_gpu_execution_ns,
+            research_dispatch,
             command_buffers: delta.command_buffers,
             encoders: delta.encoders,
             embedding_encoders: delta.embedding_encoders,
@@ -1657,6 +1715,10 @@ fn run_direct_session(
         "pass"
     };
     let stats = backend.probe_perf_stats();
+    let research_dispatch = backend
+        .probe_research_dispatches()
+        .map(research_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
     let arena_bytes = backend
         .probe_arena_stats()
         .map(|arena| arena.capacity_bytes)
@@ -1678,6 +1740,7 @@ fn run_direct_session(
         &metal_compute_dtype,
         &metal_weight_dtype,
         &metal_moe_router_weight_dtype,
+        research_dispatch,
     ))
 }
 
@@ -1723,6 +1786,12 @@ impl SharedModelMetalBackend {
 
     fn metal_moe_router_weight_dtype_report(&self) -> &'static str {
         self.inner.borrow().metal_moe_router_weight_dtype_report()
+    }
+
+    fn probe_research_dispatches(
+        &self,
+    ) -> Option<rvllm_apple_metal::research_evidence::ResearchDispatchSnapshot> {
+        self.inner.borrow().probe_research_dispatches()
     }
 }
 
@@ -1905,6 +1974,10 @@ fn run_engine_session(
             prefill_ms: per_case_prefill_ms,
             decode_ms: per_case_decode_ms,
             tok_per_s,
+            library_compiles: 0,
+            pipeline_state_compiles: 0,
+            last_step_gpu_execution_ns: None,
+            research_dispatch: serde_json::Value::Null,
             command_buffers: 0,
             encoders: 0,
             embedding_encoders: 0,
@@ -1936,6 +2009,10 @@ fn run_engine_session(
     } else {
         "pass"
     };
+    let research_dispatch = stats_backend
+        .probe_research_dispatches()
+        .map(research_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
     Ok(session_report_value(
         args,
         SessionBackend::Engine,
@@ -1953,6 +2030,7 @@ fn run_engine_session(
         stats_backend.metal_compute_dtype_report(),
         stats_backend.metal_weight_dtype_report(),
         stats_backend.metal_moe_router_weight_dtype_report(),
+        research_dispatch,
     ))
 }
 
@@ -2402,6 +2480,10 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         Vec::new()
     };
     let stats = backend.probe_perf_stats();
+    let research_dispatch = backend
+        .probe_research_dispatches()
+        .map(research_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
     let arena_bytes = backend
         .probe_arena_stats()
         .map(|arena| arena.capacity_bytes)
@@ -2425,6 +2507,10 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         decode_ms,
         tok_per_s,
         arena_bytes,
+        library_compiles: stats.library_compiles,
+        pipeline_state_compiles: stats.pipeline_state_compiles,
+        last_step_gpu_execution_ns: stats.last_step_gpu_execution_ns,
+        research_dispatch,
         command_buffers: stats.command_buffers,
         encoders: stats.encoders,
         embedding_encoders: stats.embedding_encoders,
@@ -2939,6 +3025,10 @@ mod tests {
             decode_ms: 3.0,
             tok_per_s: 4.0,
             arena_bytes: 5,
+            library_compiles: 1,
+            pipeline_state_compiles: 31,
+            last_step_gpu_execution_ns: Some(1_000_000),
+            research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
             embedding_encoders: 1,
@@ -2976,6 +3066,10 @@ mod tests {
         assert_eq!(value["claim"], CLAIM);
         assert_eq!(value["finish_reason"], "length");
         assert_eq!(value["generated_text"], " world");
+        assert_eq!(value["library_compiles"], 1);
+        assert_eq!(value["pipeline_state_compiles"], 31);
+        assert_eq!(value["last_step_gpu_execution_ns"], 1_000_000);
+        assert_eq!(value["research_dispatch"]["schema"], "test");
         assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
         assert_eq!(
             value["max_supported_total_tokens"].as_u64(),
@@ -3000,6 +3094,10 @@ mod tests {
             decode_ms: 3.0,
             tok_per_s: 4.0,
             arena_bytes: 5,
+            library_compiles: 1,
+            pipeline_state_compiles: 31,
+            last_step_gpu_execution_ns: Some(1_000_000),
+            research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
             embedding_encoders: 1,

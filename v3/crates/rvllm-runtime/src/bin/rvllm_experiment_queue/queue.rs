@@ -755,8 +755,20 @@ fn execute(
             validation = json!({"exit_code":status.code(),"success":status.success()});
         }
     }
+    let rejected = exit.success()
+        && !overdue
+        && files_unchanged.is_ok()
+        && job.purpose == Purpose::Timing
+        && !eligible;
+    let status = if accepted {
+        "succeeded"
+    } else if rejected {
+        "rejected"
+    } else {
+        "failed"
+    };
     let report = json!({"schema":"rvllm.experiment_result.v1","id":job.id,"purpose":job.purpose,
-        "status":if accepted {"succeeded"}else{"failed"},
+        "status":status,
         "exit_code":exit.code(),"signal_or_missing_exit_code":exit.code().is_none(),
         "sampled_conditions_eligible":eligible,"violations":violations,"overdue":overdue,
         "files_unchanged":files_unchanged.is_ok(),"file_error":files_unchanged.err(),
@@ -766,7 +778,7 @@ fn execute(
         "claim":"Preparation success does not qualify performance. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work."});
     atomic_json(&output.join("report.json"), &report)?;
     eprintln!("experiment {}: {}", job.id, report["status"]);
-    Ok(Some(accepted))
+    Ok(Some(accepted || rejected))
 }
 
 fn manifest_paths(queue: &Path) -> Result<Vec<PathBuf>> {
@@ -788,7 +800,7 @@ fn dependencies_ready(job: &Job, queue: &Path) -> Result<bool> {
             return Ok(false);
         }
         let value = read_json(&report)?;
-        if value["status"] != "succeeded" {
+        if !matches!(value["status"].as_str(), Some("succeeded" | "rejected")) {
             return Err(format!("dependency {dependency} did not succeed; queue stopped").into());
         }
     }
@@ -843,7 +855,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
             let result = queue.join("results").join(&job.id);
             if result.exists() {
                 let report = read_json(&result.join("report.json"))?;
-                if report["status"] != "succeeded" {
+                if !matches!(report["status"].as_str(), Some("succeeded" | "rejected")) {
                     return Err(format!(
                         "job {} has failed or incomplete output; no replay",
                         job.id
@@ -1257,6 +1269,40 @@ mod tests {
             max_run_seconds: 10,
         };
         assert!(dependencies_ready(&job, dir.path()).is_err());
+    }
+
+    #[test]
+    fn condition_rejected_dependency_allows_downstream_work() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("results/first")).unwrap();
+        atomic_json(
+            &dir.path().join("results/first/report.json"),
+            &json!({"status":"rejected","sampled_conditions_eligible":false}),
+        )
+        .unwrap();
+        let job = Job {
+            schema: SCHEMA.into(),
+            id: "second".into(),
+            purpose: Purpose::Timing,
+            command: Invocation {
+                executable: Pin {
+                    path: "/unused".into(),
+                    sha256: "0".repeat(64),
+                },
+                cwd: "/".into(),
+                args: vec![],
+                env: BTreeMap::new(),
+            },
+            validator: None,
+            inputs: vec![],
+            kernel_game_submission: None,
+            after: vec!["first".into()],
+            conditions: conditions(),
+            stable_seconds: 1,
+            max_wait_seconds: 10,
+            max_run_seconds: 10,
+        };
+        assert!(dependencies_ready(&job, dir.path()).unwrap());
     }
 
     #[test]
