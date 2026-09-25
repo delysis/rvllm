@@ -19,3 +19,15 @@ The manifests are prepared but have not been submitted or executed. The sealed
 test executable is `target/release/rvllm-runtime-tests-dynamic-qkv`, SHA-256
 `dde807197d6d7971ae3135441de31ef348c86e5188fa7332dbb02d02cf110580`.
 No accelerator, queue, correctness, performance, or promotion claim is made.
+
+## Referee correction
+
+The original `01`--`04` packet compares the static/separate route against the
+combined dynamic-QKV/all-sliding-fused route. Preserve those receipts as
+combined-route evidence, but do not attribute their timing delta to QKV.
+
+The `*-v2.json` packet fixes the causal comparison: both arms use the already
+qualified `all-sliding-fused-cached` attention/output route, and only the QKV
+weight/program plan changes. Use v2 for dynamic-QKV adjudication. Its sealed
+executable is `target/release/rvllm-runtime-tests-dynamic-qkv-v2`, SHA-256
+`23ce49d33106ad7fea1dba47031606076c37cf250270d4c3e7a43b3236f0f52a`.

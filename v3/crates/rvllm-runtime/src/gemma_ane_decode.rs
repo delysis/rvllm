@@ -1848,6 +1848,16 @@ mod tests {
             Err(std::env::VarError::NotPresent) => AneWeightPlan::StaticInt8FfnCached,
             Err(error) => panic!("invalid fused full-route weight plan: {error}"),
         };
+        // A weight-plan experiment must hold the already-qualified attention
+        // route constant. Otherwise its timing would merely re-measure the
+        // all-sliding attention/output win while attributing the combination
+        // to dynamic QKV.
+        let baseline_plan = if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached
+        {
+            candidate_plan
+        } else {
+            AneAttentionOutputPlan::Separate
+        };
         let tokens = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TOKENS")
             .map(|value| {
                 value
@@ -1886,19 +1896,28 @@ mod tests {
             )
         };
 
-        let (baseline_predictions, baseline_residuals, baseline_route) = run(
-            AneWeightPlan::StaticInt8FfnCached,
-            AneAttentionOutputPlan::Separate,
-        );
-        assert_eq!(baseline_route.fused_layers, Vec::<usize>::new());
+        let (baseline_predictions, baseline_residuals, baseline_route) =
+            run(AneWeightPlan::StaticInt8FfnCached, baseline_plan);
+        let expected_baseline_fused_layers = if baseline_plan == candidate_plan {
+            expected_fused_layers.clone()
+        } else {
+            Vec::new()
+        };
+        assert_eq!(baseline_route.fused_layers, expected_baseline_fused_layers);
         assert_eq!(baseline_route.compiler_calls_during_load, 0);
         assert_eq!(baseline_route.compiler_calls_since_load, Some(0));
-        assert_eq!(baseline_route.fused_attention_output_evaluations, 0);
+        assert_eq!(
+            baseline_route.fused_attention_output_evaluations,
+            tokens * baseline_route.fused_layers.len()
+        );
         assert_eq!(
             baseline_route.separate_attention_evaluations,
-            tokens * LAYERS
+            tokens * (LAYERS - baseline_route.fused_layers.len())
         );
-        assert_eq!(baseline_route.separate_output_evaluations, tokens * LAYERS);
+        assert_eq!(
+            baseline_route.separate_output_evaluations,
+            tokens * (LAYERS - baseline_route.fused_layers.len())
+        );
 
         let (candidate_predictions, candidate_residuals, candidate_route) =
             run(candidate_weight_plan, candidate_plan);
@@ -2028,6 +2047,12 @@ mod tests {
             Err(std::env::VarError::NotPresent) => AneWeightPlan::StaticInt8FfnCached,
             Err(error) => panic!("invalid fused full-route weight plan: {error}"),
         };
+        let baseline_plan = if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached
+        {
+            candidate_plan
+        } else {
+            AneAttentionOutputPlan::Separate
+        };
         let measured_tokens = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_TOKENS")
             .map(|value| {
                 value
@@ -2109,7 +2134,7 @@ mod tests {
         let mut candidate_qkv_evaluations = 0;
         for (index, arm) in sequence.into_iter().enumerate() {
             let plan = match arm {
-                "baseline" => AneAttentionOutputPlan::Separate,
+                "baseline" => baseline_plan,
                 "candidate" => candidate_plan,
                 _ => unreachable!(),
             };
@@ -2170,7 +2195,12 @@ mod tests {
             let route = decoder.attention_output_route_evidence();
             if arm == "baseline" {
                 baseline_ms.push(elapsed_ms);
-                assert_eq!(route.fused_layers, Vec::<usize>::new());
+                let expected_baseline_fused_layers = if baseline_plan == candidate_plan {
+                    expected_fused_layers.clone()
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(route.fused_layers, expected_baseline_fused_layers);
                 baseline_fused_evaluations += route.fused_attention_output_evaluations;
                 baseline_attention_evaluations += route.separate_attention_evaluations;
                 baseline_output_evaluations += route.separate_output_evaluations;
@@ -2225,9 +2255,23 @@ mod tests {
         let baseline_drift = baseline_ms[baseline_ms.len() - 1] / baseline_ms[0] - 1.0;
         let candidate_drift = candidate_ms[candidate_ms.len() - 1] / candidate_ms[0] - 1.0;
         let evaluations_per_route = 6 * (1 + measured_tokens);
-        assert_eq!(baseline_fused_evaluations, 0);
-        assert_eq!(baseline_attention_evaluations, evaluations_per_route * 48);
-        assert_eq!(baseline_output_evaluations, evaluations_per_route * 48);
+        let baseline_fused_layers = if baseline_plan == candidate_plan {
+            expected_fused_layers.len()
+        } else {
+            0
+        };
+        assert_eq!(
+            baseline_fused_evaluations,
+            evaluations_per_route * baseline_fused_layers
+        );
+        assert_eq!(
+            baseline_attention_evaluations,
+            evaluations_per_route * (LAYERS - baseline_fused_layers)
+        );
+        assert_eq!(
+            baseline_output_evaluations,
+            evaluations_per_route * (LAYERS - baseline_fused_layers)
+        );
         assert_eq!(baseline_qkv_evaluations, evaluations_per_route * LAYERS);
         assert_eq!(
             candidate_fused_evaluations,
@@ -2275,7 +2319,7 @@ mod tests {
             "expected_warmup_output":expected_warmup,
             "expected_outputs":expected_outputs,
             "baseline_route":{
-                "plan":AneAttentionOutputPlan::Separate.name(),
+                "plan":baseline_plan.name(),
                 "fused_evaluations":baseline_fused_evaluations,
                 "separate_attention_evaluations":baseline_attention_evaluations,
                 "separate_output_evaluations":baseline_output_evaluations,
