@@ -1778,6 +1778,246 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "private cached-only full-route ANE timing; reset-identical one-token ABBA/BAAB, zero compiler calls"]
+    fn hardware_layer0_fused_attention_output_full_route_abba_timing() {
+        use super::two_token_reference::live_tests::{load_snapshot, signature};
+        use serde_json::json;
+        use std::time::Instant;
+
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let snapshot_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_TWO_TOKEN_SNAPSHOT").expect("snapshot required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_RECEIPT")
+                .expect("timing receipt path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite timing receipt"
+        );
+        assert_eq!(compile_budget_used(), 0, "timing requires a fresh process");
+        let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
+
+        // Loading and snapshot import are deliberately outside every timed
+        // interval. Both persistent decoders use the same sealed checkpoint,
+        // cache-only program policy, and captured prefill state.
+        let mut baseline = GemmaAneDecode::load_with_attention_output_plan(
+            &model,
+            1024,
+            AneWeightPlan::StaticInt8FfnCached,
+            0,
+            AneAttentionOutputPlan::Separate,
+        )
+        .unwrap();
+        let mut candidate = GemmaAneDecode::load_with_attention_output_plan(
+            &model,
+            1024,
+            AneWeightPlan::StaticInt8FfnCached,
+            0,
+            AneAttentionOutputPlan::Layer0FusedCached,
+        )
+        .unwrap();
+        assert_eq!(
+            baseline
+                .attention_output_route_evidence()
+                .compiler_calls_during_load,
+            0
+        );
+        assert_eq!(
+            candidate
+                .attention_output_route_evidence()
+                .compiler_calls_during_load,
+            0
+        );
+        let compiler_calls_after_load = compile_budget_used();
+        assert_eq!(
+            compiler_calls_after_load, 0,
+            "all programs must be exact cache hits"
+        );
+
+        // Equal untimed warmup work. Re-importing the exact snapshot before
+        // each decode also prevents a preceding arm from changing position or
+        // KV state for the arm that follows it.
+        baseline.import_prefill(&snapshot).unwrap();
+        let baseline_warmup = baseline.decode(anchor).unwrap();
+        candidate.import_prefill(&snapshot).unwrap();
+        let candidate_warmup = candidate.decode(anchor).unwrap();
+        let expected = signature(&baseline_warmup);
+        assert_eq!(signature(&candidate_warmup), expected);
+
+        let reverse_order = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_ORDER")
+            .map(|value| value == "BAAB_FIRST")
+            .unwrap_or(false);
+        let (sequence_name, sequence) = if reverse_order {
+            (
+                "BAAB/ABBA/BAAB",
+                [
+                    "candidate",
+                    "baseline",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "baseline",
+                    "candidate",
+                ],
+            )
+        } else {
+            (
+                "ABBA/BAAB/ABBA",
+                [
+                    "baseline",
+                    "candidate",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "candidate",
+                    "baseline",
+                ],
+            )
+        };
+        let block_order = |block: usize| {
+            if reverse_order {
+                if block == 1 {
+                    "ABBA"
+                } else {
+                    "BAAB"
+                }
+            } else if block == 1 {
+                "BAAB"
+            } else {
+                "ABBA"
+            }
+        };
+        let mut observations = Vec::with_capacity(sequence.len());
+        let mut baseline_ms = Vec::with_capacity(6);
+        let mut candidate_ms = Vec::with_capacity(6);
+        for (index, arm) in sequence.into_iter().enumerate() {
+            let (decoded, elapsed_ms) = match arm {
+                "baseline" => {
+                    baseline.import_prefill(&snapshot).unwrap();
+                    let started = Instant::now();
+                    let decoded = baseline.decode(anchor).unwrap();
+                    (decoded, started.elapsed().as_secs_f64() * 1000.0)
+                }
+                "candidate" => {
+                    candidate.import_prefill(&snapshot).unwrap();
+                    let started = Instant::now();
+                    let decoded = candidate.decode(anchor).unwrap();
+                    (decoded, started.elapsed().as_secs_f64() * 1000.0)
+                }
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                signature(&decoded),
+                expected,
+                "full-route output drift in arm {index}"
+            );
+            if arm == "baseline" {
+                baseline_ms.push(elapsed_ms);
+            } else {
+                candidate_ms.push(elapsed_ms);
+            }
+            observations.push(json!({
+                "index":index,
+                "block":index / 4,
+                "order":block_order(index / 4),
+                "arm":arm,
+                "elapsed_ms":elapsed_ms,
+                "decode_breakdown_ms":{
+                    "qkv":decoded.times.qkv_ms,
+                    "attention":decoded.times.attention_ms,
+                    "output":decoded.times.output_ms,
+                    "fused_attention_output":decoded.times.fused_attention_output_ms,
+                    "ffn":decoded.times.ffn_ms,
+                    "vocabulary":decoded.times.vocabulary_ms,
+                    "host":decoded.times.host_ms,
+                    "total":decoded.times.total_ms,
+                },
+                "output":signature(&decoded),
+            }));
+        }
+
+        let median = |values: &mut Vec<f64>| {
+            values.sort_by(f64::total_cmp);
+            (values[(values.len() - 1) / 2] + values[values.len() / 2]) * 0.5
+        };
+        let baseline_median_ms = median(&mut baseline_ms);
+        let candidate_median_ms = median(&mut candidate_ms);
+        let baseline_drift = baseline_ms[baseline_ms.len() - 1] / baseline_ms[0] - 1.0;
+        let candidate_drift = candidate_ms[candidate_ms.len() - 1] / candidate_ms[0] - 1.0;
+        let baseline_route = baseline.attention_output_route_evidence();
+        let candidate_route = candidate.attention_output_route_evidence();
+        assert_eq!(baseline_route.fused_layers, Vec::<usize>::new());
+        assert_eq!(baseline_route.fused_attention_output_evaluations, 0);
+        assert_eq!(baseline_route.separate_attention_evaluations, 7 * 48);
+        assert_eq!(baseline_route.separate_output_evaluations, 7 * 48);
+        assert_eq!(candidate_route.fused_layers, vec![0]);
+        assert_eq!(candidate_route.fused_attention_output_evaluations, 7);
+        assert_eq!(candidate_route.separate_attention_evaluations, 7 * 47);
+        assert_eq!(candidate_route.separate_output_evaluations, 7 * 47);
+        let compiler_calls_after_timing = compile_budget_used();
+        assert_eq!(compiler_calls_after_timing, compiler_calls_after_load);
+        assert_eq!(baseline_route.compiler_calls_since_load, Some(0));
+        assert_eq!(candidate_route.compiler_calls_since_load, Some(0));
+
+        let report = json!({
+            "schema":"rvllm.gemma4_ane_fused_attention_output_full_route_timing.v1",
+            "status":"measured",
+            "snapshot_sha256":snapshot_sha256,
+            "weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
+            "sequence":sequence_name,
+            "warmup_tokens_per_arm":1,
+            "measured_tokens_per_arm":6,
+            "state_reset":"identical sealed prefill imported outside every timed interval",
+            "timed_scope":"one complete decode from embedding through vocabulary ranking",
+            "baseline_median_ms_per_token":baseline_median_ms,
+            "candidate_median_ms_per_token":candidate_median_ms,
+            "median_baseline_over_candidate":baseline_median_ms / candidate_median_ms,
+            "baseline_range_drift_fraction":baseline_drift,
+            "candidate_range_drift_fraction":candidate_drift,
+            "outputs_exact":true,
+            "expected_output":expected,
+            "baseline_route":{
+                "plan":baseline_route.plan,
+                "fused_evaluations":baseline_route.fused_attention_output_evaluations,
+                "separate_attention_evaluations":baseline_route.separate_attention_evaluations,
+                "separate_output_evaluations":baseline_route.separate_output_evaluations,
+            },
+            "candidate_route":{
+                "plan":candidate_route.plan,
+                "fused_evaluations":candidate_route.fused_attention_output_evaluations,
+                "separate_attention_evaluations":candidate_route.separate_attention_evaluations,
+                "separate_output_evaluations":candidate_route.separate_output_evaluations,
+            },
+            "compiler_calls_after_load":compiler_calls_after_load,
+            "compiler_calls_after_timing":compiler_calls_after_timing,
+            "compiler_calls_during_warmup_and_timing":0,
+            "observations":observations,
+            "promotion":false,
+            "claim":"Exploratory exact-cache full-route timing for the default-off layer-0 fused route. Independent opposite-order confirmation and longer stability remain required."
+        });
+        std::fs::write(
+            receipt_path,
+            serde_json::to_vec_pretty(&report).expect("serialize full-route timing receipt"),
+        )
+        .expect("preserve full-route timing receipt");
+    }
+
+    #[test]
     #[ignore = "private ANE layer-0 fused attention/output compile-source probe; one compiler attempt, zero evaluations, explicit journal and receipt"]
     fn hardware_layer0_fused_attention_output_compile_source() {
         use rvllm_apple::ane_attention::AneAttentionOutputCompile;
