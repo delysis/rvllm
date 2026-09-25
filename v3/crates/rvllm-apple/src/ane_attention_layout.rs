@@ -458,23 +458,25 @@ impl PackedAttentionLayout {
         self.projected_output_bytes(output_channels)?;
         let source = self.mil();
         let old = format!(
-            "        tensor<fp16, [1, {}, 1, {}]> y = reshape(x = transposed, shape = sq)[name = string(\"y\")];\n    }} -> (y);",
-            self.kv_width(),
-            self.groups()
+            "        tensor<fp16, [1, {kv}, {dim}, {groups}]> transposed = transpose(x = attention, perm = perm)[name = string(\"transposed\")];\n        tensor<fp16, [1, {width}, 1, {groups}]> y = reshape(x = transposed, shape = sq)[name = string(\"y\")];\n    }} -> (y);",
+            kv = self.kv_heads(),
+            dim = self.head_dim(),
+            groups = self.groups(),
+            width = self.kv_width(),
         );
         let new = format!(
-            r#"        tensor<fp16, [1, {input}, 1, {groups}]> attention_output = reshape(x = transposed, shape = sq)[name = string("attention_output")];
+            r#"        tensor<int32, [4]> projection_input_shape = const()[name = string("projection_input_shape"), val = tensor<int32, [4]>([1, {input}, 1, 1])];
+        tensor<fp16, [1, {input}, 1, 1]> attention_output = reshape(x = attention, shape = projection_input_shape)[name = string("attention_output")];
         string projection_pad_type = const()[name = string("projection_pad_type"), val = string("valid")];
         tensor<int32, [2]> projection_strides = const()[name = string("projection_strides"), val = tensor<int32, [2]>([1, 1])];
         tensor<int32, [4]> projection_pad = const()[name = string("projection_pad"), val = tensor<int32, [4]>([0, 0, 0, 0])];
         tensor<int32, [2]> projection_dilations = const()[name = string("projection_dilations"), val = tensor<int32, [2]>([1, 1])];
         int32 projection_groups = const()[name = string("projection_groups"), val = int32(1)];
         tensor<fp16, [{output}, {input}, 1, 1]> Wo = const()[name = string("Wo"), val = tensor<fp16, [{output}, {input}, 1, 1]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64({weight_offset})))];
-        tensor<fp16, [1, {output}, 1, {groups}]> y = conv(dilations = projection_dilations, groups = projection_groups, pad = projection_pad, pad_type = projection_pad_type, strides = projection_strides, weight = Wo, x = attention_output)[name = string("output_projection")];
+        tensor<fp16, [1, {output}, 1, 1]> y = conv(dilations = projection_dilations, groups = projection_groups, pad = projection_pad, pad_type = projection_pad_type, strides = projection_strides, weight = Wo, x = attention_output)[name = string("output_projection")];
     }} -> (y);"#,
             input = self.query_width(),
             output = output_channels,
-            groups = self.groups(),
         );
         if !source.contains(&old) {
             return Err("packed attention MIL tail changed; refusing fused rewrite".into());
@@ -496,7 +498,10 @@ mod tests {
         assert_eq!(source.matches(" = conv(").count(), 1);
         assert!(source.contains("tensor<fp16, [3840, 4096, 1, 1]> Wo"));
         assert!(source.contains("offset = uint64(64)"));
-        assert!(source.contains("tensor<fp16, [1, 3840, 1, 2]> y"));
+        assert!(source.contains("[1, 4096, 1, 1])"));
+        assert!(source.contains("reshape(x = attention, shape = projection_input_shape)"));
+        assert!(source.contains("tensor<fp16, [1, 3840, 1, 1]> y"));
+        assert!(!source.contains("transpose(x = attention"));
         assert_eq!(layout.projected_output_bytes(3840).unwrap(), 3840 * 64);
     }
 
