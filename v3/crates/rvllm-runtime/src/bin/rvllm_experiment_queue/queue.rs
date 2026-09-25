@@ -779,18 +779,55 @@ fn manifest_paths(queue: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn dependencies_ready(job: &Job, queue: &Path) -> Result<bool> {
+#[derive(Debug, PartialEq)]
+enum DependencyState {
+    Ready,
+    Waiting,
+    Failed(String),
+}
+
+fn dependency_state(job: &Job, queue: &Path) -> Result<DependencyState> {
     for dependency in &job.after {
         let report = queue.join("results").join(dependency).join("report.json");
         if !report.exists() {
-            return Ok(false);
+            return Ok(DependencyState::Waiting);
         }
         let value = read_json(&report)?;
         if !matches!(value["status"].as_str(), Some("succeeded" | "rejected")) {
-            return Err(format!("dependency {dependency} did not succeed; queue stopped").into());
+            return Ok(DependencyState::Failed(dependency.clone()));
         }
     }
-    Ok(true)
+    Ok(DependencyState::Ready)
+}
+
+fn quarantine_manifest(queue: &Path, path: &Path, job: &Job, reason: &str) -> Result<()> {
+    let directory = queue.join("quarantined-jobs");
+    fs::create_dir_all(&directory)?;
+    let destination = directory.join(format!("{}.json", job.id));
+    let receipt = directory.join(format!("{}.receipt.json", job.id));
+    if destination.exists() || receipt.exists() {
+        return Err(format!("quarantine identity already exists for {}", job.id).into());
+    }
+    let manifest_sha256 = digest(path)?;
+    fs::rename(path, &destination)?;
+    let report_path = queue.join("results").join(&job.id).join("report.json");
+    let report = if report_path.is_file() {
+        json!({"path":report_path,"sha256":digest(&report_path)?})
+    } else {
+        Value::Null
+    };
+    atomic_json(
+        &receipt,
+        &json!({
+            "schema":"rvllm.experiment_quarantine.v1",
+            "id":job.id,
+            "reason":reason,
+            "manifest":{"path":destination,"sha256":manifest_sha256},
+            "report":report,
+            "claim":"Quarantine preserves terminal evidence and prevents replay; independent jobs may continue."
+        }),
+    )?;
+    Ok(())
 }
 
 fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -> Result<()> {
@@ -842,6 +879,15 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
             if result.exists() {
                 let report = read_json(&result.join("report.json"))?;
                 if !matches!(report["status"].as_str(), Some("succeeded" | "rejected")) {
+                    if idle_seconds.is_none() {
+                        quarantine_manifest(
+                            queue,
+                            &path,
+                            &job,
+                            "terminal failed or incomplete result",
+                        )?;
+                        continue;
+                    }
                     return Err(format!(
                         "job {} has failed or incomplete output; no replay",
                         job.id
@@ -851,9 +897,26 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 continue;
             }
             job.validate()?;
-            if !dependencies_ready(&job, queue)? {
-                pending.push(json!({"id":job.id,"waiting_for_dependencies":job.after}));
-                continue;
+            match dependency_state(&job, queue)? {
+                DependencyState::Ready => {}
+                DependencyState::Waiting => {
+                    pending.push(json!({"id":job.id,"waiting_for_dependencies":job.after}));
+                    continue;
+                }
+                DependencyState::Failed(dependency) if idle_seconds.is_none() => {
+                    quarantine_manifest(
+                        queue,
+                        &path,
+                        &job,
+                        &format!("dependency {dependency} did not succeed"),
+                    )?;
+                    continue;
+                }
+                DependencyState::Failed(dependency) => {
+                    return Err(
+                        format!("dependency {dependency} did not succeed; queue stopped").into(),
+                    );
+                }
             }
             let started = waiting.entry(job.id.clone()).or_insert_with(Instant::now);
             if started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
@@ -887,6 +950,16 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 .ok_or("selected job is missing its waiting deadline")?;
             match execute(&job, queue, &monitor, &stop, *wait_started)? {
                 Some(false) => {
+                    if idle_seconds.is_none() {
+                        quarantine_manifest(
+                            queue,
+                            &queue.join("jobs").join(format!("{}.json", job.id)),
+                            &job,
+                            "trial or validator failed",
+                        )?;
+                        waiting.remove(&job.id);
+                        continue;
+                    }
                     return Err(
                         format!("job {} failed; queue stopped without retry", job.id).into(),
                     );
@@ -1233,7 +1306,10 @@ mod tests {
             max_wait_seconds: 10,
             max_run_seconds: 10,
         };
-        assert!(dependencies_ready(&job, dir.path()).is_err());
+        assert_eq!(
+            dependency_state(&job, dir.path()).unwrap(),
+            DependencyState::Failed("first".into())
+        );
     }
 
     #[test]
@@ -1267,7 +1343,56 @@ mod tests {
             max_wait_seconds: 10,
             max_run_seconds: 10,
         };
-        assert!(dependencies_ready(&job, dir.path()).unwrap());
+        assert_eq!(
+            dependency_state(&job, dir.path()).unwrap(),
+            DependencyState::Ready
+        );
+    }
+
+    #[test]
+    fn quarantine_preserves_manifest_and_report_identities() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("jobs")).unwrap();
+        fs::create_dir_all(dir.path().join("results/second")).unwrap();
+        let report = dir.path().join("results/second/report.json");
+        atomic_json(&report, &json!({"status":"failed"})).unwrap();
+        let job = Job {
+            schema: SCHEMA.into(),
+            id: "second".into(),
+            purpose: Purpose::Correctness,
+            command: Invocation {
+                executable: Pin {
+                    path: "/unused".into(),
+                    sha256: "0".repeat(64),
+                },
+                cwd: "/".into(),
+                args: vec![],
+                env: BTreeMap::new(),
+            },
+            validator: None,
+            inputs: vec![],
+            kernel_game_submission: None,
+            after: vec![],
+            conditions: conditions(),
+            stable_seconds: 0,
+            max_wait_seconds: 10,
+            max_run_seconds: 10,
+        };
+        let manifest = dir.path().join("jobs/second.json");
+        atomic_json(&manifest, &serde_json::to_value(&job).unwrap()).unwrap();
+        let manifest_hash = digest(&manifest).unwrap();
+        let report_hash = digest(&report).unwrap();
+
+        quarantine_manifest(dir.path(), &manifest, &job, "test failure").unwrap();
+
+        assert!(!manifest.exists());
+        let quarantined = dir.path().join("quarantined-jobs/second.json");
+        assert_eq!(digest(&quarantined).unwrap(), manifest_hash);
+        let receipt = read_json(&dir.path().join("quarantined-jobs/second.receipt.json")).unwrap();
+        assert_eq!(receipt["reason"], "test failure");
+        assert_eq!(receipt["manifest"]["sha256"], manifest_hash);
+        assert_eq!(receipt["report"]["sha256"], report_hash);
+        assert!(quarantine_manifest(dir.path(), &quarantined, &job, "retry").is_err());
     }
 
     #[test]
