@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
     if r.schema != "rvllm.gemma4.metal_prefill_referee.v2"
         || r.status != "qualified"
-        || r.candidates != expected_candidates
+        || r.candidates.iter().map(String::as_str).collect::<Vec<_>>() != expected_candidates
         || r.requested_tokens != tokens
         || !r.default_off
         || r.qkv_boundary != "external_bf16"
