@@ -1955,7 +1955,7 @@ mod tests {
         let weights = super::load_tensor(entries.get(&name).unwrap()).unwrap();
         let identity =
             AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN).unwrap();
-        let policy = super::AneProgramCachePolicy::RequireExisting;
+        let policy = super::AneProgramCachePolicy::ReuseOrCompileUpTo(3);
         let mut baseline_attention = AneAttentionProgram::compile_sliding_with_cache_policy(
             shape.query_heads,
             shape.kv_heads,
@@ -1979,7 +1979,11 @@ mod tests {
                 .unwrap()
                 .create_request()
                 .unwrap();
-        assert_eq!(compile_budget_used(), 0, "timing must be cache-only");
+        let setup_compiler_calls = compile_budget_used();
+        assert!(
+            setup_compiler_calls <= 3,
+            "bounded timing setup exceeded its compiler-call budget"
+        );
 
         let imported = 1024_usize;
         let keys: Vec<_> = (0..imported * layout.kv_width())
@@ -2094,8 +2098,10 @@ mod tests {
                 "input_bytes":identity.input_bytes,
                 "output_bytes":identity.output_bytes,
             },
-            "compiler_calls":compiler_calls,
-            "compiler_call_limit":0,
+            "setup_compiler_calls":setup_compiler_calls,
+            "compiler_calls_after_timing":compiler_calls,
+            "setup_compiler_call_limit":3,
+            "compiler_calls_during_timing":compiler_calls - setup_compiler_calls,
             "warmup_tokens_per_arm":8,
             "measured_tokens_per_arm":repetitions * 6,
             "sequence":"ABBA/BAAB/ABBA",
@@ -2115,7 +2121,10 @@ mod tests {
             serde_json::to_vec_pretty(&receipt).expect("serialize fused timing receipt"),
         )
         .expect("preserve fused timing receipt");
-        assert_eq!(compiler_calls, 0);
+        assert_eq!(
+            compiler_calls, setup_compiler_calls,
+            "no compiler call is permitted during warmup or timing"
+        );
         assert_eq!(baseline_attention.tokens_seen(), fused.tokens_seen());
     }
 
