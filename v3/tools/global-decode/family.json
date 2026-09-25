@@ -271,6 +271,30 @@
       ]
     },
     {
+      "name": "metal-global-d512-split-coopkey_r8k8p64t128s32",
+      "kernels": [
+        "research_global_d512_split_coopkey_r8k8p64t128s32_partial",
+        "research_global_d512_split_coopkey_r8k8p64t128s32_merge"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_split_coopkey_r8k8p64t128s32.metal",
+      "min_tokens": 1,
+      "max_tokens": 1,
+      "window_independent": false,
+      "numerical_contract": "bf16-fp32-split-sufficient-stat-once-rounded",
+      "budgets": [
+        {
+          "kernel": "research_global_d512_split_coopkey_r8k8p64t128s32_partial",
+          "threads": 128,
+          "source_shared_bytes": 10016
+        },
+        {
+          "kernel": "research_global_d512_split_coopkey_r8k8p64t128s32_merge",
+          "threads": 32,
+          "source_shared_bytes": 0
+        }
+      ]
+    },
+    {
       "name": "metal-global-d512-atlas_r16k16p64t128",
       "kernels": ["research_global_d512_atlas_r16k16p64t128"],
       "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_atlas_r16k16p64t128.metal",

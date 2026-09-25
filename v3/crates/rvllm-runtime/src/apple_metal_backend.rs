@@ -2678,11 +2678,13 @@ impl ModelMetalBackend {
                     model_ctx("prepare"),
                 ));
             }
-            let load_plan = rvllm_apple_metal::gemma4_model::MetalModelLoadPlan::new(
-                &ctx,
-                &self.model_dir,
-                options.limits,
-            )?;
+            let load_plan =
+                rvllm_apple_metal::gemma4_model::MetalModelLoadPlan::new_with_research_candidate(
+                    &ctx,
+                    &self.model_dir,
+                    options.limits,
+                    options.kernels.research,
+                )?;
             let memory_report = *load_plan.memory_report();
             let mut arena = MetalBufferArena::new(ctx.device(), load_plan.arena_bytes())?;
             let state = load_plan.load(&ctx, &mut arena, float_type)?;
@@ -2690,38 +2692,42 @@ impl ModelMetalBackend {
         } else {
             let (arena_bytes, memory_report) = match self.low_bit_residency_policy {
             MetalLowBitResidencyPolicy::HybridFallback => {
-                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_additional_weights(
+                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_additional_weights_and_research(
                     &ctx,
                     &self.model_dir,
                     additional_weight_bytes,
+                    self.kernel_options.research,
                 )?
             }
             MetalLowBitResidencyPolicy::ReplaceNative => {
-                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_low_bit_replacements(
+                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_low_bit_replacements_and_research(
                     &ctx,
                     &self.model_dir,
                     &low_bit_replacements,
+                    self.kernel_options.research,
                 )?
             }
         };
             let mut arena = MetalBufferArena::new(ctx.device(), arena_bytes)?;
             let state = match self.low_bit_residency_policy {
                 MetalLowBitResidencyPolicy::HybridFallback => {
-                    Gemma4MetalState::load_probe_model_with_float_type_and_additional_weights(
+                    Gemma4MetalState::load_probe_model_with_float_type_additional_weights_and_research(
                         &ctx,
                         &mut arena,
                         &self.model_dir,
                         float_type,
                         additional_weight_bytes,
+                        self.kernel_options.research,
                     )?
                 }
                 MetalLowBitResidencyPolicy::ReplaceNative => {
-                    Gemma4MetalState::load_probe_model_with_float_type_and_low_bit_replacements(
+                    Gemma4MetalState::load_probe_model_with_float_type_low_bit_replacements_and_research(
                         &ctx,
                         &mut arena,
                         &self.model_dir,
                         float_type,
                         &low_bit_replacements,
+                        self.kernel_options.research,
                     )?
                 }
             };

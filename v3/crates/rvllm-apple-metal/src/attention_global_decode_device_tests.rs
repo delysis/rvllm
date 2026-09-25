@@ -6,7 +6,7 @@ use crate::attention_global_decode::{
     physical_base,
     reference::{self, Fixture},
     round_bf16, DecodeBuffers, DecodeOutput, DecodePlan, DecodeShape, SplitDecodeBuffers,
-    SplitDecodePlan, DIM, HEADS, LIVE_LENGTHS,
+    SplitDecodePlan, DIM, HEADS, LIVE_LENGTHS, SPLIT32_SCRATCH_BYTES,
 };
 use crate::attention_global_decode_metal::{
     try_encode_global_decode, try_encode_split_global_decode, try_encode_split_global_decode_stage,
@@ -148,8 +148,8 @@ impl Setup {
                 tile.panel,
                 tile.threads,
                 tile.simd_matrix,
-                json!([2, 16, 1]),
-                16 * 16 * 514 * 4,
+                json!([16 / tile.rows, tile.partitions, 1]),
+                tile.partitions as usize * 16 * 514 * 4,
             )
         };
         let identity = json!({"candidate":candidate.name(), "core_sha256":core_sha,
@@ -225,7 +225,7 @@ impl Guarded {
         ];
         let capacity = payloads.iter().map(Vec::len).sum::<usize>()
             + FLOAT_BYTES * 3
-            + 16 * 16 * 514 * 4
+            + SPLIT32_SCRATCH_BYTES
             + 8192;
         let mut arena = MetalBufferArena::new(context.device(), capacity)?;
         let mut upload = |name: &str, payload: Vec<u8>| -> TestResult<(MetalRegion, Vec<u8>)> {
@@ -252,7 +252,7 @@ impl Guarded {
             ("serial", FLOAT_BYTES),
             ("bf16", FLOAT_BYTES / 2),
             ("sampled-dots", 36),
-            ("split-partials", 16 * 16 * 514 * 4),
+            ("split-partials", SPLIT32_SCRATCH_BYTES),
         ] {
             outputs.push(upload(name, vec![0xff; bytes])?);
         }
@@ -912,8 +912,11 @@ fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
                     output_kind,
                 )?
                 .ok_or("normal-route split predicate refused positive fixture")?;
-                assert_eq!(encoded.plan.partial_count, 16);
-                assert_eq!(encoded.plan.scratch_bytes, 16 * 16 * 514 * 4);
+                assert_eq!(encoded.plan.partial_count, tile.partitions);
+                assert_eq!(
+                    encoded.plan.scratch_bytes,
+                    tile.partitions as usize * 16 * 514 * 4
+                );
             }
             complete(&command)?;
             expect_family_count(&setup, before, 2);

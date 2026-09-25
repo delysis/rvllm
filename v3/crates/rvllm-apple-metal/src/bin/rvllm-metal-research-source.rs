@@ -31,7 +31,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let oracle = match args.next().as_deref() {
         None => false,
         Some("--global-decode-oracle")
-            if dtype == MetalFloatType::Bf16 && research.global_decode_tile().is_some() =>
+            if dtype == MetalFloatType::Bf16
+                && (research.global_decode_tile().is_some()
+                    || research.split_global_decode_tile().is_some()) =>
         {
             true
         }

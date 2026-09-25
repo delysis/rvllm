@@ -1,6 +1,24 @@
 use super::reference::{output_f32, output_f64, sampled_dots, Fixture};
 use super::*;
 
+#[test]
+fn split32_scratch_is_explicit_and_default_footprint_is_unchanged() {
+    assert_eq!(SPLIT_SCRATCH_BYTES, 526_336);
+    assert_eq!(SPLIT32_SCRATCH_BYTES, 1_052_672);
+    assert_eq!(
+        model_scratch_bytes(crate::MetalResearchCandidate::Off),
+        SPLIT_SCRATCH_BYTES
+    );
+    assert_eq!(
+        model_scratch_bytes(crate::MetalResearchCandidate::GlobalD512SplitMmaR8K32S256T128),
+        SPLIT_SCRATCH_BYTES
+    );
+    assert_eq!(
+        model_scratch_bytes(crate::MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32),
+        SPLIT32_SCRATCH_BYTES
+    );
+}
+
 fn shape() -> DecodeShape {
     Fixture::new(33, 32).shape
 }

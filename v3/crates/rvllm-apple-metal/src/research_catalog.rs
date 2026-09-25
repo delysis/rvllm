@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 39] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 40] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -46,6 +46,7 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 39] = [
     MetalResearchCandidate::GlobalD512R1P128T32,
     MetalResearchCandidate::GlobalD512SplitR8S256T128,
     MetalResearchCandidate::GlobalD512SplitMmaR8K32S256T128,
+    MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32,
     MetalResearchCandidate::GlobalD512AtlasR16K16P64T128,
     MetalResearchCandidate::GlobalD512AtlasR16K32P64T128,
     MetalResearchCandidate::GlobalD512AtlasTileR16K16P64T128,
@@ -244,6 +245,11 @@ impl MetalResearchCandidate {
                 "mma_r8k32s256t128",
                 GlobalD512SplitMmaR8K32S256T128Partial,
                 GlobalD512SplitMmaR8K32S256T128Merge
+            ),
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32 => global_split_decode_spec!(
+                "coopkey_r8k8p64t128s32",
+                GlobalD512SplitCoopKeyR8K8P64T128S32Partial,
+                GlobalD512SplitCoopKeyR8K8P64T128S32Merge
             ),
             Self::GlobalD512AtlasR16K16P64T128 => {
                 atlas_global_decode_spec!(
@@ -518,7 +524,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 39);
+        assert_eq!(all.len(), 40);
         let additions = all.split_off(18);
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
@@ -526,12 +532,12 @@ mod tests {
         assert_eq!(reviewed, legacy);
         // The additive family must have all source-defined specializations.
         assert_eq!(
-            ALL_CANDIDATES[18..27].len() + ALL_CANDIDATES[29..39].len(),
+            ALL_CANDIDATES[18..27].len() + ALL_CANDIDATES[30..40].len(),
             crate::attention_global_decode::DECODE_TILES.len()
         );
         for (candidate, tile) in ALL_CANDIDATES[18..27]
             .iter()
-            .chain(ALL_CANDIDATES[29..39].iter())
+            .chain(ALL_CANDIDATES[30..40].iter())
             .zip(crate::attention_global_decode::DECODE_TILES)
         {
             assert_eq!(candidate.global_decode_tile(), Some(tile));

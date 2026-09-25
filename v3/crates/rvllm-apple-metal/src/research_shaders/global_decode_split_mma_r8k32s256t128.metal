@@ -18,6 +18,6 @@ kernel void research_global_d512_split_mma_r8k32s256t128_merge(
     device const int *positions [[buffer(4)]], constant GlobalDecodeParams &p [[buffer(5)]],
     uint3 group [[threadgroup_position_in_grid]], ushort lane [[thread_index_in_simdgroup]],
     uint3 threads [[threads_per_threadgroup]]) {
-    global_decode_split_merge_body(partials, output, table, contexts, positions, p,
+    global_decode_split_merge_body<16>(partials, output, table, contexts, positions, p,
         group.x, lane, threads);
 }

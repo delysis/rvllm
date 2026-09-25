@@ -862,6 +862,7 @@ struct ProbeModelPlan {
     unfloored_arena_bytes: usize,
     weights_bytes: usize,
     scratch_slot_bytes: usize,
+    global_decode_scratch_bytes: usize,
     metadata_bytes: usize,
     kv_page_bytes: usize,
     physical_kv_pages: u32,
@@ -887,6 +888,29 @@ impl MetalModelLoadPlan {
     ) -> Result<Self> {
         let plan =
             ProbeModelPlan::with_limits(model_dir, Some(limits))?.apply_working_set_budget(ctx)?;
+        let memory_report = plan
+            .memory_budget
+            .clone()
+            .ok_or_else(model_arena_overflow)?;
+        Ok(Self {
+            model_dir: model_dir.to_owned(),
+            plan,
+            memory_report,
+        })
+    }
+
+    /// Research-only model plan. Default callers retain the historical split
+    /// scratch reservation byte-for-byte.
+    pub fn new_with_research_candidate(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        limits: crate::MetalModelLimits,
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<Self> {
+        let scratch = crate::attention_global_decode::model_scratch_bytes(candidate);
+        let plan = ProbeModelPlan::with_limits(model_dir, Some(limits))?
+            .with_global_decode_scratch_bytes(scratch)?
+            .apply_working_set_budget(ctx)?;
         let memory_report = plan
             .memory_budget
             .clone()
@@ -1832,6 +1856,7 @@ impl ProbeModelPlan {
             unfloored_arena_bytes,
             weights_bytes,
             scratch_slot_bytes,
+            global_decode_scratch_bytes: crate::attention_global_decode::SPLIT_SCRATCH_BYTES,
             metadata_bytes,
             kv_page_bytes,
             physical_kv_pages,
@@ -2066,6 +2091,31 @@ impl ProbeModelPlan {
             .arena_bytes
             .checked_add(additional_weight_bytes)
             .ok_or_else(model_arena_overflow)?;
+        Ok(self)
+    }
+
+    fn with_global_decode_scratch_bytes(mut self, bytes: usize) -> Result<Self> {
+        let base = crate::attention_global_decode::SPLIT_SCRATCH_BYTES;
+        if bytes < base || bytes > crate::attention_global_decode::SPLIT32_SCRATCH_BYTES {
+            return Err(model_arena_overflow());
+        }
+        let delta = bytes - base;
+        if delta == 0 {
+            return Ok(self);
+        }
+        self.scratch_slot_bytes = self
+            .scratch_slot_bytes
+            .checked_add(delta)
+            .ok_or_else(model_arena_overflow)?;
+        let arena_delta = delta
+            .checked_mul(crate::memory_budget::IN_FLIGHT_SCRATCH_SLOTS)
+            .ok_or_else(model_arena_overflow)?;
+        self.unfloored_arena_bytes = self
+            .unfloored_arena_bytes
+            .checked_add(arena_delta)
+            .ok_or_else(model_arena_overflow)?;
+        self.arena_bytes = max(self.unfloored_arena_bytes, PROBE_METAL_ARENA_BYTES);
+        self.global_decode_scratch_bytes = bytes;
         Ok(self)
     }
 
@@ -2350,8 +2400,25 @@ impl Gemma4MetalState {
         model_dir: &Path,
         additional_weight_bytes: usize,
     ) -> Result<(usize, Gemma4MetalMemoryReport)> {
+        Self::required_probe_model_arena_bytes_for_device_with_additional_weights_and_research(
+            ctx,
+            model_dir,
+            additional_weight_bytes,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn required_probe_model_arena_bytes_for_device_with_additional_weights_and_research(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        additional_weight_bytes: usize,
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<(usize, Gemma4MetalMemoryReport)> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_additional_weight_bytes(additional_weight_bytes)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         let report = plan.memory_budget.ok_or_else(|| {
             RvllmError::apple(
@@ -2373,8 +2440,25 @@ impl Gemma4MetalState {
         model_dir: &Path,
         replacements: &[MetalLowBitWeightReplacement],
     ) -> Result<(usize, Gemma4MetalMemoryReport)> {
+        Self::required_probe_model_arena_bytes_for_device_with_low_bit_replacements_and_research(
+            ctx,
+            model_dir,
+            replacements,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn required_probe_model_arena_bytes_for_device_with_low_bit_replacements_and_research(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        replacements: &[MetalLowBitWeightReplacement],
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<(usize, Gemma4MetalMemoryReport)> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_low_bit_replacements(replacements)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         let report = plan.memory_budget.ok_or_else(|| {
             RvllmError::apple(
@@ -2428,8 +2512,29 @@ impl Gemma4MetalState {
         float_type: MetalFloatType,
         additional_weight_bytes: usize,
     ) -> Result<Self> {
+        Self::load_probe_model_with_float_type_additional_weights_and_research(
+            ctx,
+            arena,
+            model_dir,
+            float_type,
+            additional_weight_bytes,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn load_probe_model_with_float_type_additional_weights_and_research(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+        additional_weight_bytes: usize,
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<Self> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_additional_weight_bytes(additional_weight_bytes)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         Self::load_probe_model_from_plan(ctx, arena, model_dir, float_type, plan)
     }
@@ -2443,8 +2548,29 @@ impl Gemma4MetalState {
         float_type: MetalFloatType,
         replacements: &[MetalLowBitWeightReplacement],
     ) -> Result<Self> {
+        Self::load_probe_model_with_float_type_low_bit_replacements_and_research(
+            ctx,
+            arena,
+            model_dir,
+            float_type,
+            replacements,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn load_probe_model_with_float_type_low_bit_replacements_and_research(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+        replacements: &[MetalLowBitWeightReplacement],
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<Self> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_low_bit_replacements(replacements)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         Self::load_probe_model_from_plan(ctx, arena, model_dir, float_type, plan)
     }
@@ -2594,7 +2720,7 @@ impl Gemma4MetalState {
                 )?,
                 global_decode_partials: Some(arena.region(
                     "metal_shared_global_decode_partials",
-                    crate::attention_global_decode::SPLIT_SCRATCH_BYTES,
+                    plan.global_decode_scratch_bytes,
                     16,
                 )?),
                 gate_up_out: arena.region(

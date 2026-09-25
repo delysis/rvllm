@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 54;
+pub const RESEARCH_KERNEL_COUNT: usize = 56;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -63,6 +63,8 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_global_d512_atlas_mma_r16k64p64t128",
     "research_global_d512_split_mma_r8k32s256t128_partial",
     "research_global_d512_split_mma_r8k32s256t128_merge",
+    "research_global_d512_split_coopkey_r8k8p64t128s32_partial",
+    "research_global_d512_split_coopkey_r8k8p64t128s32_merge",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,6 +124,8 @@ pub enum ResearchKernel {
     GlobalD512AtlasMmaR16K64P64T128 = 51,
     GlobalD512SplitMmaR8K32S256T128Partial = 52,
     GlobalD512SplitMmaR8K32S256T128Merge = 53,
+    GlobalD512SplitCoopKeyR8K8P64T128S32Partial = 54,
+    GlobalD512SplitCoopKeyR8K8P64T128S32Merge = 55,
 }
 
 impl ResearchKernel {
@@ -156,6 +160,8 @@ impl ResearchKernel {
             Self::GlobalD512AtlasMmaR16K64P64T128 => (128, 29120),
             Self::GlobalD512SplitMmaR8K32S256T128Partial => (128, 12512),
             Self::GlobalD512SplitMmaR8K32S256T128Merge => (32, 0),
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32Partial => (128, 10016),
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32Merge => (32, 0),
             Self::ShortGemm => (128, 10496),
             Self::ShortQkv => (128, 10496),
             Self::RoundedGate => (128, 14336),
@@ -230,6 +236,10 @@ impl ResearchKernel {
             Self::GlobalD512SplitMmaR8K32S256T128Partial
             | Self::GlobalD512SplitMmaR8K32S256T128Merge => {
                 MetalResearchCandidate::GlobalD512SplitMmaR8K32S256T128
+            }
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32Partial
+            | Self::GlobalD512SplitCoopKeyR8K8P64T128S32Merge => {
+                MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32
             }
             Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
             Self::RoundedGate => MetalResearchCandidate::RoundedGate32,

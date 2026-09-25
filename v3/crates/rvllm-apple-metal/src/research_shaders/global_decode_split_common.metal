@@ -1,9 +1,8 @@
 // Bounded D512/GQA16 split-KV decode. This file follows global_decode_common.metal,
 // which supplies GlobalDecodeParams, BF16 conversion, and fixed-tree reduction.
-constant uint GLOBAL_SPLIT_PARTITIONS = 16u;
 constant uint GLOBAL_SPLIT_STRIDE = 514u; // FP32 numerator[512], maximum, denominator.
 
-template<uint R, uint S, uint P, uint T>
+template<uint R, uint S, uint P, uint T, uint PARTITIONS, bool DYNAMIC>
 inline void global_decode_split_partial_body(
     device const ushort *q, device const ushort *k, device const ushort *v,
     device float *partials, device const int *table, device const int *contexts,
@@ -15,7 +14,7 @@ inline void global_decode_split_partial_body(
     constexpr uint NSG = T / 32u;
     constexpr uint OWNED = R / NSG;
     if (threads.x != T || threads.y != 1u || threads.z != 1u
-        || group.x >= 16u / R || group.y >= GLOBAL_SPLIT_PARTITIONS || group.z != 0u) return;
+        || group.x >= 16u / R || group.y >= PARTITIONS || group.z != 0u) return;
 
     // Every launched partition gets a deterministic identity before validation.
     for (uint r = 0; r < OWNED; ++r) {
@@ -41,8 +40,12 @@ inline void global_decode_split_partial_body(
         int page = table[b];
         if (page >= 0 && uint(page) >= p.num_blocks) return;
     }
-    uint begin = group.y * S;
-    uint partition_end = min(begin + S, end);
+    uint begin = DYNAMIC
+        ? uint((ulong(end) * ulong(group.y)) / ulong(PARTITIONS))
+        : group.y * S;
+    uint partition_end = DYNAMIC
+        ? uint((ulong(end) * ulong(group.y + 1u)) / ulong(PARTITIONS))
+        : min(begin + S, end);
     if (begin >= partition_end) return;
 
     float u[OWNED][16];
@@ -136,6 +139,7 @@ inline void global_decode_split_partial_body(
     }
 }
 
+template<uint PARTITIONS>
 inline void global_decode_split_merge_body(
     device const float *partials, device uchar *output, device const int *table,
     device const int *contexts, device const int *positions,
@@ -157,7 +161,7 @@ inline void global_decode_split_merge_body(
     float numerator[16];
     for (uint slot = 0; slot < 16u; ++slot) numerator[slot] = 0.0f;
     float maximum = -INFINITY, denominator = 0.0f;
-    for (uint part = 0; part < GLOBAL_SPLIT_PARTITIONS; ++part) {
+    for (uint part = 0; part < PARTITIONS; ++part) {
         size_t base = (size_t(part) * 16ul + head) * GLOBAL_SPLIT_STRIDE;
         float other_l = partials[base + 513u];
         if (other_l == 0.0f) continue;

@@ -1,0 +1,40 @@
+{
+  "schema": "rvllm.gemma4.split32-normal-route-smoke.v1",
+  "claim": "Normal-route dispatch, repeatability, and zero-compile-per-case evidence only; not a comparison or promotion result",
+  "candidate": "metal-global-d512-split-coopkey_r8k8p64t128s32",
+  "context_tokens": 256,
+  "raw_report_sha256": "ef903bbc8cf7d440bc3e07d57c54ea88cf8e62348fe224a807825e1294577e7d",
+  "raw_profile_sha256": "024203fa52fd529a4aa0a789aa6156a58a61734c310cb16804c77f76e9da03c1",
+  "raw_reports_ephemeral_path": "/tmp/rvllm-split32-fullroute",
+  "arena_bytes": 24718537248,
+  "prepare_library_compiles": 1,
+  "prepare_pipeline_state_compiles": 54,
+  "cases": [
+    {
+      "name": "pp256-decode2",
+      "generated_token_ids": [236770, 236770],
+      "library_compiles": 0,
+      "pipeline_state_compiles": 0,
+      "partial_dispatches": 16,
+      "merge_dispatches": 16,
+      "dispatch_overflowed": false,
+      "decode_ms": 707.614625,
+      "tok_per_s": 2.826397207378239
+    },
+    {
+      "name": "pp256-decode2-repeat",
+      "generated_token_ids": [236770, 236770],
+      "library_compiles": 0,
+      "pipeline_state_compiles": 0,
+      "partial_dispatches": 16,
+      "merge_dispatches": 16,
+      "dispatch_overflowed": false,
+      "decode_ms": 659.1302919999999,
+      "tok_per_s": 3.0343014488552744
+    }
+  ],
+  "profile_samples": 3,
+  "profile_median_prefill_ms": 40785.330541999996,
+  "profile_median_decode_ms": 1504.7179999999998,
+  "profile_median_tok_per_s": 2.6583054100502554
+}

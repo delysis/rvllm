@@ -12,7 +12,20 @@ pub const SPLIT_MAX_TOKENS: u32 = 4096;
 pub const SPLIT_PARTIAL_FLOATS: u32 = DIM + 2;
 pub const SPLIT_SCRATCH_BYTES: usize =
     (SPLIT_MAX_TOKENS as usize / 256) * HEADS as usize * SPLIT_PARTIAL_FLOATS as usize * 4;
+/// Wider reservation required only by the explicit split-32 research policy.
+pub const SPLIT32_SCRATCH_BYTES: usize = 32 * HEADS as usize * SPLIT_PARTIAL_FLOATS as usize * 4;
 pub const LIVE_LENGTHS: [u32; 5] = [256, 512, 1024, 2048, 4096];
+
+pub const fn model_scratch_bytes(candidate: crate::MetalResearchCandidate) -> usize {
+    if matches!(
+        candidate,
+        crate::MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32
+    ) {
+        SPLIT32_SCRATCH_BYTES
+    } else {
+        SPLIT_SCRATCH_BYTES
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DecodeTile {
@@ -284,13 +297,22 @@ pub struct SplitDecodeTile {
     pub panel: u32,
     pub threads: u32,
     pub simd_matrix: bool,
+    /// Fixed number of launched sufficient-statistic partitions. A zero
+    /// partition size divides the visible prefix evenly across these groups.
+    pub partitions: u32,
+    pub dynamic_partition: bool,
 }
 
 impl SplitDecodeTile {
     pub const fn supported(self) -> bool {
         self.rows == 8
             && matches!((self.keys, self.simd_matrix), (8, false) | (32, true))
-            && self.partition == 256
+            && ((self.partition == 256 && self.partitions == 16 && !self.dynamic_partition)
+                || (self.partition == 0
+                    && self.keys == 8
+                    && !self.simd_matrix
+                    && self.partitions == 32
+                    && self.dynamic_partition))
             && self.panel == 64
             && self.threads == 128
     }
@@ -315,6 +337,8 @@ pub const SPLIT_R8S256T128: SplitDecodeTile = SplitDecodeTile {
     panel: 64,
     threads: 128,
     simd_matrix: false,
+    partitions: 16,
+    dynamic_partition: false,
 };
 
 pub const SPLIT_MATRIX_R8K32S256T128: SplitDecodeTile = SplitDecodeTile {
@@ -324,6 +348,21 @@ pub const SPLIT_MATRIX_R8K32S256T128: SplitDecodeTile = SplitDecodeTile {
     panel: 64,
     threads: 128,
     simd_matrix: true,
+    partitions: 16,
+    dynamic_partition: false,
+};
+
+/// Matched attention-atlas prospective leader. The 32 groups partition the
+/// actually visible prefix, rather than launching fixed 256-token ranges.
+pub const SPLIT_COOP_KEY_R8K8P64T128S32: SplitDecodeTile = SplitDecodeTile {
+    rows: 8,
+    keys: 8,
+    partition: 0,
+    panel: 64,
+    threads: 128,
+    simd_matrix: false,
+    partitions: 32,
+    dynamic_partition: true,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -367,12 +406,17 @@ impl SplitDecodePlan {
         if capacity > SPLIT_MAX_TOKENS || capacity > i32::MAX as u32 {
             return None;
         }
-        let partial_count = SPLIT_MAX_TOKENS.div_ceil(tile.partition);
+        let partial_count = tile.partitions;
         let scratch_bytes = (HEADS as usize)
             .checked_mul(partial_count as usize)?
             .checked_mul(SPLIT_PARTIAL_FLOATS as usize)?
             .checked_mul(4)?;
-        if scratch_bytes != SPLIT_SCRATCH_BYTES {
+        let allowed = if tile.dynamic_partition {
+            SPLIT32_SCRATCH_BYTES
+        } else {
+            SPLIT_SCRATCH_BYTES
+        };
+        if scratch_bytes > allowed {
             return None;
         }
         let cache_bytes = (shape.num_blocks as usize)

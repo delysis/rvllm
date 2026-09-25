@@ -37,6 +37,7 @@ pub enum MetalResearchCandidate {
     GlobalD512R1P128T32,
     GlobalD512SplitR8S256T128,
     GlobalD512SplitMmaR8K32S256T128,
+    GlobalD512SplitCoopKeyR8K8P64T128S32,
     GlobalD512AtlasR16K16P64T128,
     GlobalD512AtlasR16K32P64T128,
     GlobalD512AtlasTileR16K16P64T128,
@@ -94,6 +95,9 @@ impl MetalResearchCandidate {
             }
             Self::GlobalD512SplitMmaR8K32S256T128 => {
                 Some(crate::attention_global_decode::SPLIT_MATRIX_R8K32S256T128)
+            }
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32 => {
+                Some(crate::attention_global_decode::SPLIT_COOP_KEY_R8K8P64T128S32)
             }
             _ => None,
         }
