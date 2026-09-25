@@ -1590,6 +1590,81 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "private ANE fused full-route bounded provisioning; at most 48 compiler calls"]
+    fn hardware_layer0_fused_attention_output_full_route_provision() {
+        use serde_json::json;
+        use std::io::Write;
+
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        assert_eq!(
+            compile_budget_used(),
+            0,
+            "provisioner requires a fresh process"
+        );
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let part = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_PROVISION_PART")
+            .expect("provision part required");
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_FULL_ROUTE_PROVISION_RECEIPT")
+                .expect("receipt path required"),
+        );
+        let mut receipt = std::fs::File::create_new(receipt_path).unwrap();
+        let entries = match part.as_str() {
+            "qkv" => provision_static_cache_with_capacity(
+                &model,
+                AneStaticCachePart::QueryKeyValue,
+                1024,
+            )
+            .unwrap(),
+            "output" => {
+                provision_static_cache_with_capacity(&model, AneStaticCachePart::Output, 1024)
+                    .unwrap()
+            }
+            "ffn-int8" => provision_static_cache_with_capacity(
+                &model,
+                AneStaticCachePart::FeedForwardInt8,
+                1024,
+            )
+            .unwrap(),
+            "vocab-attention" => provision_static_cache_with_capacity(
+                &model,
+                AneStaticCachePart::VocabularyAndAttention,
+                1024,
+            )
+            .unwrap(),
+            "fused-layer0" => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+                let weights = load_tensor(&tensors[&name]).unwrap();
+                let fused = AneAttentionOutputCompile::compile_layer(
+                    PackedAttentionLayout::sliding(16, 8, 256, 1024).unwrap(),
+                    &weights,
+                    HIDDEN,
+                    AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+                )
+                .unwrap();
+                drop((fused, weights, tensors));
+                1
+            }
+            _ => panic!("unknown fused full-route provision part {part}"),
+        };
+        let compiler_calls = compile_budget_used();
+        assert!(compiler_calls <= 48);
+        let report = json!({
+            "schema":"rvllm.gemma4_ane_fused_full_route_provision.v1",
+            "part":part,
+            "entries":entries,
+            "compiler_calls":compiler_calls,
+            "evaluation_calls":0,
+            "claim":"Bounded setup provisioning only; no correctness, timing, or promotion claim."
+        });
+        writeln!(receipt, "{report}").unwrap();
+        receipt.flush().unwrap();
+    }
+
+    #[test]
     #[ignore = "private ANE layer-0 fused full-route referee; exact-cache two-token baseline/candidate comparison, no timing claim"]
     fn hardware_layer0_fused_attention_output_full_route() {
         use super::two_token_reference::live_tests::{load_snapshot, signature};
@@ -1609,32 +1684,6 @@ mod tests {
         let mut receipt = std::fs::File::create_new(receipt_path).unwrap();
         let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
         assert_eq!(compile_budget_used(), 0, "referee requires a fresh process");
-        let mut provisioned_programs = 0;
-        for part in [
-            AneStaticCachePart::QueryKeyValue,
-            AneStaticCachePart::Output,
-            AneStaticCachePart::FeedForwardInt8,
-            AneStaticCachePart::VocabularyAndAttention,
-        ] {
-            provisioned_programs += provision_static_cache_with_capacity(&model, part, 1024)
-                .expect("full-route setup provisioning failed");
-        }
-        assert_eq!(provisioned_programs, 162);
-        let (arch, entries) = validated_weights(&model, 1024).unwrap();
-        let shape = layer_shape(&arch, 0);
-        assert_eq!(shape.sliding_window, Some(1024));
-        let output_name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
-        let output_weights = load_tensor(&entries[&output_name]).unwrap();
-        let fused = AneAttentionOutputCompile::compile_layer(
-            PackedAttentionLayout::sliding(16, 8, 256, 1024).unwrap(),
-            &output_weights,
-            HIDDEN,
-            AneProgramCachePolicy::ReuseOrCompileUpTo(1),
-        )
-        .expect("fused full-route setup provisioning failed");
-        drop((fused, output_weights, entries));
-        let setup_compiler_calls = compile_budget_used();
-        assert!(setup_compiler_calls <= 163);
         let compiler_calls_before = compile_budget_used();
 
         let run = |plan| {
@@ -1720,8 +1769,6 @@ mod tests {
             "compiler_calls_before":compiler_calls_before,
             "compiler_calls_after":compiler_calls_after,
             "compiler_calls_delta":0,
-            "setup_compiler_calls":setup_compiler_calls,
-            "setup_programs":163,
             "timing_claim":false,
             "promotion":false,
             "claim":"Two-token exact-cache full-route layer-0 fused correctness and dispatch evidence only."
