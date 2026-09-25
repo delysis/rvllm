@@ -42,3 +42,9 @@ The first isolation arm lowered every nested expression to explicit SSA values;
 ANEC still rejected it. Nested-expression syntax is therefore ruled out as the
 sole cause. The next bounded probes must test `reduce_sum` and `rsqrt`
 independently in otherwise minimal known-good graphs.
+
+Those minimal probes are now decisive: `reduce_sum` compiled, while `rsqrt`
+failed. The full graph's current blocker is therefore the ANEC `rsqrt` dialect,
+not reduction support. The next arm should replace it with a separately probed
+inverse-square-root formulation (for example `pow(x, -0.5)`) before rebuilding
+the full graph; numerical equivalence still requires device evidence.
