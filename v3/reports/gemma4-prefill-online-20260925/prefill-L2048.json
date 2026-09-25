@@ -1,12 +1,72 @@
 {
-  "schema": "rvllm.gemma4.prefill_advancement.v1",
+  "after": [
+    "g4-prefill-online-conventional-L1024"
+  ],
+  "command": {
+    "args": [
+      "--ignored",
+      "--exact",
+      "layer_forward::prefill_attention_tests::simd_prefill_checks_causality_pages_windows_and_fp64_reference",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "env": {
+      "RVLLM_METAL_PREFILL_LENGTH": "2048",
+      "RVLLM_METAL_PREFILL_ATTENTION_REPORT": "{output}/receipt.json"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/deps/rvllm_apple_metal-938ddf1012a82a45",
+      "sha256": "d7764035ae2efcc30f97d48fe3727aa27784a81d2bf55f3d5420e58e64af1cf1"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_disaggregated_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
   "id": "g4-prefill-online-conventional-L2048",
-  "candidate": "research_gemma4_prefill_tiled_online_bf16",
-  "arm": "conventional_tiled_online_softmax",
-  "tokens": 2048,
-  "default_off": true,
-  "after": ["g4-prefill-online-conventional-L1024"],
-  "requires_predecessor": {"correctness": "pass", "speed_gate": "pass"},
-  "boundaries": {"qkv": "external_bf16", "output_projection": "external_bf16"},
-  "next": null
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/crates/rvllm-apple-metal/src/prefill_attention_candidate.rs",
+      "sha256": "bf2988a9c6283ccf351018bcb5105ddda7e9ac3b6d14f7a5f7cacb22046d1e08"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/crates/rvllm-apple-metal/src/prefill_attention_tests.rs",
+      "sha256": "e70f9210e73713f745ce06c4f771d0c8107a24d8dcf708b5200972cea6c7c1ad"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 7200,
+  "max_wait_seconds": 86400,
+  "purpose": "exploratory_timing",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0,
+  "validator": {
+    "args": [
+      "{output}/receipt.json",
+      "2048",
+      "d7764035ae2efcc30f97d48fe3727aa27784a81d2bf55f3d5420e58e64af1cf1"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm-prefill-receipt-validate",
+      "sha256": "48418acb8032ed90994b17e7256aa69f477682388d7bfb126391efcb3a2c365c"
+    }
+  }
 }

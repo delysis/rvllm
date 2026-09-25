@@ -1,8 +1,8 @@
 # Gemma 4 Metal prefill online-softmax candidate
 
-This packet is preparation only. No accelerator command was run and no shared
-queue state was changed. The candidate is default-off and is not connected to
-`layer_forward`.
+This packet contains sealed `rvllm.experiment_job.v1` device-referee jobs. They
+have not been submitted or run, and no shared queue state was changed. The
+candidate is default-off and is not connected to the shipping selector.
 
 The conventional arm has explicit external BF16 QKV and O boundaries, FP32
 online-softmax state, 64-key panels, causal/window/page-hole handling, and a
@@ -14,8 +14,8 @@ TensorOps is explicitly deferred: this checkout has no stable queried Metal
 TensorOps ABI. GPU-family inference is intentionally insufficient and there is
 no ANE claim or silent fallback.
 
-Run the 256-token manifest only after compiling the exact source and device
-referee. Advance in order to 512, 1024, and 2048 only if the preceding receipt
-passes correctness, untouched guards, bitwise repeat, generated-code identity,
-and the declared initial speed gate. QKV, attention, and O timings must be
-reported separately.
+The 256-token manifest pins a release test executable and strict release
+validator by SHA-256. It JIT-compiles and dispatches the candidate and incumbent
+SIMD control, then validates the independent FP64 comparisons, tails, holes,
+guards, repeatability, source/executable identity and public PSO resource
+fields. The 512, 1024, and 2048 jobs form a strict predecessor chain.
