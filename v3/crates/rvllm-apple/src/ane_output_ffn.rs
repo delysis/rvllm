@@ -49,19 +49,13 @@ impl AneOutputFfnSource {
             .ok_or("ANE output/FFN input width overflow")?;
         let input_bytes = io_bytes(input_channels)?;
         let output_bytes = io_bytes(hidden)?;
-        let (blob, constants) =
-            ffn.output_ffn_blob_and_constants(output_weights, attention_width)?;
-        let post_gamma = fp16_literal(post_attention_gamma);
-        let pre_gamma = fp16_literal(pre_ffn_gamma);
-        let mil = output_ffn_mil(
-            hidden,
+        let (blob, constants) = ffn.output_ffn_blob_and_constants(
+            output_weights,
             attention_width,
-            intermediate,
-            epsilon,
-            &constants,
-            &post_gamma,
-            &pre_gamma,
-        );
+            post_attention_gamma,
+            pre_ffn_gamma,
+        )?;
+        let mil = output_ffn_mil(hidden, attention_width, intermediate, epsilon, &constants);
         let identity = AneOutputFfnIdentity {
             mil_sha256: hex_sha256(mil.as_bytes()),
             weight_blob_sha256: hex_sha256(&blob),
@@ -142,14 +136,6 @@ fn io_bytes(channels: usize) -> Result<usize, String> {
         .ok_or_else(|| "ANE output/FFN I/O shape is empty or exceeds 4 GiB".into())
 }
 
-fn fp16_literal(values: &[f16]) -> String {
-    values
-        .iter()
-        .map(|v| format!("{}", v.to_f32()))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 fn hex_sha256(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -161,8 +147,6 @@ fn output_ffn_mil(
     intermediate: usize,
     epsilon: f32,
     weights: &str,
-    post_gamma: &str,
-    pre_gamma: &str,
 ) -> String {
     let input = hidden + attention;
     format!(
@@ -179,9 +163,7 @@ fn output_ffn_mil(
         tensor<int32, [2]> ones2 = const()[val = tensor<int32, [2]>([1, 1])];
         tensor<int32, [4]> zeros4 = const()[val = tensor<int32, [4]>([0, 0, 0, 0])];
         int32 groups = const()[val = int32(1)];
-{weights}        tensor<fp16, [1, {hidden}, 1, 1]> post_gamma = const()[val = tensor<fp16, [1, {hidden}, 1, 1]>([{post_gamma}])];
-        tensor<fp16, [1, {hidden}, 1, 1]> pre_gamma = const()[val = tensor<fp16, [1, {hidden}, 1, 1]>([{pre_gamma}])];
-        tensor<int32, [3]> norm_axes = const()[val = tensor<int32, [3]>([1, 2, 3])];
+{weights}        tensor<int32, [3]> norm_axes = const()[val = tensor<int32, [3]>([1, 2, 3])];
         bool keep_dims = const()[val = bool(true)];
         fp16 norm_mean = const()[val = fp16({norm_mean})];
         fp16 norm_epsilon = const()[val = fp16({epsilon})];
@@ -261,7 +243,7 @@ mod tests {
         assert!(!source.mil.contains("rsqrt("));
         assert!(!source.mil.contains("layer_norm("));
         assert_eq!(source.mil.matches("constexpr_affine_dequantize").count(), 3);
-        assert_eq!(source.blob[..4], 7_u32.to_le_bytes());
+        assert_eq!(source.blob[..4], 9_u32.to_le_bytes());
         assert!(AneOutputFfnSource::build(
             &[],
             a,
@@ -425,8 +407,9 @@ mod tests {
         let ffn =
             AneInt8FfnWeights::quantize(&dense, &dense, &dense, hidden, intermediate).unwrap();
         let output = vec![f16::from_f32(0.02); hidden * attention];
+        let gamma = vec![f16::ONE; hidden];
         let (blob, weights) = ffn
-            .output_ffn_blob_and_constants(&output, attention)
+            .output_ffn_blob_and_constants(&output, attention, &gamma, &gamma)
             .unwrap();
         let input = hidden + attention;
         let mil = format!(

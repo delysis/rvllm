@@ -233,6 +233,8 @@ impl AneInt8FfnWeights {
         &self,
         output: &[f16],
         output_input: usize,
+        post_attention_gamma: &[f16],
+        pre_ffn_gamma: &[f16],
     ) -> Result<(Vec<u8>, String), String> {
         let output_count = self
             .hidden
@@ -242,9 +244,18 @@ impl AneInt8FfnWeights {
         let output_bytes = output_count
             .checked_mul(2)
             .ok_or("ANE output/FFN output projection size overflow")?;
+        if post_attention_gamma.len() != self.hidden || pre_ffn_gamma.len() != self.hidden {
+            return Err("ANE output/FFN gamma shape mismatch".into());
+        }
+        let gamma_bytes = self
+            .hidden
+            .checked_mul(4)
+            .and_then(|bytes| bytes.checked_add(128))
+            .ok_or("ANE output/FFN gamma size overflow")?;
         let capacity = self
             .source_blob_bytes()
             .checked_add(64 + output_bytes)
+            .and_then(|bytes| bytes.checked_add(gamma_bytes))
             .ok_or("ANE output/FFN blob size overflow")?;
         if capacity > u32::MAX as usize {
             return Err("ANE output/FFN blob exceeds 4 GiB".into());
@@ -252,7 +263,7 @@ impl AneInt8FfnWeights {
 
         let mut blob = Vec::with_capacity(capacity);
         blob.resize(64, 0);
-        blob[..4].copy_from_slice(&7_u32.to_le_bytes());
+        blob[..4].copy_from_slice(&9_u32.to_le_bytes());
         blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
         let output_offset = append_descriptor(&mut blob, 1, output_bytes);
         for weight in output {
@@ -272,6 +283,19 @@ impl AneInt8FfnWeights {
             let (rows, columns) = (matrix.rows, matrix.columns);
             constants.push_str(&format!(
                 "        tensor<fp16, [{rows}, {columns}, 1, 1]> {name} = constexpr_affine_dequantize()[axis = int32(0), name = string(\"{name}\"), quantized_data = tensor<int8, [{rows}, {columns}, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({q_offset}))), scale = tensor<fp16, [{rows}]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({scale_offset}))), zero_point = int8(0)];\n"
+            ));
+        }
+        for (gamma, name) in [
+            (post_attention_gamma, "post_gamma"),
+            (pre_ffn_gamma, "pre_gamma"),
+        ] {
+            let offset = append_descriptor(&mut blob, 1, gamma.len() * 2);
+            for value in gamma {
+                blob.extend_from_slice(&value.to_le_bytes());
+            }
+            constants.push_str(&format!(
+                "        tensor<fp16, [1, {}, 1, 1]> {name} = const()[name = string(\"{name}\"), val = tensor<fp16, [1, {}, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({offset})))];\n",
+                self.hidden, self.hidden
             ));
         }
         debug_assert_eq!(blob.len(), capacity);
@@ -898,9 +922,12 @@ mod tests {
         let output: Vec<_> = (0..32 * 48)
             .map(|i| f16::from_f32((i % 17) as f32 / 16.0 - 0.5))
             .collect();
-        let (mixed, constants) = weights.output_ffn_blob_and_constants(&output, 48).unwrap();
-        assert_eq!(&mixed[..4], &7_u32.to_le_bytes());
-        assert_eq!(constants.matches("BLOBFILE").count(), 7);
+        let gamma = vec![f16::ONE; 32];
+        let (mixed, constants) = weights
+            .output_ffn_blob_and_constants(&output, 48, &gamma, &gamma)
+            .unwrap();
+        assert_eq!(&mixed[..4], &9_u32.to_le_bytes());
+        assert_eq!(constants.matches("BLOBFILE").count(), 9);
         assert_eq!(constants.matches("constexpr_affine_dequantize").count(), 3);
         let mut descriptor = 64 + 64 + output.len() * 2;
         for matrix in &weights.matrices {
@@ -916,10 +943,24 @@ mod tests {
             assert_eq!(&mixed[descriptor + 4..descriptor + 8], &1_u32.to_le_bytes());
             descriptor += 64 + matrix.scales.len() * 2;
         }
+        for expected in [&gamma, &gamma] {
+            assert_eq!(&mixed[descriptor + 4..descriptor + 8], &1_u32.to_le_bytes());
+            let data = descriptor + 64;
+            let bytes = &mixed[data..data + expected.len() * 2];
+            for (actual, expected) in bytes.chunks_exact(2).zip(expected) {
+                assert_eq!(f16::from_le_bytes([actual[0], actual[1]]), *expected);
+            }
+            descriptor = data + expected.len() * 2;
+        }
         assert_eq!(descriptor, mixed.len());
         assert!(weights
-            .output_ffn_blob_and_constants(&output[..output.len() - 1], 48)
+            .output_ffn_blob_and_constants(&output[..output.len() - 1], 48, &gamma, &gamma)
             .is_err());
-        assert!(weights.output_ffn_blob_and_constants(&output, 0).is_err());
+        assert!(weights
+            .output_ffn_blob_and_constants(&output, 0, &gamma, &gamma)
+            .is_err());
+        assert!(weights
+            .output_ffn_blob_and_constants(&output, 48, &gamma[..31], &gamma)
+            .is_err());
     }
 }

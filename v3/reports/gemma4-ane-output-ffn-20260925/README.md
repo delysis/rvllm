@@ -77,3 +77,10 @@ interaction with the mixed graph or its learned-gamma multiplications, not a
 simple ANEC limit on repeated reductions or inverse square roots. The next arm
 adds two learned gamma tensors to the accepted dual-RMS probe before testing
 each norm boundary around the mixed convolution core.
+
+The dual-RMS probe with inline learned-gamma tensor constants failed. This
+matches the full graph's remaining failure and isolates the unsupported form:
+large inline FP16 tensor constants, rather than RMS arithmetic or the mixed
+convolution core. The graph now serializes both gamma tensors into the sealed
+weight blob and binds them through the already accepted `BLOBFILE` constant
+form. The next clean-tree compile probe tests that corrected representation.
