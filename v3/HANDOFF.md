@@ -15,8 +15,10 @@ local qualification.
   exact dispatch, repeated output, and zero-compile checks, but **is not
   promotable**. Complete normal-route speedups versus split-matrix were
   1.149x/1.861x at L256, 1.015x/1.019x at L512, 0.737x/1.155x at L1024, and
-  0.794x/0.683x at L2048. The short-context signal is unstable and becomes a
-  repeatable long-context regression. Raw reports and condition journals are
+  0.794x/0.683x at L2048. Separate three-sample profile medians instead report
+  0.967x, 1.017x, 1.113x, and 1.140x respectively. The disagreement in
+  direction at L256 and L2048 proves material cross-process/order variance;
+  neither favorable subset may be selected. Raw reports and condition journals are
   checked in at
   `reports/gemma4-split32-normal-route-20260925/`.
 - Native-BF16 Metal W4/W8 projection baseline: all seven roles (Q/K/V/O,
@@ -48,8 +50,11 @@ local qualification.
    arms to bounded prefill M and full-route tests.
 2. Attention: retain split-matrix as control. Do not promote split-32 or build a
    selector from its operator-only numbers. Investigate why its full-route
-   L2048 prefill and decode regress despite isolated-kernel wins, with command
+   route measurements disagree despite isolated-kernel wins, with command
    submission, scratch, synchronization, partial, and merge time separated.
+   The next full-route comparison must execute a predeclared counterbalanced
+   route order inside one queue job; separate control-then-candidate jobs are
+   diagnostic only.
 3. Prefill: implement a separate tiled online-softmax experiment and an
    explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
    policy or call TensorOps ANE evidence.

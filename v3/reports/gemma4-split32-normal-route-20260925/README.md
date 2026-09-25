@@ -35,26 +35,29 @@ IDs across the control, candidate, and repeated cases. Each control case
 recorded exactly 16 split-matrix research dispatches. Each candidate case
 recorded exactly 16 split-32 partial and 16 split-32 merge dispatches.
 
-| Context | Control decode ms | Split-32 decode ms | Paired speedups | Decision |
-|---:|---:|---:|---:|---|
-| 256 | 745.359 / 729.342 | 648.565 / 391.863 | 1.149x / 1.861x | repeat-unstable |
-| 512 | 993.260 / 886.426 | 978.889 / 869.883 | 1.015x / 1.019x | below 5% margin |
-| 1024 | 1330.547 / 1248.162 | 1806.287 / 1080.298 | 0.737x / 1.155x | direction reversal |
-| 2048 | 779.656 / 784.985 | 981.366 / 1149.849 | 0.794x / 0.683x | repeatable regression |
+| Context | Control decode ms | Split-32 decode ms | Session speedups | Profile-median speedup | Decision |
+|---:|---:|---:|---:|---:|---|
+| 256 | 745.359 / 729.342 | 648.565 / 391.863 | 1.149x / 1.861x | 0.967x | contradictory |
+| 512 | 993.260 / 886.426 | 978.889 / 869.883 | 1.015x / 1.019x | 1.017x | below 5% margin |
+| 1024 | 1330.547 / 1248.162 | 1806.287 / 1080.298 | 0.737x / 1.155x | 1.113x | direction reversal |
+| 2048 | 779.656 / 784.985 | 981.366 / 1149.849 | 0.794x / 0.683x | 1.140x | contradictory |
 
 Disposition: **not promotable**. Split-32 is a useful research arm and remains
 correctness-qualified, but it is not a production selector candidate on this
-evidence. Its apparent short-context advantage does not survive the complete
-normal route at long context, and the L1024 repeat reverses direction. The
-split-matrix route remains the stable qualified implementation.
+evidence. The separately executed session cases and three-sample profile
+medians disagree in direction at L256 and L2048, while the L1024 session
+repeats disagree with each other. This exposes material cross-process and run
+order variance. The split-matrix route remains the stable qualified
+implementation; a subsequent full-route comparison must counterbalance route
+order within one queue job before making a speed claim.
 
 The L1024 control queue receipt logged one missing activity observation and
 therefore marked `sampled_conditions_eligible=false`; it still completed as an
 exploratory timing job, as required by the campaign policy. All other arms had
 eligible sampled conditions. This condition observation does not rescue the
-candidate: the clean L2048 pair independently shows two substantial
-regressions. Conditions were recorded rather than used as a thermal-stability
-wait gate.
+candidate: the clean L2048 session cases regress while their companion profile
+median improves, so neither may be selected as the favorable truth. Conditions
+were recorded rather than used as a thermal-stability wait gate.
 
 Raw session and profile JSON is retained under `results/`. Exact queue reports
 and condition journals are retained under `queue-receipts/`; no failed or
