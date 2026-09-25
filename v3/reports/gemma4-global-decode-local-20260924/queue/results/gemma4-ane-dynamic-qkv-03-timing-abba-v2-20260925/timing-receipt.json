@@ -1,0 +1,1692 @@
+{
+  "baseline_median_ms_per_token": 1795.438651,
+  "baseline_range_drift_fraction": 0.02717956276030198,
+  "baseline_route": {
+    "fused_evaluations": 1200,
+    "plan": "all-sliding-fused-cached",
+    "qkv_evaluations": 1440,
+    "separate_attention_evaluations": 240,
+    "separate_output_evaluations": 240
+  },
+  "baseline_weight_plan": "static-int8-ffn-cached",
+  "candidate_median_ms_per_token": 1860.4026666250002,
+  "candidate_range_drift_fraction": 0.03903659248783553,
+  "candidate_route": {
+    "fused_evaluations": 1200,
+    "plan": "all-sliding-fused-cached",
+    "qkv_evaluations": 1440,
+    "separate_attention_evaluations": 240,
+    "separate_output_evaluations": 240
+  },
+  "candidate_weight_plan": "dynamic-qkv-static-int8-ffn-cached",
+  "claim": "Exploratory exact-cache full-route timing for an explicit default-off fused route. Independent opposite-order confirmation and longer stability remain required.",
+  "compiler_calls_after_load": 0,
+  "compiler_calls_after_timing": 0,
+  "compiler_calls_during_warmup_and_timing": 0,
+  "decoder_lifetime": "one exact-cache decoder per observation; load excluded from timing",
+  "dynamic_qkv_cache_identity": {
+    "compiled_programs": 2,
+    "global_mil_sha256": "fc15573ddf23f4cdb1c9dcb95fe1a4278e1bf41257ffc9cbc26133f99950ba47",
+    "replaced_per_layer_programs": 48,
+    "sliding_mil_sha256": "66954bcee5542f20d1fa2f328cb3f45c17472f6d9a91fc1bd9c52b8b3ce4ad8b"
+  },
+  "expected_outputs": [
+    {
+      "position": 84,
+      "token": 3730,
+      "top_five_bits": [
+        [
+          3730,
+          1093656576
+        ],
+        [
+          37423,
+          3242795008
+        ],
+        [
+          9595,
+          3243368448
+        ],
+        [
+          861,
+          3243565056
+        ],
+        [
+          16045,
+          3244048384
+        ]
+      ]
+    },
+    {
+      "position": 85,
+      "token": 37423,
+      "top_five_bits": [
+        [
+          37423,
+          1098629120
+        ],
+        [
+          7184,
+          3236151296
+        ],
+        [
+          3673,
+          3238182912
+        ],
+        [
+          17615,
+          3238576128
+        ],
+        [
+          6938,
+          3239542784
+        ]
+      ]
+    },
+    {
+      "position": 86,
+      "token": 38167,
+      "top_five_bits": [
+        [
+          38167,
+          1094262784
+        ],
+        [
+          32694,
+          3238699008
+        ],
+        [
+          532,
+          3238772736
+        ],
+        [
+          1164,
+          3239321600
+        ],
+        [
+          9212,
+          3239583744
+        ]
+      ]
+    },
+    {
+      "position": 87,
+      "token": 1024,
+      "top_five_bits": [
+        [
+          1024,
+          1099587584
+        ],
+        [
+          855,
+          3230007296
+        ],
+        [
+          41970,
+          3238256640
+        ],
+        [
+          49081,
+          3238379520
+        ],
+        [
+          237464,
+          3238641664
+        ]
+      ]
+    }
+  ],
+  "expected_warmup_output": {
+    "position": 84,
+    "token": 3730,
+    "top_five_bits": [
+      [
+        3730,
+        1093656576
+      ],
+      [
+        37423,
+        3242795008
+      ],
+      [
+        9595,
+        3243368448
+      ],
+      [
+        861,
+        3243565056
+      ],
+      [
+        16045,
+        3244048384
+      ]
+    ]
+  },
+  "measured_observations_per_route": 6,
+  "measured_tokens_per_observation": 4,
+  "measured_tokens_total_per_route": 24,
+  "median_baseline_over_candidate": 0.9650806694752524,
+  "observations": [
+    {
+      "arm": "baseline",
+      "batch_elapsed_ms": 7169.9803329999995,
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 75.96354224999999,
+        "ffn": 566.92928325,
+        "fused_attention_output": 405.45325875000003,
+        "host": 11.536109500000002,
+        "output": 80.44207324999999,
+        "qkv": 480.18222175,
+        "scope": "per-token mean within measured batch",
+        "total": 1792.44441675,
+        "vocabulary": 171.937928
+      },
+      "elapsed_ms_per_token": 1792.4950832499999,
+      "index": 0,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "candidate",
+      "batch_elapsed_ms": 7450.2875,
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 76.1694065,
+        "ffn": 570.94605375,
+        "fused_attention_output": 402.36325049999994,
+        "host": 9.266853000000062,
+        "output": 80.05705275,
+        "qkv": 559.22956075,
+        "scope": "per-token mean within measured batch",
+        "total": 1862.56510425,
+        "vocabulary": 164.532927
+      },
+      "elapsed_ms_per_token": 1862.571875,
+      "index": 1,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "candidate",
+      "batch_elapsed_ms": 7232.960333,
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 72.6936665,
+        "ffn": 550.02938525,
+        "fused_attention_output": 390.2383435,
+        "host": 9.134927250000018,
+        "output": 77.80637499999999,
+        "qkv": 543.87257325,
+        "scope": "per-token mean within measured batch",
+        "total": 1808.23530175,
+        "vocabulary": 164.46003100000001
+      },
+      "elapsed_ms_per_token": 1808.24008325,
+      "index": 2,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "baseline",
+      "batch_elapsed_ms": 7130.634292,
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 75.82238475,
+        "ffn": 565.6852692499999,
+        "fused_attention_output": 398.02813525000005,
+        "host": 10.676947750000146,
+        "output": 80.03751125,
+        "qkv": 481.7824810000001,
+        "scope": "per-token mean within measured batch",
+        "total": 1782.65331225,
+        "vocabulary": 170.62058299999998
+      },
+      "elapsed_ms_per_token": 1782.658573,
+      "index": 3,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "candidate",
+      "batch_elapsed_ms": 7373.663166,
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 73.113885,
+        "ffn": 562.6038562499999,
+        "fused_attention_output": 396.79878,
+        "host": 10.659143250000092,
+        "output": 78.94427024999999,
+        "qkv": 556.45102175,
+        "scope": "per-token mean within measured batch",
+        "total": 1843.4091355,
+        "vocabulary": 164.83817900000003
+      },
+      "elapsed_ms_per_token": 1843.4157915,
+      "index": 4,
+      "order": "BAAB",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "baseline",
+      "batch_elapsed_ms": 7309.239,
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 78.13355174999998,
+        "ffn": 573.6599174999999,
+        "fused_attention_output": 411.88610525,
+        "host": 9.749531249999912,
+        "output": 82.35976,
+        "qkv": 492.57618625000003,
+        "scope": "per-token mean within measured batch",
+        "total": 1827.30413525,
+        "vocabulary": 178.93908325
+      },
+      "elapsed_ms_per_token": 1827.30975,
+      "index": 5,
+      "order": "BAAB",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "baseline",
+      "batch_elapsed_ms": 7115.83375,
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 74.83833275,
+        "ffn": 561.4933752500001,
+        "fused_attention_output": 400.07131374999994,
+        "host": 11.300903000000034,
+        "output": 80.10601,
+        "qkv": 478.96552275000005,
+        "scope": "per-token mean within measured batch",
+        "total": 1778.9527187499998,
+        "vocabulary": 172.17726125
+      },
+      "elapsed_ms_per_token": 1778.9584375,
+      "index": 6,
+      "order": "BAAB",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "candidate",
+      "batch_elapsed_ms": 7496.265084,
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 76.9700735,
+        "ffn": 563.1401975,
+        "fused_attention_output": 408.4731235,
+        "host": 9.163863250000041,
+        "output": 81.46295875,
+        "qkv": 561.9587614999999,
+        "scope": "per-token mean within measured batch",
+        "total": 1874.0607605,
+        "vocabulary": 172.89178250000003
+      },
+      "elapsed_ms_per_token": 1874.066271,
+      "index": 7,
+      "order": "BAAB",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "baseline",
+      "batch_elapsed_ms": 7193.528875,
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 74.98519850000001,
+        "ffn": 573.0399275,
+        "fused_attention_output": 404.22304075,
+        "host": 10.810043249999964,
+        "output": 80.4683015,
+        "qkv": 485.446634,
+        "scope": "per-token mean within measured batch",
+        "total": 1798.3742917499999,
+        "vocabulary": 169.40114624999998
+      },
+      "elapsed_ms_per_token": 1798.38221875,
+      "index": 8,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "candidate",
+      "batch_elapsed_ms": 7515.310458,
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 75.20476024999999,
+        "ffn": 566.95629125,
+        "fused_attention_output": 404.61000850000005,
+        "host": 10.660356250000135,
+        "output": 80.17621925,
+        "qkv": 564.2765414999999,
+        "scope": "per-token mean within measured batch",
+        "total": 1878.82079175,
+        "vocabulary": 176.93661475
+      },
+      "elapsed_ms_per_token": 1878.8276145,
+      "index": 9,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "candidate",
+      "batch_elapsed_ms": 7432.933833,
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 74.52315675,
+        "ffn": 564.3305102500001,
+        "fused_attention_output": 399.13044700000006,
+        "host": 12.754803500000044,
+        "output": 78.63911525,
+        "qkv": 553.7866134999999,
+        "scope": "per-token mean within measured batch",
+        "total": 1858.22266675,
+        "vocabulary": 175.0580205
+      },
+      "elapsed_ms_per_token": 1858.23345825,
+      "index": 10,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    },
+    {
+      "arm": "baseline",
+      "batch_elapsed_ms": 7217.649791000001,
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 76.1338435,
+        "ffn": 574.0517827500001,
+        "fused_attention_output": 402.64079175000006,
+        "host": 9.433604499999909,
+        "output": 83.26691650000001,
+        "qkv": 483.67923874999997,
+        "scope": "per-token mean within measured batch",
+        "total": 1804.40869775,
+        "vocabulary": 175.20252
+      },
+      "elapsed_ms_per_token": 1804.4124477500002,
+      "index": 11,
+      "order": "ABBA",
+      "outputs": [
+        {
+          "position": 84,
+          "token": 3730,
+          "top_five_bits": [
+            [
+              3730,
+              1093656576
+            ],
+            [
+              37423,
+              3242795008
+            ],
+            [
+              9595,
+              3243368448
+            ],
+            [
+              861,
+              3243565056
+            ],
+            [
+              16045,
+              3244048384
+            ]
+          ]
+        },
+        {
+          "position": 85,
+          "token": 37423,
+          "top_five_bits": [
+            [
+              37423,
+              1098629120
+            ],
+            [
+              7184,
+              3236151296
+            ],
+            [
+              3673,
+              3238182912
+            ],
+            [
+              17615,
+              3238576128
+            ],
+            [
+              6938,
+              3239542784
+            ]
+          ]
+        },
+        {
+          "position": 86,
+          "token": 38167,
+          "top_five_bits": [
+            [
+              38167,
+              1094262784
+            ],
+            [
+              32694,
+              3238699008
+            ],
+            [
+              532,
+              3238772736
+            ],
+            [
+              1164,
+              3239321600
+            ],
+            [
+              9212,
+              3239583744
+            ]
+          ]
+        },
+        {
+          "position": 87,
+          "token": 1024,
+          "top_five_bits": [
+            [
+              1024,
+              1099587584
+            ],
+            [
+              855,
+              3230007296
+            ],
+            [
+              41970,
+              3238256640
+            ],
+            [
+              49081,
+              3238379520
+            ],
+            [
+              237464,
+              3238641664
+            ]
+          ]
+        }
+      ],
+      "tokens": 4
+    }
+  ],
+  "outputs_exact": true,
+  "promotion": false,
+  "schema": "rvllm.gemma4_ane_fused_attention_output_full_route_timing.v2",
+  "sequence": "ABBA/BAAB/ABBA",
+  "snapshot_sha256": "0b096c565cc841ee625081d23b1752af0590c25c8f48554451e97e1fb7140ee8",
+  "state_reset": "identical sealed prefill imported outside every timed interval",
+  "status": "measured",
+  "timed_scope": "bounded dependent-token batch from embedding through vocabulary ranking; reported latency is batch wall time divided by token count",
+  "warmup_tokens_per_arm": 1
+}
