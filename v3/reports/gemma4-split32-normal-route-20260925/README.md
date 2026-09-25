@@ -23,3 +23,39 @@ one library and 54 pipelines, while both inference cases recorded zero compiler
 calls and 16 partial plus 16 merge dispatches each. The smoke is route evidence,
 not a speed comparison; the staged candidate/control jobs provide that next
 measurement.
+
+## Completed normal-route campaign
+
+The staged campaign was executed through the existing experiment queue in
+shortest-context-first order. The L512, L1024, and L2048 pairs were submitted
+only after the preceding pair retained exact output and a plausible candidate
+signal. Every arm exited successfully, left its pinned inputs unchanged,
+compiled no library or pipeline during inference, and produced identical token
+IDs across the control, candidate, and repeated cases. Each control case
+recorded exactly 16 split-matrix research dispatches. Each candidate case
+recorded exactly 16 split-32 partial and 16 split-32 merge dispatches.
+
+| Context | Control decode ms | Split-32 decode ms | Paired speedups | Decision |
+|---:|---:|---:|---:|---|
+| 256 | 745.359 / 729.342 | 648.565 / 391.863 | 1.149x / 1.861x | repeat-unstable |
+| 512 | 993.260 / 886.426 | 978.889 / 869.883 | 1.015x / 1.019x | below 5% margin |
+| 1024 | 1330.547 / 1248.162 | 1806.287 / 1080.298 | 0.737x / 1.155x | direction reversal |
+| 2048 | 779.656 / 784.985 | 981.366 / 1149.849 | 0.794x / 0.683x | repeatable regression |
+
+Disposition: **not promotable**. Split-32 is a useful research arm and remains
+correctness-qualified, but it is not a production selector candidate on this
+evidence. Its apparent short-context advantage does not survive the complete
+normal route at long context, and the L1024 repeat reverses direction. The
+split-matrix route remains the stable qualified implementation.
+
+The L1024 control queue receipt logged one missing activity observation and
+therefore marked `sampled_conditions_eligible=false`; it still completed as an
+exploratory timing job, as required by the campaign policy. All other arms had
+eligible sampled conditions. This condition observation does not rescue the
+candidate: the clean L2048 pair independently shows two substantial
+regressions. Conditions were recorded rather than used as a thermal-stability
+wait gate.
+
+Raw session and profile JSON is retained under `results/`. Exact queue reports
+and condition journals are retained under `queue-receipts/`; no failed or
+unfavorable observation was discarded.
