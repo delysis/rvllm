@@ -160,6 +160,20 @@ fn compile(source: &Path, directory: &Path) -> Result {
 fn id(config: &Value, candidate: MetalResearchCandidate, suffix: &str) -> Result<String> {
     let campaign = config["campaign"].as_str().ok_or("campaign missing")?;
     if let Some(tile) = candidate.global_decode_tile() {
+        if tile.keys != 8 || tile.per_tile_softmax {
+            return Ok(format!(
+                "{campaign}-r{}k{}p{}t{}{}-{suffix}",
+                tile.rows,
+                tile.keys,
+                tile.panel,
+                tile.threads,
+                if tile.per_tile_softmax {
+                    "-tile"
+                } else {
+                    "-key"
+                }
+            ));
+        }
         Ok(format!(
             "{campaign}-r{}p{}t{}-{suffix}",
             tile.rows, tile.panel, tile.threads
@@ -958,6 +972,26 @@ mod tests {
         assert!(validate_selected(&["not-a-candidate".to_owned()]).is_err());
         let duplicate = "metal-global-d512-r1p128t32".to_owned();
         assert!(validate_selected(&[duplicate.clone(), duplicate]).is_err());
+    }
+
+    #[test]
+    fn atlas_schedule_ids_do_not_alias_the_k8_control_or_each_other() {
+        let config = json!({"campaign":"test"});
+        let names = [
+            "metal-global-d512-r16p64t128",
+            "metal-global-d512-atlas_r16k16p64t128",
+            "metal-global-d512-atlas_r16k32p64t128",
+            "metal-global-d512-atlas_tile_r16k16p64t128",
+            "metal-global-d512-atlas_tile_r16k32p64t128",
+        ];
+        let ids = names
+            .into_iter()
+            .map(|name| {
+                let candidate = name.parse::<MetalResearchCandidate>().unwrap();
+                id(&config, candidate, "oracle").unwrap()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(ids.len(), names.len());
     }
 
     #[test]
