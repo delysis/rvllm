@@ -2335,7 +2335,26 @@ pub unsafe fn metal_encode_forward_layer(
         && weights.per_layer_projection_offset.is_some()
         && weights.post_per_layer_input_norm_offset.is_some();
     let mut layer_scale_fused = false;
-    let rounded_gate = low_bit_gate_up.is_none()
+    let decode_gateup = low_bit_gate_up.is_none()
+        && supports_research_decode_gateup(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            trace.is_some(),
+            buf.length(),
+        )
+        && try_encode_research_decode_gateup(
+            cmd_buf,
+            pipelines,
+            buf,
+            dims,
+            weights,
+            scratch,
+        )?;
+    let rounded_gate = !decode_gateup
+        && low_bit_gate_up.is_none()
         && supports_research_rounded_gate(
             pipelines,
             dims,
@@ -2377,7 +2396,7 @@ pub unsafe fn metal_encode_forward_layer(
             two_inter,
             dims.intermediate,
         )?;
-    } else if !rounded_gate {
+    } else if !rounded_gate && !decode_gateup {
         encode_gemm_with_output(
             &cmd_buf,
             pipelines,
@@ -2406,7 +2425,7 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    if !rounded_gate {
+    if !rounded_gate && !decode_gateup {
         encode_gelu_mul(
             &cmd_buf,
             pipelines,
