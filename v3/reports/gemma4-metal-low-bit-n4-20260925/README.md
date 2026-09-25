@@ -16,7 +16,17 @@ Current evidence:
 - Strict schedule parsing and distinct ABI/kernel-name tests pass.
 - Generated BF16 MSL compiles and links under Metal 3.1.
 
-This is compiler and host-contract evidence only. Real Gemma weight
-correctness, guards, repeatability, timing, seven-role coverage, full-route
+The initial implementation checkpoint contained compiler and host-contract
+evidence only. The first real-weight screen below adds one-role operator
+evidence; seven-role coverage, independent timing confirmation, full-route
 performance and checkpoint-quality acceptance remain required before any
 promotion claim.
+
+## First real-weight screen
+
+The layer-0 Q projection passed W4/W8 at M=1 and M=4 against the independent
+CPU quantized reference, including guards, bitwise repeatability, exact route
+counts and strict `n4` kernel identity. Screen speedups against the native BF16
+GEMM were W4 M1 **1.142x**, W4 M4 **1.405x**, W8 M1 **0.802x**, and W8 M4
+**1.097x**. These are single-screen observations, not stable winners. The
+remaining six roles are staged for the same shortest-first screen.

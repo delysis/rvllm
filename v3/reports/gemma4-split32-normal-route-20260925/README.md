@@ -115,3 +115,14 @@ and L512 does not support promotion. A bounded L1024 diagnostic remains
 justified by the earlier 1.113x profile-median signal and the expectation that
 partitioning can cross over only after attention work grows; it is not an
 automatic advancement claim.
+
+At L1024, A/B/B/A reported 0.979x and B/A/A/B reported 1.068x. Combining
+the eight measured observations gives control 1246.538 ms and split-32
+1200.992 ms, or **1.038x**. Both arms still contain large outliers; their
+max/min ratios are 1.877 and 2.223. The B/A/A/B queue receipt also recorded
+the deliberately tolerated Cargo activity and one unavailable power sample.
+
+Disposition: **inconclusive and below margin at L1024**. Together with the
+L512 result, this rejects split-32 as a current selector candidate despite its
+repeatable L256 win. Do not spend the larger L2048 campaign budget on this
+schedule without a new overhead or synchronization hypothesis.

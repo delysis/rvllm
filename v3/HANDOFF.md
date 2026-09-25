@@ -69,9 +69,10 @@ local qualification.
    At L512 the A/B/B/A and B/A/A/B orders disagreed at 0.708x and 1.048x.
    Their combined eight-observation median is only 1.025x, with >2.4x ranges
    in both arms, so L512 is inconclusive and below margin. A bounded L1024
-   diagnostic is still warranted by the earlier 1.113x profile-median signal
-   and plausible long-context crossover; shipping selection still requires
-   complete evidence across the intended selector range.
+   L1024 likewise disagreed at 0.979x and 1.068x; its combined result is only
+   1.038x with >1.8x ranges. Split-32 is therefore rejected as a current
+   selector candidate beyond its repeatable L256 win. Do not run L2048 without
+   a new overhead or synchronization hypothesis.
 3. Prefill: implement a separate tiled online-softmax experiment and an
    explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
    policy or call TensorOps ANE evidence.
