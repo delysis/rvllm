@@ -154,7 +154,7 @@ fn job(
     let value = json!({"schema":"rvllm.experiment_job.v1","id":job_id,"purpose":purpose,
         "command":{"executable":pin(executable)?,"cwd":root,"args":args,"env":env},
         "inputs":inputs,"after":after,"conditions":config["conditions"],
-        "stable_seconds":30,"max_wait_seconds":7200,"max_run_seconds":3600});
+        "stable_seconds":0,"max_wait_seconds":7200,"max_run_seconds":3600});
     json_new(&root.join("jobs").join(format!("{job_id}.json")), &value)
 }
 fn source_path(root: &Path, c: MetalResearchCandidate, flavor: &str) -> PathBuf {
@@ -199,7 +199,8 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
         "queue":queue,"test_executable":pin(test)?,"job_generator":pin(&executable)?,
         "abba_retainer":pin(&retainer)?,"exploratory":exploratory,
         "conditions":policy,"conditions_input":pin(conditions)?,
-        "lengths":[256,512,1024,2048,4096],"split_kv":false,"local_prefill":false,
+        "lengths":[256,512,1024,2048],"deferred_confirmation_lengths":[4096],
+        "split_kv":false,"local_prefill":false,
         "promotion":false,"status":"proposed_unqualified"});
     json_new(&root.join("campaign.json"), &config)?;
     let mut all = Vec::new();
@@ -333,7 +334,7 @@ fn generate(root: &Path, timing: bool) -> Result {
             }
         }
         let lengths: Vec<Option<u32>> = if timing {
-            [256, 512, 1024, 2048, 4096].map(Some).to_vec()
+            [256, 512, 1024, 2048].map(Some).to_vec()
         } else {
             vec![None]
         };

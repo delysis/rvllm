@@ -140,8 +140,10 @@ impl Job {
             || c.thermal_state.is_some_and(|state| state > 3)
             || !c.disk_path.is_absolute()
             || !c.disk_path.is_dir()
-            || !(1..=600).contains(&self.stable_seconds)
-            || self.max_wait_seconds < self.stable_seconds
+            // Retained in v1 manifests for compatibility. Zero is the
+            // preferred policy: sample readiness immediately and record
+            // changing conditions instead of waiting for a stable stratum.
+            || self.stable_seconds > 600
             || self.max_wait_seconds > 86400
             || !(1..=3600).contains(&self.max_run_seconds)
             || c.quiet_process_names
@@ -697,16 +699,11 @@ fn execute(
                 job.id
             ));
         }
-        Ok(gate.observe(
-            &current,
-            &job.conditions,
-            Instant::now(),
-            Duration::from_secs(job.stable_seconds),
-        ))
+        Ok(gate.observe(&current, &job.conditions, Instant::now(), Duration::ZERO))
     };
-    // Hashing can exceed the 2.5-second observation budget. Keep sampling
-    // the SAME stable gate while the scoped verifier runs, then join it.
-    // A fresh equal-valued sample alone cannot bridge an unobserved gap.
+    // Hashing can exceed the observation freshness budget. Keep sampling
+    // readiness while the scoped verifier runs, then join it. No condition
+    // dwell is required; every sampled transition remains in the receipts.
     if !super::prelaunch::verify(
         || job.verify_files().map_err(|e| e.to_string()),
         &mut observe,
@@ -927,7 +924,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 &observation,
                 &job.conditions,
                 Instant::now(),
-                Duration::from_secs(job.stable_seconds),
+                Duration::ZERO,
             ) {
                 selected = Some(job);
                 break;
@@ -1151,6 +1148,30 @@ mod tests {
             &conditions(),
             now + needed + Duration::from_secs(1),
             needed
+        ));
+    }
+
+    #[test]
+    fn zero_window_accepts_each_ready_snapshot_immediately() {
+        let mut gate = StableGate::new();
+        let now = Instant::now();
+        let mut probe = json!({"ready":true,"power":observation()});
+        assert!(gate.observe(&probe, &conditions(), now, Duration::ZERO));
+
+        probe["power"]["sample"]["controls"]["thermal_state"] = json!(1);
+        assert!(gate.observe(
+            &probe,
+            &conditions(),
+            now + Duration::from_secs(30),
+            Duration::ZERO,
+        ));
+
+        probe["ready"] = json!(false);
+        assert!(!gate.observe(
+            &probe,
+            &conditions(),
+            now + Duration::from_secs(31),
+            Duration::ZERO,
         ));
     }
 
