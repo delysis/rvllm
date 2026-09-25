@@ -226,6 +226,69 @@ kernel void projection_w8a16_f16(
     }
 }
 
+// Experimental native-BF16 activation/output ABI.  The quantizer's group-32
+// scales intentionally remain FP16: they are package metadata, not activation
+// tensors, and retaining their established two-byte encoding permits an
+// isolated A-dtype experiment without silently changing quantized weights.
+// Accumulation and the SIMD reduction remain FP32; only the projection input
+// and its single storage-rounding output boundary are BF16.
+kernel void experimental_projection_w4abf16_bf16(
+    device const bfloat *A         [[buffer(0)]],
+    device const uchar  *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n = output.x;
+    uint m = output.y;
+    if (m >= M || n >= N) return;
+    uint packed_row_bytes = (K + 1u) >> 1u;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float partial = 0.0f;
+    for (uint k = uint(lane); k < K; k += 32u) {
+        uchar packed = W[n * packed_row_bytes + (k >> 1u)];
+        int q = int((k & 1u) == 0u ? (packed & 0x0fu) : (packed >> 4u));
+        q = q >= 8 ? q - 16 : q;
+        float scale = float(scales[n * groups_per_row + (k >> 5u)]);
+        partial += float(A[m * K + k]) * (float(q) * scale);
+    }
+    float total = simd_sum(partial);
+    if (lane == 0) C[m * C_stride + C_column + n] = bfloat(total);
+}
+
+kernel void experimental_projection_w8abf16_bf16(
+    device const bfloat *A         [[buffer(0)]],
+    device const char   *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n = output.x;
+    uint m = output.y;
+    if (m >= M || n >= N) return;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float partial = 0.0f;
+    for (uint k = uint(lane); k < K; k += 32u) {
+        int q = int(W[n * K + k]);
+        float scale = float(scales[n * groups_per_row + (k >> 5u)]);
+        partial += float(A[m * K + k]) * (float(q) * scale);
+    }
+    float total = simd_sum(partial);
+    if (lane == 0) C[m * C_stride + C_column + n] = bfloat(total);
+}
+
 constant uint TILE_M = 8;
 constant uint TILE_N = 8;
 constant uint TILE16 = 16;
@@ -2800,6 +2863,8 @@ pub const KERNEL_NAMES: &[&str] = &[
     "gemm_f16_simdgroup8x8",
     "projection_w4a16_f16",
     "projection_w8a16_f16",
+    "experimental_projection_w4abf16_bf16",
+    "experimental_projection_w8abf16_bf16",
     "gemm_rmsnorm_f16",
     "gemm_headwise_rmsnorm_f16",
     "gemm_headwise_rmsnorm_unit_f16",
@@ -6186,7 +6251,7 @@ mod tests {
         let source = bfloat_kernel_source(false);
         let start = source.find("kernel void projection_w4a16_f16").unwrap();
         let end = source[start..]
-            .find("constant uint TILE_M")
+            .find("kernel void experimental_projection_w4abf16_bf16")
             .map(|relative| start + relative)
             .unwrap();
         let low_bit = &source[start..end];
@@ -6194,6 +6259,29 @@ mod tests {
         assert!(low_bit.contains("device const half  *scales"));
         assert!(low_bit.contains("device half        *C"));
         assert!(!low_bit.contains("bfloat"));
+    }
+
+    #[test]
+    fn experimental_low_bit_bf16_abi_is_explicit_and_keeps_f16_scales() {
+        let source = bfloat_kernel_source(false);
+        for name in [
+            "experimental_projection_w4abf16_bf16",
+            "experimental_projection_w8abf16_bf16",
+        ] {
+            let start = source
+                .find(&format!("kernel void {name}"))
+                .expect("experimental BF16 kernel is present");
+            let tail = &source[start..];
+            let end = tail[1..]
+                .find("kernel void ")
+                .map_or(tail.len(), |relative| relative + 1);
+            let kernel = &tail[..end];
+            assert!(kernel.contains("device const bfloat *A"));
+            assert!(kernel.contains("device const half   *scales"));
+            assert!(kernel.contains("device bfloat       *C"));
+            assert!(kernel.contains("float partial = 0.0f"));
+            assert!(kernel.contains("float total = simd_sum(partial)"));
+        }
     }
 
     #[test]

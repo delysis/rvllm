@@ -287,6 +287,15 @@ impl MetalLowBitProjectionOffsets {
         }
     }
 
+    /// Separately named experimental native-BF16 activation/output kernel.
+    #[must_use]
+    pub const fn experimental_bf16_kernel_name(self) -> &'static str {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => "experimental_projection_w4abf16_bf16",
+            AppleLowBitWeightFormat::W8A16 => "experimental_projection_w8abf16_bf16",
+        }
+    }
+
     /// Encode `C[M,N] = A[M,K] * W[N,K]^T` with every tensor in one arena.
     pub fn encode(
         self,
@@ -322,6 +331,64 @@ impl MetalLowBitProjectionOffsets {
         m: usize,
         output_row_stride: usize,
         output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            self.kernel_name(),
+        )
+    }
+
+    /// Encode the experimental native-BF16 activation/output ABI.
+    ///
+    /// Activations and output are IEEE BF16 bit patterns. Quantization scales
+    /// deliberately retain the package's FP16 group-32 representation, and
+    /// accumulation remains FP32. This separately named entry point prevents
+    /// a caller from silently binding BF16 buffers to the production A16/F16
+    /// ABI merely because both element types occupy two bytes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            self.experimental_bf16_kernel_name(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn encode_strided_with_kernel(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+        kernel_name: &'static str,
     ) -> LowBitMetalResult<()> {
         if m == 0 {
             return Err(LowBitMetalError::ZeroBatch);
@@ -409,7 +476,7 @@ impl MetalLowBitProjectionOffsets {
             });
         }
 
-        let pipeline = pipelines.get(self.kernel_name())?;
+        let pipeline = pipelines.get(kernel_name)?;
         let encoder = command_buffer
             .computeCommandEncoder()
             .ok_or(LowBitMetalError::CommandEncoderUnavailable)?;
@@ -695,6 +762,34 @@ mod tests {
                 right: "FP16 scales"
             })
         ));
+    }
+
+    #[test]
+    fn bf16_candidate_names_cannot_alias_the_a16_abi() {
+        for format in [
+            AppleLowBitWeightFormat::W4A16,
+            AppleLowBitWeightFormat::W8A16,
+        ] {
+            let descriptor = MetalLowBitProjectionOffsets::new_for_role(
+                AppleLowBitTensorRole::QueryProjection,
+                format,
+                2,
+                32,
+                0,
+                match format {
+                    AppleLowBitWeightFormat::W4A16 => 32,
+                    AppleLowBitWeightFormat::W8A16 => 64,
+                },
+                64,
+                4,
+            )
+            .unwrap();
+            assert_ne!(
+                descriptor.kernel_name(),
+                descriptor.experimental_bf16_kernel_name()
+            );
+            assert!(descriptor.experimental_bf16_kernel_name().contains("abf16"));
+        }
     }
     use crate::arena::MetalBufferArena;
     use crate::kernels::KERNEL_SOURCE;

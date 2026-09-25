@@ -1,0 +1,299 @@
+{
+  "abi": {
+    "accumulation": "F32",
+    "activation": "BF16",
+    "output": "BF16",
+    "scales": "F16"
+  },
+  "cases": [
+    {
+      "accuracy": {
+        "max_abs": 0.00390625,
+        "relative_l2": 0.0008400084336290365
+      },
+      "dispatch": {
+        "candidate_abi": "W4ABF16",
+        "exact_correctness_dispatches_verified": 2,
+        "exact_timing_dispatch_count_verified": true,
+        "format": "w4a16",
+        "role": "query_projection",
+        "timing_dispatches": 11
+      },
+      "guard_unchanged": true,
+      "identity": {
+        "activations_bf16le_sha256": "d9c334fd86c5af2733f638dff1c5556d202cac1df30493fcc2e056de0cdf2f82",
+        "cpu_low_bit_reference_bf16le_sha256": "47b293d51bb90019dbe240d80e001eb09835f3c0b1200ed4b9ad1131132e5d50",
+        "packed_values_sha256": "0ece3593a548c164dd0ac38c58b143429f7b802eebca97a7e38088f044dd2b37",
+        "scales_f16le_sha256": "1f3c1869918cfa85b420ccd1ffd6d40dee56ca5f25b2452393b63fb5bf9cf06e"
+      },
+      "k": 3840,
+      "m": 1,
+      "n": 4096,
+      "native_accuracy": {
+        "max_abs": 0.00006103515625,
+        "relative_l2": 4.7492781971483316e-6
+      },
+      "repeatable_output_bits": true,
+      "timing": {
+        "accumulation_dtype": "F32",
+        "activation_dtype": "BF16",
+        "candidate_kernel": "experimental_projection_w4abf16_bf16",
+        "candidate_median_ms": 0.19808299999999998,
+        "candidate_ms": [
+          0.5525410000000001,
+          0.395417,
+          0.423709,
+          2.680625,
+          0.196458,
+          0.19808299999999998,
+          0.193292,
+          0.190667,
+          0.18770799999999999,
+          0.18729099999999999
+        ],
+        "method": "ABBA wall-clock commit-to-completion",
+        "native_kernel": "gemm_f16_vec8 compiled as typed BF16",
+        "native_median_ms": 0.357458,
+        "native_ms": [
+          0.403292,
+          1.090208,
+          0.35425,
+          0.448208,
+          0.40108299999999997,
+          0.357458,
+          0.297333,
+          0.292625,
+          0.287458,
+          0.295958
+        ],
+        "native_weight_conversion": "none",
+        "output_dtype": "BF16",
+        "samples_per_arm": 10,
+        "scale_dtype": "F16",
+        "speedup": 1.804586966069779
+      }
+    },
+    {
+      "accuracy": {
+        "max_abs": 0.0078125,
+        "relative_l2": 0.0007942617381869826
+      },
+      "dispatch": {
+        "candidate_abi": "W4ABF16",
+        "exact_correctness_dispatches_verified": 2,
+        "exact_timing_dispatch_count_verified": true,
+        "format": "w4a16",
+        "role": "query_projection",
+        "timing_dispatches": 11
+      },
+      "guard_unchanged": true,
+      "identity": {
+        "activations_bf16le_sha256": "6b34aede1670cac0aa2663b19805eda4b1e75a3709ad3e65332bd04c11d8c77f",
+        "cpu_low_bit_reference_bf16le_sha256": "8da4b58ed1b19fc278350e532e8d7f340744bfa271e5a799b95dfd243e4d5afa",
+        "packed_values_sha256": "0ece3593a548c164dd0ac38c58b143429f7b802eebca97a7e38088f044dd2b37",
+        "scales_f16le_sha256": "1f3c1869918cfa85b420ccd1ffd6d40dee56ca5f25b2452393b63fb5bf9cf06e"
+      },
+      "k": 3840,
+      "m": 4,
+      "n": 4096,
+      "native_accuracy": {
+        "max_abs": 0.00006103515625,
+        "relative_l2": 2.3157226534647776e-6
+      },
+      "repeatable_output_bits": true,
+      "timing": {
+        "accumulation_dtype": "F32",
+        "activation_dtype": "BF16",
+        "candidate_kernel": "experimental_projection_w4abf16_bf16",
+        "candidate_median_ms": 0.603041,
+        "candidate_ms": [
+          4.126834000000001,
+          0.482375,
+          2.031333,
+          0.47175,
+          4.508,
+          2.601042,
+          0.518,
+          0.53475,
+          0.603041,
+          0.445583
+        ],
+        "method": "ABBA wall-clock commit-to-completion",
+        "native_kernel": "gemm_f16_vec8 compiled as typed BF16",
+        "native_median_ms": 2.432833,
+        "native_ms": [
+          1.095,
+          1.147667,
+          1.373333,
+          3.529583,
+          1.038084,
+          0.9919169999999999,
+          4.064667,
+          2.603542,
+          2.432833,
+          3.283125
+        ],
+        "native_weight_conversion": "none",
+        "output_dtype": "BF16",
+        "samples_per_arm": 10,
+        "scale_dtype": "F16",
+        "speedup": 4.034274618143708
+      }
+    },
+    {
+      "accuracy": {
+        "max_abs": 0.00390625,
+        "relative_l2": 0.000902058069093503
+      },
+      "dispatch": {
+        "candidate_abi": "W8ABF16",
+        "exact_correctness_dispatches_verified": 2,
+        "exact_timing_dispatch_count_verified": true,
+        "format": "w8a16",
+        "role": "query_projection",
+        "timing_dispatches": 11
+      },
+      "guard_unchanged": true,
+      "identity": {
+        "activations_bf16le_sha256": "d9c334fd86c5af2733f638dff1c5556d202cac1df30493fcc2e056de0cdf2f82",
+        "cpu_low_bit_reference_bf16le_sha256": "691ea59654a9b253cec41e423f31ff375bc4850951b92e68904dcb3fa7cf399b",
+        "packed_values_sha256": "600c63869cc001faa5499d012696d158df4b1f0289cfba24f48bf13fc79455fb",
+        "scales_f16le_sha256": "4671bf06fd20ab67ce8efee09d2af31f8a1488e90fa8238af4650d06a05e2ff0"
+      },
+      "k": 3840,
+      "m": 1,
+      "n": 4096,
+      "native_accuracy": {
+        "max_abs": 0.00006103515625,
+        "relative_l2": 4.7492781971483316e-6
+      },
+      "repeatable_output_bits": true,
+      "timing": {
+        "accumulation_dtype": "F32",
+        "activation_dtype": "BF16",
+        "candidate_kernel": "experimental_projection_w8abf16_bf16",
+        "candidate_median_ms": 1.7605,
+        "candidate_ms": [
+          1.202916,
+          1.6305,
+          0.444167,
+          1.7605,
+          0.43825,
+          5.700292,
+          10.329208,
+          1.895625,
+          4.646875,
+          0.614959
+        ],
+        "method": "ABBA wall-clock commit-to-completion",
+        "native_kernel": "gemm_f16_vec8 compiled as typed BF16",
+        "native_median_ms": 1.033709,
+        "native_ms": [
+          0.990708,
+          1.2249999999999999,
+          1.155375,
+          0.723875,
+          0.780375,
+          0.731333,
+          2.378959,
+          1.033709,
+          3.182333,
+          0.616083
+        ],
+        "native_weight_conversion": "none",
+        "output_dtype": "BF16",
+        "samples_per_arm": 10,
+        "scale_dtype": "F16",
+        "speedup": 0.5871678500426015
+      }
+    },
+    {
+      "accuracy": {
+        "max_abs": 0.00390625,
+        "relative_l2": 0.0008718626757136663
+      },
+      "dispatch": {
+        "candidate_abi": "W8ABF16",
+        "exact_correctness_dispatches_verified": 2,
+        "exact_timing_dispatch_count_verified": true,
+        "format": "w8a16",
+        "role": "query_projection",
+        "timing_dispatches": 11
+      },
+      "guard_unchanged": true,
+      "identity": {
+        "activations_bf16le_sha256": "6b34aede1670cac0aa2663b19805eda4b1e75a3709ad3e65332bd04c11d8c77f",
+        "cpu_low_bit_reference_bf16le_sha256": "c41e8f5d53c83665d51b1acb0ff99abe3203ea6080dedde1d21c0b06402a923c",
+        "packed_values_sha256": "600c63869cc001faa5499d012696d158df4b1f0289cfba24f48bf13fc79455fb",
+        "scales_f16le_sha256": "4671bf06fd20ab67ce8efee09d2af31f8a1488e90fa8238af4650d06a05e2ff0"
+      },
+      "k": 3840,
+      "m": 4,
+      "n": 4096,
+      "native_accuracy": {
+        "max_abs": 0.00006103515625,
+        "relative_l2": 2.3157226534647776e-6
+      },
+      "repeatable_output_bits": true,
+      "timing": {
+        "accumulation_dtype": "F32",
+        "activation_dtype": "BF16",
+        "candidate_kernel": "experimental_projection_w8abf16_bf16",
+        "candidate_median_ms": 2.0255,
+        "candidate_ms": [
+          1.679958,
+          0.67225,
+          0.6432500000000001,
+          2.641458,
+          2.75225,
+          2.0255,
+          0.6789580000000001,
+          2.20675,
+          2.096667,
+          0.404209
+        ],
+        "method": "ABBA wall-clock commit-to-completion",
+        "native_kernel": "gemm_f16_vec8 compiled as typed BF16",
+        "native_median_ms": 2.3222910000000003,
+        "native_ms": [
+          1.019333,
+          1.456,
+          2.3222910000000003,
+          2.3229159999999998,
+          2.882083,
+          2.440958,
+          1.536667,
+          1.788459,
+          5.324084,
+          1.455958
+        ],
+        "native_weight_conversion": "none",
+        "output_dtype": "BF16",
+        "samples_per_arm": 10,
+        "scale_dtype": "F16",
+        "speedup": 1.1465272772155024
+      }
+    }
+  ],
+  "claim": "real checkpoint projection operator evidence only; not full-route or model-quality evidence",
+  "compile_counts": {
+    "metal_libraries": 1,
+    "pipeline_states": 3
+  },
+  "config_sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9",
+  "executable_sha256": "f0e44fa198634f865fb3ab72ddb8fb27c9c05e246ecc629cc918998408cb1171",
+  "generated_msl_sha256": "a9aa9ea629a5bda62f8d0292e841b3e62a0868b4dac71324759a4dc7fd4557f9",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "schema": "rvllm.metal_low_bit_real_weight_bf16.v1",
+  "shape": [
+    4096,
+    3840
+  ],
+  "source_dtype": "Bf16",
+  "source_file": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+  "source_file_offset": 2448873346,
+  "source_tensor_bytes": 31457280,
+  "source_tensor_sha256": "3ae6a6f7f56408ec8fc7a78ec9cb9d29054af0a717cf92552af09591f63d6444",
+  "tensor": "model.language_model.layers.0.self_attn.q_proj.weight",
+  "tensor_role": "query_projection"
+}

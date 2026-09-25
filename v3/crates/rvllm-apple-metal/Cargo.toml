@@ -19,6 +19,9 @@ default = []
 metal-stage-instrumentation = []
 # Explicit operator experiments; never part of the shipping selector.
 attention-atlas-research = ["dep:serde"]
+# Opt-in, device-only referee for authenticated real checkpoint projection
+# tensors. It is deliberately excluded from normal builds and dispatch.
+low-bit-real-weight-research = []
 
 [dependencies]
 rvllm-core = { workspace = true }
@@ -58,3 +61,8 @@ objc2-metal = { version = "0.3", features = [
 name = "rvllm-attention-atlas"
 path = "src/bin/rvllm-attention-atlas.rs"
 required-features = ["attention-atlas-research"]
+
+[[bin]]
+name = "rvllm-low-bit-real-weight"
+path = "src/bin/rvllm-low-bit-real-weight.rs"
+required-features = ["low-bit-real-weight-research"]
