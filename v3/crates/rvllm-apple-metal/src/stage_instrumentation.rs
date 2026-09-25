@@ -204,21 +204,27 @@ fn build_receipt(
     sampling: SamplingMode,
 ) -> Value {
     let mut totals = std::collections::BTreeMap::<&'static str, u64>::new();
+    let mut valid_span_count = 0usize;
     let stages = spans
         .iter()
         .map(|span| {
             let start = timestamps[span.begin].timestamp;
             let end = timestamps[span.end].timestamp;
-            let duration_ns =
-                if start != COUNTER_ERROR_VALUE && end != COUNTER_ERROR_VALUE && end >= start {
-                    Some(end - start)
-                } else {
-                    None
-                };
+            let invalid_reason = if start == COUNTER_ERROR_VALUE || end == COUNTER_ERROR_VALUE {
+                Some("counter_error_value")
+            } else if start == 0 || end == 0 {
+                Some("zero_timestamp")
+            } else if end <= start {
+                Some("non_increasing_timestamp")
+            } else {
+                None
+            };
+            let duration_ns = invalid_reason.is_none().then(|| end - start);
             if let Some(duration_ns) = duration_ns {
+                valid_span_count += 1;
                 *totals.entry(span.stage.name()).or_default() += duration_ns;
             }
-            json!({"stage": span.stage.name(), "gpu_duration_ns": duration_ns})
+            json!({"stage": span.stage.name(), "gpu_duration_ns": duration_ns, "invalid_reason": invalid_reason, "raw_start_timestamp": start, "raw_end_timestamp": end})
         })
         .collect::<Vec<_>>();
     json!({
@@ -226,6 +232,9 @@ fn build_receipt(
             "clock": "MTLCommonCounterSetTimestamp",
             "sampling_point": match sampling { SamplingMode::StageBoundary => "compute_stage_boundary", SamplingMode::DispatchBoundary => "compute_dispatch_boundary" },
             "barriered": matches!(sampling, SamplingMode::DispatchBoundary),
+            "status": if valid_span_count == spans.len() { "measured" } else if valid_span_count == 0 { "unsupported" } else { "partial" },
+            "valid_span_count": valid_span_count,
+            "invalid_span_count": spans.len() - valid_span_count,
             "totals_gpu_duration_ns": totals,
             "stages": stages,
             "caveats": [
@@ -271,6 +280,38 @@ mod tests {
         assert_eq!(receipt["schema"], "rvllm.metal_stage_timing.v1");
         assert_eq!(receipt["stages"][0]["gpu_duration_ns"], 20);
         assert!(receipt["stages"][1]["gpu_duration_ns"].is_null());
+        assert_eq!(
+            receipt["stages"][1]["invalid_reason"],
+            "counter_error_value"
+        );
+        assert_eq!(receipt["status"], "partial");
+    }
+
+    #[test]
+    fn zero_and_equal_timestamps_are_never_reported_as_measurements() {
+        let spans = [
+            Span {
+                stage: MetalStage::Embedding,
+                begin: 0,
+                end: 1,
+            },
+            Span {
+                stage: MetalStage::LmHead,
+                begin: 2,
+                end: 3,
+            },
+        ];
+        let samples = [0, 0, 42, 42].map(|timestamp| MTLCounterResultTimestamp { timestamp });
+        let receipt = build_receipt(&spans, &samples, SamplingMode::StageBoundary);
+        assert_eq!(receipt["status"], "unsupported");
+        assert!(receipt["stages"][0]["gpu_duration_ns"].is_null());
+        assert_eq!(receipt["stages"][0]["invalid_reason"], "zero_timestamp");
+        assert!(receipt["stages"][1]["gpu_duration_ns"].is_null());
+        assert_eq!(
+            receipt["stages"][1]["invalid_reason"],
+            "non_increasing_timestamp"
+        );
+        assert_eq!(receipt["totals_gpu_duration_ns"], serde_json::json!({}));
     }
 
     #[test]
@@ -317,5 +358,11 @@ mod tests {
         command_buffer.waitUntilCompleted();
         let receipt = unsafe { profiler.receipt() }.expect("timestamp receipt");
         assert_eq!(receipt["stages"][0]["stage"], "embedding");
+        let duration = &receipt["stages"][0]["gpu_duration_ns"];
+        assert!(duration.is_null() || duration.as_u64().is_some_and(|value| value > 0));
+        if duration.is_null() {
+            assert_eq!(receipt["status"], "unsupported");
+            assert!(receipt["stages"][0]["invalid_reason"].is_string());
+        }
     }
 }
