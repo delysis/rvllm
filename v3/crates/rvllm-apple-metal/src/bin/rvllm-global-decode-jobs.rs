@@ -4,6 +4,7 @@
 use rvllm_apple_metal::{MetalFloatType, MetalKernelOptions, MetalResearchCandidate};
 use serde_json::{json, Value};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     io::Write,
     path::{Path, PathBuf},
     process::Command,
@@ -19,6 +20,24 @@ fn write(path: &Path, bytes: &[u8]) -> Result {
 }
 fn json_new(path: &Path, value: &Value) -> Result {
     write(path, &serde_json::to_vec_pretty(value)?)
+}
+fn json_new_or_identical(path: &Path, value: &Value) -> Result {
+    let bytes = serde_json::to_vec_pretty(value)?;
+    match std::fs::File::create_new(path) {
+        Ok(mut file) => {
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            if read(path)? == *value {
+                Ok(())
+            } else {
+                Err(format!("immutable artifact differs: {}", path.display()).into())
+            }
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 fn read(path: &Path) -> Result<Value> {
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)
@@ -169,7 +188,48 @@ fn job(
         "command":{"executable":pin(executable)?,"cwd":root,"args":args,"env":env},
         "inputs":inputs,"after":after,"conditions":config["conditions"],
         "stable_seconds":0,"max_wait_seconds":7200,"max_run_seconds":3600});
-    json_new(&root.join("jobs").join(format!("{job_id}.json")), &value)
+    json_new_or_identical(&root.join("jobs").join(format!("{job_id}.json")), &value)
+}
+
+fn advancement_id(config: &Value, length: u32) -> Result<String> {
+    Ok(format!(
+        "{}-advance-L{length}",
+        config["campaign"].as_str().ok_or("campaign missing")?
+    ))
+}
+
+fn advancement_job(
+    config: &Value,
+    root: &Path,
+    length: u32,
+    stage_jobs: &[String],
+    expected: &[String],
+) -> Result<String> {
+    let job_id = advancement_id(config, length)?;
+    let executable = absolute(
+        config["job_generator"]["path"]
+            .as_str()
+            .ok_or("job generator missing")?,
+    )?;
+    let mut args = vec![
+        "advance".into(),
+        root.to_string_lossy().into_owned(),
+        length.to_string(),
+        "{output}".into(),
+    ];
+    args.extend(expected.iter().cloned());
+    job(
+        config,
+        root,
+        &job_id,
+        "preparation",
+        &executable,
+        args,
+        json!({}),
+        vec![pin(&root.join("campaign.json"))?],
+        stage_jobs.to_vec(),
+    )?;
+    Ok(job_id)
 }
 fn source_path(root: &Path, c: MetalResearchCandidate, flavor: &str) -> PathBuf {
     root.join(format!("{}-{flavor}.metal", c.name()))
@@ -202,6 +262,10 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
     std::fs::create_dir(root)?;
     std::fs::create_dir(root.join("jobs"))?;
     let executable = std::env::current_exe()?;
+    let queue_runner = executable
+        .parent()
+        .ok_or("generator has no parent directory")?
+        .join("rvllm_experiment_queue");
     let retainer = executable
         .parent()
         .ok_or("generator has no parent directory")?
@@ -211,6 +275,7 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
         || policy["thermal_state"].is_null();
     let config = json!({"schema":"rvllm.global-decode.campaign.v1","campaign":campaign,
         "queue":queue,"test_executable":pin(test)?,"job_generator":pin(&executable)?,
+        "queue_runner":pin(&queue_runner)?,
         "abba_retainer":pin(&retainer)?,"exploratory":exploratory,
         "conditions":policy,"conditions_input":pin(conditions)?,
         "screen_length":256,"advancement_lengths":[512,1024,2048],
@@ -416,12 +481,320 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         || "oracle-jobs.json".to_owned(),
         |length| format!("timing-jobs-L{length}.json"),
     );
-    json_new(&root.join(output), &json!(all))
+    if let Some(length) = timing_length {
+        let expected = candidates()
+            .into_iter()
+            .filter(|candidate| {
+                selected.is_empty() || selected.iter().any(|name| name == candidate.name())
+            })
+            .map(|candidate| candidate.name().to_owned())
+            .collect::<Vec<_>>();
+        let advance = advancement_job(&config, root, length, &all, &expected)?;
+        all.push(advance);
+    }
+    json_new_or_identical(&root.join(output), &json!(all))
+}
+
+#[derive(Debug, Clone)]
+struct StageScore {
+    candidate: String,
+    candidate_ms_per_dispatch: f64,
+    control_drift_passed: bool,
+    receipt_path: PathBuf,
+    receipt_sha256: String,
+    queue_report_path: PathBuf,
+    queue_report_sha256: String,
+}
+
+fn score_stage_cell(
+    root: &Path,
+    queue: &Path,
+    config: &Value,
+    length: u32,
+    candidate_name: &str,
+) -> Result<StageScore> {
+    let candidate = candidates()
+        .into_iter()
+        .find(|candidate| candidate.name() == candidate_name)
+        .ok_or("unknown advancement candidate")?;
+    let job_id = id(config, candidate, &format!("abba-L{length}"))?;
+    let result = queue.join("results").join(&job_id);
+    let queue_report_path = result.join("report.json");
+    let queue_report = read(&queue_report_path)?;
+    if queue_report["schema"] != "rvllm.experiment_result.v1"
+        || queue_report["id"] != job_id
+        || queue_report["status"] != "succeeded"
+        || queue_report["files_unchanged"] != true
+    {
+        return Err(format!(
+            "stage queue result is not successful and immutable: {candidate_name}"
+        )
+        .into());
+    }
+    let receipt_path = result.join("native/abba.json");
+    let receipt = read(&receipt_path)?;
+    let source = source_path(root, candidate, "core");
+    let compile_id = id(config, candidate, "compile-core")?;
+    let build_dir = succeeded(queue, &compile_id)?.join("build");
+    let library = build_dir.join("kernel.metallib");
+    let build_path = build_dir.join("build.json");
+    let oracle_id = id(config, candidate, "oracle")?;
+    let oracle_path = succeeded(queue, &oracle_id)?.join("native/oracle.json");
+    let oracle = read(&oracle_path)?;
+    if receipt["schema"] != "rvllm.global-decode.abba.v1"
+        || receipt["status"] != "collected"
+        || receipt["candidate"] != candidate_name
+        || receipt["length"] != length
+        || receipt["baseline"] != "attention_decode_f16 (BF16 typed)"
+        || receipt["blocks"] != 5
+        || receipt["dispatches_per_sample"] != 100
+        || receipt["warmups_per_arm"] != 5
+        || receipt["source_compiles_during_samples"] != 0
+        || receipt["promotion"] != false
+        || receipt["identity"]["candidate"] != candidate_name
+        || receipt["identity"]["oracle_library"] != false
+        || receipt["identity"]["source_sha256"] != hash(&source)?
+        || receipt["identity"]["core_sha256"] != hash(&source)?
+        || receipt["identity"]["metallib_sha256"] != hash(&library)?
+        || receipt["identity"]["build_receipt_sha256"] != hash(&build_path)?
+        || receipt["identity"]["test_executable_sha256"] != config["test_executable"]["sha256"]
+        || receipt["oracle_receipt_sha256"] != hash(&oracle_path)?
+        || oracle["status"] != "passed"
+        || oracle["identity"]["candidate"] != candidate_name
+        || oracle["identity"]["core_sha256"] != hash(&source)?
+        || oracle["identity"]["test_executable_sha256"] != config["test_executable"]["sha256"]
+    {
+        return Err(format!("stage receipt identity or work mismatch: {candidate_name}").into());
+    }
+    let tile = candidate
+        .global_decode_tile()
+        .ok_or("candidate has no global-decode tile")?;
+    if receipt["identity"]["rows"] != tile.rows
+        || receipt["identity"]["panel"] != tile.panel
+        || receipt["identity"]["threads"] != tile.threads
+        || receipt["identity"]["grid"] != json!([1, 1, 1])
+    {
+        return Err(format!("stage receipt launch geometry mismatch: {candidate_name}").into());
+    }
+    let samples = receipt["samples"]
+        .as_array()
+        .ok_or("ABBA samples missing")?;
+    if samples.len() != 20 {
+        return Err("ABBA receipt must contain exactly 20 samples".into());
+    }
+    let mut arms = BTreeMap::<&str, usize>::from([("A", 0), ("B", 0)]);
+    let mut blocks = BTreeMap::<u64, BTreeMap<&str, usize>>::new();
+    let mut candidate_seconds = 0.0;
+    for sample in samples {
+        let arm = sample["arm"].as_str().ok_or("sample arm missing")?;
+        let block = sample["block"].as_u64().ok_or("sample block missing")?;
+        let dispatches = sample["dispatches"]
+            .as_u64()
+            .ok_or("sample dispatches missing")?;
+        let seconds = sample["gpu_seconds"]
+            .as_f64()
+            .ok_or("sample GPU time missing")?;
+        if dispatches != 100 || !seconds.is_finite() || seconds <= 0.0 {
+            return Err("ABBA sample work or GPU time is invalid".into());
+        }
+        *arms.get_mut(arm).ok_or("unknown ABBA arm")? += 1;
+        *blocks.entry(block).or_default().entry(arm).or_default() += 1;
+        if arm == "B" {
+            candidate_seconds += seconds;
+        }
+    }
+    if arms != BTreeMap::from([("A", 10), ("B", 10)])
+        || blocks.len() != 5
+        || blocks
+            .values()
+            .any(|block| block.get("A") != Some(&2) || block.get("B") != Some(&2))
+    {
+        return Err("ABBA ordering cells are incomplete or non-equivalent".into());
+    }
+    Ok(StageScore {
+        candidate: candidate_name.to_owned(),
+        candidate_ms_per_dispatch: candidate_seconds * 1000.0 / 10.0 / 100.0,
+        control_drift_passed: receipt["control_drift_passed"] == true,
+        receipt_sha256: hash(&receipt_path)?,
+        receipt_path,
+        queue_report_sha256: hash(&queue_report_path)?,
+        queue_report_path,
+    })
+}
+
+fn select_survivors(length: u32, scores: &mut [StageScore]) -> Result<Vec<String>> {
+    if scores.is_empty() {
+        return Err("cannot advance an empty stage".into());
+    }
+    scores.sort_by(|left, right| {
+        left.candidate_ms_per_dispatch
+            .total_cmp(&right.candidate_ms_per_dispatch)
+            .then_with(|| left.candidate.cmp(&right.candidate))
+    });
+    let (anchor, multiplier) = match length {
+        256 | 512 | 1024 if scores.len() >= 2 => (scores[1].candidate_ms_per_dispatch, 1.10),
+        2048 => (scores[0].candidate_ms_per_dispatch, 1.05),
+        _ => return Err("stage length or candidate count cannot satisfy policy".into()),
+    };
+    Ok(scores
+        .iter()
+        .take_while(|score| score.candidate_ms_per_dispatch <= anchor * multiplier)
+        .map(|score| score.candidate.clone())
+        .collect())
+}
+
+fn submit_or_verify(queue_runner: &Path, queue: &Path, manifest: &Path) -> Result {
+    let expected = read(manifest)?;
+    let id = expected["id"].as_str().ok_or("generated job ID missing")?;
+    let status = Command::new(queue_runner)
+        .arg("submit")
+        .arg(queue)
+        .arg(manifest)
+        .status()?;
+    if status.success() {
+        return Ok(());
+    }
+    let queued = queue.join("jobs").join(format!("{id}.json"));
+    let attempted = queue.join("results").join(id).join("job.json");
+    let (existing, attempted_result) = if queued.is_file() {
+        (queued, None)
+    } else if attempted.is_file() {
+        (
+            attempted,
+            Some(queue.join("results").join(id).join("report.json")),
+        )
+    } else {
+        return Err(
+            format!("queue submission failed without an identical durable job: {id}").into(),
+        );
+    };
+    if read(&existing)? != expected {
+        return Err(format!("queue already contains a different job identity: {id}").into());
+    }
+    if let Some(report_path) = attempted_result {
+        let report = read(&report_path)?;
+        if report["id"] != id || !matches!(report["status"].as_str(), Some("running" | "succeeded"))
+        {
+            return Err(format!("queue already contains a failed or invalid attempt: {id}").into());
+        }
+    }
+    Ok(())
+}
+
+fn advance(root: &Path, length: u32, output: &Path, expected: &[String]) -> Result {
+    if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) || expected.is_empty() {
+        return Err("invalid or empty advancement stage".into());
+    }
+    if expected.iter().collect::<BTreeSet<_>>().len() != expected.len() {
+        return Err("duplicate advancement candidate".into());
+    }
+    let config_path = root.join("campaign.json");
+    let config = read(&config_path)?;
+    if pin(&std::env::current_exe()?)? != config["job_generator"] {
+        return Err("job generator identity drift".into());
+    }
+    let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
+    let queue_runner = absolute(
+        config["queue_runner"]["path"]
+            .as_str()
+            .ok_or("queue runner missing")?,
+    )?;
+    if pin(&queue_runner)? != config["queue_runner"] {
+        return Err("queue runner identity drift".into());
+    }
+    let mut scores = expected
+        .iter()
+        .map(|candidate| score_stage_cell(root, &queue, &config, length, candidate))
+        .collect::<Result<Vec<_>>>()?;
+    let selected = if length == 4096 {
+        Vec::new()
+    } else {
+        select_survivors(length, &mut scores)?
+    };
+    let next_length = match length {
+        256 => Some(512),
+        512 => Some(1024),
+        1024 => Some(2048),
+        2048 => Some(4096),
+        4096 => None,
+        _ => unreachable!(),
+    };
+    let score_json = scores
+        .iter()
+        .map(|score| {
+            json!({
+                "candidate":score.candidate,
+                "candidate_mean_ms_per_dispatch":score.candidate_ms_per_dispatch,
+                "control_drift_passed":score.control_drift_passed,
+                "native_receipt":{"path":score.receipt_path,"sha256":score.receipt_sha256},
+                "queue_report":{"path":score.queue_report_path,"sha256":score.queue_report_sha256}
+            })
+        })
+        .collect::<Vec<_>>();
+    let receipt = json!({
+        "schema":"rvllm.global-decode.advancement.v1",
+        "campaign":config["campaign"],
+        "campaign_sha256":hash(&config_path)?,
+        "completed_length":length,
+        "next_length":next_length,
+        "expected_candidates":expected,
+        "scores":score_json,
+        "selected_candidates":selected,
+        "rule":if length == 2048 {"fastest plus candidates within 5 percent"}
+            else if length == 4096 {"terminal evidence only; no automatic promotion"}
+            else {"fastest two plus candidates within 10 percent of second-fastest"},
+        "promotion":false
+    });
+    if !output.is_absolute() || !output.is_dir() {
+        return Err(
+            "advancement output must be the existing absolute queue result directory".into(),
+        );
+    }
+    json_new_or_identical(&output.join("advancement.json"), &receipt)?;
+    let Some(next_length) = next_length else {
+        return Ok(());
+    };
+    generate(root, true, Some(next_length), &selected)?;
+    let list = read(&root.join(format!("timing-jobs-L{next_length}.json")))?;
+    for job_id in list.as_array().ok_or("generated timing job list missing")? {
+        let job_id = job_id.as_str().ok_or("generated timing job ID missing")?;
+        submit_or_verify(
+            &queue_runner,
+            &queue,
+            &root.join("jobs").join(format!("{job_id}.json")),
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_directory(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "rvllm-global-decode-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        directory
+    }
+
+    fn score(candidate: &str, milliseconds: f64) -> StageScore {
+        StageScore {
+            candidate: candidate.into(),
+            candidate_ms_per_dispatch: milliseconds,
+            control_drift_passed: true,
+            receipt_path: PathBuf::from("receipt"),
+            receipt_sha256: "a".repeat(64),
+            queue_report_path: PathBuf::from("report"),
+            queue_report_sha256: "b".repeat(64),
+        }
+    }
 
     #[test]
     fn timing_request_accepts_screen_and_explicit_survivors() {
@@ -442,6 +815,121 @@ mod tests {
         assert!(validate_timing_request(512, &["not-a-candidate".to_owned()]).is_err());
         let duplicate = "metal-global-d512-r16p128t128".to_owned();
         assert!(validate_timing_request(512, &[duplicate.clone(), duplicate]).is_err());
+    }
+
+    #[test]
+    fn successive_halving_uses_absolute_candidate_time_and_widens_ties() {
+        let mut screen = vec![
+            score("slow", 12.0),
+            score("fast", 10.0),
+            score("near_second", 11.0),
+            score("second", 10.5),
+        ];
+        assert_eq!(
+            select_survivors(256, &mut screen).unwrap(),
+            ["fast", "second", "near_second"]
+        );
+        let mut finalists = vec![
+            score("outside", 10.51),
+            score("winner", 10.0),
+            score("tie", 10.5),
+        ];
+        assert_eq!(
+            select_survivors(2048, &mut finalists).unwrap(),
+            ["winner", "tie"]
+        );
+    }
+
+    #[test]
+    fn immutable_json_recovery_accepts_only_identical_content() {
+        let directory = temp_directory("immutable");
+        let path = directory.join("receipt.json");
+        let value = json!({"selected":["a","b"]});
+        json_new_or_identical(&path, &value).unwrap();
+        json_new_or_identical(&path, &value).unwrap();
+        assert!(json_new_or_identical(&path, &json!({"selected":["b"]})).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn stage_scoring_requires_sealed_identity_and_exact_work() {
+        let directory = temp_directory("stage");
+        let root = directory.join("campaign");
+        let queue = directory.join("queue");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir_all(queue.join("results")).unwrap();
+        let candidate = candidates()[0];
+        let campaign = "synthetic";
+        let config = json!({
+            "campaign":campaign,
+            "test_executable":{"sha256":"test-pin"}
+        });
+        let source = source_path(&root, candidate, "core");
+        std::fs::write(&source, b"sealed source").unwrap();
+        let compile_id = id(&config, candidate, "compile-core").unwrap();
+        let build_dir = queue.join("results").join(&compile_id).join("build");
+        std::fs::create_dir_all(&build_dir).unwrap();
+        let library = build_dir.join("kernel.metallib");
+        let build = build_dir.join("build.json");
+        std::fs::write(&library, b"sealed library").unwrap();
+        std::fs::write(&build, b"sealed build receipt").unwrap();
+        json_new(
+            &queue.join("results").join(&compile_id).join("report.json"),
+            &json!({"status":"succeeded","files_unchanged":true}),
+        )
+        .unwrap();
+        let oracle_id = id(&config, candidate, "oracle").unwrap();
+        let oracle_dir = queue.join("results").join(&oracle_id);
+        std::fs::create_dir_all(oracle_dir.join("native")).unwrap();
+        let oracle = oracle_dir.join("native/oracle.json");
+        json_new(
+            &oracle,
+            &json!({"status":"passed","identity":{"candidate":candidate.name(),
+                "core_sha256":hash(&source).unwrap(),"test_executable_sha256":"test-pin"}}),
+        )
+        .unwrap();
+        json_new(
+            &oracle_dir.join("report.json"),
+            &json!({"status":"succeeded","files_unchanged":true}),
+        )
+        .unwrap();
+        let timing_id = id(&config, candidate, "abba-L256").unwrap();
+        let timing_dir = queue.join("results").join(timing_id);
+        std::fs::create_dir_all(timing_dir.join("native")).unwrap();
+        let tile = candidate.global_decode_tile().unwrap();
+        let mut samples = Vec::new();
+        for block in 0..5 {
+            for arm in ["A", "B", "B", "A"] {
+                samples.push(json!({"arm":arm,"block":block,"dispatches":100,
+                    "gpu_seconds":if arm == "A" {2.0} else {1.0}}));
+            }
+        }
+        let receipt_path = timing_dir.join("native/abba.json");
+        let receipt = json!({"schema":"rvllm.global-decode.abba.v1","status":"collected",
+            "baseline":"attention_decode_f16 (BF16 typed)","blocks":5,
+            "candidate":candidate.name(),"length":256,"dispatches_per_sample":100,
+            "warmups_per_arm":5,"source_compiles_during_samples":0,"promotion":false,
+            "control_drift_passed":false,"oracle_receipt_sha256":hash(&oracle).unwrap(),
+            "identity":{"candidate":candidate.name(),"oracle_library":false,
+                "source_sha256":hash(&source).unwrap(),"core_sha256":hash(&source).unwrap(),
+                "metallib_sha256":hash(&library).unwrap(),"build_receipt_sha256":hash(&build).unwrap(),
+                "test_executable_sha256":"test-pin","rows":tile.rows,"panel":tile.panel,
+                "threads":tile.threads,"grid":[1,1,1]},"samples":samples});
+        json_new(&receipt_path, &receipt).unwrap();
+        json_new(
+            &timing_dir.join("report.json"),
+            &json!({"schema":"rvllm.experiment_result.v1","status":"succeeded",
+                "id":timing_dir.file_name().unwrap().to_str().unwrap(),"files_unchanged":true}),
+        )
+        .unwrap();
+        let score = score_stage_cell(&root, &queue, &config, 256, candidate.name()).unwrap();
+        assert_eq!(score.candidate_ms_per_dispatch, 10.0);
+        let mut changed = receipt;
+        changed["samples"][0]["dispatches"] = json!(99);
+        std::fs::write(&receipt_path, serde_json::to_vec_pretty(&changed).unwrap()).unwrap();
+        assert!(score_stage_cell(&root, &queue, &config, 256, candidate.name()).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
 fn main() -> Result {
@@ -470,6 +958,8 @@ fn main() -> Result {
             let length = length.parse()?;
             generate(&absolute(root)?,true,Some(length),selected)
         }
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT | timing-jobs ROOT [LENGTH CANDIDATE...]".into()),
+        [action,root,length,output,expected @ ..] if action=="advance" && !expected.is_empty() =>
+            advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
     }
 }

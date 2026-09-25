@@ -27,13 +27,24 @@ Ties deliberately widen rather than narrow the next stage. If a receipt has
 the wrong identity, incomplete samples, failed correctness, mutated guards, or
 non-equivalent work, it is invalid and cannot advance regardless of speed.
 
-The generator now emits only the L256 screen by default. Later jobs require an
-explicit length and explicit candidate names, for example:
+The generator emits only the L256 screen by default, followed by a preparation
+job whose dependencies are exactly those screen cells. That job validates every
+sealed queue and native receipt, writes an immutable advancement receipt, and
+submits only the policy-selected next stage through the existing queue command.
+The same dependency chain continues through 4096, where it terminates without
+promoting a kernel. A crash may reconcile only byte-equivalent job identities
+and semantically identical immutable JSON; a missing, changed, incomplete, or
+failed receipt stops the chain.
+
+An operator may still generate an explicit stage for inspection or recovery:
 
 ```text
 rvllm-global-decode-jobs timing-jobs ROOT 512 \
   metal-global-d512-r16p128t128 metal-global-d512-r16p64t128
 ```
 
-This makes advancement a reviewable input rather than an accidental lexical
-property of a pre-generated Cartesian queue.
+The checked-in controller, not queue lexical order or an observing agent,
+performs normal advancement. The current `g4decode20260924v1` campaign predates
+the controller's pinned queue-runner identity, so its already-created manifests
+are being advanced manually under this same policy and retained as historical
+evidence. New campaigns use the automatic chain from their first L256 screen.
