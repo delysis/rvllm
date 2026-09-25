@@ -6434,6 +6434,83 @@ unsafe fn encode_gemm_with_output(
     Ok(())
 }
 
+/// Decode-only single-encoder Gate||Up projection + activation.
+unsafe fn try_encode_research_decode_gateup(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    dims: &MetalLayerDims,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+) -> Result<bool> {
+    let Some(pso) = pipelines.research_pso("research_decode_gateup_mlx16", 128, 0) else {
+        return Ok(false);
+    };
+    if !crate::research::rounded_gate_buffers_fit(
+        [
+            scratch.normed_hidden,
+            weights.gate_up_offset,
+            scratch.gate_up_out,
+            scratch.activated,
+        ],
+        dims.num_tokens,
+        dims.hidden,
+        dims.intermediate,
+        buf.length(),
+        false,
+    ) {
+        return Ok(false);
+    }
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "research_decode_gateup_mlx16",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    encoder.setLabel(Some(&objc2_foundation::NSString::from_str(
+        "metal-decode-gateup-mlx16",
+    )));
+    encoder.setComputePipelineState(pso);
+    for (index, offset) in [
+        scratch.normed_hidden,
+        weights.gate_up_offset,
+        scratch.activated,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        encoder.setBuffer_offset_atIndex(Some(buf), offset, index);
+    }
+    for (index, value) in [dims.hidden, dims.intermediate].iter().enumerate() {
+        encoder.setBytes_length_atIndex(std::ptr::NonNull::from(value).cast(), 4, index + 3);
+    }
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        MTLSize {
+            width: (dims.intermediate as usize).div_ceil(16),
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 128,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    pipelines.record_research_dispatch(
+        crate::research_evidence::ResearchKernel::DecodeGateupMlx16,
+    );
+    tracing::debug!(
+        candidate = "metal-decode-gateup-mlx16",
+        "Research dispatch"
+    );
+    Ok(true)
+}
+
 /// One encoder replaces the gate/up GEMM and activation encoder, without
 /// changing the command-buffer dependency or arena ownership model.
 unsafe fn try_encode_research_rounded_gate(
