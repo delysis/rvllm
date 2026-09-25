@@ -8,11 +8,12 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const INPUT_SCHEMA: &str = "rvllm.gemma4_quality_referee.input.v1";
+const INPUT_SCHEMA: &str = "rvllm.gemma4_quality_referee.input.v2";
+const TENSOR_MANIFEST_SCHEMA: &str = "rvllm.gemma4_quantized_tensor_manifest.v1";
 const FIXTURE_SCHEMA: &str = "rvllm.gemma4_token_fixture.v1";
 const OBSERVATION_SCHEMA: &str = "rvllm.gemma4_quality_observations.v1";
 const CALIBRATION_SCHEMA: &str = "rvllm.gemma4_quality_calibration.v1";
-const OUTPUT_SCHEMA: &str = "rvllm.gemma4_quality_referee.receipt.v1";
+const OUTPUT_SCHEMA: &str = "rvllm.gemma4_quality_referee.receipt.v2";
 const REQUIRED_ROLES: [&str; 7] = [
     "q_projection",
     "k_projection",
@@ -30,6 +31,7 @@ struct Input {
     checkpoint: CheckpointIdentity,
     config: FileIdentity,
     quantizer: QuantizerIdentity,
+    tensor_manifest: FileIdentity,
     reference_route: RouteIdentity,
     candidate_route: RouteIdentity,
     fixture: FileIdentity,
@@ -69,6 +71,41 @@ struct QuantizerIdentity {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+struct QuantizedTensorManifest {
+    schema: String,
+    checkpoint_manifest_sha256: Sha256Digest,
+    config_sha256: Sha256Digest,
+    model_package_sha256: Sha256Digest,
+    quantizer: TensorQuantizerContract,
+    tensors: Vec<QuantizedTensorIdentity>,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct TensorQuantizerContract {
+    implementation_revision: String,
+    weight_bits: u8,
+    group_size: u32,
+    scale_dtype: String,
+    zero_point: bool,
+    rounding: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct QuantizedTensorIdentity {
+    name: String,
+    role: String,
+    shape: Vec<u64>,
+    source_tensor_sha256: Sha256Digest,
+    packed_weight_sha256: Sha256Digest,
+    scales_sha256: Sha256Digest,
+    packed_bytes: u64,
+    scale_count: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct RouteIdentity {
     name: String,
     source_tree_sha256: Sha256Digest,
@@ -82,6 +119,7 @@ struct RouteIdentity {
 struct Coverage {
     full_checkpoint_quantized: bool,
     quantized_roles: Vec<String>,
+    quantized_tensor_count: usize,
     operator_correctness_receipt_sha256: Option<Sha256Digest>,
 }
 
@@ -172,6 +210,8 @@ struct Receipt<'a> {
     checkpoint: &'a CheckpointIdentity,
     config_sha256: &'a Sha256Digest,
     quantizer: &'a QuantizerIdentity,
+    tensor_manifest_sha256: &'a Sha256Digest,
+    quantized_tensor_count: usize,
     reference_route: &'a RouteIdentity,
     candidate_route: &'a RouteIdentity,
     fixture_sha256: &'a Sha256Digest,
@@ -271,6 +311,7 @@ fn run(path: &Path) -> Result<Receipt<'static>, String> {
     }
     for artifact in [
         &input.config,
+        &input.tensor_manifest,
         &input.fixture,
         &input.reference_observations,
         &input.candidate_observations,
@@ -281,6 +322,8 @@ fn run(path: &Path) -> Result<Receipt<'static>, String> {
         verify_file(calibration)?;
     }
 
+    let tensor_manifest: QuantizedTensorManifest = read_strict(&input.tensor_manifest.path)?;
+    validate_tensor_manifest(input, &tensor_manifest)?;
     let fixture: Fixture = read_strict(&input.fixture.path)?;
     let reference: Observations = read_strict(&input.reference_observations.path)?;
     let candidate: Observations = read_strict(&input.candidate_observations.path)?;
@@ -336,6 +379,8 @@ fn run(path: &Path) -> Result<Receipt<'static>, String> {
     let all_roles = roles == required_roles;
     let full_route = input.coverage.full_checkpoint_quantized
         && all_roles
+        && input.coverage.quantized_tensor_count == tensor_manifest.tensors.len()
+        && !tensor_manifest.tensors.is_empty()
         && input.reference_route.full_model_route
         && input.candidate_route.full_model_route;
     if input.coverage.operator_correctness_receipt_sha256.is_none() {
@@ -362,6 +407,8 @@ fn run(path: &Path) -> Result<Receipt<'static>, String> {
         checkpoint: &input.checkpoint,
         config_sha256: &input.config.sha256,
         quantizer: &input.quantizer,
+        tensor_manifest_sha256: &input.tensor_manifest.sha256,
+        quantized_tensor_count: tensor_manifest.tensors.len(),
         reference_route: &input.reference_route,
         candidate_route: &input.candidate_route,
         fixture_sha256: &input.fixture.sha256,
@@ -381,6 +428,58 @@ fn run(path: &Path) -> Result<Receipt<'static>, String> {
         failed_gates: failures,
         limitations,
     })
+}
+
+fn validate_tensor_manifest(
+    input: &Input,
+    manifest: &QuantizedTensorManifest,
+) -> Result<(), String> {
+    if manifest.schema != TENSOR_MANIFEST_SCHEMA
+        || manifest.checkpoint_manifest_sha256 != input.checkpoint.manifest_sha256
+        || manifest.config_sha256 != input.config.sha256
+        || manifest.model_package_sha256 != input.candidate_route.model_package_sha256
+    {
+        return Err(
+            "tensor manifest checkpoint/config/model-package identity mismatch".into(),
+        );
+    }
+    let expected_quantizer = TensorQuantizerContract {
+        implementation_revision: input.quantizer.implementation_revision.clone(),
+        weight_bits: input.quantizer.weight_bits,
+        group_size: input.quantizer.group_size,
+        scale_dtype: input.quantizer.scale_dtype.clone(),
+        zero_point: input.quantizer.zero_point,
+        rounding: input.quantizer.rounding.clone(),
+    };
+    if manifest.quantizer != expected_quantizer {
+        return Err("tensor manifest quantizer identity mismatch".into());
+    }
+    if manifest.tensors.is_empty() {
+        return Err("tensor manifest is empty".into());
+    }
+    let mut names = BTreeSet::new();
+    let mut roles = BTreeSet::new();
+    for tensor in &manifest.tensors {
+        validate_identity("tensor name", &tensor.name)?;
+        validate_identity("tensor role", &tensor.role)?;
+        if !names.insert(tensor.name.as_str())
+            || !REQUIRED_ROLES.contains(&tensor.role.as_str())
+            || tensor.shape.is_empty()
+            || tensor.shape.iter().any(|&dimension| dimension == 0)
+            || tensor.packed_bytes == 0
+            || tensor.scale_count == 0
+        {
+            return Err(format!("invalid quantized tensor identity: {}", tensor.name));
+        }
+        roles.insert(tensor.role.as_str());
+    }
+    if roles != REQUIRED_ROLES.into_iter().collect::<BTreeSet<_>>() {
+        return Err("tensor manifest does not cover exactly the seven Gemma 4 projection roles".into());
+    }
+    if input.coverage.quantized_tensor_count != manifest.tensors.len() {
+        return Err("coverage tensor count does not match the sealed tensor manifest".into());
+    }
+    Ok(())
 }
 
 fn validate_observation_identity(
