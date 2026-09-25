@@ -25,6 +25,18 @@
     {
       "path": "REQUIRED_ABSOLUTE_TOKEN_FIXTURE_PATH",
       "sha256": "REQUIRED_FIXTURE_SHA256"
+    },
+    {
+      "path": "REQUIRED_ABSOLUTE_TENSOR_MANIFEST_PATH",
+      "sha256": "REQUIRED_TENSOR_MANIFEST_SHA256"
+    },
+    {
+      "path": "REQUIRED_ABSOLUTE_CANDIDATE_MODEL_PACKAGE_PATH",
+      "sha256": "REQUIRED_CANDIDATE_MODEL_PACKAGE_SHA256"
+    },
+    {
+      "path": "REQUIRED_ABSOLUTE_OPERATOR_CORRECTNESS_RECEIPT_PATH",
+      "sha256": "REQUIRED_OPERATOR_CORRECTNESS_RECEIPT_SHA256"
     }
   ],
   "kernel_game_submission": null,
@@ -36,7 +48,12 @@
     "minimum_free_bytes": 1073741824,
     "disk_path": "REQUIRED_ABSOLUTE_WORKTREE",
     "quiet_process_names": [],
-    "observe_process_names": ["cargo", "rustc", "llama-server", "ollama"],
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "ollama"
+    ],
     "idle_llama_servers": []
   },
   "stable_seconds": 0,
