@@ -1703,7 +1703,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "private ANE fused full-route referee; exact-cache two-token baseline/candidate comparison, no timing claim"]
+    #[ignore = "private ANE fused full-route referee; exact-cache dependent-token baseline/candidate comparison, no timing claim"]
     fn hardware_layer0_fused_attention_output_full_route() {
         use super::two_token_reference::live_tests::{load_snapshot, signature};
         use serde_json::json;
@@ -1739,6 +1739,15 @@ mod tests {
             }
             AneAttentionOutputPlan::Separate => unreachable!(),
         };
+        let tokens = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TOKENS")
+            .map(|value| {
+                value
+                    .parse::<usize>()
+                    .expect("token count must be an integer")
+            })
+            .unwrap_or(2);
+        assert!((2..=32).contains(&tokens), "token count must be 2..=32");
+        assert!(snapshot.tokens + tokens <= 1024);
         assert_eq!(compile_budget_used(), 0, "referee requires a fresh process");
         let compiler_calls_before = compile_budget_used();
 
@@ -1752,22 +1761,22 @@ mod tests {
             )
             .unwrap();
             decoder.import_prefill(&snapshot).unwrap();
-            let mut residuals = Vec::with_capacity(2 * LAYERS);
-            let first = decoder
-                .decode_with_observer(anchor, &mut |_, hidden| {
-                    residuals.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
-                    Ok(())
-                })
-                .unwrap();
-            let second = decoder
-                .decode_with_observer(first.token, &mut |_, hidden| {
-                    residuals.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
-                    Ok(())
-                })
-                .unwrap();
-            assert_eq!(residuals.len(), 2 * LAYERS);
+            let mut residuals = Vec::with_capacity(tokens * LAYERS);
+            let mut predictions = Vec::with_capacity(tokens);
+            let mut next = anchor;
+            for _ in 0..tokens {
+                let decoded = decoder
+                    .decode_with_observer(next, &mut |_, hidden| {
+                        residuals.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+                        Ok(())
+                    })
+                    .unwrap();
+                next = decoded.token;
+                predictions.push(signature(&decoded));
+            }
+            assert_eq!(residuals.len(), tokens * LAYERS);
             (
-                vec![signature(&first), signature(&second)],
+                predictions,
                 residuals,
                 decoder.attention_output_route_evidence(),
             )
@@ -1779,8 +1788,11 @@ mod tests {
         assert_eq!(baseline_route.compiler_calls_during_load, 0);
         assert_eq!(baseline_route.compiler_calls_since_load, Some(0));
         assert_eq!(baseline_route.fused_attention_output_evaluations, 0);
-        assert_eq!(baseline_route.separate_attention_evaluations, 96);
-        assert_eq!(baseline_route.separate_output_evaluations, 96);
+        assert_eq!(
+            baseline_route.separate_attention_evaluations,
+            tokens * LAYERS
+        );
+        assert_eq!(baseline_route.separate_output_evaluations, tokens * LAYERS);
 
         let (candidate_predictions, candidate_residuals, candidate_route) = run(candidate_plan);
         assert_eq!(candidate_route.fused_layers, expected_fused_layers);
@@ -1788,15 +1800,15 @@ mod tests {
         assert_eq!(candidate_route.compiler_calls_since_load, Some(0));
         assert_eq!(
             candidate_route.fused_attention_output_evaluations,
-            2 * candidate_route.fused_layers.len()
+            tokens * candidate_route.fused_layers.len()
         );
         assert_eq!(
             candidate_route.separate_attention_evaluations,
-            2 * (LAYERS - candidate_route.fused_layers.len())
+            tokens * (LAYERS - candidate_route.fused_layers.len())
         );
         assert_eq!(
             candidate_route.separate_output_evaluations,
-            2 * (LAYERS - candidate_route.fused_layers.len())
+            tokens * (LAYERS - candidate_route.fused_layers.len())
         );
         assert_eq!(candidate_residuals, baseline_residuals);
         assert_eq!(candidate_predictions, baseline_predictions);
@@ -1806,7 +1818,7 @@ mod tests {
         let report = json!({
             "schema":"rvllm.gemma4_ane_fused_attention_output_full_route.v1",
             "snapshot_sha256":snapshot_sha256,
-            "tokens":2,
+            "tokens":tokens,
             "weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
             "baseline_predictions":baseline_predictions,
             "candidate_predictions":candidate_predictions,
@@ -1831,14 +1843,14 @@ mod tests {
             "compiler_calls_delta":0,
             "timing_claim":false,
             "promotion":false,
-            "claim":"Two-token exact-cache full-route fused correctness and dispatch evidence only."
+            "claim":"Dependent-token exact-cache full-route fused correctness and dispatch evidence only."
         });
         writeln!(receipt, "{}", report).unwrap();
         receipt.flush().unwrap();
     }
 
     #[test]
-    #[ignore = "private cached-only full-route ANE timing; reset-identical one-token ABBA/BAAB, zero compiler calls"]
+    #[ignore = "private cached-only full-route ANE timing; reset-identical bounded-token ABBA/BAAB, zero compiler calls"]
     fn hardware_layer0_fused_attention_output_full_route_abba_timing() {
         use super::two_token_reference::live_tests::{load_snapshot, signature};
         use serde_json::json;
@@ -1879,6 +1891,18 @@ mod tests {
             }
             AneAttentionOutputPlan::Separate => unreachable!(),
         };
+        let measured_tokens = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_TOKENS")
+            .map(|value| {
+                value
+                    .parse::<usize>()
+                    .expect("timing token count must be an integer")
+            })
+            .unwrap_or(1);
+        assert!(
+            (1..=8).contains(&measured_tokens),
+            "timing token count must be 1..=8"
+        );
+        assert!(snapshot.tokens + measured_tokens <= 1024);
 
         let reverse_order = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_ORDER")
             .map(|value| value == "BAAB_FIRST")
@@ -1936,7 +1960,8 @@ mod tests {
         let mut observations = Vec::with_capacity(sequence.len());
         let mut baseline_ms = Vec::with_capacity(6);
         let mut candidate_ms = Vec::with_capacity(6);
-        let mut expected = None;
+        let mut expected_warmup = None;
+        let mut expected_outputs = None;
         let mut baseline_fused_evaluations = 0;
         let mut baseline_attention_evaluations = 0;
         let mut baseline_output_evaluations = 0;
@@ -1973,20 +1998,36 @@ mod tests {
             );
             decoder.import_prefill(&snapshot).unwrap();
             let warmup = signature(&decoder.decode(anchor).unwrap());
-            if let Some(expected) = &expected {
+            if let Some(expected) = &expected_warmup {
                 assert_eq!(&warmup, expected, "full-route warmup drift in arm {index}");
             } else {
-                expected = Some(warmup);
+                expected_warmup = Some(warmup);
             }
             decoder.import_prefill(&snapshot).unwrap();
+            let mut next = anchor;
+            let mut outputs = Vec::with_capacity(measured_tokens);
+            let mut breakdown = AneDecodeTimes::default();
             let started = Instant::now();
-            let decoded = decoder.decode(anchor).unwrap();
-            let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
-            assert_eq!(
-                signature(&decoded),
-                *expected.as_ref().unwrap(),
-                "full-route output drift in arm {index}"
-            );
+            for _ in 0..measured_tokens {
+                let decoded = decoder.decode(next).unwrap();
+                next = decoded.token;
+                outputs.push(signature(&decoded));
+                breakdown.qkv_ms += decoded.times.qkv_ms;
+                breakdown.attention_ms += decoded.times.attention_ms;
+                breakdown.output_ms += decoded.times.output_ms;
+                breakdown.fused_attention_output_ms += decoded.times.fused_attention_output_ms;
+                breakdown.ffn_ms += decoded.times.ffn_ms;
+                breakdown.vocabulary_ms += decoded.times.vocabulary_ms;
+                breakdown.host_ms += decoded.times.host_ms;
+                breakdown.total_ms += decoded.times.total_ms;
+            }
+            let batch_elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+            let elapsed_ms = batch_elapsed_ms / measured_tokens as f64;
+            if let Some(expected) = &expected_outputs {
+                assert_eq!(&outputs, expected, "full-route output drift in arm {index}");
+            } else {
+                expected_outputs = Some(outputs.clone());
+            }
             let route = decoder.attention_output_route_evidence();
             if arm == "baseline" {
                 baseline_ms.push(elapsed_ms);
@@ -2007,18 +2048,21 @@ mod tests {
                 "block":index / 4,
                 "order":block_order(index / 4),
                 "arm":arm,
-                "elapsed_ms":elapsed_ms,
+                "tokens":measured_tokens,
+                "batch_elapsed_ms":batch_elapsed_ms,
+                "elapsed_ms_per_token":elapsed_ms,
                 "decode_breakdown_ms":{
-                    "qkv":decoded.times.qkv_ms,
-                    "attention":decoded.times.attention_ms,
-                    "output":decoded.times.output_ms,
-                    "fused_attention_output":decoded.times.fused_attention_output_ms,
-                    "ffn":decoded.times.ffn_ms,
-                    "vocabulary":decoded.times.vocabulary_ms,
-                    "host":decoded.times.host_ms,
-                    "total":decoded.times.total_ms,
+                    "scope":"per-token mean within measured batch",
+                    "qkv":breakdown.qkv_ms / measured_tokens as f64,
+                    "attention":breakdown.attention_ms / measured_tokens as f64,
+                    "output":breakdown.output_ms / measured_tokens as f64,
+                    "fused_attention_output":breakdown.fused_attention_output_ms / measured_tokens as f64,
+                    "ffn":breakdown.ffn_ms / measured_tokens as f64,
+                    "vocabulary":breakdown.vocabulary_ms / measured_tokens as f64,
+                    "host":breakdown.host_ms / measured_tokens as f64,
+                    "total":breakdown.total_ms / measured_tokens as f64,
                 },
-                "output":signature(&decoded),
+                "outputs":outputs,
             }));
         }
 
@@ -2030,43 +2074,48 @@ mod tests {
         let candidate_median_ms = median(&mut candidate_ms);
         let baseline_drift = baseline_ms[baseline_ms.len() - 1] / baseline_ms[0] - 1.0;
         let candidate_drift = candidate_ms[candidate_ms.len() - 1] / candidate_ms[0] - 1.0;
+        let evaluations_per_route = 6 * (1 + measured_tokens);
         assert_eq!(baseline_fused_evaluations, 0);
-        assert_eq!(baseline_attention_evaluations, 12 * 48);
-        assert_eq!(baseline_output_evaluations, 12 * 48);
+        assert_eq!(baseline_attention_evaluations, evaluations_per_route * 48);
+        assert_eq!(baseline_output_evaluations, evaluations_per_route * 48);
         assert_eq!(
             candidate_fused_evaluations,
-            12 * expected_fused_layers.len()
+            evaluations_per_route * expected_fused_layers.len()
         );
         assert_eq!(
             candidate_attention_evaluations,
-            12 * (LAYERS - expected_fused_layers.len())
+            evaluations_per_route * (LAYERS - expected_fused_layers.len())
         );
         assert_eq!(
             candidate_output_evaluations,
-            12 * (LAYERS - expected_fused_layers.len())
+            evaluations_per_route * (LAYERS - expected_fused_layers.len())
         );
         let compiler_calls_after_timing = compile_budget_used();
         assert_eq!(compiler_calls_after_timing, 0);
-        let expected = expected.unwrap();
+        let expected_warmup = expected_warmup.unwrap();
+        let expected_outputs = expected_outputs.unwrap();
 
         let report = json!({
-            "schema":"rvllm.gemma4_ane_fused_attention_output_full_route_timing.v1",
+            "schema":"rvllm.gemma4_ane_fused_attention_output_full_route_timing.v2",
             "status":"measured",
             "snapshot_sha256":snapshot_sha256,
             "weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
             "sequence":sequence_name,
             "warmup_tokens_per_arm":1,
-            "measured_tokens_per_arm":6,
+            "measured_observations_per_route":6,
+            "measured_tokens_per_observation":measured_tokens,
+            "measured_tokens_total_per_route":6 * measured_tokens,
             "decoder_lifetime":"one exact-cache decoder per observation; load excluded from timing",
             "state_reset":"identical sealed prefill imported outside every timed interval",
-            "timed_scope":"one complete decode from embedding through vocabulary ranking",
+            "timed_scope":"bounded dependent-token batch from embedding through vocabulary ranking; reported latency is batch wall time divided by token count",
             "baseline_median_ms_per_token":baseline_median_ms,
             "candidate_median_ms_per_token":candidate_median_ms,
             "median_baseline_over_candidate":baseline_median_ms / candidate_median_ms,
             "baseline_range_drift_fraction":baseline_drift,
             "candidate_range_drift_fraction":candidate_drift,
             "outputs_exact":true,
-            "expected_output":expected,
+            "expected_warmup_output":expected_warmup,
+            "expected_outputs":expected_outputs,
             "baseline_route":{
                 "plan":AneAttentionOutputPlan::Separate.name(),
                 "fused_evaluations":baseline_fused_evaluations,
