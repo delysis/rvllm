@@ -2030,11 +2030,28 @@ mod tests {
         assert!(maximum_warmup_difference < 0.004);
 
         let repetitions = 64_usize;
-        let sequence = [
-            "baseline", "fused", "fused", "baseline", // ABBA
-            "fused", "baseline", "baseline", "fused", // BAAB
-            "baseline", "fused", "fused", "baseline", // ABBA
-        ];
+        let reverse_order = std::env::var("RVLLM_ANE_FUSED_TIMING_ORDER")
+            .map(|value| value == "BAAB_FIRST")
+            .unwrap_or(false);
+        let (sequence_name, sequence) = if reverse_order {
+            (
+                "BAAB/ABBA/BAAB",
+                [
+                    "fused", "baseline", "baseline", "fused", // BAAB
+                    "baseline", "fused", "fused", "baseline", // ABBA
+                    "fused", "baseline", "baseline", "fused", // BAAB
+                ],
+            )
+        } else {
+            (
+                "ABBA/BAAB/ABBA",
+                [
+                    "baseline", "fused", "fused", "baseline", // ABBA
+                    "fused", "baseline", "baseline", "fused", // BAAB
+                    "baseline", "fused", "fused", "baseline", // ABBA
+                ],
+            )
+        };
         let mut observations = Vec::new();
         let mut baseline_ms = Vec::new();
         let mut fused_ms = Vec::new();
@@ -2070,7 +2087,11 @@ mod tests {
             observations.push(serde_json::json!({
                 "index":index,
                 "block":index / 4,
-                "order":match index / 4 { 1 => "BAAB", _ => "ABBA" },
+                "order":if reverse_order {
+                    match index / 4 { 1 => "ABBA", _ => "BAAB" }
+                } else {
+                    match index / 4 { 1 => "BAAB", _ => "ABBA" }
+                },
                 "arm":arm,
                 "repetitions":repetitions,
                 "elapsed_ms":elapsed_ms,
@@ -2104,7 +2125,7 @@ mod tests {
             "compiler_calls_during_timing":compiler_calls - setup_compiler_calls,
             "warmup_tokens_per_arm":8,
             "measured_tokens_per_arm":repetitions * 6,
-            "sequence":"ABBA/BAAB/ABBA",
+            "sequence":sequence_name,
             "baseline_evaluations_per_token":2,
             "fused_evaluations_per_token":1,
             "baseline_median_ms_per_token":baseline_median_ms,
