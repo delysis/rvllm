@@ -323,4 +323,57 @@ mod tests {
         );
         println!("identity={:?}", compiled.identity());
     }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    fn compile_dialect_probe(mil: &str, input_channels: usize, output_channels: usize) {
+        use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
+        use rvllm_apple_ane_sys::AneInMemoryProgram;
+
+        let before = compile_budget_used();
+        let _program = AneInMemoryProgram::compile_with_cache_policy(
+            mil,
+            &[],
+            input_channels * 64,
+            output_channels * 64,
+            AneProgramCachePolicy::Compile,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before + 1);
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE reduce_sum dialect compile probe"]
+    fn hardware_reduce_sum_dialect_compile_probe() {
+        compile_dialect_probe(
+            r#"program(1.3)
+{
+    func main<ios18>(tensor<fp16, [1, 32, 1, 1]> x) {
+        tensor<int32, [3]> axes = const()[val = tensor<int32, [3]>([1, 2, 3])];
+        bool keep_dims = const()[val = bool(true)];
+        tensor<fp16, [1, 1, 1, 1]> y = reduce_sum(axes = axes, keep_dims = keep_dims, x = x);
+    } -> (y);
+}
+"#,
+            32,
+            1,
+        );
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE rsqrt dialect compile probe"]
+    fn hardware_rsqrt_dialect_compile_probe() {
+        compile_dialect_probe(
+            r#"program(1.3)
+{
+    func main<ios18>(tensor<fp16, [1, 32, 1, 1]> x) {
+        tensor<fp16, [1, 32, 1, 1]> y = rsqrt(x = x);
+    } -> (y);
+}
+"#,
+            32,
+            32,
+        );
+    }
 }
