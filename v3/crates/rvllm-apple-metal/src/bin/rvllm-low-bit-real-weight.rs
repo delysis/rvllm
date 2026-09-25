@@ -839,6 +839,266 @@ mod macos {
         }))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn run_n4_vs_qmv_shape(
+        ctx: &MetalContext,
+        pipelines: &PipelineCache,
+        role: AppleLowBitTensorRole,
+        format: AppleLowBitWeightFormat,
+        source_f32: &[f32],
+        m: usize,
+        n: usize,
+        k: usize,
+        samples: usize,
+        order: DirectOrder,
+        challenger: CandidateSchedule,
+    ) -> Result<Value, String> {
+        if m != 1 {
+            return Err("direct N4-vs-QMV qualification is decode-only (M=1)".to_owned());
+        }
+        if !matches!(challenger, CandidateSchedule::MlxQmv | CandidateSchedule::Core8Qmv) {
+            return Err("direct QMV challenger must be mlx-qmv or core8-qmv".to_owned());
+        }
+
+        let packed = quantize_apple_low_bit_reference(format, n, k, source_f32)
+            .map_err(|e| e.to_string())?;
+        let input_values = activations(m, k);
+        let expected = low_bit_reference_bf16(&packed, &input_values, m)?;
+        let output_count = m.checked_mul(n).ok_or("output overflow")?;
+        let mut arena = MetalBufferArena::new(
+            ctx.device(),
+            input_values.len() * 2
+                + packed.packed_values().len()
+                + packed.scales().len() * 2
+                + output_count * 4
+                + 4096,
+        )
+        .map_err(|e| e.to_string())?;
+        let input = arena
+            .region("direct_qmv_input", input_values.len() * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let values = arena
+            .region("direct_qmv_values", packed.packed_values().len(), 16)
+            .map_err(|e| e.to_string())?;
+        let scales = arena
+            .region("direct_qmv_scales", packed.scales().len() * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let n4_out = arena
+            .region("direct_qmv_n4_output", output_count * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let challenger_out = arena
+            .region("direct_qmv_challenger_output", output_count * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let guard = arena
+            .region("direct_qmv_guard", 64, 16)
+            .map_err(|e| e.to_string())?;
+        unsafe {
+            write_bf16(&arena, &input, &input_values);
+            arena
+                .write_region(&values, packed.packed_values())
+                .map_err(|e| e.to_string())?;
+            write_f16(&arena, &scales, packed.scales());
+            write_bf16(&arena, &guard, &vec![bf16::from_bits(SENTINEL); 32]);
+        }
+
+        let projection = MetalLowBitProjectionOffsets::new_for_role(
+            role,
+            format,
+            n,
+            k,
+            values.offset,
+            values.size,
+            scales.offset,
+            scales.size,
+        )
+        .map_err(|e| e.to_string())?;
+        let buffer = arena.buffer_retained();
+
+        let before = pipelines.low_bit_dispatch_snapshot();
+        let mut n4_bits: Option<Vec<u16>> = None;
+        let mut challenger_bits: Option<Vec<u16>> = None;
+        let mut n4_accuracy = None;
+        let mut challenger_accuracy = None;
+        for (schedule, output) in [
+            (CandidateSchedule::N4, &n4_out),
+            (challenger, &challenger_out),
+        ] {
+            let mut first_bits: Option<Vec<u16>> = None;
+            for _ in 0..2 {
+                unsafe {
+                    write_bf16(
+                        &arena,
+                        output,
+                        &vec![bf16::from_bits(SENTINEL); output_count],
+                    );
+                }
+                submit(ctx, |command| {
+                    encode_candidate(
+                        schedule,
+                        projection,
+                        command,
+                        pipelines,
+                        buffer,
+                        input.offset,
+                        output.offset,
+                        m,
+                        n,
+                    )
+                })?;
+                let actual = unsafe { read_bf16(&arena, output, output_count) };
+                let got_accuracy = accuracy(&actual, &expected)?;
+                let bits: Vec<u16> = actual.iter().map(|v| v.to_bits()).collect();
+                if first_bits.as_ref().is_some_and(|first| first != &bits) {
+                    return Err(format!(
+                        "{} output is not bitwise repeatable",
+                        schedule.name()
+                    ));
+                }
+                first_bits = Some(bits.clone());
+                if schedule == CandidateSchedule::N4 {
+                    n4_accuracy = Some(got_accuracy);
+                    n4_bits = Some(bits);
+                } else {
+                    challenger_accuracy = Some(got_accuracy);
+                    challenger_bits = Some(bits);
+                }
+            }
+        }
+        let mut exact = [0; AppleLowBitTensorRole::COUNT];
+        exact[role.index()] = 4;
+        pipelines
+            .low_bit_dispatch_snapshot()
+            .checked_since(before)
+            .map_err(str::to_owned)?
+            .verify_exact(format, exact)
+            .map_err(str::to_owned)?;
+
+        for (schedule, output) in [
+            (CandidateSchedule::N4, &n4_out),
+            (challenger, &challenger_out),
+        ] {
+            submit(ctx, |command| {
+                encode_candidate(
+                    schedule,
+                    projection,
+                    command,
+                    pipelines,
+                    buffer,
+                    input.offset,
+                    output.offset,
+                    m,
+                    n,
+                )
+            })?;
+        }
+
+        let timing_before = pipelines.low_bit_dispatch_snapshot();
+        let mut n4_ms = Vec::with_capacity(samples * 2);
+        let mut challenger_ms = Vec::with_capacity(samples * 2);
+        for _ in 0..samples {
+            let sequence = match order {
+                DirectOrder::Abba => [
+                    CandidateSchedule::N4,
+                    challenger,
+                    challenger,
+                    CandidateSchedule::N4,
+                ],
+                DirectOrder::Baab => [
+                    challenger,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::N4,
+                    challenger,
+                ],
+            };
+            for schedule in sequence {
+                let output = if schedule == CandidateSchedule::N4 {
+                    &n4_out
+                } else {
+                    &challenger_out
+                };
+                let elapsed = submit(ctx, |command| {
+                    encode_candidate(
+                        schedule,
+                        projection,
+                        command,
+                        pipelines,
+                        buffer,
+                        input.offset,
+                        output.offset,
+                        m,
+                        n,
+                    )
+                })?;
+                if schedule == CandidateSchedule::N4 {
+                    n4_ms.push(elapsed);
+                } else {
+                    challenger_ms.push(elapsed);
+                }
+            }
+        }
+        let mut timing_exact = [0; AppleLowBitTensorRole::COUNT];
+        timing_exact[role.index()] = (samples * 4) as u64;
+        pipelines
+            .low_bit_dispatch_snapshot()
+            .checked_since(timing_before)
+            .map_err(str::to_owned)?
+            .verify_exact(format, timing_exact)
+            .map_err(str::to_owned)?;
+
+        if unsafe { read_bf16(&arena, &guard, 32) }
+            .iter()
+            .any(|v| v.to_bits() != SENTINEL)
+        {
+            return Err("direct QMV output guard changed".to_owned());
+        }
+
+        let n4_median = median(&n4_ms);
+        let challenger_median = median(&challenger_ms);
+        let challenger_kernel = match challenger {
+            CandidateSchedule::MlxQmv => projection.experimental_bf16_mlx_qmv_kernel_name(),
+            CandidateSchedule::Core8Qmv => {
+                projection.experimental_bf16_core8_qmv_kernel_name()
+            }
+            _ => unreachable!("challenger checked above"),
+        };
+        let cross_equal = n4_bits == challenger_bits;
+
+        Ok(json!({
+            "m":m,"n":n,"k":k,
+            "n4_accuracy":n4_accuracy.ok_or("missing N4 accuracy")?,
+            "challenger_accuracy":challenger_accuracy.ok_or("missing challenger accuracy")?,
+            "guard_unchanged":true,
+            "repeatable_output_bits":true,
+            "cross_schedule_output_bits_equal":cross_equal,
+            "cross_schedule_bit_equality_required":false,
+            "identity":{
+                "packed_values_sha256":sha256(packed.packed_values()),
+                "scales_f16le_sha256":sha256(&f16_bytes(packed.scales())),
+                "activations_bf16le_sha256":sha256(&bf16_bytes(&input_values)),
+                "cpu_low_bit_reference_bf16le_sha256":sha256(&bf16_bytes(&expected))
+            },
+            "dispatch":{
+                "format":format.name(),"role":role.report_name(),
+                "exact_correctness_dispatches_verified":4,
+                "exact_timing_dispatch_count_verified":true,
+                "timing_dispatches_per_schedule":samples * 2
+            },
+            "timing":{
+                "method":format!("{} wall-clock commit-to-completion",order.name()),
+                "blocks":samples,"samples_per_arm":samples * 2,
+                "n4_kernel":projection.experimental_bf16_n4_kernel_name(),
+                "challenger_schedule":challenger.name(),
+                "challenger_kernel":challenger_kernel,
+                "activation_dtype":"BF16","output_dtype":"BF16","scale_dtype":"F16",
+                "accumulation_dtype":"F32",
+                "n4_ms":n4_ms,"challenger_ms":challenger_ms,
+                "n4_median_ms":n4_median,"challenger_median_ms":challenger_median,
+                "n4_over_challenger_speedup":challenger_median/n4_median,
+                "challenger_over_n4_speedup":n4_median/challenger_median
+            }
+        }))
+    }
+
     fn run_shape(
         ctx: &MetalContext,
         pipelines: &PipelineCache,
