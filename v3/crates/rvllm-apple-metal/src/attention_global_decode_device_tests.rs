@@ -437,6 +437,229 @@ fn global_decode_device_oracle() -> TestResult {
 }
 
 #[test]
+#[ignore = "explicit same-command-buffer newest-K/V visibility gate; requires Apple9 and identity-bound strict-math library"]
+fn global_decode_newest_kv_same_command_buffer_visibility() -> TestResult {
+    let setup = Setup::new(false)?;
+    if setup.candidate != MetalResearchCandidate::GlobalD512R8P64T128 {
+        return Err("newest-K/V gate requires global-d512-r8p64t128".into());
+    }
+    let tile = setup
+        .candidate
+        .global_decode_tile()
+        .ok_or("unsplit global decode candidate required")?;
+    let expected_fixture = Fixture::new(256, 16);
+    let plan = DecodePlan::new(tile, expected_fixture.shape, DecodeOutput::F32)
+        .ok_or("candidate rejected newest-K/V fixture")?;
+    let newest_token = expected_fixture.position as u32;
+    let newest_base = physical_base(
+        expected_fixture.shape,
+        &expected_fixture.table,
+        newest_token,
+    )
+    .ok_or("newest token has no physical slot")?;
+    let newest_slot = i32::try_from(newest_base / DIM as usize)?;
+
+    let mut before_fixture = expected_fixture.clone();
+    for d in 0..DIM as usize {
+        before_fixture.k[newest_base + d] = round_bf16(0.0);
+        before_fixture.v[newest_base + d] = round_bf16(0.0);
+    }
+    let cpu_before = reference::output_f32(&before_fixture, plan)?;
+    let cpu_after = reference::output_f32(&expected_fixture, plan)?;
+    if cpu_before
+        .iter()
+        .zip(&cpu_after)
+        .all(|(before, after)| before.to_bits() == after.to_bits())
+    {
+        return Err("newest token fixture does not affect output".into());
+    }
+    let f32_bytes = |values: &[f32]| -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
+    };
+    let u16_bytes = |values: &[u16]| -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
+    };
+    let expected_before = f32_bytes(&cpu_before);
+    let expected_after = f32_bytes(&cpu_after);
+
+    // Negative control: the same metadata with a finite zero placeholder in
+    // the newest slot must produce the pre-append reference.
+    let control = Guarded::new(&setup.context, &before_fixture)?;
+    let control_command = setup
+        .context
+        .queue()
+        .commandBuffer()
+        .ok_or("control command unavailable")?;
+    try_encode_global_decode(
+        &setup.pipelines,
+        &control_command,
+        control.arena.buffer(),
+        &dims(before_fixture.shape),
+        MetalPhase::Decode,
+        control.bindings(0),
+        DecodeOutput::F32,
+    )?
+    .ok_or("control route refused fixture")?;
+    complete(&control_command)?;
+    assert_eq!(control.payload(0), expected_before);
+    control.check(false);
+
+    let k_source_words =
+        &expected_fixture.k[newest_base..newest_base + DIM as usize];
+    let v_source_words =
+        &expected_fixture.v[newest_base..newest_base + DIM as usize];
+    let k_source_bytes = u16_bytes(k_source_words);
+    let v_source_bytes = u16_bytes(v_source_words);
+
+    let mut repeated_output: Option<Vec<u8>> = None;
+    for repeat in 0..3 {
+        let mut data = Guarded::new(&setup.context, &before_fixture)?;
+        let k_source = data.arena.region("newest-k-src", k_source_bytes.len(), 32)?;
+        let v_source = data.arena.region("newest-v-src", v_source_bytes.len(), 32)?;
+        let slot_map = data.arena.region("newest-slot-map", 4, 4)?;
+        // SAFETY: these are fresh shared regions and no command buffer refers
+        // to them until after all three writes return.
+        unsafe {
+            data.arena.write_region(&k_source, &k_source_bytes)?;
+            data.arena.write_region(&v_source, &v_source_bytes)?;
+            data.arena
+                .write_region(&slot_map, &newest_slot.to_le_bytes())?;
+        }
+
+        let command = setup
+            .context
+            .queue()
+            .commandBuffer()
+            .ok_or("append-attend command unavailable")?;
+        let encoder = command
+            .computeCommandEncoder()
+            .ok_or("KV append encoder unavailable")?;
+        let pso = setup.pipelines.get("kv_cache_write_f16")?;
+        encoder.setComputePipelineState(pso);
+        let bindings = data.bindings(0);
+        let num_tokens = 1u32;
+        let kv_dim = DIM;
+        // SAFETY: Guarded and the three source regions above own the complete
+        // byte spans; scalar argument widths exactly match the MSL ABI.
+        unsafe {
+            encoder.setBuffer_offset_atIndex(Some(data.arena.buffer()), k_source.offset, 0);
+            encoder.setBuffer_offset_atIndex(Some(data.arena.buffer()), v_source.offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(data.arena.buffer()), bindings.k, 2);
+            encoder.setBuffer_offset_atIndex(Some(data.arena.buffer()), bindings.v, 3);
+            encoder.setBuffer_offset_atIndex(Some(data.arena.buffer()), slot_map.offset, 4);
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::from(&num_tokens).cast(),
+                std::mem::size_of_val(&num_tokens),
+                5,
+            );
+            encoder.setBytes_length_atIndex(
+                std::ptr::NonNull::from(&kv_dim).cast(),
+                std::mem::size_of_val(&kv_dim),
+                6,
+            );
+        }
+        encoder.dispatchThreads_threadsPerThreadgroup(
+            MTLSize {
+                width: 1,
+                height: DIM as usize,
+                depth: 1,
+            },
+            MTLSize {
+                width: 1,
+                height: 1,
+                depth: 1,
+            },
+        );
+        encoder.endEncoding();
+
+        // No commit, wait, host read, or other CPU synchronization occurs
+        // between the append encoder above and this attention encoder.
+        let before_dispatch = setup.pipelines.research_dispatch_snapshot();
+        try_encode_global_decode(
+            &setup.pipelines,
+            &command,
+            data.arena.buffer(),
+            &dims(expected_fixture.shape),
+            MetalPhase::Decode,
+            bindings,
+            DecodeOutput::F32,
+        )?
+        .ok_or("append-attend route refused fixture")?;
+        complete(&command)?;
+        expect_count(&setup, before_dispatch, 1);
+
+        let output = data.payload(0);
+        assert_eq!(output, expected_after, "repeat {repeat} saw stale newest K/V");
+        assert_ne!(output, expected_before, "repeat {repeat} matched stale control");
+        if let Some(first) = &repeated_output {
+            assert_eq!(first, &output, "newest-K/V output was not repeatable");
+        } else {
+            repeated_output = Some(output);
+        }
+
+        // The append may mutate only the target payload inside K/V. All guards,
+        // query, page table, context and position remain unchanged.
+        for &index in &[0usize, 3, 4, 5] {
+            let (region, original) = &data.inputs[index];
+            assert_eq!(&data.read(region), original, "non-cache input mutation");
+        }
+        for &index in &[1usize, 2] {
+            let (region, _) = &data.inputs[index];
+            let bytes = data.read(region);
+            assert_eq!(&bytes[..GUARD], &[0xa5; GUARD], "cache leading guard");
+            assert_eq!(
+                &bytes[bytes.len() - GUARD..],
+                &[0xa5; GUARD],
+                "cache trailing guard"
+            );
+        }
+        for (region, _) in &data.outputs {
+            let bytes = data.read(region);
+            assert_eq!(&bytes[..GUARD], &[0xa5; GUARD], "output leading guard");
+            assert_eq!(
+                &bytes[bytes.len() - GUARD..],
+                &[0xa5; GUARD],
+                "output trailing guard"
+            );
+        }
+        let k_raw = data.read(&data.inputs[1].0);
+        let v_raw = data.read(&data.inputs[2].0);
+        let start = GUARD + newest_base * 2;
+        let end = start + DIM as usize * 2;
+        assert_eq!(&k_raw[start..end], k_source_bytes.as_slice());
+        assert_eq!(&v_raw[start..end], v_source_bytes.as_slice());
+    }
+
+    write_new(
+        &setup.directory.join("newest-kv-visible.json"),
+        &serde_json::to_vec_pretty(&json!({
+            "schema": "rvllm.global-decode.newest-kv-visible.v1",
+            "scope": "synthetic global D512 decode dependency gate; not model/full-route qualification",
+            "identity": setup.identity,
+            "live_tokens": expected_fixture.context,
+            "newest_token": newest_token,
+            "newest_slot": newest_slot,
+            "append_kernel": "kv_cache_write_f16 compiled as typed BF16",
+            "attention_candidate": setup.candidate.name(),
+            "command_buffers_per_repeat": 1,
+            "cpu_synchronizations_between_append_and_attention": 0,
+            "repeats": 3,
+            "exact_once_rounded_fp32_reference": true,
+            "control_output_differs": true,
+            "guards_unchanged": true,
+            "newest_kv_device_visible": true,
+        }))?,
+    )?;
+    Ok(())
+}
+
+#[test]
 #[ignore = "explicit bounded SIMD-matrix global D512 oracle; requires Apple9 and prebuilt strict-math oracle library"]
 fn global_decode_matrix_device_oracle() -> TestResult {
     run_global_decode_device_oracle(true)
