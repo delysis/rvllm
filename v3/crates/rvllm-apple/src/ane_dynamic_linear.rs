@@ -3,7 +3,8 @@
 //! FFNs can retain compiled constant weights within the program-count budget.
 
 use half::f16;
-use rvllm_apple_ane_sys::{AneInMemoryKernel, AneInMemoryProgram};
+use rvllm_apple_ane_sys::{AneInMemoryKernel, AneInMemoryProgram, AneProgramCachePolicy};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy)]
 struct Layout {
@@ -91,10 +92,31 @@ pub struct AneDynamicLinearProgram {
 
 impl AneDynamicLinearProgram {
     pub fn compile(input: usize, output: usize) -> Result<Self, String> {
+        Self::compile_with_cache_policy(input, output, AneProgramCachePolicy::Compile)
+    }
+
+    pub fn compile_with_cache_policy(
+        input: usize,
+        output: usize,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
         let layout = Layout::new(input, output)?;
-        let program =
-            AneInMemoryProgram::compile(&layout.mil(), &[], layout.input_bytes, output * 64)?;
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &layout.mil(),
+            &[],
+            layout.input_bytes,
+            output * 64,
+            policy,
+        )?;
         Ok(Self { layout, program })
+    }
+
+    pub fn cache_identity(input: usize, output: usize) -> Result<String, String> {
+        let layout = Layout::new(input, output)?;
+        Ok(Sha256::digest(layout.mil().as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect())
     }
 
     pub fn create_layer(&self, weights: &[f16]) -> Result<AneDynamicLinear, String> {
@@ -170,6 +192,20 @@ mod tests {
         assert!(AneDynamicLinearProgram::compile(0, 3840).is_err());
         assert!(AneDynamicLinearProgram::compile(8192, 65536).is_err());
         assert!(layout.pack(&weights[..3]).is_err());
+    }
+
+    #[test]
+    fn qkv_cache_identities_are_weight_independent_and_shape_bound() {
+        let sliding = AneDynamicLinearProgram::cache_identity(3840, 8192).unwrap();
+        let global = AneDynamicLinearProgram::cache_identity(3840, 8704).unwrap();
+        assert_eq!(sliding.len(), 64);
+        assert_eq!(global.len(), 64);
+        assert_ne!(sliding, global);
+        assert_eq!(
+            sliding,
+            AneDynamicLinearProgram::cache_identity(3840, 8192).unwrap()
+        );
+        assert!(AneDynamicLinearProgram::cache_identity(0, 8192).is_err());
     }
 
     #[test]
