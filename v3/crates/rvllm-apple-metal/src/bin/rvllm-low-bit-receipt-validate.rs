@@ -267,7 +267,7 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
         [(f, m)].into_iter().collect()
     } else {
         require(
-            matches!(a.candidate.as_str(), "scalar" | "n4" | "n8"),
+            matches!(a.candidate.as_str(), "scalar" | "n4" | "n8" | "vector"),
             "invalid legacy candidate",
         )?;
         [
@@ -404,6 +404,13 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                 "scalar" => "",
                 "n4" => "_n4",
                 "n8" => "_n8",
+                "vector" => {
+                    if c.dispatch.format == "w4a16" {
+                        "_n4_packed2"
+                    } else {
+                        "_n8_k4"
+                    }
+                }
                 _ => unreachable!(),
             };
             let expected_kernel = format!(

@@ -476,6 +476,85 @@ kernel void experimental_projection_w8abf16_bf16_n8(
     }
 }
 
+// W4 next-round schedule: each lane consumes both values in one packed byte.
+kernel void experimental_projection_w4abf16_bf16_n4_packed2(
+    device const bfloat *A [[buffer(0)]], device const uchar *W [[buffer(1)]],
+    device const half *scales [[buffer(2)]], device bfloat *C [[buffer(3)]],
+    constant uint &M [[buffer(4)]], constant uint &N [[buffer(5)]],
+    constant uint &K [[buffer(6)]], constant uint &C_stride [[buffer(7)]],
+    constant uint &C_column [[buffer(8)]],
+    uint2 output [[threadgroup_position_in_grid]],
+    ushort lane [[thread_index_in_simdgroup]]) {
+    uint n0 = output.x * 4u, m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint row_bytes = (K + 1u) >> 1u, groups = (K + 31u) >> 5u;
+    float4 even = 0.0f, odd = 0.0f;
+    for (uint k0 = uint(lane) * 2u; k0 < K; k0 += 64u) {
+        float a0 = float(A[m * K + k0]);
+        bool has_k1 = k0 + 1u < K;
+        float a1 = has_k1 ? float(A[m * K + k0 + 1u]) : 0.0f;
+        for (uint column = 0u; column < 4u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                uchar packed = W[n * row_bytes + (k0 >> 1u)];
+                int q0 = int(packed & 0x0fu); q0 = q0 >= 8 ? q0 - 16 : q0;
+                int q1 = int(packed >> 4u); q1 = q1 >= 8 ? q1 - 16 : q1;
+                float scale = float(scales[n * groups + (k0 >> 5u)]);
+                even[column] += a0 * (float(q0) * scale);
+                if (has_k1) odd[column] += a1 * (float(q1) * scale);
+            }
+        }
+    }
+    float4 total;
+    for (uint column = 0u; column < 4u; ++column)
+        total[column] = simd_sum(even[column]) + simd_sum(odd[column]);
+    if (lane == 0) for (uint column = 0u; column < 4u; ++column) {
+        uint n = n0 + column;
+        if (n < N) C[m * C_stride + C_column + n] = bfloat(total[column]);
+    }
+}
+
+// W8 next-round schedule: four adjacent K values per lane, with one activation
+// vector reused across eight output rows. The scalar tail keeps arbitrary K legal.
+kernel void experimental_projection_w8abf16_bf16_n8_k4(
+    device const bfloat *A [[buffer(0)]], device const char *W [[buffer(1)]],
+    device const half *scales [[buffer(2)]], device bfloat *C [[buffer(3)]],
+    constant uint &M [[buffer(4)]], constant uint &N [[buffer(5)]],
+    constant uint &K [[buffer(6)]], constant uint &C_stride [[buffer(7)]],
+    constant uint &C_column [[buffer(8)]],
+    uint2 output [[threadgroup_position_in_grid]],
+    ushort lane [[thread_index_in_simdgroup]]) {
+    uint n0 = output.x * 8u, m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint groups = (K + 31u) >> 5u;
+    float4 lo = 0.0f, hi = 0.0f;
+    for (uint k0 = uint(lane) * 4u; k0 < K; k0 += 128u) {
+        uint count = min(4u, K - k0);
+        float4 av = 0.0f;
+        for (uint j = 0u; j < count; ++j) av[j] = float(A[m * K + k0 + j]);
+        for (uint column = 0u; column < 8u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                float sum = 0.0f;
+                for (uint j = 0u; j < count; ++j) {
+                    float scale = float(scales[n * groups + ((k0 + j) >> 5u)]);
+                    sum += av[j] * (float(W[n * K + k0 + j]) * scale);
+                }
+                if (column < 4u) lo[column] += sum; else hi[column - 4u] += sum;
+            }
+        }
+    }
+    float4 total_lo, total_hi;
+    for (uint column = 0u; column < 4u; ++column) {
+        total_lo[column] = simd_sum(lo[column]);
+        total_hi[column] = simd_sum(hi[column]);
+    }
+    if (lane == 0) for (uint column = 0u; column < 8u; ++column) {
+        uint n = n0 + column;
+        if (n < N) C[m * C_stride + C_column + n] = bfloat(column < 4u ? total_lo[column] : total_hi[column - 4u]);
+    }
+}
+
 constant uint TILE_M = 8;
 constant uint TILE_N = 8;
 constant uint TILE16 = 16;
@@ -3056,6 +3135,8 @@ pub const KERNEL_NAMES: &[&str] = &[
     "experimental_projection_w8abf16_bf16_n4",
     "experimental_projection_w4abf16_bf16_n8",
     "experimental_projection_w8abf16_bf16_n8",
+    "experimental_projection_w4abf16_bf16_n4_packed2",
+    "experimental_projection_w8abf16_bf16_n8_k4",
     "gemm_rmsnorm_f16",
     "gemm_headwise_rmsnorm_f16",
     "gemm_headwise_rmsnorm_unit_f16",

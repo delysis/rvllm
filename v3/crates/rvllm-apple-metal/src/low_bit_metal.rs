@@ -314,6 +314,24 @@ impl MetalLowBitProjectionOffsets {
         }
     }
 
+    /// Format-specific next-round schedule. This is deliberately default-off.
+    #[must_use]
+    pub const fn experimental_bf16_vector_kernel_name(self) -> &'static str {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => "experimental_projection_w4abf16_bf16_n4_packed2",
+            AppleLowBitWeightFormat::W8A16 => "experimental_projection_w8abf16_bf16_n8_k4",
+        }
+    }
+
+    /// Exact number of adjacent output rows owned by one SIMD group.
+    #[must_use]
+    pub const fn experimental_bf16_vector_output_width(self) -> usize {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => 4,
+            AppleLowBitWeightFormat::W8A16 => 8,
+        }
+    }
+
     /// Encode `C[M,N] = A[M,K] * W[N,K]^T` with every tensor in one arena.
     pub fn encode(
         self,
@@ -448,6 +466,34 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_n8_kernel_name(),
             8,
+        )
+    }
+
+    /// Encode the format-specific packed/vectorized research schedule.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16_vector(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        let width = self.experimental_bf16_vector_output_width();
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            self.experimental_bf16_vector_kernel_name(),
+            width,
         )
     }
 
@@ -874,6 +920,23 @@ mod tests {
             assert!(descriptor
                 .experimental_bf16_n8_kernel_name()
                 .ends_with("_n8"));
+            assert!(descriptor
+                .experimental_bf16_vector_kernel_name()
+                .starts_with("experimental_projection_"));
+            assert_ne!(
+                descriptor.experimental_bf16_vector_kernel_name(),
+                descriptor.experimental_bf16_n4_kernel_name()
+            );
+            let width = descriptor.experimental_bf16_vector_output_width();
+            assert_eq!(
+                width,
+                if format == AppleLowBitWeightFormat::W4A16 {
+                    4
+                } else {
+                    8
+                }
+            );
+            assert_eq!((descriptor.shape()[0] as usize).div_ceil(width), 1);
         }
     }
     use crate::arena::MetalBufferArena;

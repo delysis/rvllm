@@ -41,6 +41,7 @@ mod macos {
         Scalar,
         N4,
         N8,
+        Vector,
         N4VsN8,
     }
 
@@ -50,8 +51,9 @@ mod macos {
                 "scalar" => Ok(Self::Scalar),
                 "n4" => Ok(Self::N4),
                 "n8" => Ok(Self::N8),
+                "vector" => Ok(Self::Vector),
                 "n4-vs-n8" => Ok(Self::N4VsN8),
-                _ => Err("--candidate must be scalar, n4, n8, or n4-vs-n8".to_owned()),
+                _ => Err("--candidate must be scalar, n4, n8, vector, or n4-vs-n8".to_owned()),
             }
         }
 
@@ -60,6 +62,7 @@ mod macos {
                 Self::Scalar => "scalar",
                 Self::N4 => "n4",
                 Self::N8 => "n8",
+                Self::Vector => "vector",
                 Self::N4VsN8 => "n4-vs-n8",
             }
         }
@@ -101,7 +104,7 @@ mod macos {
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
          [--m 1,4] [--format w4a16|w8a16|both] [--samples 5] \
-         [--candidate scalar|n4|n8|n4-vs-n8] [--order abba|baab]"
+         [--candidate scalar|n4|n8|vector|n4-vs-n8] [--order abba|baab]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -528,6 +531,16 @@ mod macos {
                 n,
                 0,
             ),
+            CandidateSchedule::Vector => projection.encode_strided_bf16_vector(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
             CandidateSchedule::N4VsN8 => {
                 return Err("direct comparison is not a kernel schedule".to_owned())
             }
@@ -828,6 +841,42 @@ mod macos {
         .map_err(|e| e.to_string())?;
         let buffer = arena.buffer_retained();
 
+        // A rejected alias must neither encode work nor touch the poisoned
+        // destination. This exercises the same schedule selector used below.
+        let rejected_before = pipelines.low_bit_dispatch_snapshot();
+        let rejected = ctx
+            .queue_retained()
+            .commandBuffer()
+            .ok_or_else(|| "command buffer unavailable".to_owned())?;
+        if encode_candidate(
+            schedule,
+            projection,
+            &rejected,
+            pipelines,
+            buffer,
+            values.offset,
+            low_out.offset,
+            m,
+            n,
+        )
+        .is_ok()
+        {
+            return Err("aliased candidate dispatch was not rejected".to_owned());
+        }
+        let rejected_delta = pipelines
+            .low_bit_dispatch_snapshot()
+            .checked_since(rejected_before)
+            .map_err(str::to_owned)?;
+        rejected_delta
+            .verify_exact(format, [0; AppleLowBitTensorRole::COUNT])
+            .map_err(str::to_owned)?;
+        if unsafe { read_bf16(&arena, &low_out, output_count) }
+            .iter()
+            .any(|value| value.to_bits() != SENTINEL)
+        {
+            return Err("rejected candidate changed output".to_owned());
+        }
+
         let before = pipelines.low_bit_dispatch_snapshot();
         submit(ctx, |command| {
             encode_candidate(
@@ -1009,6 +1058,7 @@ mod macos {
                     CandidateSchedule::Scalar => projection.experimental_bf16_kernel_name(),
                     CandidateSchedule::N4 => projection.experimental_bf16_n4_kernel_name(),
                     CandidateSchedule::N8 => projection.experimental_bf16_n8_kernel_name(),
+                    CandidateSchedule::Vector => projection.experimental_bf16_vector_kernel_name(),
                     CandidateSchedule::N4VsN8 => unreachable!("direct mode has a separate referee"),
                 },
                 "activation_dtype": "BF16", "output_dtype": "BF16", "scale_dtype": "F16", "accumulation_dtype": "F32",
@@ -1057,6 +1107,11 @@ mod macos {
             CandidateSchedule::N8 => [
                 "experimental_projection_w4abf16_bf16_n8",
                 "experimental_projection_w8abf16_bf16_n8",
+            ]
+            .as_slice(),
+            CandidateSchedule::Vector => [
+                "experimental_projection_w4abf16_bf16_n4_packed2",
+                "experimental_projection_w8abf16_bf16_n8_k4",
             ]
             .as_slice(),
             CandidateSchedule::N4VsN8 => [
@@ -1172,6 +1227,10 @@ mod macos {
             assert_eq!(
                 CandidateSchedule::parse("n8").unwrap(),
                 CandidateSchedule::N8
+            );
+            assert_eq!(
+                CandidateSchedule::parse("vector").unwrap(),
+                CandidateSchedule::Vector
             );
             assert!(CandidateSchedule::parse("n16").is_err());
         }
