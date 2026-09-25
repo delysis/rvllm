@@ -39,6 +39,25 @@ The common failure is W8 vector-K4 at M=1: reducing the K-loop iterations did no
 
 Ten sealed jobs cover only the five plausible recovery cells, in both ABBA and reverse BAAB order. Each job checks an independent BF16 CPU reference, guard bytes, rejected alias/no-dispatch behavior, exact repeated output bits, and exact dispatch counts. Changing thermal/process conditions are recorded and never gate execution.
 
+## Adaptive-selector confirmation
+
+All ten sealed jobs completed successfully under the persistent queue. Every arm passed its independent BF16 reference, guard, rejected-dispatch, repeated-bit and exact-dispatch checks. The timings below compare the selected N4 kernel against the typed-BF16 native control in the same receipt; `native x` is native median divided by candidate median.
+
+| role | fmt | order | adaptive ms | native ms | native x | disposition |
+|---|---|---|---:|---:|---:|---|
+| K | W8 | ABBA | 0.3666 | 0.3720 | 1.015 | inconclusive |
+| K | W8 | BAAB | 0.6502 | 0.5786 | 0.890 | reject selector change |
+| V | W8 | ABBA | 0.4610 | 0.4575 | 0.992 | inconclusive |
+| V | W8 | BAAB | 0.5125 | 0.5845 | 1.140 | order-sensitive; no promotion |
+| O | W8 | ABBA | 0.5382 | 0.8353 | 1.552 | prospective winner |
+| O | W8 | BAAB | 0.3695 | 0.5918 | 1.601 | prospective winner |
+| down | W8 | ABBA | 1.6340 | 2.5726 | 1.574 | prospective winner |
+| down | W8 | BAAB | 1.3104 | 2.0835 | 1.590 | prospective winner |
+| down | W4 | ABBA | 1.1110 | 2.1336 | 1.920 | prospective winner |
+| down | W4 | BAAB | 1.0649 | 1.8578 | 1.745 | prospective winner |
+
+The evidence supports N4 as a prospective M=1 selector for W8 output and W8/W4 down projections. It does not support changing W8 K or V selection: K reverses into a loss, while V straddles parity and changes materially by order. This remains operator evidence, so the three winners require production-route dispatch proof and end-to-end confirmation before any shipping default changes.
+
 ## Limitations
 
 - Confirmation versus screen absolute medians drift by more than 20% in several cells, especially down projections and W8 O M=4. Those cells are not stable winners.
