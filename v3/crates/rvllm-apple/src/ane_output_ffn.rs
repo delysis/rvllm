@@ -663,6 +663,124 @@ mod tests {
     }
 
     #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "actual Gemma 4 sliding-layer-shape oracle; zero compiles and two evaluations"]
+    fn hardware_output_ffn_gemma_shape_correctness_probe() {
+        use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
+        use rvllm_apple_ane_sys::AneInMemoryProgram;
+
+        let (hidden, intermediate, attention) = (3840, 15360, 4096);
+        let dense: Vec<_> = (0..hidden * intermediate)
+            .map(|index| f16::from_f32(((index * 17 + 3) % 31) as f32 / 512.0 - 0.03))
+            .collect();
+        let ffn =
+            AneInt8FfnWeights::quantize(&dense, &dense, &dense, hidden, intermediate).unwrap();
+        drop(dense);
+        let output: Vec<_> = (0..hidden * attention)
+            .map(|index| f16::from_f32(((index * 19 + 5) % 37) as f32 / 512.0 - 0.035))
+            .collect();
+        let post_gamma: Vec<_> = (0..hidden)
+            .map(|index| f16::from_f32(0.9 + (index % 97) as f32 / 1000.0))
+            .collect();
+        let pre_gamma: Vec<_> = (0..hidden)
+            .map(|index| f16::from_f32(1.05 - (index % 89) as f32 / 1200.0))
+            .collect();
+        let attended: Vec<_> = (0..attention)
+            .map(|index| f16::from_f32(((index * 23 + 7) % 53) as f32 / 384.0 - 0.07))
+            .collect();
+        let residual: Vec<_> = (0..hidden)
+            .map(|index| f16::from_f32(((index * 29 + 11) % 59) as f32 / 384.0 - 0.075))
+            .collect();
+        let projected: Vec<_> = output
+            .chunks_exact(attention)
+            .map(|row| {
+                f16::from_f32(
+                    row.iter()
+                        .zip(&attended)
+                        .map(|(&weight, &value)| weight.to_f32() * value.to_f32())
+                        .sum(),
+                )
+            })
+            .collect();
+        let (_, expected) = output_ffn_cpu_boundary_oracle(
+            &projected,
+            &residual,
+            &post_gamma,
+            &pre_gamma,
+            &ffn,
+            1e-6,
+        )
+        .unwrap();
+        let source =
+            AneOutputFfnSource::build(&output, attention, &ffn, &post_gamma, &pre_gamma, 1e-6)
+                .unwrap();
+        let before = compile_budget_used();
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &source.mil,
+            &source.blob,
+            source.identity.input_bytes,
+            source.identity.output_bytes,
+            AneProgramCachePolicy::RequireExisting,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before);
+        let mut kernel = program.create_request().unwrap();
+        let mut input = vec![0_u8; source.identity.input_bytes];
+        for (channel, value) in attended.iter().chain(&residual).enumerate() {
+            let offset = channel * 64;
+            input[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        let mut runs = Vec::new();
+        for _ in 0..2 {
+            kernel.write_input(&input).unwrap();
+            kernel.evaluate().unwrap();
+            let mut bytes = vec![0_u8; source.identity.output_bytes];
+            kernel.read_output(&mut bytes).unwrap();
+            runs.push(
+                bytes
+                    .chunks_exact(64)
+                    .map(|row| f16::from_le_bytes([row[0], row[1]]))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        assert_eq!(runs[0], runs[1], "repeated Gemma-shape output changed bits");
+        assert!(runs[0].iter().all(|value| value.is_finite()));
+        let squared_error: f32 = runs[0]
+            .iter()
+            .zip(&expected)
+            .map(|(actual, expected)| {
+                let difference = actual.to_f32() - expected.to_f32();
+                difference * difference
+            })
+            .sum();
+        let squared_reference: f32 = expected
+            .iter()
+            .map(|value| value.to_f32() * value.to_f32())
+            .sum();
+        let relative_l2 = (squared_error / squared_reference.max(f32::MIN_POSITIVE)).sqrt();
+        let maximum_absolute_error = runs[0]
+            .iter()
+            .zip(&expected)
+            .map(|(actual, expected)| (actual.to_f32() - expected.to_f32()).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(relative_l2 <= 0.05, "relative L2 error {relative_l2}");
+        assert!(
+            maximum_absolute_error <= 0.1,
+            "maximum absolute error {maximum_absolute_error}"
+        );
+        assert_eq!(compile_budget_used(), before);
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "relative_l2_error": relative_l2,
+                "maximum_absolute_error": maximum_absolute_error,
+                "repeated_bit_exact": true,
+                "values": hidden,
+            })
+        );
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
     fn compile_dialect_probe(mil: &str, input_channels: usize, output_channels: usize) {
         use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
         use rvllm_apple_ane_sys::AneInMemoryProgram;
