@@ -8,6 +8,10 @@ Packet patch SHA-256: `32389c8f968efc88319b9873ce039387e64be70dc414a68e36fc35e18
 
 Port commit: `ebd84dfa`
 
+Bounded-oracle commit: `62494e08`
+
+Additional one-axis probe commit: `e6d899d5`
+
 ## Intake boundary
 
 The supplied packet is byte-identical to the previously audited Atlas packet and
@@ -25,35 +29,76 @@ non-executable ANE descriptors were not imported. Existing cooperative shader
 source and immutable job IDs remain unchanged; matrix jobs carry an explicit
 `-mma` discriminator.
 
-## Gates and result
+## Exact-contract screen
 
 Focused Rust geometry/catalog/queue tests passed (13, 3, and 8 tests). All eight
 identity-bound core/oracle build jobs compiled and linked with Metal 3.1 and
 `-fno-fast-math`, with unchanged inputs.
 
 All four Apple9 native oracle jobs then failed at the L256 exact serial-FP32
-comparison. This is retained as a real gate failure. It does not establish that
-the matrix results exceed an acceptable model-level error budget because the
-matrix family deliberately changes floating-point association, but it does mean
-the candidates are not qualified for timing under the current exact contract.
+comparison. This is retained as a real result rather than rewritten as a pass.
+Because SIMD-matrix accumulation deliberately changes floating-point association,
+the exact contract was followed by a distinct bounded contract rather than being
+weakened in place.
 
-| candidate | strict build | Apple9 exact serial-FP32 oracle | timing eligibility |
-|---|---|---|---|
-| R16/K16/P64/T128 | passed | failed at L256 | no |
-| R16/K32/P64/T128 | passed | failed at L256 | no |
-| R16/K16/P128/T128 | passed | failed at L256 | no |
-| R8/K32/P64/T128 | passed | failed at L256 | no |
+## Independent bounded matrix oracle
+
+Commit `62494e08` added a separate fail-closed matrix oracle using an independent
+scalar FP64 reference. It requires maximum absolute error at most `5e-4`, relative
+L2 error at most `1e-4`, exact once-rounded BF16 output, three-run repeatability,
+input/guard preservation, rejected-dispatch no-write behavior, and exact source,
+metallib, executable and workload identity. Serial-FP32 exactness remains a
+diagnostic field.
+
+All four candidates passed this native Apple9 oracle. Across the campaign, maximum
+FP64 absolute error was `4.24622e-6`; maximum relative L2 error was
+`1.87599e-6`. Serial-FP32 maximum differences were between `4.35114e-6` and
+`4.52995e-6` and were correctly reported as non-exact.
+
+## Exploratory successive-halving timing
+
+Mean candidate GPU milliseconds per dispatch are below. Every sample was retained.
+The boolean is the predeclared 5% control-drift gate; failure makes a cell
+exploratory/inconclusive for promotion, but does not erase its scheduling signal.
+
+| Context | R16/K16/P64/T128 | R16/K32/P64/T128 | R16/K16/P128/T128 | R8/K32/P64/T128 |
+|---:|---:|---:|---:|---:|
+| 256 | 1.177 (drift pass) | **1.066** (drift pass) | 1.165 (drift pass) | 1.070 (drift fail) |
+| 512 | eliminated | 4.390 (drift fail) | 4.431 (drift fail) | **3.810** (drift fail) |
+| 1024 | eliminated | 8.072 (drift fail) | 9.018 (drift fail) | **6.293** (drift fail) |
+| 2048 | eliminated | 17.259 (drift fail) | eliminated | **14.605** (drift fail) |
+
+R8/K32/P64/T128 is therefore the prospective matrix-family leader through 2048.
+It improves the prior unsplit R8/P64/T128 result from `23.399 ms` to `14.605 ms`
+(`1.60x` faster), but remains approximately `9.81x` slower than the retained
+exploratory MLX BF16 full-attention operator datum of `1.489 ms` at 2048. This is
+not promotion evidence: every 512-and-longer matrix cell failed the control-drift
+gate, there is no independent confirmation campaign, and the comparison is not a
+sealed cross-framework referee.
+
+The campaign auto-submitted its deferred 4096 survivor confirmation after L2048;
+that result is intentionally not used here. The user-requested short screen is
+already decisive for iteration.
 
 Immutable raw results are under
 `reports/gemma4-global-decode-local-20260924/queue/results/g4d512atlasmma20260924v1-*-mma-*`.
 The identity-bound campaign inputs and manifests are under
 `reports/gemma4-global-d512-atlas-mma-20260924-v1/`.
 
-## Next gate
+## Next probes and gate
 
-Do not time or promote these candidates yet. Add a separate matrix numerical
-contract using an independent FP64 reference, explicit absolute/relative and
-once-rounded BF16 bounds, adversarial page/cache cases, repeatability, guard
-bytes, and rejected-dispatch no-write checks. Keep the exact serial-FP32 result
-in the receipt as a diagnostic rather than rewriting it as a pass. Only matrix
-candidates that pass that independent bounded oracle may enter the L256 screen.
+Commit `e6d899d5` adds two one-axis probes without changing defaults:
+
+- R16/K16/P64/T64 isolates thread-count effects.
+- R16/K64/P64/T128 isolates a larger KV tile.
+
+R32 variants from the packet were rejected: global Q=1 exposes only 16 packed
+rows, so the current exact grid would launch zero groups and a rounded-up grid
+would access rows 16..31 without a separately designed masked schedule.
+
+The two admitted probes must pass strict compilation and the same bounded native
+matrix oracle before L256 timing. No matrix candidate is promotable until a
+separate confirmation campaign passes the drift gate and the full inference route
+is correctness-qualified. The 2048 gap to MLX also says the next architectural
+round must reduce serialized context traversal and barrier/launch cost rather than
+merely polish another unsplit tile.
