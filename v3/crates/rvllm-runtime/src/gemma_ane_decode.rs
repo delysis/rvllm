@@ -107,7 +107,7 @@ impl AneAttentionOutputPlan {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct AnePrecisionContract {
     /// Serialized constant representation before ANE constexpr expansion.
     pub ffn_weight_storage: &'static str,
@@ -2075,6 +2075,8 @@ mod tests {
             "tokens":tokens,
             "baseline_weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
             "candidate_weight_plan":candidate_weight_plan.name(),
+            "baseline_precision_contract":AneWeightPlan::StaticInt8FfnCached.precision_contract(),
+            "candidate_precision_contract":candidate_weight_plan.precision_contract(),
             "dynamic_qkv_cache_identity":if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached { Some(json!({
                 "sliding_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8192).unwrap(),
                 "global_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8704).unwrap(),
@@ -2412,6 +2414,8 @@ mod tests {
             "snapshot_sha256":snapshot_sha256,
             "baseline_weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
             "candidate_weight_plan":candidate_weight_plan.name(),
+            "baseline_precision_contract":AneWeightPlan::StaticInt8FfnCached.precision_contract(),
+            "candidate_precision_contract":candidate_weight_plan.precision_contract(),
             "dynamic_qkv_cache_identity":if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached { Some(json!({
                 "sliding_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8192).unwrap(),
                 "global_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8704).unwrap(),
