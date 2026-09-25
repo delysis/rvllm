@@ -1590,6 +1590,118 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "private ANE layer-0 fused full-route referee; exact-cache two-token baseline/candidate comparison, no timing claim"]
+    fn hardware_layer0_fused_attention_output_full_route() {
+        use super::two_token_reference::live_tests::{load_snapshot, signature};
+        use serde_json::json;
+        use std::io::Write;
+
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let snapshot_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_TWO_TOKEN_SNAPSHOT").expect("snapshot required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_FULL_ROUTE_RECEIPT").expect("receipt path required"),
+        );
+        let mut receipt = std::fs::File::create_new(receipt_path).unwrap();
+        let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
+        let compiler_calls_before = compile_budget_used();
+
+        let run = |plan| {
+            let mut decoder = GemmaAneDecode::load_with_attention_output_plan(
+                &model,
+                1024,
+                AneWeightPlan::StaticInt8FfnCached,
+                0,
+                plan,
+            )
+            .unwrap();
+            decoder.import_prefill(&snapshot).unwrap();
+            let mut layer0 = Vec::with_capacity(2);
+            let first = decoder
+                .decode_with_observer(anchor, &mut |layer, hidden| {
+                    if layer == 0 {
+                        layer0.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            let second = decoder
+                .decode_with_observer(first.token, &mut |layer, hidden| {
+                    if layer == 0 {
+                        layer0.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(layer0.len(), 2);
+            (
+                vec![signature(&first), signature(&second)],
+                layer0,
+                decoder.attention_output_route_evidence(),
+            )
+        };
+
+        let (baseline_predictions, baseline_layer0, baseline_route) =
+            run(AneAttentionOutputPlan::Separate);
+        assert_eq!(baseline_route.fused_layers, Vec::<usize>::new());
+        assert_eq!(baseline_route.compiler_calls_during_load, 0);
+        assert_eq!(baseline_route.compiler_calls_since_load, Some(0));
+        assert_eq!(baseline_route.fused_attention_output_evaluations, 0);
+        assert_eq!(baseline_route.separate_attention_evaluations, 96);
+        assert_eq!(baseline_route.separate_output_evaluations, 96);
+
+        let (candidate_predictions, candidate_layer0, candidate_route) =
+            run(AneAttentionOutputPlan::Layer0FusedCached);
+        assert_eq!(candidate_route.fused_layers, vec![0]);
+        assert_eq!(candidate_route.compiler_calls_during_load, 0);
+        assert_eq!(candidate_route.compiler_calls_since_load, Some(0));
+        assert_eq!(candidate_route.fused_attention_output_evaluations, 2);
+        assert_eq!(candidate_route.separate_attention_evaluations, 94);
+        assert_eq!(candidate_route.separate_output_evaluations, 94);
+        assert_eq!(candidate_layer0, baseline_layer0);
+        assert_eq!(candidate_predictions, baseline_predictions);
+
+        let compiler_calls_after = compile_budget_used();
+        assert_eq!(compiler_calls_after, compiler_calls_before);
+        let report = json!({
+            "schema":"rvllm.gemma4_ane_fused_attention_output_full_route.v1",
+            "snapshot_sha256":snapshot_sha256,
+            "tokens":2,
+            "weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
+            "baseline_predictions":baseline_predictions,
+            "candidate_predictions":candidate_predictions,
+            "layer0_residuals_exact":true,
+            "final_predictions_exact":true,
+            "baseline_route":{
+                "plan":baseline_route.plan,
+                "fused_layers":baseline_route.fused_layers,
+                "fused_evaluations":baseline_route.fused_attention_output_evaluations,
+                "separate_attention_evaluations":baseline_route.separate_attention_evaluations,
+                "separate_output_evaluations":baseline_route.separate_output_evaluations,
+            },
+            "candidate_route":{
+                "plan":candidate_route.plan,
+                "fused_layers":candidate_route.fused_layers,
+                "fused_evaluations":candidate_route.fused_attention_output_evaluations,
+                "separate_attention_evaluations":candidate_route.separate_attention_evaluations,
+                "separate_output_evaluations":candidate_route.separate_output_evaluations,
+            },
+            "compiler_calls_before":compiler_calls_before,
+            "compiler_calls_after":compiler_calls_after,
+            "compiler_calls_delta":0,
+            "timing_claim":false,
+            "promotion":false,
+            "claim":"Two-token exact-cache full-route layer-0 fused correctness and dispatch evidence only."
+        });
+        writeln!(receipt, "{}", report).unwrap();
+        receipt.flush().unwrap();
+    }
+
+    #[test]
     #[ignore = "private ANE layer-0 fused attention/output compile-source probe; one compiler attempt, zero evaluations, explicit journal and receipt"]
     fn hardware_layer0_fused_attention_output_compile_source() {
         use rvllm_apple::ane_attention::AneAttentionOutputCompile;
