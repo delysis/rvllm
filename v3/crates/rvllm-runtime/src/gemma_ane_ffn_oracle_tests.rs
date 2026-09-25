@@ -10,6 +10,13 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 const SCHEMA: &str = "rvllm.ane.ffn-component-input.v1";
+const BOUNDED_SCHEMA: &str = "rvllm.ane.ffn-layout-equivalence.v1";
+const NEAR_ZERO: f64 = 1.0 / 64.0;
+const NEAR_ZERO_ABS: f64 = 1.0 / 1024.0;
+const MAX_ABS: f64 = 1.0 / 32.0;
+const MAX_MATERIAL_ULP: u32 = 4;
+const MAX_NEAR_ZERO_ULP: u32 = 1024;
+const MAX_RELATIVE_L2: f64 = 1.0 / 1024.0;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -174,6 +181,206 @@ fn output(directory: &Path, name: &str, values: &[f16]) -> Result<String, String
     Ok(sha(&bytes))
 }
 
+fn ordered_f16(bits: u16) -> u32 {
+    if bits & 0x8000 != 0 {
+        u32::from(0x8000_u16 - (bits & 0x7fff))
+    } else {
+        u32::from(0x8000_u16.wrapping_add(bits))
+    }
+}
+
+fn ulp_distance(a: f16, b: f16) -> u32 {
+    if a == f16::ZERO && b == f16::ZERO {
+        return 0;
+    }
+    ordered_f16(a.to_bits()).abs_diff(ordered_f16(b.to_bits()))
+}
+
+fn f16_spacing_toward(control: f16, candidate: f16) -> f64 {
+    let bits = control.to_bits();
+    if bits == 0 || bits == 0x8000 {
+        return f64::from(f16::from_bits(1).to_f32());
+    }
+    let next_bits = if candidate.to_f32() >= control.to_f32() {
+        if bits & 0x8000 == 0 {
+            bits + 1
+        } else {
+            bits - 1
+        }
+    } else if bits & 0x8000 == 0 {
+        bits - 1
+    } else {
+        bits + 1
+    };
+    f64::from((f16::from_bits(next_bits).to_f32() - control.to_f32()).abs())
+}
+
+#[derive(Debug)]
+struct BoundedComparison {
+    receipt: serde_json::Value,
+    passed: bool,
+    squared_error: f64,
+    squared_reference: f64,
+}
+
+fn bounded_comparison(control: &[f16], candidate: &[f16]) -> BoundedComparison {
+    let length_match = control.len() == candidate.len();
+    let mut finite_control = true;
+    let mut finite_candidate = true;
+    let mut control_nan = 0_u64;
+    let mut candidate_nan = 0_u64;
+    let mut control_pos_inf = 0_u64;
+    let mut control_neg_inf = 0_u64;
+    let mut candidate_pos_inf = 0_u64;
+    let mut candidate_neg_inf = 0_u64;
+    let mut mismatch_count = 0_u64;
+    let mut hybrid_violations = 0_u64;
+    let mut material_ulp_violations = 0_u64;
+    let mut near_zero_ulp_violations = 0_u64;
+    let mut max_abs_error = 0.0_f64;
+    let mut max_abs_index = None;
+    let mut max_ulp_all = 0_u32;
+    let mut max_ulp_all_index = None;
+    let mut max_ulp_material = 0_u32;
+    let mut max_ulp_material_index = None;
+    let mut max_ulp_near_zero = 0_u32;
+    let mut max_ulp_near_zero_index = None;
+    let mut first_hybrid_violation = None;
+    let mut squared_error = 0.0_f64;
+    let mut squared_reference = 0.0_f64;
+    let mut histogram = [0_u64; 11];
+    let common = control.len().min(candidate.len());
+    for index in 0..common {
+        let a = control[index];
+        let b = candidate[index];
+        let af = f64::from(a.to_f32());
+        let bf = f64::from(b.to_f32());
+        if !a.is_finite() {
+            finite_control = false;
+            if a.is_nan() {
+                control_nan += 1;
+            } else if af.is_sign_positive() {
+                control_pos_inf += 1;
+            } else {
+                control_neg_inf += 1;
+            }
+        }
+        if !b.is_finite() {
+            finite_candidate = false;
+            if b.is_nan() {
+                candidate_nan += 1;
+            } else if bf.is_sign_positive() {
+                candidate_pos_inf += 1;
+            } else {
+                candidate_neg_inf += 1;
+            }
+        }
+        if !a.is_finite() || !b.is_finite() {
+            continue;
+        }
+        squared_reference += af * af;
+        let error = (bf - af).abs();
+        squared_error += error * error;
+        let ulp = ulp_distance(a, b);
+        let bucket = match ulp {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            4 => 4,
+            5..=8 => 5,
+            9..=16 => 6,
+            17..=64 => 7,
+            65..=256 => 8,
+            257..=1024 => 9,
+            _ => 10,
+        };
+        histogram[bucket] += 1;
+        if a.to_bits() != b.to_bits() {
+            mismatch_count += 1;
+        }
+        if error > max_abs_error {
+            max_abs_error = error;
+            max_abs_index = Some(index);
+        }
+        if ulp > max_ulp_all {
+            max_ulp_all = ulp;
+            max_ulp_all_index = Some(index);
+        }
+        let material = af.abs().max(bf.abs()) >= NEAR_ZERO;
+        if material {
+            if ulp > max_ulp_material {
+                max_ulp_material = ulp;
+                max_ulp_material_index = Some(index);
+            }
+            if ulp > MAX_MATERIAL_ULP {
+                material_ulp_violations += 1;
+            }
+        } else {
+            if ulp > max_ulp_near_zero {
+                max_ulp_near_zero = ulp;
+                max_ulp_near_zero_index = Some(index);
+            }
+            if ulp > MAX_NEAR_ZERO_ULP || error > NEAR_ZERO_ABS {
+                near_zero_ulp_violations += 1;
+            }
+        }
+        let hybrid_limit = NEAR_ZERO_ABS.max(4.0 * f16_spacing_toward(a, b));
+        if error > hybrid_limit {
+            hybrid_violations += 1;
+            first_hybrid_violation.get_or_insert(index);
+        }
+    }
+    let denominator = squared_reference.max(common as f64 * (2.0_f64).powi(-28));
+    let relative_l2 = (squared_error / denominator).sqrt();
+    let absolute_pass = max_abs_error <= MAX_ABS;
+    let relative_l2_pass = relative_l2 <= MAX_RELATIVE_L2;
+    let passed = length_match
+        && common > 0
+        && finite_control
+        && finite_candidate
+        && hybrid_violations == 0
+        && material_ulp_violations == 0
+        && near_zero_ulp_violations == 0
+        && absolute_pass
+        && relative_l2_pass;
+    let at = |index: Option<usize>| {
+        index.map(|i| {
+            serde_json::json!({
+        "index":i, "control":control[i].to_f32(), "candidate":candidate[i].to_f32(),
+        "control_bits":format!("{:04x}",control[i].to_bits()),
+        "candidate_bits":format!("{:04x}",candidate[i].to_bits())})
+        })
+    };
+    BoundedComparison {
+        receipt: serde_json::json!({
+            "schema":BOUNDED_SCHEMA, "passed":passed, "length_match":length_match,
+            "control_length":control.len(), "candidate_length":candidate.len(),
+            "finite_control":finite_control, "finite_candidate":finite_candidate,
+            "nonfinite":{"control_nan":control_nan,"candidate_nan":candidate_nan,
+                "control_pos_inf":control_pos_inf,"control_neg_inf":control_neg_inf,
+                "candidate_pos_inf":candidate_pos_inf,"candidate_neg_inf":candidate_neg_inf},
+            "bit_exact":length_match && mismatch_count == 0, "mismatch_count":mismatch_count,
+            "mismatch_fraction":if common == 0 { 0.0 } else { mismatch_count as f64/common as f64 },
+            "max_abs_error":max_abs_error,"max_abs_location":at(max_abs_index),
+            "relative_l2":relative_l2,"squared_error":squared_error,
+            "squared_reference":squared_reference,
+            "max_ulp_all":max_ulp_all,"max_ulp_all_location":at(max_ulp_all_index),
+            "max_ulp_material":max_ulp_material,"max_ulp_material_location":at(max_ulp_material_index),
+            "max_ulp_near_zero":max_ulp_near_zero,"max_ulp_near_zero_location":at(max_ulp_near_zero_index),
+            "ulp_histogram":{"0":histogram[0],"1":histogram[1],"2":histogram[2],"3":histogram[3],"4":histogram[4],
+                "5_8":histogram[5],"9_16":histogram[6],"17_64":histogram[7],"65_256":histogram[8],
+                "257_1024":histogram[9],"gt1024":histogram[10]},
+            "hybrid_violation_count":hybrid_violations,"first_hybrid_violation":first_hybrid_violation,
+            "material_ulp_violation_count":material_ulp_violations,
+            "near_zero_ulp_violation_count":near_zero_ulp_violations,
+            "absolute_pass":absolute_pass,"relative_l2_pass":relative_l2_pass}),
+        passed,
+        squared_error,
+        squared_reference,
+    }
+}
+
 fn load_component_weights(
     model_dir: &Path,
     layer: usize,
@@ -318,6 +525,179 @@ fn run(
     result
 }
 
+fn run_chunk4_bounded_equivalence(
+    policy: AneProgramCachePolicy,
+    cache_policy: &'static str,
+) -> Result<(), String> {
+    let variable = |name| std::env::var(name).map_err(|_| format!("explicit {name} required"));
+    let model_dir = PathBuf::from(variable("RVLLM_ANE_FFN_ORACLE_MODEL_DIR")?);
+    let manifest = PathBuf::from(variable("RVLLM_ANE_FFN_ORACLE_MANIFEST")?);
+    let expected = variable("RVLLM_ANE_FFN_ORACLE_MANIFEST_SHA256")?;
+    let directory = PathBuf::from(variable("RVLLM_ANE_FFN_ORACLE_OUTPUT")?);
+    let journal = PathBuf::from(variable("RVLLM_ANE_DIAGNOSTIC_JOURNAL")?);
+    if [&model_dir, &manifest, &directory, &journal]
+        .iter()
+        .any(|p| !p.is_absolute())
+    {
+        return Err("component paths must be absolute".into());
+    }
+    let raw = pinned_bytes(&manifest, &expected, 65536)?;
+    let input = validate_input(&raw, Candidate::Chunk4)?;
+    let mut samples = Vec::new();
+    for sample in &input.samples {
+        samples.push(half_input(&pinned_bytes(
+            &sample.path,
+            &sample.sha256,
+            HIDDEN * 2,
+        )?)?);
+    }
+    let weights = load_component_weights(&model_dir, input.layer, &input.model_config_sha256)?;
+    let observed = weights.matrices().map(matrix_hash);
+    if observed != input.quantized_matrix_sha256 {
+        return Err("FFN coefficient pins disagree".into());
+    }
+    std::fs::create_dir(&directory).map_err(|e| e.to_string())?;
+    let mut events = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(directory.join("events.jsonl"))
+        .map_err(|e| e.to_string())?;
+    let compiler_calls_before = rvllm_apple::ane_linear::compile_budget_used();
+    record(
+        &mut events,
+        serde_json::json!({
+        "event":"begin", "schema":BOUNDED_SCHEMA, "input_schema":SCHEMA,
+        "candidate":Candidate::Chunk4.name(), "control":Candidate::Chunk4.control(),
+        "layer":input.layer, "manifest_sha256":expected,
+        "model_config_sha256":input.model_config_sha256,
+        "quantized_matrix_sha256":observed, "samples":samples.len(),
+        "maximum_program_evaluations":4*samples.len(), "cache_policy":cache_policy,
+        "compiler_calls_before":compiler_calls_before,
+        "output":{"dtype":"binary16", "length":HIDDEN, "layout":"contiguous-hidden"},
+        "contract":{"finite":true,"hybrid":"abs_error <= max(2^-10, 4*ulp_toward(control))",
+            "max_absolute":MAX_ABS,"material_threshold":NEAR_ZERO,
+            "max_material_ulp":MAX_MATERIAL_ULP,"max_near_zero_ulp":MAX_NEAR_ZERO_ULP,
+            "near_zero_max_absolute":NEAR_ZERO_ABS,"max_relative_l2":MAX_RELATIVE_L2,
+            "relative_l2_denominator_floor":"sqrt(n)*2^-14",
+            "signed_zero_ulp_distance":0,"repeatability":"bit-exact-finite"},
+        "timing":false, "driver_journal":journal,
+        "driver_lifecycle_validation":"required-separately"}),
+    )?;
+    let result = (|| -> Result<(), String> {
+        record(
+            &mut events,
+            serde_json::json!({"event":"load-control-begin"}),
+        )?;
+        let mut control = AneGatedFfn::compile_int8_with_cache_policy(&weights, policy)?;
+        record(
+            &mut events,
+            serde_json::json!({"event":"load-candidate-begin"}),
+        )?;
+        let mut candidate = AneGatedFfn::compile_int8_chunk4_with_cache_policy(&weights, policy)?;
+        let mut control_a = vec![f16::ZERO; HIDDEN];
+        let mut control_b = vec![f16::ZERO; HIDDEN];
+        let mut candidate_a = vec![f16::ZERO; HIDDEN];
+        let mut candidate_b = vec![f16::ZERO; HIDDEN];
+        let mut all_passed = true;
+        let mut aggregate_squared_error = 0.0_f64;
+        let mut aggregate_squared_reference = 0.0_f64;
+        let mut completed = 0_usize;
+        for (index, sample) in samples.iter().enumerate() {
+            record(
+                &mut events,
+                serde_json::json!({"event":"sample-evaluate-begin","sample":index}),
+            )?;
+            control.project(sample, &mut control_a)?;
+            control.project(sample, &mut control_b)?;
+            candidate.project(sample, &mut candidate_a)?;
+            candidate.project(sample, &mut candidate_b)?;
+            let control_a_hash = output(
+                &directory,
+                &format!("sample-{index}-control-a.f16"),
+                &control_a,
+            )?;
+            let control_b_hash = output(
+                &directory,
+                &format!("sample-{index}-control-b.f16"),
+                &control_b,
+            )?;
+            let candidate_a_hash = output(
+                &directory,
+                &format!("sample-{index}-candidate-a.f16"),
+                &candidate_a,
+            )?;
+            let candidate_b_hash = output(
+                &directory,
+                &format!("sample-{index}-candidate-b.f16"),
+                &candidate_b,
+            )?;
+            let control_repeat = bounded_comparison(&control_a, &control_b);
+            let candidate_repeat = bounded_comparison(&candidate_a, &candidate_b);
+            let comparison = bounded_comparison(&control_a, &candidate_a);
+            let control_repeat_bit_exact = control_repeat.receipt["bit_exact"] == true
+                && control_repeat.receipt["finite_control"] == true
+                && control_repeat.receipt["finite_candidate"] == true;
+            let candidate_repeat_bit_exact = candidate_repeat.receipt["bit_exact"] == true
+                && candidate_repeat.receipt["finite_control"] == true
+                && candidate_repeat.receipt["finite_candidate"] == true;
+            let sample_passed =
+                comparison.passed && control_repeat_bit_exact && candidate_repeat_bit_exact;
+            all_passed &= sample_passed;
+            aggregate_squared_error += comparison.squared_error;
+            aggregate_squared_reference += comparison.squared_reference;
+            completed += 1;
+            record(
+                &mut events,
+                serde_json::json!({
+                "event":"comparison", "sample":index,
+                "input_sha256":input.samples[index].sha256,
+                "outputs":{"control_a_sha256":control_a_hash,"control_b_sha256":control_b_hash,
+                    "candidate_a_sha256":candidate_a_hash,"candidate_b_sha256":candidate_b_hash},
+                "control_repeat_bit_exact_finite":control_repeat_bit_exact,
+                "candidate_repeat_bit_exact_finite":candidate_repeat_bit_exact,
+                "control_repeat":control_repeat.receipt,
+                "candidate_repeat":candidate_repeat.receipt,
+                "layout_equivalence":comparison.receipt,
+                "sample_passed":sample_passed}),
+            )?;
+        }
+        let denominator =
+            aggregate_squared_reference.max(completed as f64 * HIDDEN as f64 * (2.0_f64).powi(-28));
+        let aggregate_relative_l2 = (aggregate_squared_error / denominator).sqrt();
+        let aggregate_passed =
+            all_passed && completed == samples.len() && aggregate_relative_l2 <= MAX_RELATIVE_L2;
+        record(
+            &mut events,
+            serde_json::json!({
+            "event":"aggregate-comparison", "samples_expected":samples.len(),
+            "samples_completed":completed,"squared_error":aggregate_squared_error,
+            "squared_reference":aggregate_squared_reference,
+            "relative_l2":aggregate_relative_l2,"relative_l2_limit":MAX_RELATIVE_L2,
+            "all_sample_contracts_passed":all_passed,"passed":aggregate_passed}),
+        )?;
+        drop(candidate);
+        drop(control);
+        if !aggregate_passed {
+            return Err(
+                "Chunk4 bounded-equivalence contract failed; see immutable per-sample receipts"
+                    .into(),
+            );
+        }
+        Ok(())
+    })();
+    let compiler_calls_after = rvllm_apple::ane_linear::compile_budget_used();
+    let compiler_calls_delta = compiler_calls_after.checked_sub(compiler_calls_before);
+    record(
+        &mut events,
+        serde_json::json!({
+        "event":"end", "matched_all_inputs":result.is_ok(), "error":result.as_ref().err(),
+        "promotion":false,"compiler_calls_before":compiler_calls_before,
+        "compiler_calls_after":compiler_calls_after,"compiler_calls_delta":compiler_calls_delta,
+        "driver_lifecycle_validation":"required-separately", "performance_qualified":false}),
+    )?;
+    result
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PinRequest {
@@ -441,6 +821,15 @@ fn native_chunk4_bounded_provision_matches_plain_ffn() -> Result<(), String> {
 }
 
 #[test]
+#[ignore = "explicit queued ANE Chunk4 prospective bounded-equivalence oracle; at most two compiles"]
+fn native_chunk4_bounded_equivalence_matches_plain_ffn() -> Result<(), String> {
+    run_chunk4_bounded_equivalence(
+        AneProgramCachePolicy::ReuseOrCompileUpTo(2),
+        "ReuseOrCompileUpTo(2)",
+    )
+}
+
+#[test]
 #[ignore = "explicit queued ANE Down4 provision plus real-input comparison; at most two compiles"]
 fn native_down4_bounded_provision_matches_plain_ffn() -> Result<(), String> {
     run(
@@ -463,6 +852,109 @@ fn native_interleaved_bounded_provision_matches_stacked_ffn() -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn positive(value: f32, ulps: u16) -> f16 {
+        let base = f16::from_f32(value);
+        f16::from_bits(base.to_bits() + ulps)
+    }
+
+    #[test]
+    fn bounded_equivalence_material_ulp_boundary_is_exact() {
+        let control = vec![f16::from_f32(1.0); 16];
+        let mut candidate = control.clone();
+        candidate[0] = positive(1.0, 4);
+        let at_limit = bounded_comparison(&control, &candidate);
+        assert!(at_limit.passed, "{}", at_limit.receipt);
+        assert_eq!(at_limit.receipt["max_ulp_material"], 4);
+        candidate[0] = positive(1.0, 5);
+        let over = bounded_comparison(&control, &candidate);
+        assert!(!over.passed);
+        assert_eq!(over.receipt["material_ulp_violation_count"], 1);
+    }
+
+    #[test]
+    fn bounded_equivalence_near_zero_ulp_boundary_is_exact() {
+        let control = [f16::ZERO, f16::from_f32(1.0)];
+        let at_limit = bounded_comparison(&control, &[f16::from_bits(1024), control[1]]);
+        assert!(at_limit.passed, "{}", at_limit.receipt);
+        assert_eq!(at_limit.receipt["max_ulp_near_zero"], 1024);
+        let over = bounded_comparison(&control, &[f16::from_bits(1025), control[1]]);
+        assert!(!over.passed);
+        assert_eq!(over.receipt["near_zero_ulp_violation_count"], 1);
+        assert!(over.receipt["max_abs_error"].as_f64().unwrap() < NEAR_ZERO_ABS);
+    }
+
+    #[test]
+    fn bounded_equivalence_absolute_boundary_is_independent() {
+        let control = [f16::from_f32(32.0)];
+        let at_limit = bounded_comparison(&control, &[f16::from_f32(32.03125)]);
+        assert!(at_limit.passed, "{}", at_limit.receipt);
+        assert_eq!(at_limit.receipt["max_abs_error"], MAX_ABS);
+        let over = bounded_comparison(&control, &[f16::from_f32(32.0625)]);
+        assert!(!over.passed);
+        assert_eq!(over.receipt["absolute_pass"], false);
+        assert_eq!(over.receipt["material_ulp_violation_count"], 0);
+    }
+
+    #[test]
+    fn bounded_equivalence_relative_l2_boundary_is_independent() {
+        let control = [f16::from_f32(1.0), f16::from_f32(1.0)];
+        let at_limit = bounded_comparison(&control, &[positive(1.0, 1), positive(1.0, 1)]);
+        assert!(at_limit.passed, "{}", at_limit.receipt);
+        assert_eq!(at_limit.receipt["relative_l2"], MAX_RELATIVE_L2);
+        let over = bounded_comparison(&control, &[positive(1.0, 1), positive(1.0, 2)]);
+        assert!(!over.passed);
+        assert_eq!(over.receipt["relative_l2_pass"], false);
+        assert_eq!(over.receipt["material_ulp_violation_count"], 0);
+        assert_eq!(over.receipt["hybrid_violation_count"], 0);
+    }
+
+    #[test]
+    fn bounded_equivalence_rejects_nonfinite_length_and_large_near_zero_error() {
+        for bad in [f16::NAN, f16::INFINITY, f16::NEG_INFINITY] {
+            let result = bounded_comparison(&[f16::ZERO], &[bad]);
+            assert!(!result.passed);
+        }
+        assert!(!bounded_comparison(&[f16::ZERO], &[]).passed);
+        assert!(!bounded_comparison(&[], &[]).passed);
+        let sign_flip = bounded_comparison(&[f16::from_f32(0.000_5)], &[f16::from_f32(-0.000_6)]);
+        assert!(!sign_flip.passed);
+        assert_eq!(sign_flip.receipt["near_zero_ulp_violation_count"], 1);
+    }
+
+    #[test]
+    fn bounded_equivalence_signed_zero_is_bit_distinct_but_zero_ulp() {
+        let result = bounded_comparison(&[f16::ZERO], &[f16::NEG_ZERO]);
+        assert!(result.passed, "{}", result.receipt);
+        assert_eq!(result.receipt["bit_exact"], false);
+        assert_eq!(result.receipt["max_ulp_all"], 0);
+    }
+
+    #[test]
+    fn bounded_equivalence_ulp_order_is_contiguous_across_signs() {
+        let negative_min = f16::from_bits(0x8001);
+        let positive_min = f16::from_bits(0x0001);
+        assert_eq!(ulp_distance(negative_min, f16::NEG_ZERO), 1);
+        assert_eq!(ulp_distance(f16::NEG_ZERO, f16::ZERO), 0);
+        assert_eq!(ulp_distance(f16::ZERO, positive_min), 1);
+        assert_eq!(ulp_distance(negative_min, positive_min), 2);
+
+        let negative_one = f16::from_f32(-1.0);
+        assert_eq!(
+            ulp_distance(negative_one, f16::from_bits(negative_one.to_bits() + 1)),
+            1
+        );
+    }
+
+    #[test]
+    fn bounded_equivalence_rejects_layout_permutation() {
+        let control = [f16::from_f32(1.0), f16::from_f32(2.0)];
+        let result = bounded_comparison(&control, &[control[1], control[0]]);
+        assert!(!result.passed);
+        assert_eq!(result.receipt["mismatch_count"], 2);
+        assert!(result.receipt["hybrid_violation_count"].as_u64().unwrap() > 0);
+    }
+
     fn fixture() -> serde_json::Value {
         serde_json::json!({"schema":SCHEMA,"candidate":"ane-int8-ffn-interleaved", "layer":0,
             "model_config_sha256":"a".repeat(64), "quantized_matrix_sha256":["b".repeat(64),"c".repeat(64),"d".repeat(64)],
