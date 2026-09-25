@@ -36,17 +36,41 @@ mod macos {
     const DEFAULT_SAMPLES: usize = 5;
     const SENTINEL: u16 = 0x7e55;
 
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    enum CandidateSchedule {
+        Scalar,
+        N4,
+    }
+
+    impl CandidateSchedule {
+        fn parse(value: &str) -> Result<Self, String> {
+            match value {
+                "scalar" => Ok(Self::Scalar),
+                "n4" => Ok(Self::N4),
+                _ => Err("--candidate must be scalar or n4".to_owned()),
+            }
+        }
+
+        const fn name(self) -> &'static str {
+            match self {
+                Self::Scalar => "scalar",
+                Self::N4 => "n4",
+            }
+        }
+    }
+
     #[derive(Debug)]
     struct Args {
         model_dir: PathBuf,
         tensor: String,
         ms: Vec<usize>,
         samples: usize,
+        candidate: CandidateSchedule,
     }
 
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
-         [--m 1,4] [--samples 5]"
+         [--m 1,4] [--samples 5] [--candidate scalar|n4]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -54,6 +78,7 @@ mod macos {
         let mut tensor = None;
         let mut ms = DEFAULT_MS.to_vec();
         let mut samples = DEFAULT_SAMPLES;
+        let mut candidate = CandidateSchedule::Scalar;
         let mut args = std::env::args().skip(1);
         while let Some(flag) = args.next() {
             let value = args
@@ -77,6 +102,7 @@ mod macos {
                         return Err("--samples must be in 3..=31".to_owned());
                     }
                 }
+                "--candidate" => candidate = CandidateSchedule::parse(&value)?,
                 _ => return Err(format!("unknown option {flag:?}")),
             }
         }
@@ -85,6 +111,7 @@ mod macos {
             tensor: tensor.ok_or_else(|| "--tensor is required".to_owned())?,
             ms,
             samples,
+            candidate,
         })
     }
 
@@ -387,6 +414,43 @@ mod macos {
         Ok(output)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn encode_candidate(
+        schedule: CandidateSchedule,
+        projection: MetalLowBitProjectionOffsets,
+        command: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        buffer: &ProtocolObject<dyn MTLBuffer>,
+        input_offset: usize,
+        output_offset: usize,
+        m: usize,
+        n: usize,
+    ) -> Result<(), String> {
+        let result = match schedule {
+            CandidateSchedule::Scalar => projection.encode_strided_bf16(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
+            CandidateSchedule::N4 => projection.encode_strided_bf16_n4(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
+        };
+        result.map_err(|error| error.to_string())
+    }
+
     fn run_shape(
         ctx: &MetalContext,
         pipelines: &PipelineCache,
@@ -398,6 +462,7 @@ mod macos {
         n: usize,
         k: usize,
         samples: usize,
+        schedule: CandidateSchedule,
     ) -> Result<Value, String> {
         let packed = quantize_apple_low_bit_reference(format, n, k, source_f32)
             .map_err(|e| e.to_string())?;
@@ -464,18 +529,17 @@ mod macos {
 
         let before = pipelines.low_bit_dispatch_snapshot();
         submit(ctx, |command| {
-            projection
-                .encode_strided_bf16(
-                    command,
-                    pipelines,
-                    buffer,
-                    input.offset,
-                    low_out.offset,
-                    m,
-                    n,
-                    0,
-                )
-                .map_err(|e| e.to_string())
+            encode_candidate(
+                schedule,
+                projection,
+                command,
+                pipelines,
+                buffer,
+                input.offset,
+                low_out.offset,
+                m,
+                n,
+            )
         })?;
         let actual = unsafe { read_bf16(&arena, &low_out, output_count) };
         let low_bit_accuracy = accuracy(&actual, &expected)?;
@@ -491,18 +555,17 @@ mod macos {
             );
         }
         submit(ctx, |command| {
-            projection
-                .encode_strided_bf16(
-                    command,
-                    pipelines,
-                    buffer,
-                    input.offset,
-                    low_out.offset,
-                    m,
-                    n,
-                    0,
-                )
-                .map_err(|e| e.to_string())
+            encode_candidate(
+                schedule,
+                projection,
+                command,
+                pipelines,
+                buffer,
+                input.offset,
+                low_out.offset,
+                m,
+                n,
+            )
         })?;
         let repeated = unsafe { read_bf16(&arena, &low_out, output_count) };
         if repeated
@@ -539,18 +602,17 @@ mod macos {
         let native_accuracy = accuracy(&native_actual, &native_expected)?;
         let timing_dispatch_before = pipelines.low_bit_dispatch_snapshot();
         submit(ctx, |command| {
-            projection
-                .encode_strided_bf16(
-                    command,
-                    pipelines,
-                    buffer,
-                    input.offset,
-                    low_out.offset,
-                    m,
-                    n,
-                    0,
-                )
-                .map_err(|e| e.to_string())
+            encode_candidate(
+                schedule,
+                projection,
+                command,
+                pipelines,
+                buffer,
+                input.offset,
+                low_out.offset,
+                m,
+                n,
+            )
         })?;
         let mut native_ms = Vec::with_capacity(samples * 2);
         let mut low_ms = Vec::with_capacity(samples * 2);
@@ -569,32 +631,30 @@ mod macos {
                 )
             })?);
             low_ms.push(submit(ctx, |command| {
-                projection
-                    .encode_strided_bf16(
-                        command,
-                        pipelines,
-                        buffer,
-                        input.offset,
-                        low_out.offset,
-                        m,
-                        n,
-                        0,
-                    )
-                    .map_err(|e| e.to_string())
+                encode_candidate(
+                    schedule,
+                    projection,
+                    command,
+                    pipelines,
+                    buffer,
+                    input.offset,
+                    low_out.offset,
+                    m,
+                    n,
+                )
             })?);
             low_ms.push(submit(ctx, |command| {
-                projection
-                    .encode_strided_bf16(
-                        command,
-                        pipelines,
-                        buffer,
-                        input.offset,
-                        low_out.offset,
-                        m,
-                        n,
-                        0,
-                    )
-                    .map_err(|e| e.to_string())
+                encode_candidate(
+                    schedule,
+                    projection,
+                    command,
+                    pipelines,
+                    buffer,
+                    input.offset,
+                    low_out.offset,
+                    m,
+                    n,
+                )
             })?);
             native_ms.push(submit(ctx, |command| {
                 encode_native(
@@ -644,7 +704,10 @@ mod macos {
                 "timing_dispatches": 1 + samples * 2},
             "timing": {"method": "ABBA wall-clock commit-to-completion", "samples_per_arm": samples * 2,
                 "native_kernel": "gemm_f16_vec8 compiled as typed BF16", "native_weight_conversion": "none",
-                "candidate_kernel": projection.experimental_bf16_kernel_name(),
+                "candidate_kernel": match schedule {
+                    CandidateSchedule::Scalar => projection.experimental_bf16_kernel_name(),
+                    CandidateSchedule::N4 => projection.experimental_bf16_n4_kernel_name(),
+                },
                 "activation_dtype": "BF16", "output_dtype": "BF16", "scale_dtype": "F16", "accumulation_dtype": "F32",
                 "native_ms": native_ms, "candidate_ms": low_ms,
                 "native_median_ms": native_median, "candidate_median_ms": low_median,
@@ -677,11 +740,17 @@ mod macos {
         ctx.compile_library(&generated_msl)
             .map_err(|e| e.to_string())?;
         let mut pipelines = PipelineCache::new();
-        for kernel in [
-            "gemm_f16_vec8",
-            "experimental_projection_w4abf16_bf16",
-            "experimental_projection_w8abf16_bf16",
-        ] {
+        let candidate_kernels = match args.candidate {
+            CandidateSchedule::Scalar => [
+                "experimental_projection_w4abf16_bf16",
+                "experimental_projection_w8abf16_bf16",
+            ],
+            CandidateSchedule::N4 => [
+                "experimental_projection_w4abf16_bf16_n4",
+                "experimental_projection_w8abf16_bf16_n4",
+            ],
+        };
+        for kernel in ["gemm_f16_vec8", candidate_kernels[0], candidate_kernels[1]] {
             pipelines.compile(&ctx, kernel).map_err(|e| e.to_string())?;
         }
         let mut cases = Vec::new();
@@ -701,6 +770,7 @@ mod macos {
                     n,
                     k,
                     args.samples,
+                    args.candidate,
                 )?);
             }
         }
@@ -713,6 +783,7 @@ mod macos {
             "shape": info.shape, "source_file": info.file, "source_file_offset": info.file_offset,
             "source_tensor_bytes": info.nbytes, "source_tensor_sha256": tensor_sha256,
             "abi": {"activation": "BF16", "output": "BF16", "scales": "F16", "accumulation": "F32"},
+            "candidate_schedule": args.candidate.name(),
             "generated_msl_sha256": sha256(generated_msl.as_bytes()), "executable_sha256": hash_file(&executable)?,
             "compile_counts": {"metal_libraries": 1, "pipeline_states": 3}, "cases": cases
         });
@@ -750,6 +821,19 @@ mod macos {
         #[test]
         fn median_is_order_independent() {
             assert_eq!(median(&[9.0, 1.0, 5.0]), 5.0);
+        }
+
+        #[test]
+        fn candidate_schedule_is_strict() {
+            assert_eq!(
+                CandidateSchedule::parse("scalar").unwrap(),
+                CandidateSchedule::Scalar
+            );
+            assert_eq!(
+                CandidateSchedule::parse("n4").unwrap(),
+                CandidateSchedule::N4
+            );
+            assert!(CandidateSchedule::parse("n8").is_err());
         }
     }
 }

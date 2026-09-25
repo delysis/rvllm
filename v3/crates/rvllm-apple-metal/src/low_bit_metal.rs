@@ -296,6 +296,15 @@ impl MetalLowBitProjectionOffsets {
         }
     }
 
+    /// Four-output-per-SIMD native-BF16 research kernel.
+    #[must_use]
+    pub const fn experimental_bf16_n4_kernel_name(self) -> &'static str {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => "experimental_projection_w4abf16_bf16_n4",
+            AppleLowBitWeightFormat::W8A16 => "experimental_projection_w8abf16_bf16_n4",
+        }
+    }
+
     /// Encode `C[M,N] = A[M,K] * W[N,K]^T` with every tensor in one arena.
     pub fn encode(
         self,
@@ -342,6 +351,7 @@ impl MetalLowBitProjectionOffsets {
             output_row_stride,
             output_column,
             self.kernel_name(),
+            1,
         )
     }
 
@@ -374,6 +384,34 @@ impl MetalLowBitProjectionOffsets {
             output_row_stride,
             output_column,
             self.experimental_bf16_kernel_name(),
+            1,
+        )
+    }
+
+    /// Encode with the four-output-per-SIMD native-BF16 research schedule.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16_n4(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            self.experimental_bf16_n4_kernel_name(),
+            4,
         )
     }
 
@@ -389,6 +427,7 @@ impl MetalLowBitProjectionOffsets {
         output_row_stride: usize,
         output_column: usize,
         kernel_name: &'static str,
+        output_tile_width: usize,
     ) -> LowBitMetalResult<()> {
         if m == 0 {
             return Err(LowBitMetalError::ZeroBatch);
@@ -495,7 +534,7 @@ impl MetalLowBitProjectionOffsets {
             set_u32(&encoder, &output_column, 8);
             encoder.dispatchThreadgroups_threadsPerThreadgroup(
                 MTLSize {
-                    width: self.n as usize,
+                    width: (self.n as usize).div_ceil(output_tile_width),
                     height: m as usize,
                     depth: 1,
                 },
@@ -789,6 +828,13 @@ mod tests {
                 descriptor.experimental_bf16_kernel_name()
             );
             assert!(descriptor.experimental_bf16_kernel_name().contains("abf16"));
+            assert_ne!(
+                descriptor.experimental_bf16_kernel_name(),
+                descriptor.experimental_bf16_n4_kernel_name()
+            );
+            assert!(descriptor
+                .experimental_bf16_n4_kernel_name()
+                .ends_with("_n4"));
         }
     }
     use crate::arena::MetalBufferArena;
