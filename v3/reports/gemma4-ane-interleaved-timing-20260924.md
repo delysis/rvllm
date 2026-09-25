@@ -4,16 +4,17 @@ Date: 2026-09-24
 
 ## Verdict
 
-`static-int8-interleaved-ffn-cached` is **timing-inconclusive** against the
-shipping `static-int8-ffn-cached` control.  It is component-correct under the
-separate bounded oracle and every timing arm completed through ANE without a
-CPU/GPU decode fallback or a compiler call, but this timing sequence does not
-establish a speedup.
+`static-int8-interleaved-ffn-cached` is **not a performance nominee** against
+the shipping `static-int8-ffn-cached` control.  It is component-correct under
+the separate device oracle and every timing arm completed through ANE without
+a CPU/GPU decode fallback or a compiler call, but this timing sequence does not
+establish a speedup.  The only two pairs accepted by the predeclared strict
+phase-observation comparator both make the candidate slower.
 
-The robust center of the six per-arm mean FFN times is 153.99 ms/token for the
-interleaved candidate and 154.86 ms/token for the stacked control: a nominal
-0.56% advantage, far below the observed run-to-run variation.  The candidate
-must not be promoted from this evidence.
+An exploratory robust center over every arm produces a nominal 0.56% FFN
+advantage, but four of six process pairs were rejected by the strict comparator
+and the accepted pairs contradict that pooled estimate.  The candidate must
+not be promoted from this evidence.
 
 ## Experiment
 
@@ -28,9 +29,11 @@ The sequence was:
 Each arm contains nine fixed prompt cases and nine measured decode steps per
 case (81 token observations).  All twelve queue reports succeeded.  Every
 inference report records `ane_execution_verified=true`,
-`cpu_or_gpu_decode_fallback=false`, and `ane_compile_budget_used=0`.  Sampled
-conditions were AC power, low-power mode enabled, and nominal thermal state 0.
-Changing conditions were recorded; the queue did not wait for a stable host.
+`cpu_or_gpu_decode_fallback=false`, and `ane_compile_budget_used=0`.  The outer
+queue accepted every process, but the stricter phase comparator accepted only
+A1/B1 and A6/B6; it rejected four pairs for missing, stale, changing, or
+thermally limited phase observations.  The queue records changing conditions
+and does not wait for a stable host.
 
 The table reports arithmetic means across the 81 decode observations in each
 arm.  Times are milliseconds per generated token.
@@ -57,7 +60,8 @@ its FFN time ranges from 95.175 to 185.191 ms/token.  This is not a small-noise
 campaign.  It also demonstrates why total-token time is not a sound estimator
 of a weight-layout change confined to the FFN.
 
-For each four-arm ABBA block, the geometric candidate/control ratios are:
+For each four-arm ABBA block, the exploratory geometric candidate/control
+ratios are:
 
 | Block | Total ratio | FFN ratio | Apparent result |
 |---|---:|---:|---|
@@ -66,7 +70,9 @@ For each four-arm ABBA block, the geometric candidate/control ratios are:
 | 3 | 1.217 | 1.187 | candidate slower |
 
 The sign reversal is decisive evidence of an unresolved time/order effect.
-Taking the median of the six arm means per plan reduces that sensitivity:
+These block ratios include comparator-rejected arms and therefore are
+descriptive only.  Taking the median of the six arm means per plan likewise
+gives only an exploratory robust center:
 
 | Plan | Median arm-mean total | Median arm-mean FFN |
 |---|---:|---:|
@@ -75,7 +81,23 @@ Taking the median of the six arm means per plan reduces that sensitivity:
 | candidate/control | 0.947 | 0.994 |
 
 Only the FFN comparison is causally close to the candidate change, and its
-nominal 0.56% advantage is not distinguishable from this campaign's variance.
+nominal 0.56% pooled advantage is not distinguishable from this campaign's
+variance.  More importantly, the accepted A1/B1 and A6/B6 process-median
+decode ratios are approximately 1.055 and 1.797.  Their corresponding FFN9
+ratios are approximately 1.129 and 1.699.  Both admissible observations favor
+the stacked control.
+
+A local Cargo test overlapped A4.  The submitted manifest did not list Cargo
+and rustc as quiet-process exclusions, so the queue did not itself flag the
+interference.  A4 remains preserved, is explicitly contaminated, and was also
+independently rejected by the strict comparator.  No rejected or contaminated
+arm is converted into promotion evidence here.
+
+## Sealed evidence
+
+- Full-route qualification report SHA-256: `c31c518dfa35b6bef47982f08b9a1525d92447765ebd279756db2f6c4cef6628`
+- Component oracle events SHA-256: `825398dd3dd9e635cc2d814186dad4bb4fdecb77b523fb7d1cc7ce9aec9764e1`
+- Comparator executable SHA-256: `0b366bcbcabc5b47a948c574c25ee094d8c5b210b4f2177f04776d485965c161`
 
 ## Next gate
 
