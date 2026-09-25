@@ -531,3 +531,13 @@ Evidence is in `reports/gemma4-metal-low-bit-n4-20260925/` and
 `reports/gemma4-metal-low-bit-n8-20260925/`. The latter's `summary.json` is the
 compact current adjudication; its `queue-receipts/` directory preserves all
 fourteen unaltered job receipts.
+
+The generated-code evidence gap is now narrowed by
+`reports/gemma4-metal-artifact-evidence-attention-20260925/`. Its strict
+receipt seals the exact MSL, AIR, metallib, toolchain, compiler commands,
+public `metal-objdump` output and live M4 Max pipeline properties. Split-32
+uses 2,912 B plus 384 B static threadgroup memory for partial plus merge;
+split-matrix uses 12,512 B plus 0 B. All four report execution width 32 and a
+1,024-thread pipeline maximum. Apple public APIs still do not expose supported
+register-count, occupancy, residency or machine-lowering evidence, so those
+claims remain explicitly unavailable or unverified.
