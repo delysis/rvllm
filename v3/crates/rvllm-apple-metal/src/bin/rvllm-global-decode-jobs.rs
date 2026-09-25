@@ -397,7 +397,14 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         if !selected.is_empty() && !selected.iter().any(|name| name == candidate.name()) {
             continue;
         }
-        let flavor = if timing { "core" } else { "oracle" };
+        // The split oracle validates the production partial+merge entry points
+        // directly and therefore needs the exact core source.  Only the
+        // single-pass oracle uses the appended diagnostic entry point.
+        let flavor = if timing || candidate.split_global_decode_tile().is_some() {
+            "core"
+        } else {
+            "oracle"
+        };
         let compile_id = id(&config, candidate, &format!("compile-{flavor}"))?;
         let built = succeeded(&queue, &compile_id)?.join("build");
         let source = source_path(root, candidate, flavor);

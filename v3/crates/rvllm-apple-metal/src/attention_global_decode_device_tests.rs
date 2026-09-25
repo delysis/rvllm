@@ -768,6 +768,12 @@ fn global_decode_split_device_oracle() -> TestResult {
         ("last-hole", 15),
     ] {
         let mut fixture = Fixture::new(4096, 256);
+        // Fixture::new deliberately reserves two future logical blocks for
+        // tail-read detection.  This bounded split family admits an exact
+        // 4096-token logical table, so remove only those unused table entries;
+        // retain the extra physical cache allocation as poisoned padding.
+        fixture.shape.max_blocks = 16;
+        fixture.table.truncate(16);
         fixture.table[page] = -1;
         fixtures.push((label.into(), fixture));
     }
