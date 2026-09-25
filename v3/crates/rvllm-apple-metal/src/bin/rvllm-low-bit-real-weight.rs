@@ -46,6 +46,8 @@ mod macos {
         Core8Qmv,
         Adaptive,
         N4VsN8,
+        N4VsMlxQmv,
+        N4VsCore8Qmv,
     }
 
     impl CandidateSchedule {
@@ -59,8 +61,10 @@ mod macos {
                 "core8-qmv" => Ok(Self::Core8Qmv),
                 "adaptive" => Ok(Self::Adaptive),
                 "n4-vs-n8" => Ok(Self::N4VsN8),
+                "n4-vs-mlx-qmv" => Ok(Self::N4VsMlxQmv),
+                "n4-vs-core8-qmv" => Ok(Self::N4VsCore8Qmv),
                 _ => Err(
-                    "--candidate must be scalar, n4, n8, vector, mlx-qmv, core8-qmv, adaptive, or n4-vs-n8".to_owned(),
+                    "--candidate must be scalar, n4, n8, vector, mlx-qmv, core8-qmv, adaptive, n4-vs-n8, n4-vs-mlx-qmv, or n4-vs-core8-qmv".to_owned(),
                 ),
             }
         }
@@ -75,7 +79,13 @@ mod macos {
                 Self::Core8Qmv => "core8-qmv",
                 Self::Adaptive => "adaptive",
                 Self::N4VsN8 => "n4-vs-n8",
+                Self::N4VsMlxQmv => "n4-vs-mlx-qmv",
+                Self::N4VsCore8Qmv => "n4-vs-core8-qmv",
             }
+        }
+
+        const fn is_direct(self) -> bool {
+            matches!(self, Self::N4VsN8 | Self::N4VsMlxQmv | Self::N4VsCore8Qmv)
         }
     }
 
@@ -115,7 +125,7 @@ mod macos {
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
          [--m 1,4] [--format w4a16|w8a16|both] [--samples 5] \
-         [--candidate scalar|n4|n8|vector|mlx-qmv|core8-qmv|adaptive|n4-vs-n8] [--order abba|baab]"
+         [--candidate scalar|n4|n8|vector|mlx-qmv|core8-qmv|adaptive|n4-vs-n8|n4-vs-mlx-qmv|n4-vs-core8-qmv] [--order abba|baab]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -603,7 +613,9 @@ mod macos {
                 0,
             ),
             CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
-            CandidateSchedule::N4VsN8 => {
+            CandidateSchedule::N4VsN8
+            | CandidateSchedule::N4VsMlxQmv
+            | CandidateSchedule::N4VsCore8Qmv => {
                 return Err("direct comparison is not a kernel schedule".to_owned())
             }
         };
