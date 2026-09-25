@@ -344,6 +344,28 @@ mod tests {
     }
 
     #[cfg(feature = "macos-private-ane-research")]
+    fn compile_blob_probe(
+        mil: &str,
+        blob: &[u8],
+        input_channels: usize,
+        output_channels: usize,
+    ) {
+        use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
+        use rvllm_apple_ane_sys::AneInMemoryProgram;
+
+        let before = compile_budget_used();
+        let _program = AneInMemoryProgram::compile_with_cache_policy(
+            mil,
+            blob,
+            input_channels * 64,
+            output_channels * 64,
+            AneProgramCachePolicy::Compile,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before + 1);
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
     #[test]
     #[ignore = "bounded private-ANE reduce_sum dialect compile probe"]
     fn hardware_reduce_sum_dialect_compile_probe() {
@@ -395,5 +417,60 @@ mod tests {
             32,
             32,
         );
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE mixed output-projection plus INT8 FFN core compile probe"]
+    fn hardware_output_ffn_core_without_norm_compile_probe() {
+        let hidden = 32;
+        let intermediate = 32;
+        let attention = 32;
+        let dense = vec![f16::from_f32(0.01); hidden * intermediate];
+        let ffn =
+            AneInt8FfnWeights::quantize(&dense, &dense, &dense, hidden, intermediate).unwrap();
+        let output = vec![f16::from_f32(0.02); hidden * attention];
+        let (blob, weights) = ffn
+            .output_ffn_blob_and_constants(&output, attention)
+            .unwrap();
+        let input = hidden + attention;
+        let mil = format!(
+            r#"program(1.3)
+{{
+    func main<ios18>(tensor<fp16, [1, {input}, 1, 1]> packed) {{
+        tensor<int32, [4]> attended_begin = const()[val = tensor<int32, [4]>([0, 0, 0, 0])];
+        tensor<int32, [4]> residual_begin = const()[val = tensor<int32, [4]>([0, {attention}, 0, 0])];
+        tensor<int32, [4]> attended_size = const()[val = tensor<int32, [4]>([1, {attention}, 1, 1])];
+        tensor<int32, [4]> hidden_size = const()[val = tensor<int32, [4]>([1, {hidden}, 1, 1])];
+        tensor<fp16, [1, {attention}, 1, 1]> attended = slice_by_size(x = packed, begin = attended_begin, size = attended_size);
+        tensor<fp16, [1, {hidden}, 1, 1]> residual = slice_by_size(x = packed, begin = residual_begin, size = hidden_size);
+        string valid = const()[val = string("valid")];
+        tensor<int32, [2]> ones2 = const()[val = tensor<int32, [2]>([1, 1])];
+        tensor<int32, [4]> zeros4 = const()[val = tensor<int32, [4]>([0, 0, 0, 0])];
+        int32 groups = const()[val = int32(1)];
+{weights}        fp16 half = const()[val = fp16(0.5)];
+        fp16 one = const()[val = fp16(1.0)];
+        fp16 cubic = const()[val = fp16(0.044715)];
+        fp16 root = const()[val = fp16(0.7978845608)];
+        tensor<fp16, [1, {hidden}, 1, 1]> projected = conv(dilations = ones2, groups = groups, pad = zeros4, pad_type = valid, strides = ones2, weight = Wo, x = attended);
+        tensor<fp16, [1, {hidden}, 1, 1]> x = add(x = projected, y = residual);
+        tensor<fp16, [1, {intermediate}, 1, 1]> gate = conv(dilations = ones2, groups = groups, pad = zeros4, pad_type = valid, strides = ones2, weight = Wg, x = x);
+        tensor<fp16, [1, {intermediate}, 1, 1]> up = conv(dilations = ones2, groups = groups, pad = zeros4, pad_type = valid, strides = ones2, weight = Wu, x = x);
+        tensor<fp16, [1, {intermediate}, 1, 1]> g2 = mul(x = gate, y = gate);
+        tensor<fp16, [1, {intermediate}, 1, 1]> g3 = mul(x = g2, y = gate);
+        tensor<fp16, [1, {intermediate}, 1, 1]> cubic_term = mul(x = g3, y = cubic);
+        tensor<fp16, [1, {intermediate}, 1, 1]> gelu_inner = add(x = gate, y = cubic_term);
+        tensor<fp16, [1, {intermediate}, 1, 1]> ga = mul(x = gelu_inner, y = root);
+        tensor<fp16, [1, {intermediate}, 1, 1]> tanh_ga = tanh(x = ga);
+        tensor<fp16, [1, {intermediate}, 1, 1]> tanh_plus_one = add(x = tanh_ga, y = one);
+        tensor<fp16, [1, {intermediate}, 1, 1]> half_gate = mul(x = gate, y = half);
+        tensor<fp16, [1, {intermediate}, 1, 1]> activated = mul(x = half_gate, y = tanh_plus_one);
+        tensor<fp16, [1, {intermediate}, 1, 1]> gated = mul(x = activated, y = up);
+        tensor<fp16, [1, {hidden}, 1, 1]> y = conv(dilations = ones2, groups = groups, pad = zeros4, pad_type = valid, strides = ones2, weight = Wd, x = gated);
+    }} -> (y);
+}}
+"#
+        );
+        compile_blob_probe(&mil, &blob, input, hidden);
     }
 }
