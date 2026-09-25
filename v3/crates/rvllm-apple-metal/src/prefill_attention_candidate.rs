@@ -7,7 +7,8 @@
 
 use sha2::{Digest, Sha256};
 
-pub const GENERATOR_VERSION: &str = "gemma4-prefill-online-v1";
+pub const GENERATOR_VERSION: &str = "gemma4-prefill-online-v2";
+pub const TENSOR_OPS_THREADGROUP_BYTES: usize = 640;
 pub const CONVENTIONAL_ENTRYPOINT: &str = "research_gemma4_prefill_tiled_online_bf16";
 pub const TENSOR_OPS_ENTRYPOINT: &str = "research_gemma4_prefill_tensorops_bf16";
 
@@ -103,23 +104,25 @@ impl PrefillPlan {
         {
             return Admission::Rejected("not an exact Gemma 4 prefill/QKV/O contract");
         }
-        let source = match self.arm {
-            PrefillArm::ConventionalTiled => CONVENTIONAL_MSL,
+        let (source, entrypoint, required_threadgroup_memory) = match self.arm {
+            PrefillArm::ConventionalTiled => (CONVENTIONAL_MSL, CONVENTIONAL_ENTRYPOINT, 256),
             PrefillArm::TensorOps if !hardware.tensor_ops => {
                 return Admission::Unsupported(
                     "TensorOps capability was not reported by the device query",
                 )
             }
-            PrefillArm::TensorOps => {
-                return Admission::Unsupported(
-                    "TensorOps source is deferred pending a stable queried Metal ABI",
-                )
-            }
+            PrefillArm::TensorOps => (
+                TENSOR_OPS_MSL,
+                TENSOR_OPS_ENTRYPOINT,
+                TENSOR_OPS_THREADGROUP_BYTES,
+            ),
         };
-        if hardware.max_threadgroup_memory < 256 {
-            return Admission::Unsupported("less than 256 bytes of queried threadgroup memory");
+        if hardware.max_threadgroup_memory < required_threadgroup_memory {
+            return Admission::Unsupported(
+                "queried threadgroup memory is below the candidate requirement",
+            );
         }
-        Admission::Ready(identity(source, CONVENTIONAL_ENTRYPOINT))
+        Admission::Ready(identity(source, entrypoint))
     }
 }
 
@@ -168,6 +171,111 @@ kernel void research_gemma4_prefill_tiled_online_bf16(
  float inv=l>0?1/l:0; for(uint z=0;z<slots;z++){uint d=uint(lane)+32*z;o[qi*qdim+h*dim+d]=bfloat(ov[z]*inv);}
 }
 "#;
+
+/// Public-Metal TensorOps arm.
+///
+/// One SIMDgroup still owns one query/head, preserving the exact conventional
+/// admission surface. For each eight-key tile it uses an 8x8 BF16 TensorOps
+/// multiply to obtain eight QK scores at once. The query is replicated across
+/// matrix rows; only row zero is consumed. This intentionally spends otherwise
+/// redundant matrix rows to retain arbitrary batches, page tables, windows and
+/// query positions without imposing an undocumented batch-1 contract. The PV
+/// recurrence remains lane-vectorized FP32 so online-softmax association,
+/// causal masking and page-hole semantics remain explicit.
+pub const TENSOR_OPS_MSL: &str = r#"
+#include <metal_stdlib>
+using namespace metal;
+kernel void research_gemma4_prefill_tensorops_bf16(
+ device const bfloat *q [[buffer(0)]], device const bfloat *k [[buffer(1)]],
+ device const bfloat *v [[buffer(2)]], device bfloat *o [[buffer(3)]],
+ device const int *pages [[buffer(4)]], device const int *context [[buffer(5)]],
+ device const int *cu [[buffer(6)]], device const int *positions [[buffer(7)]],
+ constant uint &total_q [[buffer(8)]], constant uint &batch [[buffer(9)]],
+ constant uint &heads [[buffer(10)]], constant uint &kv_heads [[buffer(11)]],
+ constant uint &dim [[buffer(12)]], constant uint &page_size [[buffer(13)]],
+ constant uint &max_pages [[buffer(14)]], constant float &scale [[buffer(15)]],
+ constant uint &window [[buffer(16)]], uint2 tg [[threadgroup_position_in_grid]],
+ ushort lane [[thread_index_in_simdgroup]]) {
+ uint qi=tg.x,h=tg.y; if(qi>=total_q||h>=heads||(dim!=256&&dim!=512)) return;
+ uint seq=batch; for(uint i=0;i<batch;i++) if(int(qi)>=cu[i]&&int(qi)<cu[i+1]) {seq=i;break;}
+ if(seq==batch||context[seq]<=0) return;
+ uint qdim=heads*dim, kvdim=kv_heads*dim, kh=h/(heads/kv_heads), slots=dim/32;
+ uint end=min(uint(context[seq]),uint(max(positions[qi],0))+1), begin=window?end-min(end,window):0;
+ uint qbase=qi*qdim+h*dim;
+ float ov[16]; for(uint z=0;z<slots;z++) ov[z]=0.0f;
+
+ threadgroup bfloat qa[64];
+ threadgroup bfloat kb[64];
+ threadgroup float scores[64];
+ threadgroup int page_id[8];
+ threadgroup float correction[8];
+ threadgroup float weight[8];
+ threadgroup float state[2];
+ if(lane==0){state[0]=-INFINITY;state[1]=0.0f;}
+ simdgroup_barrier(mem_flags::mem_threadgroup);
+
+ for(uint t0=begin;t0<end;t0+=8u){
+  if(lane<8u){
+   uint t=t0+uint(lane);
+   page_id[lane]=(t<end)?pages[seq*max_pages+t/page_size]:-1;
+  }
+  simdgroup_barrier(mem_flags::mem_threadgroup);
+
+  simdgroup_float8x8 score_matrix(0.0f);
+  for(uint d0=0u;d0<dim;d0+=8u){
+   for(uint ix=uint(lane);ix<64u;ix+=32u){
+    uint r=ix/8u,c=ix%8u;
+    qa[ix]=q[qbase+d0+c];
+    uint t=t0+c; int page=page_id[c];
+    if(t<end&&page>=0){
+     uint base=uint(page)*page_size*kvdim+(t%page_size)*kvdim+kh*dim;
+     kb[ix]=k[base+d0+r];
+    }else{
+     kb[ix]=bfloat(0.0f);
+    }
+   }
+   simdgroup_barrier(mem_flags::mem_threadgroup);
+   simdgroup_matrix<bfloat,8,8> ma,mb;
+   simdgroup_load(ma,qa,8);
+   simdgroup_load(mb,kb,8);
+   simdgroup_multiply_accumulate(score_matrix,ma,mb,score_matrix);
+   simdgroup_barrier(mem_flags::mem_threadgroup);
+  }
+  simdgroup_store(score_matrix,scores,8);
+  simdgroup_barrier(mem_flags::mem_threadgroup);
+
+  if(lane==0){
+   float m=state[0],l=state[1];
+   for(uint j=0u;j<8u;j++){
+    uint t=t0+j;
+    if(t>=end||page_id[j]<0){correction[j]=1.0f;weight[j]=0.0f;continue;}
+    float score=scores[j]*scale,nm=max(m,score);
+    float a=l==0.0f?0.0f:exp(m-nm),w=exp(score-nm);
+    correction[j]=a;weight[j]=w;l=l*a+w;m=nm;
+   }
+   state[0]=m;state[1]=l;
+  }
+  simdgroup_barrier(mem_flags::mem_threadgroup);
+
+  for(uint j=0u;j<8u;j++){
+   uint t=t0+j; float a=correction[j],w=weight[j];
+   if(t>=end||page_id[j]<0) continue;
+   uint base=uint(page_id[j])*page_size*kvdim+(t%page_size)*kvdim+kh*dim;
+   for(uint z=0u;z<slots;z++){
+    uint d=uint(lane)+32u*z;
+    ov[z]=ov[z]*a+w*float(v[base+d]);
+   }
+  }
+  simdgroup_barrier(mem_flags::mem_threadgroup);
+ }
+ float inv=state[1]>0.0f?1.0f/state[1]:0.0f;
+ for(uint z=0u;z<slots;z++){
+  uint d=uint(lane)+32u*z;
+  o[qi*qdim+h*dim+d]=bfloat(ov[z]*inv);
+ }
+}
+"#;
+
 
 /// Independent scalar FP64 oracle for one query/head. It shares no reduction
 /// or tiling code with the generated Metal candidate.
@@ -253,10 +361,27 @@ mod tests {
             plan(PrefillArm::TensorOps, 256).admit(hw(false)),
             Admission::Unsupported("TensorOps capability was not reported by the device query")
         );
-        assert!(matches!(
-            plan(PrefillArm::TensorOps, 256).admit(hw(true)),
-            Admission::Unsupported(_)
-        ));
+        let Admission::Ready(tensor_id) =
+            plan(PrefillArm::TensorOps, 256).admit(hw(true))
+        else {
+            panic!("queried TensorOps hardware must admit the TensorOps source")
+        };
+        assert_eq!(
+            tensor_id,
+            identity(TENSOR_OPS_MSL, TENSOR_OPS_ENTRYPOINT)
+        );
+        assert!(TENSOR_OPS_MSL.contains("simdgroup_matrix<bfloat,8,8>"));
+        assert!(TENSOR_OPS_MSL.contains("simdgroup_multiply_accumulate"));
+        assert!(TENSOR_OPS_MSL.contains("threadgroup float state[2]"));
+        assert_eq!(
+            plan(PrefillArm::TensorOps, 256).admit(QueriedHardware {
+                tensor_ops: true,
+                max_threadgroup_memory: TENSOR_OPS_THREADGROUP_BYTES - 1,
+            }),
+            Admission::Unsupported(
+                "queried threadgroup memory is below the candidate requirement"
+            )
+        );
         for n in [0, 2049, u32::MAX] {
             assert!(matches!(
                 plan(PrefillArm::ConventionalTiled, n).admit(hw(false)),
