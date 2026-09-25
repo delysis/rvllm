@@ -100,7 +100,8 @@ pub use arena::MetalBufferArena;
 pub use context::{MetalContext, MetalDeviceCapabilities};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use low_bit_metal::{
-    LowBitMetalError, LowBitMetalResult, MetalLowBitProjection, MetalLowBitProjectionOffsets,
+    ExperimentalBf16TileSchedule, LowBitMetalError, LowBitMetalResult, MetalLowBitProjection,
+    MetalLowBitProjectionOffsets,
 };
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use pipeline::PipelineCache;
