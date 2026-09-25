@@ -1782,6 +1782,7 @@ fn run_direct_session(
         .probe_arena_stats()
         .map(|arena| arena.capacity_bytes)
         .unwrap_or(0);
+    #[allow(unused_mut)]
     let mut report = session_report_value(
         args,
         SessionBackend::Direct,
@@ -1813,6 +1814,13 @@ fn run_direct_session(
         serde_json::json!(cases.len()),
     );
     object.insert("checkpoint_complete".to_owned(), serde_json::json!(true));
+    #[cfg(feature = "metal-stage-instrumentation")]
+    object.insert(
+        "metal_stage_timing".to_owned(),
+        backend
+            .last_stage_timing_receipt()
+            .unwrap_or(serde_json::Value::Null),
+    );
     Ok(report)
 }
 
@@ -1834,6 +1842,11 @@ impl SharedModelMetalBackend {
 
     fn probe_perf_stats(&self) -> rvllm_runtime::apple_metal_backend::MetalProbePerfStats {
         self.inner.borrow().probe_perf_stats()
+    }
+
+    #[cfg(feature = "metal-stage-instrumentation")]
+    fn last_stage_timing_receipt(&self) -> Option<serde_json::Value> {
+        self.inner.borrow().last_stage_timing_receipt()
     }
 
     fn probe_arena_bytes(&self) -> usize {
@@ -2085,7 +2098,8 @@ fn run_engine_session(
         .probe_research_dispatches()
         .map(research_dispatch_value)
         .unwrap_or(serde_json::Value::Null);
-    Ok(session_report_value(
+    #[allow(unused_mut)]
+    let mut report = session_report_value(
         args,
         SessionBackend::Engine,
         status,
@@ -2103,7 +2117,18 @@ fn run_engine_session(
         stats_backend.metal_weight_dtype_report(),
         stats_backend.metal_moe_router_weight_dtype_report(),
         research_dispatch,
-    ))
+    );
+    #[cfg(feature = "metal-stage-instrumentation")]
+    report
+        .as_object_mut()
+        .expect("session report must be a JSON object")
+        .insert(
+            "metal_stage_timing".to_owned(),
+            stats_backend
+                .last_stage_timing_receipt()
+                .unwrap_or(serde_json::Value::Null),
+        );
+    Ok(report)
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]

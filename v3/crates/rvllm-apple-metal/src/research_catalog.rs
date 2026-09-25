@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 27] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 28] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -44,6 +44,7 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 27] = [
     MetalResearchCandidate::GlobalD512R16P128T64,
     MetalResearchCandidate::GlobalD512R16P128T128,
     MetalResearchCandidate::GlobalD512R1P128T32,
+    MetalResearchCandidate::GlobalD512SplitR8S256T128,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -98,6 +99,33 @@ macro_rules! global_decode_spec {
     };
 }
 
+macro_rules! global_split_decode_spec {
+    ($suffix:literal, $partial:ident, $merge:ident) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-split-", $suffix),
+            kernels: &[ResearchKernel::$partial, ResearchKernel::$merge],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_split_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: "bf16-fp32-split-sufficient-stat-once-rounded",
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!("research_shaders/global_decode_split_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_split_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
+
 impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
@@ -115,6 +143,11 @@ impl MetalResearchCandidate {
             Self::GlobalD512R1P128T32 => {
                 global_decode_spec!("r1p128t32", GlobalD512R1P128T32)
             }
+            Self::GlobalD512SplitR8S256T128 => global_split_decode_spec!(
+                "r8s256t128",
+                GlobalD512SplitR8S256T128Partial,
+                GlobalD512SplitR8S256T128Merge
+            ),
             Self::Off => CandidateSpec {
                 name: "off",
                 kernels: &[],
@@ -338,7 +371,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 27);
+        assert_eq!(all.len(), 28);
         let additions = all.split_off(18);
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
@@ -346,10 +379,10 @@ mod tests {
         assert_eq!(reviewed, legacy);
         // The additive family must have all source-defined specializations.
         assert_eq!(
-            ALL_CANDIDATES[18..].len(),
+            ALL_CANDIDATES[18..27].len(),
             crate::attention_global_decode::DECODE_TILES.len()
         );
-        for (candidate, tile) in ALL_CANDIDATES[18..]
+        for (candidate, tile) in ALL_CANDIDATES[18..27]
             .iter()
             .zip(crate::attention_global_decode::DECODE_TILES)
         {
@@ -360,6 +393,12 @@ mod tests {
                 (tile.threads as usize, tile.threadgroup_bytes())
             );
         }
+        let split = MetalResearchCandidate::GlobalD512SplitR8S256T128;
+        assert_eq!(
+            split.split_global_decode_tile(),
+            Some(crate::attention_global_decode::SPLIT_R8S256T128)
+        );
+        assert_eq!(split.kernels().len(), 2);
         for candidate in ALL_CANDIDATES {
             for dtype in [MetalFloatType::Bf16, MetalFloatType::F16] {
                 let source = crate::kernels::kernel_source_with_options(
@@ -403,17 +442,23 @@ mod tests {
         for candidate in ALL_CANDIDATES {
             let good = Gemma12bResearchShape {
                 tokens: candidate.spec().min_tokens,
-                kv_heads: if candidate.global_decode_tile().is_some() {
+                kv_heads: if candidate.global_decode_tile().is_some()
+                    || candidate.split_global_decode_tile().is_some()
+                {
                     1
                 } else {
                     8
                 },
-                head_dim: if candidate.global_decode_tile().is_some() {
+                head_dim: if candidate.global_decode_tile().is_some()
+                    || candidate.split_global_decode_tile().is_some()
+                {
                     512
                 } else {
                     256
                 },
-                attention_window: if candidate.global_decode_tile().is_some() {
+                attention_window: if candidate.global_decode_tile().is_some()
+                    || candidate.split_global_decode_tile().is_some()
+                {
                     0
                 } else {
                     1024

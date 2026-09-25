@@ -16,6 +16,7 @@ authors.workspace = true
 
 [features]
 default = []
+metal-stage-instrumentation = []
 
 [dependencies]
 rvllm-core = { workspace = true }
@@ -42,6 +43,7 @@ objc2-metal = { version = "0.3", features = [
     "MTLArgument",
     "MTLTexture",
     "MTLPixelFormat",
+    "MTLCounters",
     "std",
     "objc2-io-surface",
 ] }

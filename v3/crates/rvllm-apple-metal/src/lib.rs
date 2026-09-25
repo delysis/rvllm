@@ -81,6 +81,11 @@ pub mod low_bit_metal;
 pub mod memory_budget;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod pipeline;
+#[cfg(all(
+    feature = "metal-stage-instrumentation",
+    any(target_os = "macos", target_os = "ios")
+))]
+pub mod stage_instrumentation;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 mod unavailable;
 #[cfg(any(target_os = "macos", target_os = "ios"))]

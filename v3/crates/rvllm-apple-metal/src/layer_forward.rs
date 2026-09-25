@@ -273,6 +273,8 @@ pub struct MetalScratch {
     pub k_offset: usize,
     pub v_offset: usize,
     pub attn_out: usize,
+    /// Dedicated FP32 sufficient-statistic storage for bounded split-KV decode.
+    pub global_decode_partials: Option<usize>,
     pub gate_up_out: usize,
     pub activated: usize,
     pub mlp_out: usize,
@@ -776,6 +778,8 @@ pub unsafe fn metal_forward_layer(
         attention_kv_cache_k_offset,
         attention_kv_cache_v_offset,
         debug_skip,
+        #[cfg(feature = "metal-stage-instrumentation")]
+        None,
     )?;
     cmd_buf.commit();
 
@@ -799,6 +803,9 @@ pub unsafe fn metal_encode_forward_layer(
     attention_kv_cache_k_offset: usize,
     attention_kv_cache_v_offset: usize,
     debug_skip: MetalLayerDebugSkip,
+    #[cfg(feature = "metal-stage-instrumentation")] mut stage_profiler: Option<
+        &mut crate::stage_instrumentation::MetalStageProfiler,
+    >,
 ) -> Result<()> {
     let allow_prefill_mma = trace.is_none() && supports_gemma4_prefill_mma(pipelines, dims, phase);
     let buf = arena.buffer_retained();
@@ -857,6 +864,13 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.begin(
+            cmd_buf,
+            crate::stage_instrumentation::MetalStage::NormResidual,
+        );
+    }
     // 1. RMSNorm(residual) → normed_hidden
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
@@ -909,6 +923,18 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            if dims.attention_window == 0 {
+                crate::stage_instrumentation::MetalStage::QkvFull
+            } else {
+                crate::stage_instrumentation::MetalStage::QkvSliding
+            },
+        );
+    }
     // 2-4. QKV projection and optional Gemma-style Q/K/V norms before RoPE.
     if let (Some(q_norm_offset), Some(k_norm_offset)) =
         (weights.q_norm_offset, weights.k_norm_offset)
@@ -1415,29 +1441,66 @@ pub unsafe fn metal_encode_forward_layer(
         encoder.endEncoding();
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            if dims.attention_window == 0 {
+                crate::stage_instrumentation::MetalStage::AttentionFull
+            } else {
+                crate::stage_instrumentation::MetalStage::AttentionSliding
+            },
+        );
+    }
     // 7. Attention
     match phase {
         MetalPhase::Decode => {
             // Explicit opt-in only; unsupported requests retain the unchanged
             // incumbent route. The adapter records only actual candidate encodes.
-            if crate::attention_global_decode_metal::try_encode_global_decode(
-                pipelines,
-                cmd_buf,
-                buf,
-                dims,
-                phase,
-                crate::attention_global_decode::DecodeBuffers {
-                    q: scratch.q_offset,
-                    k: attention_kv_cache_k_offset,
-                    v: attention_kv_cache_v_offset,
-                    output: scratch.attn_out,
-                    block_tables: meta.block_tables_offset,
-                    context_lens: meta.context_lens_offset,
-                    positions: meta.positions_offset,
-                },
-                crate::attention_global_decode::DecodeOutput::Bf16,
-            )?
-            .is_none()
+            let split_encoded = if let Some(partials) = scratch.global_decode_partials {
+                crate::attention_global_decode_metal::try_encode_split_global_decode(
+                    pipelines,
+                    cmd_buf,
+                    buf,
+                    dims,
+                    phase,
+                    crate::attention_global_decode::SplitDecodeBuffers {
+                        common: crate::attention_global_decode::DecodeBuffers {
+                            q: scratch.q_offset,
+                            k: attention_kv_cache_k_offset,
+                            v: attention_kv_cache_v_offset,
+                            output: scratch.attn_out,
+                            block_tables: meta.block_tables_offset,
+                            context_lens: meta.context_lens_offset,
+                            positions: meta.positions_offset,
+                        },
+                        partials,
+                    },
+                    crate::attention_global_decode::DecodeOutput::Bf16,
+                )?
+            } else {
+                None
+            };
+            if split_encoded.is_none()
+                && crate::attention_global_decode_metal::try_encode_global_decode(
+                    pipelines,
+                    cmd_buf,
+                    buf,
+                    dims,
+                    phase,
+                    crate::attention_global_decode::DecodeBuffers {
+                        q: scratch.q_offset,
+                        k: attention_kv_cache_k_offset,
+                        v: attention_kv_cache_v_offset,
+                        output: scratch.attn_out,
+                        block_tables: meta.block_tables_offset,
+                        context_lens: meta.context_lens_offset,
+                        positions: meta.positions_offset,
+                    },
+                    crate::attention_global_decode::DecodeOutput::Bf16,
+                )?
+                .is_none()
             {
                 let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
                     rvllm_core::RvllmError::apple(
@@ -1738,6 +1801,18 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            if dims.attention_window == 0 {
+                crate::stage_instrumentation::MetalStage::OProjectionFull
+            } else {
+                crate::stage_instrumentation::MetalStage::OProjectionSliding
+            },
+        );
+    }
     // 8. O projection, post-attention norm, then residual add.
     let attn_addition_offset = if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
         if let Some(trace) = trace {
@@ -1853,6 +1928,14 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            crate::stage_instrumentation::MetalStage::FfnGateUpActivation,
+        );
+    }
     // 11. Dense FFN branch: Gate||Up projection, GELU, Down projection.
     let two_inter = 2 * dims.intermediate;
     let has_per_layer_input_branch = dims.ple_dim > 0
@@ -1931,6 +2014,11 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(cmd_buf, crate::stage_instrumentation::MetalStage::FfnDown);
+    }
     let ffn_addition_offset = if let Some(moe) = weights.moe {
         let Some(topk_indices_offset) = scratch.moe_topk_indices else {
             return Err(missing_moe_scratch("moe_topk_indices"));
@@ -2406,6 +2494,14 @@ pub unsafe fn metal_encode_forward_layer(
         }
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            crate::stage_instrumentation::MetalStage::NormResidual,
+        );
+    }
     if !layer_scale_fused {
         encode_layer_scale(
             &cmd_buf,
@@ -2419,6 +2515,10 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+    }
     Ok(())
 }
 
@@ -4676,6 +4776,7 @@ mod tests {
             k_offset: 80,
             v_offset: 88,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
@@ -4696,6 +4797,7 @@ mod tests {
             k_offset: 80,
             v_offset: 96,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
@@ -4716,6 +4818,7 @@ mod tests {
             k_offset: 2048,
             v_offset: 3072,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
@@ -4739,6 +4842,7 @@ mod tests {
             k_offset: 128,
             v_offset: 160,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,

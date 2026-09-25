@@ -5,9 +5,12 @@ use crate::arena::MetalRegion;
 use crate::attention_global_decode::{
     physical_base,
     reference::{self, Fixture},
-    round_bf16, DecodeBuffers, DecodeOutput, DecodePlan, DecodeShape, DIM, HEADS, LIVE_LENGTHS,
+    round_bf16, DecodeBuffers, DecodeOutput, DecodePlan, DecodeShape, SplitDecodeBuffers,
+    SplitDecodePlan, DIM, HEADS, LIVE_LENGTHS,
 };
-use crate::attention_global_decode_metal::try_encode_global_decode;
+use crate::attention_global_decode_metal::{
+    try_encode_global_decode, try_encode_split_global_decode,
+};
 use crate::layer_forward::{MetalLayerDims, MetalPhase};
 use crate::{
     MetalBufferArena, MetalContext, MetalFloatType, MetalKernelOptions, MetalResearchCandidate,
@@ -71,9 +74,11 @@ impl Setup {
     fn new(oracle: bool) -> TestResult<Self> {
         let candidate: MetalResearchCandidate =
             std::env::var(format!("{PREFIX}CANDIDATE"))?.parse()?;
-        candidate
-            .global_decode_tile()
-            .ok_or("explicit global decode candidate required")?;
+        if candidate.global_decode_tile().is_none()
+            && candidate.split_global_decode_tile().is_none()
+        {
+            return Err("explicit global decode candidate required".into());
+        }
         let directory = env_path("REPORT_DIR")?;
         std::fs::create_dir(&directory)?; // fresh, never truncate an earlier receipt
         let source_path = env_path("SOURCE")?;
@@ -110,25 +115,45 @@ impl Setup {
         context.load_metallib(&library_path)?;
         let mut pipelines = PipelineCache::with_kernel_options(options);
         pipelines.compile_all_for_type(&context, MetalFloatType::Bf16)?;
-        let tile = candidate.global_decode_tile().unwrap();
-        let kernel = candidate.kernels()[0];
-        let pso = pipelines
-            .research_pso(
-                kernel.name(),
-                tile.threads as usize,
-                tile.threadgroup_bytes(),
+        let mut kernels = Vec::new();
+        for kernel in candidate.kernels() {
+            let (threads, shared) = kernel.limits();
+            let pso = pipelines
+                .research_pso(kernel.name(), threads, shared)
+                .ok_or("candidate refused by existing family/typed-PSO/resource gates")?;
+            kernels.push(json!({"name":kernel.name(),"threads":threads,
+                "source_threadgroup_bytes":shared,
+                "actual_static_threadgroup_bytes":pso.staticThreadgroupMemoryLength(),
+                "actual_execution_width":pso.threadExecutionWidth(),
+                "actual_max_threads":pso.maxTotalThreadsPerThreadgroup()}));
+        }
+        let tile = candidate.global_decode_tile();
+        let split = candidate.split_global_decode_tile();
+        let (rows, panel, threads, grid, scratch_bytes) = if let Some(tile) = tile {
+            (
+                tile.rows,
+                tile.panel,
+                tile.threads,
+                json!([HEADS / tile.rows, 1, 1]),
+                0,
             )
-            .ok_or("candidate refused by existing family/typed-PSO/resource gates")?;
+        } else {
+            let tile = split.unwrap();
+            (
+                tile.rows,
+                tile.panel,
+                tile.threads,
+                json!([2, 16, 1]),
+                16 * 16 * 514 * 4,
+            )
+        };
         let identity = json!({"candidate":candidate.name(), "core_sha256":core_sha,
             "source_sha256":source_sha, "metallib_sha256":library_sha,
             "build_receipt_sha256":sha256(&build_path)?,
-            "test_executable_sha256":sha256(&std::env::current_exe()?)?,
-            "kernel":kernel.name(), "rows":tile.rows, "panel":tile.panel,
-            "threads":tile.threads, "grid":[HEADS / tile.rows,1,1],
-            "scratch_bytes":0, "source_threadgroup_bytes":tile.threadgroup_bytes(),
-            "actual_static_threadgroup_bytes":pso.staticThreadgroupMemoryLength(),
-            "actual_execution_width":pso.threadExecutionWidth(),
-            "actual_max_threads":pso.maxTotalThreadsPerThreadgroup(),
+            "test_executable_sha256":sha256(&std::env::current_exe()?)?, "kernels":kernels,
+            "kernel":candidate.kernels()[0].name(),
+            "rows":rows, "panel":panel, "threads":threads, "grid":grid,
+            "scratch_bytes":scratch_bytes,
             "gpu_family":format!("{:?}",pipelines.gpu_family()),
             "device_name":context.device().name().to_string(), "oracle_library":oracle});
         write_new(
@@ -192,7 +217,10 @@ impl Guarded {
             f.context.to_le_bytes().to_vec(),
             f.position.to_le_bytes().to_vec(),
         ];
-        let capacity = payloads.iter().map(Vec::len).sum::<usize>() + FLOAT_BYTES * 3 + 8192;
+        let capacity = payloads.iter().map(Vec::len).sum::<usize>()
+            + FLOAT_BYTES * 3
+            + 16 * 16 * 514 * 4
+            + 8192;
         let mut arena = MetalBufferArena::new(context.device(), capacity)?;
         let mut upload = |name: &str, payload: Vec<u8>| -> TestResult<(MetalRegion, Vec<u8>)> {
             let mut raw = vec![0xa5; GUARD];
@@ -218,6 +246,7 @@ impl Guarded {
             ("serial", FLOAT_BYTES),
             ("bf16", FLOAT_BYTES / 2),
             ("sampled-dots", 36),
+            ("split-partials", 16 * 16 * 514 * 4),
         ] {
             outputs.push(upload(name, vec![0xff; bytes])?);
         }
@@ -239,6 +268,13 @@ impl Guarded {
             block_tables: offset(3),
             context_lens: offset(4),
             positions: offset(5),
+        }
+    }
+
+    fn split_bindings(&self, output: usize) -> SplitDecodeBuffers {
+        SplitDecodeBuffers {
+            common: self.bindings(output),
+            partials: self.outputs[4].0.offset + GUARD,
         }
     }
 
@@ -353,6 +389,33 @@ fn expect_count(
         assert_eq!(
             count,
             if slot == setup.candidate.kernels()[0] as usize {
+                expected
+            } else {
+                0
+            }
+        );
+    }
+}
+
+fn expect_family_count(
+    setup: &Setup,
+    before: crate::research_evidence::ResearchDispatchSnapshot,
+    expected: u64,
+) {
+    let delta = setup
+        .pipelines
+        .research_dispatch_snapshot()
+        .checked_since(before)
+        .unwrap();
+    for (slot, &count) in delta.counts.iter().enumerate() {
+        assert_eq!(
+            count,
+            if setup
+                .candidate
+                .kernels()
+                .iter()
+                .any(|kernel| *kernel as usize == slot)
+            {
                 expected
             } else {
                 0
@@ -680,6 +743,105 @@ fn global_decode_device_oracle() -> TestResult {
         "encoded_metadata_refusals":shader_refusals,"timing_eligible":false});
     write_new(
         &setup.directory.join("oracle.json"),
+        &serde_json::to_vec_pretty(&receipt)?,
+    )?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "explicit bounded split-KV D512 device oracle; requires Apple9 and prebuilt strict-math library"]
+fn global_decode_split_device_oracle() -> TestResult {
+    let setup = Setup::new(false)?;
+    let tile = setup
+        .candidate
+        .split_global_decode_tile()
+        .ok_or("explicit split-KV candidate required")?;
+    let mut fixtures: Vec<(String, Fixture)> = [
+        1_u32, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 2047, 2048, 2049,
+    ]
+    .into_iter()
+    .map(|n| (format!("L{n}"), Fixture::new(n, 32)))
+    .collect();
+    for (label, page) in [
+        ("first-hole", 0_usize),
+        ("middle-hole", 8),
+        ("last-hole", 15),
+    ] {
+        let mut fixture = Fixture::new(4096, 256);
+        fixture.table[page] = -1;
+        fixtures.push((label.into(), fixture));
+    }
+    let mut reports = Vec::new();
+    for (label, fixture) in fixtures {
+        let plan = SplitDecodePlan::new(tile, fixture.shape, DecodeOutput::F32)
+            .ok_or("split plan rejected oracle fixture")?;
+        let reference_plan = DecodePlan::new(
+            crate::attention_global_decode::DecodeTile {
+                rows: tile.rows,
+                panel: tile.panel,
+                threads: tile.threads,
+            },
+            fixture.shape,
+            DecodeOutput::F32,
+        )
+        .ok_or("reference plan rejected split fixture")?;
+        let cpu = reference::output_f32(&fixture, reference_plan)?;
+        let data = Guarded::new(&setup.context, &fixture)?;
+        let before = setup.pipelines.research_dispatch_snapshot();
+        let command = setup
+            .context
+            .queue()
+            .commandBuffer()
+            .ok_or("command unavailable")?;
+        for (output_index, output_kind) in [(0, DecodeOutput::F32), (2, DecodeOutput::Bf16)] {
+            let encoded = try_encode_split_global_decode(
+                &setup.pipelines,
+                &command,
+                data.arena.buffer(),
+                &dims(fixture.shape),
+                MetalPhase::Decode,
+                data.split_bindings(output_index),
+                output_kind,
+            )?
+            .ok_or("normal-route split predicate refused positive fixture")?;
+            assert_eq!(encoded.plan.partial_count, 16);
+            assert_eq!(encoded.plan.scratch_bytes, 16 * 16 * 514 * 4);
+        }
+        complete(&command)?;
+        expect_family_count(&setup, before, 2);
+        data.check(false);
+        let actual = data.payload(0);
+        let mut max_cpu_error = 0.0_f32;
+        let mut rounded = Vec::with_capacity(FLOAT_BYTES / 2);
+        for (bytes, &reference) in actual.chunks_exact(4).zip(&cpu) {
+            let value = f32::from_le_bytes(bytes.try_into().unwrap());
+            assert!(value.is_finite(), "nonfinite split result: {label}");
+            max_cpu_error = max_cpu_error.max((value - reference).abs());
+            rounded.extend_from_slice(&round_bf16(value).to_le_bytes());
+        }
+        // Split reduction changes FP32 association; this is an explicit
+        // numerical bound, not a false bitwise-serial-parity claim.
+        assert!(
+            max_cpu_error <= 5e-5,
+            "split CPU error: {label}: {max_cpu_error}"
+        );
+        assert_eq!(
+            data.payload(2),
+            rounded,
+            "single final BF16 rounding: {label}"
+        );
+        let bf16_path = setup.directory.join(format!("{label}.split.bf16"));
+        write_new(&bf16_path, &data.payload(2))?;
+        reports.push(json!({"label":label,"max_cpu_fp32_abs_error":max_cpu_error,
+            "bitwise_serial_parity_claimed":false,"once_rounded_bf16":true,
+            "partial_count":plan.partial_count,"scratch_bytes":plan.scratch_bytes,
+            "bf16_file":bf16_path,"bf16_sha256":sha256(&bf16_path)?}));
+    }
+    let receipt = json!({"schema":"rvllm.global-decode.split-oracle.v1","status":"passed",
+        "scope":"synthetic bounded split-KV attention operator; not model/full-route qualification",
+        "identity":setup.identity,"cases":reports,"timing_eligible":false});
+    write_new(
+        &setup.directory.join("split-oracle.json"),
         &serde_json::to_vec_pretty(&receipt)?,
     )?;
     Ok(())

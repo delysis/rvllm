@@ -197,6 +197,7 @@ pub struct MetalLayerExecutionSlot {
     pub k: MetalRegion,
     pub v: MetalRegion,
     pub attn_out: MetalRegion,
+    pub global_decode_partials: Option<MetalRegion>,
     pub gate_up_out: MetalRegion,
     pub activated: MetalRegion,
     pub mlp_out: MetalRegion,
@@ -300,6 +301,7 @@ pub struct MetalOneLayerState {
     pub k: MetalRegion,
     pub v: MetalRegion,
     pub attn_out: MetalRegion,
+    pub global_decode_partials: Option<MetalRegion>,
     pub gate_up_out: MetalRegion,
     pub activated: MetalRegion,
     pub mlp_out: MetalRegion,
@@ -424,6 +426,7 @@ impl Gemma4MetalState {
             layer.k = execution.k.clone();
             layer.v = execution.v.clone();
             layer.attn_out = execution.attn_out.clone();
+            layer.global_decode_partials = execution.global_decode_partials.clone();
             layer.gate_up_out = execution.gate_up_out.clone();
             layer.activated = execution.activated.clone();
             layer.mlp_out = execution.mlp_out.clone();
@@ -453,6 +456,7 @@ struct SharedLayerScratch {
     k: MetalRegion,
     v: MetalRegion,
     attn_out: MetalRegion,
+    global_decode_partials: Option<MetalRegion>,
     gate_up_out: MetalRegion,
     activated: MetalRegion,
     mlp_out: MetalRegion,
@@ -470,6 +474,7 @@ fn execution_layer_from_state(layer: &MetalOneLayerState) -> MetalLayerExecution
         k: layer.k.clone(),
         v: layer.v.clone(),
         attn_out: layer.attn_out.clone(),
+        global_decode_partials: layer.global_decode_partials.clone(),
         gate_up_out: layer.gate_up_out.clone(),
         activated: layer.activated.clone(),
         mlp_out: layer.mlp_out.clone(),
@@ -1691,6 +1696,7 @@ impl ProbeModelPlan {
                 + max_batch_tokens * max_moe_top_k * f32_bytes
                 + max_batch_tokens * max_moe_top_k * max_moe_intermediate * half_bytes
                 + max_batch_tokens * arch.hidden_size * half_bytes
+                + crate::attention_global_decode::SPLIT_SCRATCH_BYTES
                 + 64;
         }
 
@@ -2471,6 +2477,11 @@ impl Gemma4MetalState {
                     max_batch_tokens * max_q_dim * half_bytes,
                     16,
                 )?,
+                global_decode_partials: Some(arena.region(
+                    "metal_shared_global_decode_partials",
+                    crate::attention_global_decode::SPLIT_SCRATCH_BYTES,
+                    16,
+                )?),
                 gate_up_out: arena.region(
                     "metal_shared_layer_gate_up_out",
                     max_batch_tokens * 2 * max_intermediate * half_bytes,
@@ -2701,6 +2712,7 @@ impl Gemma4MetalState {
             let k = scratch.k.clone();
             let v = scratch.v.clone();
             let attn_out = scratch.attn_out.clone();
+            let global_decode_partials = scratch.global_decode_partials.clone();
             let gate_up_out = scratch.gate_up_out.clone();
             let activated = scratch.activated.clone();
             let mlp_out = scratch.mlp_out.clone();
@@ -2864,6 +2876,7 @@ impl Gemma4MetalState {
                 k,
                 v,
                 attn_out,
+                global_decode_partials,
                 gate_up_out,
                 activated,
                 mlp_out,
@@ -2945,6 +2958,12 @@ impl Gemma4MetalState {
                             arena,
                             &name("attn_out"),
                             &layer.attn_out,
+                            16,
+                        )?,
+                        global_decode_partials: allocate_optional_region_like(
+                            arena,
+                            &name("global_decode_partials"),
+                            layer.global_decode_partials.as_ref(),
                             16,
                         )?,
                         gate_up_out: allocate_region_like(

@@ -71,7 +71,7 @@ fn candidates() -> Vec<MetalResearchCandidate> {
     rvllm_apple_metal::research_catalog::ALL_CANDIDATES
         .iter()
         .copied()
-        .filter(|c| c.global_decode_tile().is_some())
+        .filter(|c| c.global_decode_tile().is_some() || c.split_global_decode_tile().is_some())
         .collect()
 }
 fn validate_selected(selected: &[String]) -> Result {
@@ -159,11 +159,20 @@ fn compile(source: &Path, directory: &Path) -> Result {
 }
 fn id(config: &Value, candidate: MetalResearchCandidate, suffix: &str) -> Result<String> {
     let campaign = config["campaign"].as_str().ok_or("campaign missing")?;
-    let tile = candidate.global_decode_tile().unwrap();
-    Ok(format!(
-        "{campaign}-r{}p{}t{}-{suffix}",
-        tile.rows, tile.panel, tile.threads
-    ))
+    if let Some(tile) = candidate.global_decode_tile() {
+        Ok(format!(
+            "{campaign}-r{}p{}t{}-{suffix}",
+            tile.rows, tile.panel, tile.threads
+        ))
+    } else {
+        let tile = candidate
+            .split_global_decode_tile()
+            .ok_or("candidate has no global decode identity")?;
+        Ok(format!(
+            "{campaign}-split-r{}s{}t{}-{suffix}",
+            tile.rows, tile.partition, tile.threads
+        ))
+    }
 }
 fn succeeded(queue: &Path, id: &str) -> Result<PathBuf> {
     let directory = queue.join("results").join(id);
@@ -348,6 +357,17 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
     {
         return Err("test/generator executable identity drift".into());
     }
+    if timing
+        && candidates().into_iter().any(|candidate| {
+            candidate.split_global_decode_tile().is_some()
+                && (selected.is_empty() || selected.iter().any(|name| name == candidate.name()))
+        })
+    {
+        return Err(
+            "split-KV timing is fail-closed until the v2 two-kernel receipt/verifier is implemented"
+                .into(),
+        );
+    }
     let retainer = if timing {
         let path = absolute(
             config["abba_retainer"]["path"]
@@ -405,7 +425,13 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         if timing {
             inputs.push(pin(&test)?);
             let oracle_id = id(&config, candidate, "oracle")?;
-            let oracle_path = succeeded(&queue, &oracle_id)?.join("native/oracle.json");
+            let oracle_path = succeeded(&queue, &oracle_id)?.join(
+                if candidate.split_global_decode_tile().is_some() {
+                    "native/split-oracle.json"
+                } else {
+                    "native/oracle.json"
+                },
+            );
             let oracle = read(&oracle_path)?;
             if oracle["status"] != "passed"
                 || oracle["identity"]["candidate"] != candidate.name()
@@ -438,6 +464,8 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 json!(queue.join("results").join(&job_id).join("native"));
             let test_name = if timing {
                 "global_decode_abba"
+            } else if candidate.split_global_decode_tile().is_some() {
+                "global_decode_split_device_oracle"
             } else {
                 "global_decode_device_oracle"
             };

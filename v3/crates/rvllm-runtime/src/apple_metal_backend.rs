@@ -6,6 +6,8 @@ use rvllm_apple::{
 use rvllm_core::{AppleCtx, AppleError, BlockId, Result, RvllmError, TokenId};
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use std::cell::Cell;
+#[cfg(feature = "metal-stage-instrumentation")]
+use std::cell::RefCell;
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use std::cmp::max;
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -109,6 +111,11 @@ use objc2_metal::{
 use rvllm_apple::RolloutBucket;
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use rvllm_apple_metal::arena::{MetalBufferArena, MetalRegion};
+#[cfg(all(
+    feature = "metal-stage-instrumentation",
+    any(target_os = "macos", target_os = "ios")
+))]
+use rvllm_apple_metal::stage_instrumentation::{MetalStage, MetalStageProfiler};
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use rvllm_apple_metal::{
     context::MetalContext,
@@ -451,6 +458,8 @@ struct MetalProbePerfCounters {
     last_step_cpu_wall_ns: Cell<u64>,
     last_step_command_buffer_wait_ns: Cell<u64>,
     last_step_gpu_execution_ns: Cell<Option<u64>>,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    last_stage_timing_receipt: RefCell<Option<serde_json::Value>>,
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -479,6 +488,8 @@ impl MetalProbePerfCounters {
         self.last_step_cpu_wall_ns.set(0);
         self.last_step_command_buffer_wait_ns.set(0);
         self.last_step_gpu_execution_ns.set(None);
+        #[cfg(feature = "metal-stage-instrumentation")]
+        self.last_stage_timing_receipt.borrow_mut().take();
     }
 
     fn snapshot(&self) -> MetalProbePerfStats {
@@ -1378,6 +1389,8 @@ struct ModelGpuSubmission {
     wall_start: Instant,
     num_tokens: usize,
     is_decode: bool,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    stage_profiler: MetalStageProfiler,
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -1444,6 +1457,19 @@ impl ModelGpuSubmission {
                 && gpu_end > gpu_start)
                 .then(|| ((gpu_end - gpu_start) * 1e9) as u64),
         );
+        #[cfg(feature = "metal-stage-instrumentation")]
+        {
+            let receipt = unsafe { self.stage_profiler.receipt() }.map_err(|_| {
+                RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "resolve_stage_timing",
+                    },
+                    model_ctx("resolve_stage_timing"),
+                )
+            })?;
+            *perf.last_stage_timing_receipt.borrow_mut() = Some(receipt);
+        }
 
         let outputs = match self.output {
             ModelGpuOutput::Prefill => Vec::new(),
@@ -1915,6 +1941,11 @@ impl ModelMetalBackend {
     #[must_use]
     pub fn probe_perf_stats(&self) -> MetalProbePerfStats {
         self.perf.snapshot()
+    }
+
+    #[cfg(feature = "metal-stage-instrumentation")]
+    pub fn last_stage_timing_receipt(&self) -> Option<serde_json::Value> {
+        self.perf.last_stage_timing_receipt.borrow().clone()
     }
 
     /// Encoded research dispatches, not proof of GPU completion or accuracy.
@@ -3701,6 +3732,9 @@ impl ModelMetalBackend {
     fn enqueue_probe_layers(
         &self,
         external_cmd_buf: Option<&ProtocolObject<dyn MTLCommandBuffer>>,
+        #[cfg(feature = "metal-stage-instrumentation")] mut stage_profiler: Option<
+            &mut MetalStageProfiler,
+        >,
         state: &Gemma4MetalState,
         num_tokens: usize,
         phase: MetalPhase,
@@ -3903,6 +3937,10 @@ impl ModelMetalBackend {
                 k_offset: one.k.offset,
                 v_offset: one.v.offset,
                 attn_out: one.attn_out.offset,
+                global_decode_partials: one
+                    .global_decode_partials
+                    .as_ref()
+                    .map(|region| region.offset),
                 gate_up_out: one.gate_up_out.offset,
                 activated: one.activated.offset,
                 mlp_out: one.mlp_out.offset,
@@ -4007,6 +4045,8 @@ impl ModelMetalBackend {
                         attention_kv_cache_k_offset,
                         attention_kv_cache_v_offset,
                         shared_kv_debug_skip,
+                        #[cfg(feature = "metal-stage-instrumentation")]
+                        stage_profiler.as_deref_mut(),
                     )?;
                 } else {
                     metal_forward_layer(
@@ -4417,12 +4457,33 @@ impl ModelMetalBackend {
             let cmd_buf = queue.commandBuffer().ok_or_else(|| {
                 RvllmError::apple(AppleError::MetalUnavailable, model_ctx("launch_prefill"))
             })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            let mut stage_profiler =
+                MetalStageProfiler::new(ctx.device(), state.num_layers * 7 + 2).map_err(|_| {
+                    RvllmError::apple(
+                        AppleError::FeatureNotAvailable {
+                            backend: "model-metal-backend",
+                            op: "create_stage_timing",
+                        },
+                        model_ctx("launch_prefill"),
+                    )
+                })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.begin(&cmd_buf, MetalStage::Embedding)
+            };
             self.encode_embedding_gather(&cmd_buf, state, num_tokens)?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.end(&cmd_buf)
+            };
             self.perf.add_embedding_encoders(1);
             let ple_encoders = self.encode_ple_inputs(&cmd_buf, state, num_tokens)?;
             self.perf.add_ple_encoders(ple_encoders);
             self.enqueue_probe_layers(
                 Some(&cmd_buf),
+                #[cfg(feature = "metal-stage-instrumentation")]
+                Some(&mut stage_profiler),
                 state,
                 num_tokens,
                 MetalPhase::Prefill {
@@ -4432,7 +4493,15 @@ impl ModelMetalBackend {
                 "launch_prefill",
             )?;
             let output = if sample_first_token {
+                #[cfg(feature = "metal-stage-instrumentation")]
+                unsafe {
+                    stage_profiler.begin(&cmd_buf, MetalStage::LmHead)
+                };
                 self.encode_prefill_first_token(&cmd_buf, state, num_tokens)?;
+                #[cfg(feature = "metal-stage-instrumentation")]
+                unsafe {
+                    stage_profiler.end(&cmd_buf)
+                };
                 ModelGpuOutput::Tokens {
                     req_ids: handoff.req_ids.clone(),
                     sampled: state.sampled.clone(),
@@ -4449,11 +4518,15 @@ impl ModelMetalBackend {
                 wall_start,
                 num_tokens,
                 is_decode: false,
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler,
             }));
         }
         self.enqueue_embedding_gather(state, num_tokens)?;
         self.enqueue_ple_inputs(state, num_tokens)?;
         self.enqueue_probe_layers(
+            None,
+            #[cfg(feature = "metal-stage-instrumentation")]
             None,
             state,
             num_tokens,
@@ -4579,12 +4652,33 @@ impl ModelMetalBackend {
             let cmd_buf = queue.commandBuffer().ok_or_else(|| {
                 RvllmError::apple(AppleError::MetalUnavailable, model_ctx("launch_rollout"))
             })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            let mut stage_profiler =
+                MetalStageProfiler::new(ctx.device(), state.num_layers * 7 + 2).map_err(|_| {
+                    RvllmError::apple(
+                        AppleError::FeatureNotAvailable {
+                            backend: "model-metal-backend",
+                            op: "create_stage_timing",
+                        },
+                        model_ctx("launch_rollout"),
+                    )
+                })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.begin(&cmd_buf, MetalStage::Embedding)
+            };
             self.encode_embedding_gather(&cmd_buf, state, num_tokens)?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.end(&cmd_buf)
+            };
             self.perf.add_embedding_encoders(1);
             let ple_encoders = self.encode_ple_inputs(&cmd_buf, state, num_tokens)?;
             self.perf.add_ple_encoders(ple_encoders);
             self.enqueue_probe_layers(
                 Some(&cmd_buf),
+                #[cfg(feature = "metal-stage-instrumentation")]
+                Some(&mut stage_profiler),
                 state,
                 num_tokens,
                 MetalPhase::Decode,
@@ -4611,6 +4705,8 @@ impl ModelMetalBackend {
                 return Ok(ModelLaunchResult::Ready(outputs));
             }
             unsafe {
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler.begin(&cmd_buf, MetalStage::LmHead);
                 metal_encode_finalize_sample(
                     &cmd_buf,
                     pipelines,
@@ -4629,6 +4725,8 @@ impl ModelMetalBackend {
                     state.final_argmax_partial_max.offset,
                     state.final_argmax_partial_idx.offset,
                 )?;
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler.end(&cmd_buf);
             }
             self.perf
                 .add_final_sample_encoders(metal_finalize_sample_encoder_count(
@@ -4648,11 +4746,15 @@ impl ModelMetalBackend {
                 wall_start,
                 num_tokens,
                 is_decode: true,
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler,
             }));
         } else {
             self.enqueue_embedding_gather(state, num_tokens)?;
             self.enqueue_ple_inputs(state, num_tokens)?;
             self.enqueue_probe_layers(
+                None,
+                #[cfg(feature = "metal-stage-instrumentation")]
                 None,
                 state,
                 num_tokens,

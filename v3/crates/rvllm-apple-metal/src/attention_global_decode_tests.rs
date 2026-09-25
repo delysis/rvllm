@@ -53,6 +53,46 @@ fn geometry_and_scratch_are_exact_for_all_tiles() {
 }
 
 #[test]
+fn bounded_split_plan_has_exact_two_stage_geometry_and_disjoint_scratch() {
+    let plan = SplitDecodePlan::new(SPLIT_R8S256T128, shape(), DecodeOutput::Bf16).unwrap();
+    assert_eq!(plan.partial_grid, [2, 16, 1]);
+    assert_eq!(plan.partial_threads, [128, 1, 1]);
+    assert_eq!(plan.merge_grid, [16, 1, 1]);
+    assert_eq!(plan.merge_threads, [32, 1, 1]);
+    assert_eq!(plan.partial_threadgroup_bytes, 10016);
+    assert_eq!(plan.merge_threadgroup_bytes, 0);
+    assert_eq!(plan.partial_count, 16);
+    assert_eq!(plan.scratch_bytes, 16 * 16 * 514 * 4);
+
+    let unsplit = DecodePlan::new(DECODE_TILES[0], shape(), DecodeOutput::Bf16).unwrap();
+    let (common, mut capacity) = layout(unsplit);
+    capacity = capacity.next_multiple_of(16);
+    let buffers = SplitDecodeBuffers {
+        common,
+        partials: capacity,
+    };
+    capacity += plan.scratch_bytes;
+    assert!(plan.buffers_fit(buffers, capacity));
+    assert!(!plan.buffers_fit(
+        SplitDecodeBuffers {
+            partials: buffers.common.output,
+            ..buffers
+        },
+        capacity
+    ));
+    assert!(SplitDecodePlan::new(
+        SPLIT_R8S256T128,
+        DecodeShape {
+            max_blocks: 129,
+            block_size: 32,
+            ..shape()
+        },
+        DecodeOutput::Bf16
+    )
+    .is_none());
+}
+
+#[test]
 fn every_near_miss_shape_and_overflow_is_rejected() {
     let good = shape();
     for bad in [

@@ -8,6 +8,10 @@ use std::ops::Range;
 pub const HEADS: u32 = 16;
 pub const DIM: u32 = 512;
 pub const KV_TILE: u32 = 8;
+pub const SPLIT_MAX_TOKENS: u32 = 4096;
+pub const SPLIT_PARTIAL_FLOATS: u32 = DIM + 2;
+pub const SPLIT_SCRATCH_BYTES: usize =
+    (SPLIT_MAX_TOKENS as usize / 256) * HEADS as usize * SPLIT_PARTIAL_FLOATS as usize * 4;
 pub const LIVE_LENGTHS: [u32; 5] = [256, 512, 1024, 2048, 4096];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -127,6 +131,165 @@ pub struct DecodeBuffers {
     pub block_tables: usize,
     pub context_lens: usize,
     pub positions: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SplitDecodeTile {
+    pub rows: u32,
+    pub partition: u32,
+    pub panel: u32,
+    pub threads: u32,
+}
+
+impl SplitDecodeTile {
+    pub const fn supported(self) -> bool {
+        self.rows == 8 && self.partition == 256 && self.panel == 64 && self.threads == 128
+    }
+
+    pub const fn partial_threadgroup_bytes(self) -> usize {
+        DecodeTile {
+            rows: self.rows,
+            panel: self.panel,
+            threads: self.threads,
+        }
+        .threadgroup_bytes()
+    }
+}
+
+pub const SPLIT_R8S256T128: SplitDecodeTile = SplitDecodeTile {
+    rows: 8,
+    partition: 256,
+    panel: 64,
+    threads: 128,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SplitDecodeBuffers {
+    pub common: DecodeBuffers,
+    pub partials: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SplitDecodePlan {
+    pub tile: SplitDecodeTile,
+    pub shape: DecodeShape,
+    pub output: DecodeOutput,
+    pub partial_grid: [usize; 3],
+    pub partial_threads: [usize; 3],
+    pub merge_grid: [usize; 3],
+    pub merge_threads: [usize; 3],
+    pub partial_threadgroup_bytes: usize,
+    pub merge_threadgroup_bytes: usize,
+    pub partial_count: u32,
+    pub scratch_bytes: usize,
+    pub cache_bytes: usize,
+}
+
+impl SplitDecodePlan {
+    pub fn new(tile: SplitDecodeTile, shape: DecodeShape, output: DecodeOutput) -> Option<Self> {
+        if !tile.supported()
+            || shape.sequences != 1
+            || shape.heads != HEADS
+            || shape.kv_heads != 1
+            || shape.head_dim != DIM
+            || shape.window != 0
+            || shape.scale.to_bits() != 1.0_f32.to_bits()
+            || shape.block_size == 0
+            || shape.max_blocks == 0
+            || shape.num_blocks == 0
+        {
+            return None;
+        }
+        let capacity = shape.max_blocks.checked_mul(shape.block_size)?;
+        if capacity > SPLIT_MAX_TOKENS || capacity > i32::MAX as u32 {
+            return None;
+        }
+        let partial_count = SPLIT_MAX_TOKENS.div_ceil(tile.partition);
+        let scratch_bytes = (HEADS as usize)
+            .checked_mul(partial_count as usize)?
+            .checked_mul(SPLIT_PARTIAL_FLOATS as usize)?
+            .checked_mul(4)?;
+        if scratch_bytes != SPLIT_SCRATCH_BYTES {
+            return None;
+        }
+        let cache_bytes = (shape.num_blocks as usize)
+            .checked_mul(shape.block_size as usize)?
+            .checked_mul(DIM as usize)?
+            .checked_mul(2)?;
+        Some(Self {
+            tile,
+            shape,
+            output,
+            partial_grid: [(HEADS / tile.rows) as usize, partial_count as usize, 1],
+            partial_threads: [tile.threads as usize, 1, 1],
+            merge_grid: [HEADS as usize, 1, 1],
+            merge_threads: [32, 1, 1],
+            partial_threadgroup_bytes: tile.partial_threadgroup_bytes(),
+            merge_threadgroup_bytes: 0,
+            partial_count,
+            scratch_bytes,
+            cache_bytes,
+        })
+    }
+
+    pub const fn params(self) -> DecodeParams {
+        DecodeParams {
+            sequences: self.shape.sequences,
+            heads: self.shape.heads,
+            kv_heads: self.shape.kv_heads,
+            head_dim: self.shape.head_dim,
+            block_size: self.shape.block_size,
+            max_blocks: self.shape.max_blocks,
+            num_blocks: self.shape.num_blocks,
+            window: self.shape.window,
+            scale: self.shape.scale,
+            output_kind: self.output as u32,
+        }
+    }
+
+    pub fn buffers_fit(self, buffers: SplitDecodeBuffers, capacity: usize) -> bool {
+        let elements = (HEADS * DIM) as usize;
+        let Some(q) = span(buffers.common.q, elements * 2, 2, capacity) else {
+            return false;
+        };
+        let Some(k) = span(buffers.common.k, self.cache_bytes, 2, capacity) else {
+            return false;
+        };
+        let Some(v) = span(buffers.common.v, self.cache_bytes, 2, capacity) else {
+            return false;
+        };
+        let Some(table) = span(
+            buffers.common.block_tables,
+            self.shape.max_blocks as usize * 4,
+            4,
+            capacity,
+        ) else {
+            return false;
+        };
+        let Some(context) = span(buffers.common.context_lens, 4, 4, capacity) else {
+            return false;
+        };
+        let Some(positions) = span(buffers.common.positions, 4, 4, capacity) else {
+            return false;
+        };
+        let Some(output) = span(
+            buffers.common.output,
+            elements * self.output.element_bytes(),
+            self.output.element_bytes(),
+            capacity,
+        ) else {
+            return false;
+        };
+        let Some(partials) = span(buffers.partials, self.scratch_bytes, 16, capacity) else {
+            return false;
+        };
+        let reads = [q, k.clone(), v.clone(), table, context, positions];
+        !overlaps(&k, &v)
+            && reads
+                .iter()
+                .all(|read| !overlaps(read, &output) && !overlaps(read, &partials))
+            && !overlaps(&output, &partials)
+    }
 }
 
 impl DecodeBuffers {

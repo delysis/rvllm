@@ -35,6 +35,7 @@ pub enum MetalResearchCandidate {
     GlobalD512R16P128T64,
     GlobalD512R16P128T128,
     GlobalD512R1P128T32,
+    GlobalD512SplitR8S256T128,
 }
 
 impl MetalResearchCandidate {
@@ -58,6 +59,17 @@ impl MetalResearchCandidate {
             panel,
             threads,
         })
+    }
+
+    pub const fn split_global_decode_tile(
+        self,
+    ) -> Option<crate::attention_global_decode::SplitDecodeTile> {
+        match self {
+            Self::GlobalD512SplitR8S256T128 => {
+                Some(crate::attention_global_decode::SPLIT_R8S256T128)
+            }
+            _ => None,
+        }
     }
 
     pub const fn name(self) -> &'static str {
@@ -119,6 +131,7 @@ impl Gemma12bResearchShape {
                 || matches!((self.kv_heads, self.head_dim, self.attention_window),
                     (8, 256, 1024) | (1, 512, 0)))
             && (candidate.global_decode_tile().is_none()
+                && candidate.split_global_decode_tile().is_none()
                 || (self.tokens == 1 && self.kv_heads == 1
                     && self.head_dim == 512 && self.attention_window == 0))
             && candidate != MetalResearchCandidate::Off
