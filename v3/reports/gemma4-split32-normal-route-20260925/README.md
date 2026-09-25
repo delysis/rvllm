@@ -62,3 +62,9 @@ were recorded rather than used as a thermal-stability wait gate.
 Raw session and profile JSON is retained under `results/`. Exact queue reports
 and condition journals are retained under `queue-receipts/`; no failed or
 unfavorable observation was discarded.
+
+`run-abba.sh` and `jobs/abba-L256.json` define the corrective experiment:
+control/candidate/candidate/control inside one queue job, two identical cases
+per process, one profile sample, exact route checks, and a summary computed
+from all four observations per arm. It is a fresh experiment, not a
+reinterpretation of the evidence above.

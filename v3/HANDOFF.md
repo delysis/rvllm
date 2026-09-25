@@ -54,7 +54,8 @@ local qualification.
    submission, scratch, synchronization, partial, and merge time separated.
    The next full-route comparison must execute a predeclared counterbalanced
    route order inside one queue job; separate control-then-candidate jobs are
-   diagnostic only.
+   diagnostic only. The first corrective L256 ABBA manifest is staged at
+   `reports/gemma4-split32-normal-route-20260925/jobs/abba-L256.json`.
 3. Prefill: implement a separate tiled online-softmax experiment and an
    explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
    policy or call TensorOps ANE evidence.
