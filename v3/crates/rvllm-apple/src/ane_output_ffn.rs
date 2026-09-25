@@ -344,12 +344,7 @@ mod tests {
     }
 
     #[cfg(feature = "macos-private-ane-research")]
-    fn compile_blob_probe(
-        mil: &str,
-        blob: &[u8],
-        input_channels: usize,
-        output_channels: usize,
-    ) {
+    fn compile_blob_probe(mil: &str, blob: &[u8], input_channels: usize, output_channels: usize) {
         use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
         use rvllm_apple_ane_sys::AneInMemoryProgram;
 
