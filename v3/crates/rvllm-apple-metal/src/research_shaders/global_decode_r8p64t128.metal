@@ -11,6 +11,6 @@ kernel void research_global_d512_r8p64t128(
     threadgroup ushort stage[8 * 64];
     threadgroup float scores[8 * 8], alpha[8 * 8], weight[8 * 8];
     threadgroup int pages[8];
-    global_decode_body<8, 64, 128>(q, k, v, output, table, contexts, positions, p,
+    global_decode_body<8, 8, 64, 128, false>(q, k, v, output, table, contexts, positions, p,
         group, tid, sg, lane, threads, qt, stage, scores, alpha, weight, pages);
 }

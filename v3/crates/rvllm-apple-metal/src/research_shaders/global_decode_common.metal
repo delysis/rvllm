@@ -26,7 +26,7 @@ inline float global_decode_sum32(float value) {
     return value; // only lane zero consumes this result.
 }
 
-template<uint R, uint P, uint T>
+template<uint R, uint BK, uint P, uint T, bool PerTile>
 inline void global_decode_body(
     device const ushort *q, device const ushort *k, device const ushort *v,
     device uchar *output, device const int *table, device const int *contexts,
@@ -67,16 +67,19 @@ inline void global_decode_body(
         qt[i] = q[size_t(group.x) * R * 512u + i];
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint first = 0; first < end; first += 8u) {
-        for (uint j = tid; j < 8u; j += T) {
+    for (uint first = 0; first < end; first += BK) {
+        for (uint j = tid; j < BK; j += T) {
             pages[j] = first + j < end ? table[(first + j) / p.block_size] : -1;
         }
-        for (uint i = tid; i < R * 8u; i += T) scores[i] = 0.0f;
+        for (uint i = tid; i < R * BK; i += T) {
+            scores[i] = 0.0f;
+            weight[i] = 0.0f;
+        }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         // COMPLETE all D panels before any normalization. Each staged K panel
         // is consumed by every packed head; no repeated per-head device KV load.
         for (uint panel = 0; panel < 512u; panel += P) {
-            for (uint i = tid; i < 8u * P; i += T) {
+            for (uint i = tid; i < BK * P; i += T) {
                 uint j = i / P, d = panel + i % P;
                 stage[i] = pages[j] >= 0
                     ? k[(size_t(pages[j]) * p.block_size + (first + j) % p.block_size) * 512u + d]
@@ -88,7 +91,7 @@ inline void global_decode_body(
             for (uint sub = 0; sub < P; sub += 64u) {
                 for (uint r = 0; r < OWNED; ++r) {
                     uint row = uint(sg) + r * NSG;
-                    for (uint j = 0; j < 8u; ++j) {
+                    for (uint j = 0; j < BK; ++j) {
                         if (pages[j] < 0) continue;
                         float partial = 0.0f;
                         for (uint d = uint(lane); d < 64u; d += 32u) {
@@ -96,7 +99,7 @@ inline void global_decode_body(
                                 global_decode_widen(stage[j * P + sub + d]), partial);
                         }
                         partial = global_decode_sum32(partial);
-                        if (lane == 0) scores[row * 8u + j] += partial;
+                        if (lane == 0) scores[row * BK + j] += partial;
                     }
                 }
             }
@@ -107,18 +110,43 @@ inline void global_decode_body(
         if (lane == 0) {
             for (uint r = 0; r < OWNED; ++r) {
                 uint row = uint(sg) + r * NSG;
-                for (uint j = 0; j < 8u; ++j) {
-                    if (pages[j] < 0) continue;
-                    float score = scores[row * 8u + j];
-                    float next = max(maxima[r], score);
-                    // Empty state is an identity: no -infinity - -infinity.
-                    float a = denominators[r] == 0.0f ? 0.0f
-                        : (next == maxima[r] ? 1.0f : precise::exp(maxima[r] - next));
-                    float w = score == next ? 1.0f : precise::exp(score - next);
-                    alpha[row * 8u + j] = a;
-                    weight[row * 8u + j] = w;
-                    denominators[r] = fma(denominators[r], a, w);
-                    maxima[r] = next;
+                if (PerTile) {
+                    // An all-hole tile is an identity; do not reuse a prior
+                    // tile's output rescale factor.
+                    alpha[row * BK] = 1.0f;
+                    float next = maxima[r];
+                    bool valid = false;
+                    for (uint j = 0; j < BK; ++j) if (pages[j] >= 0) {
+                        next = max(next, scores[row * BK + j]);
+                        valid = true;
+                    }
+                    if (valid) {
+                        float a = denominators[r] == 0.0f ? 0.0f
+                            : (next == maxima[r] ? 1.0f : precise::exp(maxima[r] - next));
+                        float sum = 0.0f;
+                        for (uint j = 0; j < BK; ++j) if (pages[j] >= 0) {
+                            float score = scores[row * BK + j];
+                            float w = score == next ? 1.0f : precise::exp(score - next);
+                            weight[row * BK + j] = w;
+                            sum += w;
+                        }
+                        alpha[row * BK] = a;
+                        denominators[r] = fma(denominators[r], a, sum);
+                        maxima[r] = next;
+                    }
+                } else {
+                    for (uint j = 0; j < BK; ++j) {
+                        if (pages[j] < 0) continue;
+                        float score = scores[row * BK + j];
+                        float next = max(maxima[r], score);
+                        float a = denominators[r] == 0.0f ? 0.0f
+                            : (next == maxima[r] ? 1.0f : precise::exp(maxima[r] - next));
+                        float w = score == next ? 1.0f : precise::exp(score - next);
+                        alpha[row * BK + j] = a;
+                        weight[row * BK + j] = w;
+                        denominators[r] = fma(denominators[r], a, w);
+                        maxima[r] = next;
+                    }
                 }
             }
         }
@@ -126,7 +154,7 @@ inline void global_decode_body(
         // Reuse K staging for V. No BF16 probabilities or normalized partial
         // outputs. The output state stays in FP32, distributed across lanes.
         for (uint panel = 0; panel < 512u; panel += P) {
-            for (uint i = tid; i < 8u * P; i += T) {
+            for (uint i = tid; i < BK * P; i += T) {
                 uint j = i / P, d = panel + i % P;
                 stage[i] = pages[j] >= 0
                     ? v[(size_t(pages[j]) * p.block_size + (first + j) % p.block_size) * 512u + d]
@@ -137,10 +165,12 @@ inline void global_decode_body(
                 uint row = uint(sg) + r * NSG;
                 for (uint d = uint(lane); d < P; d += 32u) {
                     uint slot = (panel + d) / 32u;
-                    for (uint j = 0; j < 8u; ++j) {
+                    if (PerTile) u[r][slot] *= alpha[row * BK];
+                    for (uint j = 0; j < BK; ++j) {
                         if (pages[j] < 0) continue;
-                        u[r][slot] = fma(weight[row * 8u + j], global_decode_widen(stage[j * P + d]),
-                            u[r][slot] * alpha[row * 8u + j]);
+                        float a = PerTile ? 1.0f : alpha[row * BK + j];
+                        u[r][slot] = fma(weight[row * BK + j], global_decode_widen(stage[j * P + d]),
+                            u[r][slot] * a);
                     }
                 }
             }

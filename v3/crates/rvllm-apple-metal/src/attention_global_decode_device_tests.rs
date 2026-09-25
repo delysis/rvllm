@@ -785,8 +785,10 @@ fn global_decode_split_device_oracle() -> TestResult {
         let reference_plan = DecodePlan::new(
             crate::attention_global_decode::DecodeTile {
                 rows: tile.rows,
+                keys: crate::attention_global_decode::KV_TILE,
                 panel: tile.panel,
                 threads: tile.threads,
+                per_tile_softmax: false,
             },
             fixture.shape,
             DecodeOutput::F32,

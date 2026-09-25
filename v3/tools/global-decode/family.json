@@ -245,6 +245,38 @@
           "source_shared_bytes": 0
         }
       ]
+    },
+    {
+      "name": "metal-global-d512-atlas_r16k16p64t128",
+      "kernels": ["research_global_d512_atlas_r16k16p64t128"],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_atlas_r16k16p64t128.metal",
+      "min_tokens": 1, "max_tokens": 1, "window_independent": false,
+      "numerical_contract": "bf16-fp32-fixed64-tree-online-k16-once-rounded",
+      "budgets": [{"kernel": "research_global_d512_atlas_r16k16p64t128", "threads": 128, "source_shared_bytes": 21568}]
+    },
+    {
+      "name": "metal-global-d512-atlas_r16k32p64t128",
+      "kernels": ["research_global_d512_atlas_r16k32p64t128"],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_atlas_r16k32p64t128.metal",
+      "min_tokens": 1, "max_tokens": 1, "window_independent": false,
+      "numerical_contract": "bf16-fp32-fixed64-tree-online-k32-once-rounded",
+      "budgets": [{"kernel": "research_global_d512_atlas_r16k32p64t128", "threads": 128, "source_shared_bytes": 26752}]
+    },
+    {
+      "name": "metal-global-d512-atlas_tile_r16k16p64t128",
+      "kernels": ["research_global_d512_atlas_tile_r16k16p64t128"],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_atlas_tile_r16k16p64t128.metal",
+      "min_tokens": 1, "max_tokens": 1, "window_independent": false,
+      "numerical_contract": "bf16-fp32-fixed64-tree-per-tile-k16-once-rounded",
+      "budgets": [{"kernel": "research_global_d512_atlas_tile_r16k16p64t128", "threads": 128, "source_shared_bytes": 21568}]
+    },
+    {
+      "name": "metal-global-d512-atlas_tile_r16k32p64t128",
+      "kernels": ["research_global_d512_atlas_tile_r16k32p64t128"],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_atlas_tile_r16k32p64t128.metal",
+      "min_tokens": 1, "max_tokens": 1, "window_independent": false,
+      "numerical_contract": "bf16-fp32-fixed64-tree-per-tile-k32-once-rounded",
+      "budgets": [{"kernel": "research_global_d512_atlas_tile_r16k32p64t128", "threads": 128, "source_shared_bytes": 26752}]
     }
   ]
 }

@@ -35,14 +35,10 @@ fn geometry_and_scratch_are_exact_for_all_tiles() {
         assert_eq!(plan.scratch_bytes, 0);
         assert_eq!(
             plan.threadgroup_bytes,
-            match (tile.rows, tile.panel) {
-                (1, 128) => 3200,
-                (8, 64) => 10016,
-                (8, 128) => 11040,
-                (16, 64) => 18976,
-                (16, 128) => 20000,
-                _ => unreachable!(),
-            }
+            (tile.rows * DIM * 2
+                + tile.keys * tile.panel * 2
+                + 3 * tile.rows * tile.keys * 4
+                + tile.keys * 4) as usize
         );
         assert!(tile.output_floats_per_thread() <= 128);
         let (buffers, capacity) = layout(plan);
@@ -176,13 +172,17 @@ fn every_near_miss_shape_and_overflow_is_rejected() {
         },
         DecodeTile {
             rows: 1,
+            keys: 8,
             panel: 64,
             threads: 32,
+            per_tile_softmax: false,
         },
         DecodeTile {
             rows: 1,
+            keys: 8,
             panel: 128,
             threads: 64,
+            per_tile_softmax: false,
         },
     ] {
         assert!(DecodePlan::new(tile, good, DecodeOutput::Bf16).is_none());

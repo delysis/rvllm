@@ -17,71 +17,131 @@ pub const LIVE_LENGTHS: [u32; 5] = [256, 512, 1024, 2048, 4096];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DecodeTile {
     pub rows: u32,
+    pub keys: u32,
     pub panel: u32,
     pub threads: u32,
+    pub per_tile_softmax: bool,
 }
 
-pub const DECODE_TILES: [DecodeTile; 9] = [
+pub const DECODE_TILES: [DecodeTile; 13] = [
     DecodeTile {
         rows: 8,
+        keys: 8,
         panel: 64,
         threads: 64,
-    },
-    DecodeTile {
-        rows: 8,
-        panel: 64,
-        threads: 128,
+        per_tile_softmax: false,
     },
     DecodeTile {
         rows: 8,
-        panel: 128,
-        threads: 64,
+        keys: 8,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: false,
     },
     DecodeTile {
         rows: 8,
-        panel: 128,
-        threads: 128,
-    },
-    DecodeTile {
-        rows: 16,
-        panel: 64,
-        threads: 64,
-    },
-    DecodeTile {
-        rows: 16,
-        panel: 64,
-        threads: 128,
-    },
-    DecodeTile {
-        rows: 16,
+        keys: 8,
         panel: 128,
         threads: 64,
+        per_tile_softmax: false,
+    },
+    DecodeTile {
+        rows: 8,
+        keys: 8,
+        panel: 128,
+        threads: 128,
+        per_tile_softmax: false,
     },
     DecodeTile {
         rows: 16,
+        keys: 8,
+        panel: 64,
+        threads: 64,
+        per_tile_softmax: false,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 8,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: false,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 8,
+        panel: 128,
+        threads: 64,
+        per_tile_softmax: false,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 8,
         panel: 128,
         threads: 128,
+        per_tile_softmax: false,
     },
     DecodeTile {
         rows: 1,
+        keys: 8,
         panel: 128,
         threads: 32,
+        per_tile_softmax: false,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 16,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: false,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 32,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: false,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 16,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: true,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 32,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: true,
     },
 ];
 
 impl DecodeTile {
     pub const fn supported(self) -> bool {
-        (self.rows == 1 && self.panel == 128 && self.threads == 32)
+        ((self.rows == 1
+            && self.keys == 8
+            && !self.per_tile_softmax
+            && self.panel == 128
+            && self.threads == 32)
             || (matches!(self.rows, 8 | 16)
+                && self.keys == 8
+                && !self.per_tile_softmax
                 && matches!(self.panel, 64 | 128)
-                && matches!(self.threads, 64 | 128))
+                && matches!(self.threads, 64 | 128)))
+            || (self.rows == 16
+                && matches!(self.keys, 16 | 32)
+                && self.panel == 64
+                && self.threads == 128)
     }
 
     /// Q is staged once; one K or V panel reuses the same storage. Scores,
     /// corrections and weights are FP32. Eight signed page IDs are separate.
     pub const fn threadgroup_bytes(self) -> usize {
-        (self.rows * DIM * 2 + KV_TILE * self.panel * 2 + 3 * self.rows * KV_TILE * 4 + KV_TILE * 4)
-            as usize
+        (self.rows * DIM * 2
+            + self.keys * self.panel * 2
+            + 3 * self.rows * self.keys * 4
+            + self.keys * 4) as usize
     }
 
     /// Source-level FP32 output state per lane. Not a compiler register count.
@@ -149,8 +209,10 @@ impl SplitDecodeTile {
     pub const fn partial_threadgroup_bytes(self) -> usize {
         DecodeTile {
             rows: self.rows,
+            keys: KV_TILE,
             panel: self.panel,
             threads: self.threads,
+            per_tile_softmax: false,
         }
         .threadgroup_bytes()
     }

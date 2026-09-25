@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 42;
+pub const RESEARCH_KERNEL_COUNT: usize = 46;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -51,6 +51,10 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_global_d512_r1p128t32",
     "research_global_d512_split_r8s256t128_partial",
     "research_global_d512_split_r8s256t128_merge",
+    "research_global_d512_atlas_r16k16p64t128",
+    "research_global_d512_atlas_r16k32p64t128",
+    "research_global_d512_atlas_tile_r16k16p64t128",
+    "research_global_d512_atlas_tile_r16k32p64t128",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -98,6 +102,10 @@ pub enum ResearchKernel {
     GlobalD512R1P128T32 = 39,
     GlobalD512SplitR8S256T128Partial = 40,
     GlobalD512SplitR8S256T128Merge = 41,
+    GlobalD512AtlasR16K16P64T128 = 42,
+    GlobalD512AtlasR16K32P64T128 = 43,
+    GlobalD512AtlasTileR16K16P64T128 = 44,
+    GlobalD512AtlasTileR16K32P64T128 = 45,
 }
 
 impl ResearchKernel {
@@ -118,6 +126,12 @@ impl ResearchKernel {
             Self::GlobalD512R1P128T32 => (32, 3200),
             Self::GlobalD512SplitR8S256T128Partial => (128, 10016),
             Self::GlobalD512SplitR8S256T128Merge => (32, 0),
+            Self::GlobalD512AtlasR16K16P64T128 | Self::GlobalD512AtlasTileR16K16P64T128 => {
+                (128, 21568)
+            }
+            Self::GlobalD512AtlasR16K32P64T128 | Self::GlobalD512AtlasTileR16K32P64T128 => {
+                (128, 26752)
+            }
             Self::ShortGemm => (128, 10496),
             Self::ShortQkv => (128, 10496),
             Self::RoundedGate => (128, 14336),
@@ -158,6 +172,18 @@ impl ResearchKernel {
             Self::GlobalD512R1P128T32 => MetalResearchCandidate::GlobalD512R1P128T32,
             Self::GlobalD512SplitR8S256T128Partial | Self::GlobalD512SplitR8S256T128Merge => {
                 MetalResearchCandidate::GlobalD512SplitR8S256T128
+            }
+            Self::GlobalD512AtlasR16K16P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasR16K16P64T128
+            }
+            Self::GlobalD512AtlasR16K32P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasR16K32P64T128
+            }
+            Self::GlobalD512AtlasTileR16K16P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasTileR16K16P64T128
+            }
+            Self::GlobalD512AtlasTileR16K32P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasTileR16K32P64T128
             }
             Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
             Self::RoundedGate => MetalResearchCandidate::RoundedGate32,

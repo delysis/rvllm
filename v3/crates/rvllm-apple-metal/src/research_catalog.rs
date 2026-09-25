@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 28] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 32] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -45,6 +45,10 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 28] = [
     MetalResearchCandidate::GlobalD512R16P128T128,
     MetalResearchCandidate::GlobalD512R1P128T32,
     MetalResearchCandidate::GlobalD512SplitR8S256T128,
+    MetalResearchCandidate::GlobalD512AtlasR16K16P64T128,
+    MetalResearchCandidate::GlobalD512AtlasR16K32P64T128,
+    MetalResearchCandidate::GlobalD512AtlasTileR16K16P64T128,
+    MetalResearchCandidate::GlobalD512AtlasTileR16K32P64T128,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -126,6 +130,32 @@ macro_rules! global_split_decode_spec {
     };
 }
 
+macro_rules! atlas_global_decode_spec {
+    ($suffix:literal, $kernel:ident, $contract:literal) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-", $suffix),
+            kernels: &[ResearchKernel::$kernel],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: $contract,
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
+
 impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
@@ -148,6 +178,34 @@ impl MetalResearchCandidate {
                 GlobalD512SplitR8S256T128Partial,
                 GlobalD512SplitR8S256T128Merge
             ),
+            Self::GlobalD512AtlasR16K16P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_r16k16p64t128",
+                    GlobalD512AtlasR16K16P64T128,
+                    "bf16-fp32-fixed64-tree-online-k16-once-rounded"
+                )
+            }
+            Self::GlobalD512AtlasR16K32P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_r16k32p64t128",
+                    GlobalD512AtlasR16K32P64T128,
+                    "bf16-fp32-fixed64-tree-online-k32-once-rounded"
+                )
+            }
+            Self::GlobalD512AtlasTileR16K16P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_tile_r16k16p64t128",
+                    GlobalD512AtlasTileR16K16P64T128,
+                    "bf16-fp32-fixed64-tree-per-tile-k16-once-rounded"
+                )
+            }
+            Self::GlobalD512AtlasTileR16K32P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_tile_r16k32p64t128",
+                    GlobalD512AtlasTileR16K32P64T128,
+                    "bf16-fp32-fixed64-tree-per-tile-k32-once-rounded"
+                )
+            }
             Self::Off => CandidateSpec {
                 name: "off",
                 kernels: &[],
@@ -371,7 +429,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 28);
+        assert_eq!(all.len(), 32);
         let additions = all.split_off(18);
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
@@ -379,11 +437,12 @@ mod tests {
         assert_eq!(reviewed, legacy);
         // The additive family must have all source-defined specializations.
         assert_eq!(
-            ALL_CANDIDATES[18..27].len(),
+            ALL_CANDIDATES[18..27].len() + ALL_CANDIDATES[28..32].len(),
             crate::attention_global_decode::DECODE_TILES.len()
         );
         for (candidate, tile) in ALL_CANDIDATES[18..27]
             .iter()
+            .chain(ALL_CANDIDATES[28..32].iter())
             .zip(crate::attention_global_decode::DECODE_TILES)
         {
             assert_eq!(candidate.global_decode_tile(), Some(tile));
