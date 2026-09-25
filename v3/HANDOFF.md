@@ -555,3 +555,13 @@ attention graph caused an AppleH16ANEInterface panic. The design and safe-Rust
 fail-closed gate are in
 `reports/gemma4-ane-next-boundary-candidate-20260925.md` and
 `rvllm_ane_boundary_referee`.
+
+The N4/N8 selector prerequisite is now implemented as a direct real-weight
+referee rather than inferred from two separate native-BF16 comparisons. It
+admits only the 11 cells in the union of independently repeated N4/N8 wins and
+emits paired ABBA plus BAAB jobs per cell. Both schedules must match the CPU
+BF16 oracle, each other bit-for-bit, guards, repeatability, exact dispatch
+counts and exact kernel identities. A safe-Rust validator recomputes medians
+and reciprocal speedups from the retained samples. The 22 zero-dwell manifests
+are in `reports/gemma4-metal-low-bit-n4-vs-n8-direct-20260925/`; they remain
+operator selection evidence only, not full-route or checkpoint acceptance.

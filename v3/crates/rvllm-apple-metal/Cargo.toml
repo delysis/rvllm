@@ -21,7 +21,7 @@ metal-stage-instrumentation = []
 attention-atlas-research = ["dep:serde"]
 # Opt-in, device-only referee for authenticated real checkpoint projection
 # tensors. It is deliberately excluded from normal builds and dispatch.
-low-bit-real-weight-research = []
+low-bit-real-weight-research = ["dep:serde"]
 
 [dependencies]
 rvllm-core = { workspace = true }
@@ -65,6 +65,11 @@ required-features = ["attention-atlas-research"]
 [[bin]]
 name = "rvllm-low-bit-real-weight"
 path = "src/bin/rvllm-low-bit-real-weight.rs"
+required-features = ["low-bit-real-weight-research"]
+
+[[bin]]
+name = "rvllm-low-bit-receipt-validate"
+path = "src/bin/rvllm-low-bit-receipt-validate.rs"
 required-features = ["low-bit-real-weight-research"]
 
 [[bin]]
