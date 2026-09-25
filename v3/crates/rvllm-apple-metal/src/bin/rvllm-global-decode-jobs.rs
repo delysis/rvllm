@@ -619,10 +619,12 @@ fn sample_work_and_gpu_seconds(sample: &Value, split: bool, arm: &str) -> Result
         .as_f64()
         .ok_or("sample total GPU time missing")?;
     let candidate_arm = arm == "B";
+    let component_sum = partial + merge;
+    let sum_tolerance = 8.0 * f64::EPSILON * total.abs().max(component_sum.abs()).max(1.0);
     if sample["partial_dispatches"].as_u64() != Some(if candidate_arm { 100 } else { 0 })
         || sample["merge_dispatches"].as_u64() != Some(if candidate_arm { 100 } else { 0 })
         || sample["baseline_dispatches"].as_u64() != Some(if candidate_arm { 0 } else { 100 })
-        || (candidate_arm && total != partial + merge)
+        || (candidate_arm && (total - component_sum).abs() > sum_tolerance)
         || (candidate_arm && (partial <= 0.0 || merge <= 0.0))
         || (!candidate_arm && (partial != 0.0 || merge != 0.0))
     {
@@ -1009,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn split_v2_sample_uses_exact_sum_and_fails_closed() {
+    fn split_v2_sample_accepts_roundtrip_ulp_and_fails_closed() {
         let sample = json!({"operations":100,"partial_dispatches":100,
             "merge_dispatches":100,"baseline_dispatches":0,
             "partial_gpu_seconds":0.75,"merge_gpu_seconds":0.25,
@@ -1017,6 +1019,12 @@ mod tests {
         assert_eq!(
             sample_work_and_gpu_seconds(&sample, true, "B").unwrap(),
             (100, 1.0)
+        );
+        let mut roundtrip_ulp = sample.clone();
+        roundtrip_ulp["total_gpu_seconds"] = json!(1.0 + f64::EPSILON);
+        assert_eq!(
+            sample_work_and_gpu_seconds(&roundtrip_ulp, true, "B").unwrap(),
+            (100, 1.0 + f64::EPSILON)
         );
         let mut mismatched = sample.clone();
         mismatched["total_gpu_seconds"] = json!(0.75);
