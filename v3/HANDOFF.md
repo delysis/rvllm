@@ -56,6 +56,11 @@ local qualification.
    route order inside one queue job; separate control-then-candidate jobs are
    diagnostic only. The first corrective L256 ABBA manifest is staged at
    `reports/gemma4-split32-normal-route-20260925/jobs/abba-L256.json`.
+   That first ABBA run completed at 0.674x using every observation, but exposed
+   a large process-first transient that would reverse the answer if second
+   cases were cherry-picked. Treat it as inconclusive. The next L256 referee
+   must predeclare and retain one excluded warmup case per process before any
+   measured cases; do not advance to longer context until that round is stable.
 3. Prefill: implement a separate tiled online-softmax experiment and an
    explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
    policy or call TensorOps ANE evidence.

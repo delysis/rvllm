@@ -68,3 +68,18 @@ control/candidate/candidate/control inside one queue job, two identical cases
 per process, one profile sample, exact route checks, and a summary computed
 from all four observations per arm. It is a fresh experiment, not a
 reinterpretation of the evidence above.
+
+The first L256 ABBA execution completed successfully with eligible sampled
+conditions, unchanged inputs, identical output tokens, zero inference-time
+compilation, and exact route dispatches. Its all-observation medians were
+784.414 ms for control and 1163.479 ms for split-32, or 0.674x. It is still
+not promotion evidence: several fresh-process first cases were approximately
+twice as slow as their immediately repeated case. Candidate first/second pairs
+were 1632.298/694.659 and 1670.023/625.300 ms; the final control pair was
+1608.051/718.599 ms. Selecting only the faster second cases would reverse the
+answer and is forbidden because those cases were not predeclared as warmups.
+
+Disposition: **inconclusive process-first transient**. The next referee must
+predeclare one excluded warmup case in every process, retain it in the receipt,
+and compute the comparison only from subsequent measured cases. No longer
+context advances from this round.
