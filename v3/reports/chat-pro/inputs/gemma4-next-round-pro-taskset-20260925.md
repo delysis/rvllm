@@ -3,7 +3,7 @@
 Remain in ordinary Chat; do not switch to Work.
 
 Work directly from PR #4, branch `astra/gemma4-load4-tiles-20260923`, at or
-after commit `22d1f4d6`. Produce reviewable source patches or a complete source
+after commit `f2d520160812e1a34f0c2b91faaa87f1b2ecc5a4`. Produce reviewable source patches or a complete source
 archive, not merely recommendations. Do not claim Apple-device performance you
 cannot measure. Preserve safe Rust, exact dispatch evidence, independent
 correctness oracles, and the existing kernel-game admission boundaries.
@@ -167,3 +167,19 @@ Codex can execute it locally.
 Sequence the work so early operator screens are cheap: compile and independent
 oracle first, then 256-token or M=1 timing, then advance only plausible arms to
 512/1024/2048 or larger-M prefill. Preserve rejected and inconclusive evidence.
+
+Implement and package the work in this order so Codex can begin local Apple
+qualification before the full sprint is complete:
+
+1. ANE all-sliding 10--32-token stability manifests and bounded multi-token
+   timing, plus targeted FFN/QKV fusion candidates;
+2. Metal W4/W8 tiled native-BF16 candidates and the generated-code evidence
+   collector;
+3. production-route newest-K/V tests and the bounded decode selector;
+4. the separate prefill arms;
+5. checkpoint-quality gates and the device-resident loop vertical slice.
+
+Return intermediate downloadable source artifacts as coherent checkpoints if
+the interface permits, but continue the same response through the entire
+sprint. A design discussion is not a substitute for compilable changes,
+tests, and queue manifests.
