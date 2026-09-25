@@ -323,6 +323,15 @@ impl MetalLowBitProjectionOffsets {
         }
     }
 
+    /// MLX qmv_fast-shaped two-SIMD-group research kernel.
+    #[must_use]
+    pub const fn experimental_bf16_mlx_qmv_kernel_name(self) -> &'static str {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => "research_projection_w4abf16_bf16_qmv_mlx",
+            AppleLowBitWeightFormat::W8A16 => "research_projection_w8abf16_bf16_qmv_mlx",
+        }
+    }
+
     /// Exact number of adjacent output rows owned by one SIMD group.
     #[must_use]
     pub const fn experimental_bf16_vector_output_width(self) -> usize {
@@ -379,6 +388,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.kernel_name(),
             1,
+            32,
         )
     }
 
@@ -412,6 +422,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_kernel_name(),
             1,
+            32,
         )
     }
 
@@ -439,6 +450,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_n4_kernel_name(),
             4,
+            32,
         )
     }
 
@@ -466,6 +478,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_n8_kernel_name(),
             8,
+            32,
         )
     }
 
@@ -494,6 +507,37 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_vector_kernel_name(),
             width,
+            32,
+        )
+    }
+
+    /// Encode the MLX qmv_fast-shaped two-SIMD-group native-BF16 schedule.
+    /// This remains explicitly opt-in and is used only by the real-weight
+    /// research referee until it clears paired device gates.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16_mlx_qmv(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            self.experimental_bf16_mlx_qmv_kernel_name(),
+            8,
+            64,
         )
     }
 
@@ -510,6 +554,7 @@ impl MetalLowBitProjectionOffsets {
         output_column: usize,
         kernel_name: &'static str,
         output_tile_width: usize,
+        threads_per_threadgroup: usize,
     ) -> LowBitMetalResult<()> {
         if m == 0 {
             return Err(LowBitMetalError::ZeroBatch);
@@ -621,7 +666,7 @@ impl MetalLowBitProjectionOffsets {
                     depth: 1,
                 },
                 MTLSize {
-                    width: 32,
+                    width: threads_per_threadgroup,
                     height: 1,
                     depth: 1,
                 },
@@ -926,6 +971,13 @@ mod tests {
             assert_ne!(
                 descriptor.experimental_bf16_vector_kernel_name(),
                 descriptor.experimental_bf16_n4_kernel_name()
+            );
+            assert!(descriptor
+                .experimental_bf16_mlx_qmv_kernel_name()
+                .starts_with("research_projection_"));
+            assert_ne!(
+                descriptor.experimental_bf16_mlx_qmv_kernel_name(),
+                descriptor.experimental_bf16_vector_kernel_name()
             );
             let width = descriptor.experimental_bf16_vector_output_width();
             assert_eq!(
