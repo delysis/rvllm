@@ -30,3 +30,22 @@ counts and strict `n4` kernel identity. Screen speedups against the native BF16
 GEMM were W4 M1 **1.142x**, W4 M4 **1.405x**, W8 M1 **0.802x**, and W8 M4
 **1.097x**. These are single-screen observations, not stable winners. The
 remaining six roles are staged for the same shortest-first screen.
+
+## Seven-role adjudication
+
+All 14 screen/confirmation jobs and all 56 correctness cases succeeded with
+strict schedule/kernel identity, guards, bitwise repeatability and exact
+dispatch accounting. Under the existing 20% drift and 1.05x-in-both-runs
+policy, **8/28** timing cells are stable operator wins:
+
+- V W4 M4: 1.421x / 1.341x.
+- Gate W8 M4: 3.056x / 3.097x.
+- Up W8 M1: 1.963x / 1.876x; M4: 3.057x / 3.181x.
+- Down W4 M1: 1.760x / 1.764x; M4: 2.482x / 2.688x.
+- Down W8 M1: 1.707x / 1.598x; M4: 3.188x / 2.898x.
+
+The other 20 cells are unstable or fail the repeated speed margin. Campaign
+disposition: **not promotable; partial operator wins**. In particular, the N4
+schedule is shape-sensitive and cannot be applied indiscriminately to every
+projection role. The stable rows justify route-specific full-model experiments
+and a second materially different schedule for the remaining roles.

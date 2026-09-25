@@ -36,6 +36,12 @@ local qualification.
   **not promotable**; genuinely tiled native-BF16 W4 and W8 kernels are the
   next Metal priority. See
   `reports/gemma4-metal-low-bit-bf16-campaign-20260925/`.
+- Native-BF16 N4 schedule: a four-output-per-SIMD candidate now passes every
+  real-weight correctness case across all seven roles, W4/W8, and M1/M4. Eight
+  of 28 timing cells repeat as stable wins under the same strict policy: V/W4/M4,
+  Gate/W8/M4, Up/W8/M1+M4, and Down/W4+W8/M1+M4. The remaining 20 cells are
+  unstable or not faster, so this is a role-specific research candidate rather
+  than a generic selector. See `reports/gemma4-metal-low-bit-n4-20260925/`.
 - ANE baseline versus stacked FFN: both routes are exact for the ten-token
   continuation, provisioned 210/210, and compile-free during inference.
   Corrected counterbalancing found mean stacked-minus-baseline FFN +0.016 ms

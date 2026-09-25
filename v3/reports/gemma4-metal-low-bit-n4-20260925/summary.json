@@ -1,0 +1,24 @@
+{
+  "schema": "rvllm.gemma4_metal_low_bit_bf16_n4_campaign_summary.v1",
+  "complete": true,
+  "case_count": 28,
+  "stable_operator_win_count": 8,
+  "policy": {
+    "maximum_candidate_median_relative_drift": 0.2,
+    "maximum_native_median_relative_drift": 0.2,
+    "maximum_speedup_relative_drift": 0.2,
+    "minimum_speedup_in_each_repeat": 1.05
+  },
+  "stable_operator_wins": [
+    {"role": "v", "format": "w4a16", "m": 4, "screen_speedup": 1.4212820455209294, "confirm_speedup": 1.3406290061779693},
+    {"role": "gate", "format": "w8a16", "m": 4, "screen_speedup": 3.05571990511852, "confirm_speedup": 3.096913508920986},
+    {"role": "up", "format": "w8a16", "m": 1, "screen_speedup": 1.9627138564273794, "confirm_speedup": 1.875752773375594},
+    {"role": "up", "format": "w8a16", "m": 4, "screen_speedup": 3.0570114081513147, "confirm_speedup": 3.1808773682662266},
+    {"role": "down", "format": "w4a16", "m": 1, "screen_speedup": 1.7604784957392812, "confirm_speedup": 1.7638755516980298},
+    {"role": "down", "format": "w4a16", "m": 4, "screen_speedup": 2.4819631490593674, "confirm_speedup": 2.6877326101228953},
+    {"role": "down", "format": "w8a16", "m": 1, "screen_speedup": 1.7071069647827548, "confirm_speedup": 1.5980058776382584},
+    {"role": "down", "format": "w8a16", "m": 4, "screen_speedup": 3.1883967266006485, "confirm_speedup": 2.898444160635731}
+  ],
+  "campaign_disposition": "not_promotable_partial_operator_wins",
+  "claim_boundary": "real-weight projection operator evidence only; no full-route or model-quality claim"
+}
