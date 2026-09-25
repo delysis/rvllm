@@ -6,9 +6,9 @@
 use objc2::runtime::ProtocolObject;
 use objc2_foundation::{ns_string, NSRange};
 use objc2_metal::{
-    MTLCommandBuffer, MTLCommandEncoder, MTLComputeCommandEncoder, MTLCounterResultTimestamp,
-    MTLCounterSampleBuffer, MTLCounterSampleBufferDescriptor, MTLCounterSet, MTLDevice,
-    MTLStorageMode,
+    MTLCommandBuffer, MTLCommandEncoder, MTLComputeCommandEncoder, MTLComputePassDescriptor,
+    MTLCounterResultTimestamp, MTLCounterSampleBuffer, MTLCounterSampleBufferDescriptor,
+    MTLCounterSamplingPoint, MTLCounterSet, MTLDevice, MTLStorageMode,
 };
 use serde_json::{json, Value};
 
@@ -54,11 +54,34 @@ struct Span {
     end: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SamplingMode {
+    StageBoundary,
+    DispatchBoundary,
+}
+
+fn select_sampling_mode(
+    stage_boundary: bool,
+    dispatch_boundary: bool,
+) -> Result<SamplingMode, String> {
+    if stage_boundary {
+        Ok(SamplingMode::StageBoundary)
+    } else if dispatch_boundary {
+        Ok(SamplingMode::DispatchBoundary)
+    } else {
+        Err(
+            "Metal timestamp sampling is unsupported at compute stage and dispatch boundaries"
+                .into(),
+        )
+    }
+}
+
 pub struct MetalStageProfiler {
     samples: objc2::rc::Retained<ProtocolObject<dyn MTLCounterSampleBuffer>>,
     next_sample: usize,
     open: Option<(MetalStage, usize)>,
     spans: Vec<Span>,
+    sampling: SamplingMode,
 }
 
 impl std::fmt::Debug for MetalStageProfiler {
@@ -73,6 +96,10 @@ impl std::fmt::Debug for MetalStageProfiler {
 
 impl MetalStageProfiler {
     pub fn new(device: &ProtocolObject<dyn MTLDevice>, max_spans: usize) -> Result<Self, String> {
+        let sampling = select_sampling_mode(
+            device.supportsCounterSampling(MTLCounterSamplingPoint::AtStageBoundary),
+            device.supportsCounterSampling(MTLCounterSamplingPoint::AtDispatchBoundary),
+        )?;
         let set = device
             .counterSets()
             .and_then(|sets| {
@@ -92,7 +119,37 @@ impl MetalStageProfiler {
             next_sample: 0,
             open: None,
             spans: Vec::with_capacity(max_spans),
+            sampling,
         })
+    }
+
+    unsafe fn sample(&self, command_buffer: &ProtocolObject<dyn MTLCommandBuffer>, index: usize) {
+        let encoder = match self.sampling {
+            SamplingMode::StageBoundary => {
+                let descriptor = MTLComputePassDescriptor::computePassDescriptor();
+                let attachment = descriptor
+                    .sampleBufferAttachments()
+                    .objectAtIndexedSubscript(0);
+                attachment.setSampleBuffer(Some(&self.samples));
+                attachment.setStartOfEncoderSampleIndex(usize::MAX);
+                attachment.setEndOfEncoderSampleIndex(index);
+                command_buffer
+                    .computeCommandEncoderWithDescriptor(&descriptor)
+                    .expect("stage-boundary timestamp encoder")
+            }
+            SamplingMode::DispatchBoundary => {
+                let encoder = command_buffer
+                    .computeCommandEncoder()
+                    .expect("dispatch-boundary timestamp encoder");
+                encoder.sampleCountersInBuffer_atSampleIndex_withBarrier(
+                    &self.samples,
+                    index,
+                    true,
+                );
+                encoder
+            }
+        };
+        encoder.endEncoding();
     }
 
     /// Inserts a barriered GPU timestamp. Calls are diagnostic-path-only.
@@ -103,11 +160,7 @@ impl MetalStageProfiler {
     ) {
         debug_assert!(self.open.is_none());
         let index = self.next_sample;
-        let encoder = command_buffer
-            .computeCommandEncoder()
-            .expect("timestamp encoder");
-        encoder.sampleCountersInBuffer_atSampleIndex_withBarrier(&self.samples, index, true);
-        encoder.endEncoding();
+        self.sample(command_buffer, index);
         self.next_sample += 1;
         self.open = Some((stage, index));
     }
@@ -115,11 +168,7 @@ impl MetalStageProfiler {
     pub unsafe fn end(&mut self, command_buffer: &ProtocolObject<dyn MTLCommandBuffer>) {
         let (stage, begin) = self.open.take().expect("unmatched Metal stage end");
         let end = self.next_sample;
-        let encoder = command_buffer
-            .computeCommandEncoder()
-            .expect("timestamp encoder");
-        encoder.sampleCountersInBuffer_atSampleIndex_withBarrier(&self.samples, end, true);
-        encoder.endEncoding();
+        self.sample(command_buffer, end);
         self.next_sample += 1;
         self.spans.push(Span { stage, begin, end });
     }
@@ -145,11 +194,15 @@ impl MetalStageProfiler {
             std::ptr::NonNull::new(timestamps.as_mut_ptr().cast()).unwrap(),
             expected,
         );
-        Ok(build_receipt(&self.spans, &timestamps))
+        Ok(build_receipt(&self.spans, &timestamps, self.sampling))
     }
 }
 
-fn build_receipt(spans: &[Span], timestamps: &[MTLCounterResultTimestamp]) -> Value {
+fn build_receipt(
+    spans: &[Span],
+    timestamps: &[MTLCounterResultTimestamp],
+    sampling: SamplingMode,
+) -> Value {
     let mut totals = std::collections::BTreeMap::<&'static str, u64>::new();
     let stages = spans
         .iter()
@@ -171,7 +224,8 @@ fn build_receipt(spans: &[Span], timestamps: &[MTLCounterResultTimestamp]) -> Va
     json!({
             "schema": "rvllm.metal_stage_timing.v1",
             "clock": "MTLCommonCounterSetTimestamp",
-            "barriered": true,
+            "sampling_point": match sampling { SamplingMode::StageBoundary => "compute_stage_boundary", SamplingMode::DispatchBoundary => "compute_dispatch_boundary" },
+            "barriered": matches!(sampling, SamplingMode::DispatchBoundary),
             "totals_gpu_duration_ns": totals,
             "stages": stages,
             "caveats": [
@@ -187,7 +241,9 @@ fn build_receipt(spans: &[Span], timestamps: &[MTLCounterResultTimestamp]) -> Va
 
 #[cfg(test)]
 mod tests {
-    use super::{build_receipt, MetalStage, Span, COUNTER_ERROR_VALUE};
+    use super::{
+        build_receipt, select_sampling_mode, MetalStage, SamplingMode, Span, COUNTER_ERROR_VALUE,
+    };
     use objc2_metal::MTLCounterResultTimestamp;
     #[test]
     fn stage_names_are_stable_receipt_keys() {
@@ -211,9 +267,55 @@ mod tests {
         ];
         let samples = [10, 30, COUNTER_ERROR_VALUE, 90]
             .map(|timestamp| MTLCounterResultTimestamp { timestamp });
-        let receipt = build_receipt(&spans, &samples);
+        let receipt = build_receipt(&spans, &samples, SamplingMode::StageBoundary);
         assert_eq!(receipt["schema"], "rvllm.metal_stage_timing.v1");
         assert_eq!(receipt["stages"][0]["gpu_duration_ns"], 20);
         assert!(receipt["stages"][1]["gpu_duration_ns"].is_null());
+    }
+
+    #[test]
+    fn sampling_capability_selection_never_calls_an_unsupported_path() {
+        assert_eq!(
+            select_sampling_mode(true, false).unwrap(),
+            SamplingMode::StageBoundary
+        );
+        assert_eq!(
+            select_sampling_mode(false, true).unwrap(),
+            SamplingMode::DispatchBoundary
+        );
+        assert!(select_sampling_mode(false, false).is_err());
+    }
+
+    #[test]
+    fn live_device_sampling_mode_is_feature_probed() {
+        use objc2_metal::{
+            MTLCommandBuffer, MTLCommandQueue, MTLCounterSamplingPoint,
+            MTLCreateSystemDefaultDevice, MTLDevice,
+        };
+        let device = MTLCreateSystemDefaultDevice().expect("Metal device");
+        let selected = select_sampling_mode(
+            device.supportsCounterSampling(MTLCounterSamplingPoint::AtStageBoundary),
+            device.supportsCounterSampling(MTLCounterSamplingPoint::AtDispatchBoundary),
+        );
+        assert!(
+            selected.is_ok(),
+            "live Metal device exposes no timestamp sampling point"
+        );
+        if let Ok(SamplingMode::StageBoundary) = selected {
+            assert!(device.supportsCounterSampling(MTLCounterSamplingPoint::AtStageBoundary));
+        } else if let Ok(SamplingMode::DispatchBoundary) = selected {
+            assert!(device.supportsCounterSampling(MTLCounterSamplingPoint::AtDispatchBoundary));
+        }
+        let queue = device.newCommandQueue().expect("command queue");
+        let command_buffer = queue.commandBuffer().expect("command buffer");
+        let mut profiler = super::MetalStageProfiler::new(&device, 1).expect("stage profiler");
+        unsafe {
+            profiler.begin(&command_buffer, MetalStage::Embedding);
+            profiler.end(&command_buffer);
+        }
+        command_buffer.commit();
+        command_buffer.waitUntilCompleted();
+        let receipt = unsafe { profiler.receipt() }.expect("timestamp receipt");
+        assert_eq!(receipt["stages"][0]["stage"], "embedding");
     }
 }
