@@ -124,7 +124,7 @@ fn accept_draft(target: TokenId, draft: TokenId, allow_second: bool) -> bool {
 
 #[cfg(test)]
 #[path = "ane_two_token_reference_live_tests.rs"]
-mod live_tests;
+pub(crate) mod live_tests;
 
 #[cfg(test)]
 #[path = "ane_kv_import_scratch_tests.rs"]
