@@ -99,3 +99,12 @@ bit-identical output. Because that fixture used deliberately uniform matrices,
 this is a bounded arithmetic/lifetime screen rather than broad channel-wise
 coverage. The next arm uses asymmetric output, FFN, and learned-gamma values
 before timing is allowed.
+
+The asymmetric graph compiled once and then passed a separate strict-cache
+component oracle with zero additional compiler calls. Across three distinct
+inputs its maximum absolute error versus the independently dequantized CPU
+reference was 0.00003815; repeated execution was bit-identical. Each output
+contained 31 or 32 distinct FP16 bit patterns, closing the uniform-channel
+coverage weakness. This admits the boundary to representative-shape and
+real-weight screening, but it is still not timing, full-route, or checkpoint
+quality evidence.
