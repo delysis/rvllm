@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--tensor", required=True)
     parser.add_argument("--role", required=True)
     parser.add_argument("--samples", type=int, required=True)
+    parser.add_argument("--candidate", choices=("scalar", "n4"))
     args = parser.parse_args()
 
     receipt = json.loads(args.receipt.read_text())
@@ -30,6 +31,8 @@ def main() -> None:
         == {"activation": "BF16", "output": "BF16", "scales": "F16", "accumulation": "F32"},
         "wrong ABI",
     )
+    if args.candidate is not None:
+        require(receipt.get("candidate_schedule") == args.candidate, "wrong candidate schedule")
     cases = receipt.get("cases")
     require(isinstance(cases, list) and len(cases) == 4, "expected four cases")
     expected = {(fmt, m) for fmt in ("w4a16", "w8a16") for m in (1, 4)}
@@ -53,6 +56,14 @@ def main() -> None:
                 value = accuracy.get(metric)
                 require(isinstance(value, (int, float)) and math.isfinite(value) and value >= 0, f"bad {accuracy_name}.{metric} for {key}")
         timing = case.get("timing", {})
+        if args.candidate is not None:
+            suffix = "_n4" if args.candidate == "n4" else ""
+            expected_kernel = (
+                f"experimental_projection_w4abf16_bf16{suffix}"
+                if key[0] == "w4a16"
+                else f"experimental_projection_w8abf16_bf16{suffix}"
+            )
+            require(timing.get("candidate_kernel") == expected_kernel, f"wrong candidate kernel for {key}")
         require(timing.get("method") == "ABBA wall-clock commit-to-completion", f"wrong timing method for {key}")
         require(timing.get("samples_per_arm") == 2 * args.samples, f"wrong sample count for {key}")
         for arm in ("native_ms", "candidate_ms"):
