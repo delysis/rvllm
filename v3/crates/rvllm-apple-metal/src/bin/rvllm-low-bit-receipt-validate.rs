@@ -240,7 +240,14 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
         "wrong Metal library count",
     )?;
     require(
-        r.compile_counts.pipeline_states == if direct { 4 } else { 3 },
+        r.compile_counts.pipeline_states
+            == if direct {
+                4
+            } else if a.candidate == "adaptive" {
+                7
+            } else {
+                3
+            },
         "wrong pipeline count",
     )?;
     require(
@@ -267,17 +274,21 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
         [(f, m)].into_iter().collect()
     } else {
         require(
-            matches!(a.candidate.as_str(), "scalar" | "n4" | "n8" | "vector"),
+            matches!(
+                a.candidate.as_str(),
+                "scalar" | "n4" | "n8" | "vector" | "adaptive"
+            ),
             "invalid legacy candidate",
         )?;
-        [
-            ("w4a16".into(), 1),
-            ("w4a16".into(), 4),
-            ("w8a16".into(), 1),
-            ("w8a16".into(), 4),
-        ]
-        .into_iter()
-        .collect()
+        let formats = a.format.clone().map_or_else(
+            || vec!["w4a16".to_owned(), "w8a16".to_owned()],
+            |format| vec![format],
+        );
+        let ms = a.m.map_or_else(|| vec![1, 4], |m| vec![m]);
+        formats
+            .into_iter()
+            .flat_map(|format| ms.iter().copied().map(move |m| (format.clone(), m)))
+            .collect()
     };
     require(r.cases.len() == expected.len(), "wrong case count")?;
     let mut seen = BTreeSet::new();
@@ -395,7 +406,11 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                 "wrong legacy dispatch",
             )?;
             require(
-                c.timing.method == "ABBA wall-clock commit-to-completion"
+                c.timing.method
+                    == format!(
+                        "{} wall-clock commit-to-completion",
+                        a.order.as_deref().unwrap_or("ABBA")
+                    )
                     && positive(c.timing.native_ms.as_deref().unwrap_or(&[]), count)
                     && positive(c.timing.candidate_ms.as_deref().unwrap_or(&[]), count),
                 "invalid legacy timing",
@@ -411,6 +426,23 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                         "_n8_k4"
                     }
                 }
+                "adaptive" => match (c.dispatch.format.as_str(), a.role.as_str(), c.m) {
+                    (
+                        "w8a16",
+                        "key_projection"
+                        | "value_projection"
+                        | "output_projection"
+                        | "dense_down_projection",
+                        1,
+                    )
+                    | ("w4a16", "dense_down_projection", 1)
+                    | ("w4a16", "output_projection", 1 | 4)
+                    | ("w8a16", "key_projection", 4) => "_n4",
+                    ("w8a16", "dense_up_projection", 1) => "_n8",
+                    ("w4a16", _, _) => "_n4_packed2",
+                    ("w8a16", _, _) => "_n8_k4",
+                    _ => return fail("invalid adaptive selector cell"),
+                },
                 _ => unreachable!(),
             };
             let expected_kernel = format!(

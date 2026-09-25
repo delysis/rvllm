@@ -42,6 +42,7 @@ mod macos {
         N4,
         N8,
         Vector,
+        Adaptive,
         N4VsN8,
     }
 
@@ -52,8 +53,11 @@ mod macos {
                 "n4" => Ok(Self::N4),
                 "n8" => Ok(Self::N8),
                 "vector" => Ok(Self::Vector),
+                "adaptive" => Ok(Self::Adaptive),
                 "n4-vs-n8" => Ok(Self::N4VsN8),
-                _ => Err("--candidate must be scalar, n4, n8, vector, or n4-vs-n8".to_owned()),
+                _ => Err(
+                    "--candidate must be scalar, n4, n8, vector, adaptive, or n4-vs-n8".to_owned(),
+                ),
             }
         }
 
@@ -63,6 +67,7 @@ mod macos {
                 Self::N4 => "n4",
                 Self::N8 => "n8",
                 Self::Vector => "vector",
+                Self::Adaptive => "adaptive",
                 Self::N4VsN8 => "n4-vs-n8",
             }
         }
@@ -104,7 +109,7 @@ mod macos {
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
          [--m 1,4] [--format w4a16|w8a16|both] [--samples 5] \
-         [--candidate scalar|n4|n8|vector|n4-vs-n8] [--order abba|baab]"
+         [--candidate scalar|n4|n8|vector|adaptive|n4-vs-n8] [--order abba|baab]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -488,6 +493,35 @@ mod macos {
         Ok(output)
     }
 
+    fn resolve_schedule(
+        schedule: CandidateSchedule,
+        projection: MetalLowBitProjectionOffsets,
+        m: usize,
+    ) -> CandidateSchedule {
+        if schedule != CandidateSchedule::Adaptive {
+            return schedule;
+        }
+        match (projection.format(), projection.role(), m) {
+            (
+                AppleLowBitWeightFormat::W8A16,
+                AppleLowBitTensorRole::KeyProjection
+                | AppleLowBitTensorRole::ValueProjection
+                | AppleLowBitTensorRole::OutputProjection
+                | AppleLowBitTensorRole::DenseDownProjection,
+                1,
+            )
+            | (AppleLowBitWeightFormat::W4A16, AppleLowBitTensorRole::DenseDownProjection, 1)
+            | (AppleLowBitWeightFormat::W4A16, AppleLowBitTensorRole::OutputProjection, 1 | 4)
+            | (AppleLowBitWeightFormat::W8A16, AppleLowBitTensorRole::KeyProjection, 4) => {
+                CandidateSchedule::N4
+            }
+            (AppleLowBitWeightFormat::W8A16, AppleLowBitTensorRole::DenseUpProjection, 1) => {
+                CandidateSchedule::N8
+            }
+            _ => CandidateSchedule::Vector,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn encode_candidate(
         schedule: CandidateSchedule,
@@ -500,6 +534,7 @@ mod macos {
         m: usize,
         n: usize,
     ) -> Result<(), String> {
+        let schedule = resolve_schedule(schedule, projection, m);
         let result = match schedule {
             CandidateSchedule::Scalar => projection.encode_strided_bf16(
                 command,
@@ -541,6 +576,7 @@ mod macos {
                 n,
                 0,
             ),
+            CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
             CandidateSchedule::N4VsN8 => {
                 return Err("direct comparison is not a kernel schedule".to_owned())
             }
@@ -777,6 +813,7 @@ mod macos {
         k: usize,
         samples: usize,
         schedule: CandidateSchedule,
+        order: DirectOrder,
     ) -> Result<Value, String> {
         let packed = quantize_apple_low_bit_reference(format, n, k, source_f32)
             .map_err(|e| e.to_string())?;
@@ -966,59 +1003,51 @@ mod macos {
         })?;
         let mut native_ms = Vec::with_capacity(samples * 2);
         let mut low_ms = Vec::with_capacity(samples * 2);
+        let time_native = || {
+            submit(ctx, |command| {
+                encode_native(
+                    command,
+                    pipelines,
+                    buffer,
+                    input.offset,
+                    native_w.offset,
+                    native_out.offset,
+                    m,
+                    n,
+                    k,
+                )
+            })
+        };
+        let time_candidate = || {
+            submit(ctx, |command| {
+                encode_candidate(
+                    schedule,
+                    projection,
+                    command,
+                    pipelines,
+                    buffer,
+                    input.offset,
+                    low_out.offset,
+                    m,
+                    n,
+                )
+            })
+        };
         for _ in 0..samples {
-            native_ms.push(submit(ctx, |command| {
-                encode_native(
-                    command,
-                    pipelines,
-                    buffer,
-                    input.offset,
-                    native_w.offset,
-                    native_out.offset,
-                    m,
-                    n,
-                    k,
-                )
-            })?);
-            low_ms.push(submit(ctx, |command| {
-                encode_candidate(
-                    schedule,
-                    projection,
-                    command,
-                    pipelines,
-                    buffer,
-                    input.offset,
-                    low_out.offset,
-                    m,
-                    n,
-                )
-            })?);
-            low_ms.push(submit(ctx, |command| {
-                encode_candidate(
-                    schedule,
-                    projection,
-                    command,
-                    pipelines,
-                    buffer,
-                    input.offset,
-                    low_out.offset,
-                    m,
-                    n,
-                )
-            })?);
-            native_ms.push(submit(ctx, |command| {
-                encode_native(
-                    command,
-                    pipelines,
-                    buffer,
-                    input.offset,
-                    native_w.offset,
-                    native_out.offset,
-                    m,
-                    n,
-                    k,
-                )
-            })?);
+            match order {
+                DirectOrder::Abba => {
+                    native_ms.push(time_native()?);
+                    low_ms.push(time_candidate()?);
+                    low_ms.push(time_candidate()?);
+                    native_ms.push(time_native()?);
+                }
+                DirectOrder::Baab => {
+                    low_ms.push(time_candidate()?);
+                    native_ms.push(time_native()?);
+                    native_ms.push(time_native()?);
+                    low_ms.push(time_candidate()?);
+                }
+            }
         }
         let timing_dispatch = pipelines
             .low_bit_dispatch_snapshot()
@@ -1052,13 +1081,14 @@ mod macos {
                 "exact_correctness_dispatches_verified": 2,
                 "exact_timing_dispatch_count_verified": true,
                 "timing_dispatches": 1 + samples * 2},
-            "timing": {"method": "ABBA wall-clock commit-to-completion", "samples_per_arm": samples * 2,
+            "timing": {"method": format!("{} wall-clock commit-to-completion", order.name()), "samples_per_arm": samples * 2,
                 "native_kernel": "gemm_f16_vec8 compiled as typed BF16", "native_weight_conversion": "none",
-                "candidate_kernel": match schedule {
+                "candidate_kernel": match resolve_schedule(schedule, projection, m) {
                     CandidateSchedule::Scalar => projection.experimental_bf16_kernel_name(),
                     CandidateSchedule::N4 => projection.experimental_bf16_n4_kernel_name(),
                     CandidateSchedule::N8 => projection.experimental_bf16_n8_kernel_name(),
                     CandidateSchedule::Vector => projection.experimental_bf16_vector_kernel_name(),
+                    CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
                     CandidateSchedule::N4VsN8 => unreachable!("direct mode has a separate referee"),
                 },
                 "activation_dtype": "BF16", "output_dtype": "BF16", "scale_dtype": "F16", "accumulation_dtype": "F32",
@@ -1114,6 +1144,15 @@ mod macos {
                 "experimental_projection_w8abf16_bf16_n8_k4",
             ]
             .as_slice(),
+            CandidateSchedule::Adaptive => [
+                "experimental_projection_w4abf16_bf16_n4",
+                "experimental_projection_w8abf16_bf16_n4",
+                "experimental_projection_w4abf16_bf16_n8",
+                "experimental_projection_w8abf16_bf16_n8",
+                "experimental_projection_w4abf16_bf16_n4_packed2",
+                "experimental_projection_w8abf16_bf16_n8_k4",
+            ]
+            .as_slice(),
             CandidateSchedule::N4VsN8 => [
                 "experimental_projection_w4abf16_bf16_n4",
                 "experimental_projection_w8abf16_bf16_n4",
@@ -1159,6 +1198,7 @@ mod macos {
                         k,
                         args.samples,
                         args.candidate,
+                        args.order,
                     )?
                 });
             }
@@ -1174,9 +1214,9 @@ mod macos {
             "abi": {"activation": "BF16", "output": "BF16", "scales": "F16", "accumulation": "F32"},
             "candidate_schedule": args.candidate.name(),
             "generated_msl_sha256": sha256(generated_msl.as_bytes()), "executable_sha256": hash_file(&executable)?,
-            "direct_order": if args.candidate == CandidateSchedule::N4VsN8 { Some(args.order.name()) } else { None },
+            "direct_order": Some(args.order.name()),
             "conditions_policy": "observed externally; never a wait gate",
-            "compile_counts": {"metal_libraries": 1, "pipeline_states": if args.candidate == CandidateSchedule::N4VsN8 { 4 } else { 3 }}, "cases": cases
+            "compile_counts": {"metal_libraries": 1, "pipeline_states": match args.candidate { CandidateSchedule::N4VsN8 => 4, CandidateSchedule::Adaptive => 7, _ => 3 }}, "cases": cases
         });
         println!(
             "{}",
@@ -1232,7 +1272,90 @@ mod macos {
                 CandidateSchedule::parse("vector").unwrap(),
                 CandidateSchedule::Vector
             );
+            assert_eq!(
+                CandidateSchedule::parse("adaptive").unwrap(),
+                CandidateSchedule::Adaptive
+            );
             assert!(CandidateSchedule::parse("n16").is_err());
+        }
+
+        #[test]
+        fn adaptive_selector_is_bounded_to_measured_m1_losses() {
+            for (format, role, expected_m1, expected_m4) in [
+                (
+                    AppleLowBitWeightFormat::W8A16,
+                    AppleLowBitTensorRole::KeyProjection,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::N4,
+                ),
+                (
+                    AppleLowBitWeightFormat::W8A16,
+                    AppleLowBitTensorRole::ValueProjection,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::Vector,
+                ),
+                (
+                    AppleLowBitWeightFormat::W8A16,
+                    AppleLowBitTensorRole::OutputProjection,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::Vector,
+                ),
+                (
+                    AppleLowBitWeightFormat::W8A16,
+                    AppleLowBitTensorRole::DenseDownProjection,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::Vector,
+                ),
+                (
+                    AppleLowBitWeightFormat::W4A16,
+                    AppleLowBitTensorRole::DenseDownProjection,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::Vector,
+                ),
+                (
+                    AppleLowBitWeightFormat::W8A16,
+                    AppleLowBitTensorRole::QueryProjection,
+                    CandidateSchedule::Vector,
+                    CandidateSchedule::Vector,
+                ),
+                (
+                    AppleLowBitWeightFormat::W4A16,
+                    AppleLowBitTensorRole::OutputProjection,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::N4,
+                ),
+                (
+                    AppleLowBitWeightFormat::W8A16,
+                    AppleLowBitTensorRole::DenseUpProjection,
+                    CandidateSchedule::N8,
+                    CandidateSchedule::Vector,
+                ),
+            ] {
+                let values_bytes = if format == AppleLowBitWeightFormat::W4A16 {
+                    32
+                } else {
+                    64
+                };
+                let projection = MetalLowBitProjectionOffsets::new_for_role(
+                    role,
+                    format,
+                    2,
+                    32,
+                    0,
+                    values_bytes,
+                    64,
+                    4,
+                )
+                .unwrap();
+                assert_eq!(
+                    resolve_schedule(CandidateSchedule::Adaptive, projection, 1),
+                    expected_m1
+                );
+                assert_eq!(
+                    resolve_schedule(CandidateSchedule::Adaptive, projection, 4),
+                    expected_m4
+                );
+            }
         }
         #[test]
         fn direct_allowlist_is_sealed_to_report_winners() {
