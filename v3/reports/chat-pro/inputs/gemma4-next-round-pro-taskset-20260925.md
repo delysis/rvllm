@@ -41,8 +41,14 @@ correctness oracles, and the existing kernel-game admission boundaries.
   BAAB measured 2076.822 fused versus 2065.441 baseline (0.9945x). Pooled
   medians differ by only 0.09%, far below observed variation. Treat the
   one-layer route as correctness-qualified and full-route timing-inconclusive,
-  not promotable. The next meaningful arm must fuse all eligible sliding
-  layers while retaining separate global-layer handling.
+  not promotable. That next arm is now implemented and measured: fusing all 40
+  sliding layers while leaving 8 global layers separate passed exact residual
+  bits after every layer for two dependent tokens, exact final outputs, exact
+  route accounting and zero compilation. Complete-route medians improved from
+  2070.572 to 1724.747 ms/token (1.2005x) and, under reverse ordering, from
+  2150.135 to 1821.671 ms/token (1.1803x). Treat it as a confirmed prospective
+  winner that still needs longer dependent-token stability and bounded
+  multi-token timing before production selection.
 - MLX isolated-stage evidence says FFN dominates PP4096, while FFN, attention,
   QKV and O projection are all material in long-context decode. The captured
   MLX trace and generated Metal evidence are diagnostic, not a speed oracle.
@@ -105,15 +111,15 @@ route, evaluation count and fallback absence first-class receipt fields.
 Separate 4-bit storage/quality experiments from claims of native 4-bit ANE
 arithmetic.
 
-Extend the correctness-qualified layer-0 vertical slice to all eligible sliding
-layers, leaving global layers on the separate route unless independently
-qualified. Preserve persistent KV state and strided newest-token writes; do not
-reintroduce full-surface host copies. Prove the selected route, exact first-token
-and multi-token output, newest-K/V visibility, cache identity, evaluation count,
-and zero compiler calls during inference. Add independently ordered timing
-manifests and variance-stratified receipts. The confirmed ~1.96x component gain
-and inconclusive one-layer full-route result are evidence for a larger measured
-arm, not a license to select the route.
+Advance the new `all-sliding-fused-cached` prospective winner through a 10- to
+32-token dependent decode referee and bounded multi-token timing. Leave global
+layers on the separate route unless independently qualified. Preserve
+persistent KV state and strided newest-token writes; do not reintroduce
+full-surface host copies. Prove exact multi-token output and sampled intermediate
+residuals, newest-K/V visibility, cache identity, evaluation count, and zero
+compiler calls during inference. Keep the shipping default unchanged until
+those gates and selector review pass. In parallel, target FFN and QKV, now the
+largest remaining measured phases.
 
 ## Deliverable F: checkpoint-quality gates
 

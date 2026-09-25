@@ -75,15 +75,14 @@ pub enum AneWeightPlan {
 
 /// Explicit, default-off attention/output execution policy.
 ///
-/// The experimental arm is deliberately limited to layer 0, whose qualified
-/// sliding geometry and real output weights are sealed by the component
-/// oracle. Selecting it is fail-closed: a missing cached fused graph aborts
-/// preparation and can never fall back to the two-request route.
+/// Experimental arms are explicit and fail closed: a missing cached fused
+/// graph aborts preparation and can never fall back to the two-request route.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AneAttentionOutputPlan {
     #[default]
     Separate,
     Layer0FusedCached,
+    AllSlidingFusedCached,
 }
 
 impl AneAttentionOutputPlan {
@@ -91,11 +90,17 @@ impl AneAttentionOutputPlan {
         match self {
             Self::Separate => "separate",
             Self::Layer0FusedCached => "layer0-fused-cached",
+            Self::AllSlidingFusedCached => "all-sliding-fused-cached",
         }
     }
 
     fn fuses_layer(self, layer: usize, shape: PrefillLayerShape) -> bool {
-        self == Self::Layer0FusedCached && layer == 0 && shape.sliding_window == Some(1024)
+        shape.sliding_window == Some(1024)
+            && match self {
+                Self::Separate => false,
+                Self::Layer0FusedCached => layer == 0,
+                Self::AllSlidingFusedCached => true,
+            }
     }
 }
 
@@ -1578,6 +1583,9 @@ mod tests {
         assert!(AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(0, sliding));
         assert!(!AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(1, sliding));
         assert!(!AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(0, global));
+        assert!(AneAttentionOutputPlan::AllSlidingFusedCached.fuses_layer(0, sliding));
+        assert!(AneAttentionOutputPlan::AllSlidingFusedCached.fuses_layer(1, sliding));
+        assert!(!AneAttentionOutputPlan::AllSlidingFusedCached.fuses_layer(0, global));
     }
 
     #[test]
@@ -1586,6 +1594,10 @@ mod tests {
         assert_eq!(
             AneAttentionOutputPlan::Layer0FusedCached.name(),
             "layer0-fused-cached"
+        );
+        assert_eq!(
+            AneAttentionOutputPlan::AllSlidingFusedCached.name(),
+            "all-sliding-fused-cached"
         );
     }
 
@@ -1648,6 +1660,32 @@ mod tests {
                 drop((fused, weights, tensors));
                 1
             }
+            "fused-sliding" => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let mut entries = 0;
+                for index in 0..LAYERS {
+                    let shape = layer_shape(&arch, index);
+                    if shape.sliding_window != Some(1024) {
+                        continue;
+                    }
+                    let name = format!(
+                        "{}.layers.{index}.self_attn.o_proj.weight",
+                        arch.weight_prefix
+                    );
+                    let weights = load_tensor(&tensors[&name]).unwrap();
+                    let fused = AneAttentionOutputCompile::compile_layer(
+                        PackedAttentionLayout::sliding(16, 8, 256, 1024).unwrap(),
+                        &weights,
+                        HIDDEN,
+                        AneProgramCachePolicy::ReuseOrCompileUpTo(48),
+                    )
+                    .unwrap();
+                    drop((fused, weights));
+                    entries += 1;
+                }
+                drop(tensors);
+                entries
+            }
             _ => panic!("unknown fused full-route provision part {part}"),
         };
         let compiler_calls = compile_budget_used();
@@ -1665,7 +1703,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "private ANE layer-0 fused full-route referee; exact-cache two-token baseline/candidate comparison, no timing claim"]
+    #[ignore = "private ANE fused full-route referee; exact-cache two-token baseline/candidate comparison, no timing claim"]
     fn hardware_layer0_fused_attention_output_full_route() {
         use super::two_token_reference::live_tests::{load_snapshot, signature};
         use serde_json::json;
@@ -1683,6 +1721,24 @@ mod tests {
         );
         let mut receipt = std::fs::File::create_new(receipt_path).unwrap();
         let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
+        let candidate_plan = match std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_PLAN").as_deref() {
+            Ok("all-sliding") => AneAttentionOutputPlan::AllSlidingFusedCached,
+            Ok(value) => panic!("unknown fused full-route plan {value}"),
+            Err(std::env::VarError::NotPresent) => AneAttentionOutputPlan::Layer0FusedCached,
+            Err(error) => panic!("invalid fused full-route plan: {error}"),
+        };
+        let expected_fused_layers = match candidate_plan {
+            AneAttentionOutputPlan::Layer0FusedCached => vec![0],
+            AneAttentionOutputPlan::AllSlidingFusedCached => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let layers = (0..LAYERS)
+                    .filter(|&index| layer_shape(&arch, index).sliding_window == Some(1024))
+                    .collect::<Vec<_>>();
+                drop(tensors);
+                layers
+            }
+            AneAttentionOutputPlan::Separate => unreachable!(),
+        };
         assert_eq!(compile_budget_used(), 0, "referee requires a fresh process");
         let compiler_calls_before = compile_budget_used();
 
@@ -1696,32 +1752,28 @@ mod tests {
             )
             .unwrap();
             decoder.import_prefill(&snapshot).unwrap();
-            let mut layer0 = Vec::with_capacity(2);
+            let mut residuals = Vec::with_capacity(2 * LAYERS);
             let first = decoder
-                .decode_with_observer(anchor, &mut |layer, hidden| {
-                    if layer == 0 {
-                        layer0.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
-                    }
+                .decode_with_observer(anchor, &mut |_, hidden| {
+                    residuals.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
                     Ok(())
                 })
                 .unwrap();
             let second = decoder
-                .decode_with_observer(first.token, &mut |layer, hidden| {
-                    if layer == 0 {
-                        layer0.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
-                    }
+                .decode_with_observer(first.token, &mut |_, hidden| {
+                    residuals.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
                     Ok(())
                 })
                 .unwrap();
-            assert_eq!(layer0.len(), 2);
+            assert_eq!(residuals.len(), 2 * LAYERS);
             (
                 vec![signature(&first), signature(&second)],
-                layer0,
+                residuals,
                 decoder.attention_output_route_evidence(),
             )
         };
 
-        let (baseline_predictions, baseline_layer0, baseline_route) =
+        let (baseline_predictions, baseline_residuals, baseline_route) =
             run(AneAttentionOutputPlan::Separate);
         assert_eq!(baseline_route.fused_layers, Vec::<usize>::new());
         assert_eq!(baseline_route.compiler_calls_during_load, 0);
@@ -1730,15 +1782,23 @@ mod tests {
         assert_eq!(baseline_route.separate_attention_evaluations, 96);
         assert_eq!(baseline_route.separate_output_evaluations, 96);
 
-        let (candidate_predictions, candidate_layer0, candidate_route) =
-            run(AneAttentionOutputPlan::Layer0FusedCached);
-        assert_eq!(candidate_route.fused_layers, vec![0]);
+        let (candidate_predictions, candidate_residuals, candidate_route) = run(candidate_plan);
+        assert_eq!(candidate_route.fused_layers, expected_fused_layers);
         assert_eq!(candidate_route.compiler_calls_during_load, 0);
         assert_eq!(candidate_route.compiler_calls_since_load, Some(0));
-        assert_eq!(candidate_route.fused_attention_output_evaluations, 2);
-        assert_eq!(candidate_route.separate_attention_evaluations, 94);
-        assert_eq!(candidate_route.separate_output_evaluations, 94);
-        assert_eq!(candidate_layer0, baseline_layer0);
+        assert_eq!(
+            candidate_route.fused_attention_output_evaluations,
+            2 * candidate_route.fused_layers.len()
+        );
+        assert_eq!(
+            candidate_route.separate_attention_evaluations,
+            2 * (LAYERS - candidate_route.fused_layers.len())
+        );
+        assert_eq!(
+            candidate_route.separate_output_evaluations,
+            2 * (LAYERS - candidate_route.fused_layers.len())
+        );
+        assert_eq!(candidate_residuals, baseline_residuals);
         assert_eq!(candidate_predictions, baseline_predictions);
 
         let compiler_calls_after = compile_budget_used();
@@ -1750,7 +1810,7 @@ mod tests {
             "weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
             "baseline_predictions":baseline_predictions,
             "candidate_predictions":candidate_predictions,
-            "layer0_residuals_exact":true,
+            "all_layer_residuals_exact":true,
             "final_predictions_exact":true,
             "baseline_route":{
                 "plan":baseline_route.plan,
@@ -1771,7 +1831,7 @@ mod tests {
             "compiler_calls_delta":0,
             "timing_claim":false,
             "promotion":false,
-            "claim":"Two-token exact-cache full-route layer-0 fused correctness and dispatch evidence only."
+            "claim":"Two-token exact-cache full-route fused correctness and dispatch evidence only."
         });
         writeln!(receipt, "{}", report).unwrap();
         receipt.flush().unwrap();
@@ -1801,6 +1861,24 @@ mod tests {
         );
         assert_eq!(compile_budget_used(), 0, "timing requires a fresh process");
         let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
+        let candidate_plan = match std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_PLAN").as_deref() {
+            Ok("all-sliding") => AneAttentionOutputPlan::AllSlidingFusedCached,
+            Ok(value) => panic!("unknown fused full-route plan {value}"),
+            Err(std::env::VarError::NotPresent) => AneAttentionOutputPlan::Layer0FusedCached,
+            Err(error) => panic!("invalid fused full-route plan: {error}"),
+        };
+        let expected_fused_layers = match candidate_plan {
+            AneAttentionOutputPlan::Layer0FusedCached => vec![0],
+            AneAttentionOutputPlan::AllSlidingFusedCached => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let layers = (0..LAYERS)
+                    .filter(|&index| layer_shape(&arch, index).sliding_window == Some(1024))
+                    .collect::<Vec<_>>();
+                drop(tensors);
+                layers
+            }
+            AneAttentionOutputPlan::Separate => unreachable!(),
+        };
 
         let reverse_order = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_ORDER")
             .map(|value| value == "BAAB_FIRST")
@@ -1868,7 +1946,7 @@ mod tests {
         for (index, arm) in sequence.into_iter().enumerate() {
             let plan = match arm {
                 "baseline" => AneAttentionOutputPlan::Separate,
-                "candidate" => AneAttentionOutputPlan::Layer0FusedCached,
+                "candidate" => candidate_plan,
                 _ => unreachable!(),
             };
             // The private runtime gives a deterministic model-directory lease
@@ -1918,7 +1996,7 @@ mod tests {
                 baseline_output_evaluations += route.separate_output_evaluations;
             } else {
                 candidate_ms.push(elapsed_ms);
-                assert_eq!(route.fused_layers, vec![0]);
+                assert_eq!(route.fused_layers, expected_fused_layers);
                 candidate_fused_evaluations += route.fused_attention_output_evaluations;
                 candidate_attention_evaluations += route.separate_attention_evaluations;
                 candidate_output_evaluations += route.separate_output_evaluations;
@@ -1955,9 +2033,18 @@ mod tests {
         assert_eq!(baseline_fused_evaluations, 0);
         assert_eq!(baseline_attention_evaluations, 12 * 48);
         assert_eq!(baseline_output_evaluations, 12 * 48);
-        assert_eq!(candidate_fused_evaluations, 12);
-        assert_eq!(candidate_attention_evaluations, 12 * 47);
-        assert_eq!(candidate_output_evaluations, 12 * 47);
+        assert_eq!(
+            candidate_fused_evaluations,
+            12 * expected_fused_layers.len()
+        );
+        assert_eq!(
+            candidate_attention_evaluations,
+            12 * (LAYERS - expected_fused_layers.len())
+        );
+        assert_eq!(
+            candidate_output_evaluations,
+            12 * (LAYERS - expected_fused_layers.len())
+        );
         let compiler_calls_after_timing = compile_budget_used();
         assert_eq!(compiler_calls_after_timing, 0);
         let expected = expected.unwrap();
@@ -1987,7 +2074,7 @@ mod tests {
                 "separate_output_evaluations":baseline_output_evaluations,
             },
             "candidate_route":{
-                "plan":AneAttentionOutputPlan::Layer0FusedCached.name(),
+                "plan":candidate_plan.name(),
                 "fused_evaluations":candidate_fused_evaluations,
                 "separate_attention_evaluations":candidate_attention_evaluations,
                 "separate_output_evaluations":candidate_output_evaluations,
@@ -1997,7 +2084,7 @@ mod tests {
             "compiler_calls_during_warmup_and_timing":0,
             "observations":observations,
             "promotion":false,
-            "claim":"Exploratory exact-cache full-route timing for the default-off layer-0 fused route. Independent opposite-order confirmation and longer stability remain required."
+            "claim":"Exploratory exact-cache full-route timing for an explicit default-off fused route. Independent opposite-order confirmation and longer stability remain required."
         });
         std::fs::write(
             receipt_path,
