@@ -130,12 +130,7 @@ impl From<rvllm_core::RvllmError> for LowBitMetalError {
 /// Result returned by the low-bit Metal execution surface.
 pub type LowBitMetalResult<T> = std::result::Result<T, LowBitMetalError>;
 
-/// Copyable descriptor for a low-bit projection stored inside the model arena.
-///
-/// The descriptor contains no owning Metal object and is therefore safe to
-/// copy into every preallocated execution-slot view. Both weight regions are
-/// immutable after preparation.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+/// Static resource/dispatch contract for a default-off cooperative BF16 tile.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ExperimentalBf16TileSchedule {
     pub kernel_name: &'static str,
@@ -147,6 +142,12 @@ pub struct ExperimentalBf16TileSchedule {
     pub fp32_accumulators_per_lane: usize,
 }
 
+/// Copyable descriptor for a low-bit projection stored inside the model arena.
+///
+/// The descriptor contains no owning Metal object and is therefore safe to
+/// copy into every preallocated execution-slot view. Both weight regions are
+/// immutable after preparation.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct MetalLowBitProjectionOffsets {
     role: AppleLowBitTensorRole,
     format: AppleLowBitWeightFormat,
@@ -1075,13 +1076,23 @@ mod tests {
             AppleLowBitWeightFormat::W8A16,
         ] {
             let k = if format == AppleLowBitWeightFormat::W4A16 { 33 } else { 65 };
+            let packed_row_bytes = if format == AppleLowBitWeightFormat::W4A16 {
+                k.div_ceil(2)
+            } else {
+                k
+            };
+            let packed_bytes = 17 * packed_row_bytes;
+            let scales_bytes = 17 * k.div_ceil(rvllm_apple::APPLE_LOW_BIT_GROUP_SIZE) * 2;
+            let scales_offset = packed_bytes.next_multiple_of(4);
             let descriptor = MetalLowBitProjectionOffsets::new_for_role(
-                format,
                 AppleLowBitTensorRole::QueryProjection,
+                format,
                 17,
                 k,
                 0,
-                4096,
+                packed_bytes,
+                scales_offset,
+                scales_bytes,
             )
             .unwrap();
             let conservative = descriptor.experimental_bf16_coop16_schedule();
