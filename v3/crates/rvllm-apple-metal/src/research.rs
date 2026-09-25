@@ -20,6 +20,7 @@ pub enum MetalResearchCandidate {
     Mma32Load4,
     RmsnormSimd256,
     DecodeGemvMlx16,
+    DecodeGateupMlx16,
     Load4M16N32K64,
     Load4M16N64K64,
     Load4M32N32K64,
