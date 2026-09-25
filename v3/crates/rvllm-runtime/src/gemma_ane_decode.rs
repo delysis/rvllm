@@ -1751,6 +1751,174 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "private ANE corrected fused attention/output real-weight oracle; one compile and twelve bounded evaluations"]
+    fn hardware_layer0_fused_attention_output_real_weight_oracle() {
+        use rvllm_apple::ane_attention::AneAttentionOutputCompile;
+        use rvllm_apple::ane_linear::compile_budget_used;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite oracle receipt"
+        );
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        assert_eq!(compile_budget_used(), 0, "oracle requires a fresh process");
+
+        let (arch, entries) = super::validated_weights(&model, 1024).unwrap();
+        let shape = super::layer_shape(&arch, 0);
+        let layout = rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+            shape.query_heads,
+            shape.kv_heads,
+            shape.head_dim,
+            shape.sliding_window.unwrap(),
+        )
+        .unwrap();
+        let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+        let weights = super::load_tensor(entries.get(&name).unwrap()).unwrap();
+        let identity =
+            AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN).unwrap();
+
+        // Every token has the same V. Attention therefore has an exact,
+        // score-independent result at every tested mask/ring boundary: each
+        // query head receives the V row of its KV head. This makes head/group
+        // flattening and the real checkpoint projection independently visible.
+        let kv_value: Vec<f16> = (0..layout.kv_width())
+            .map(|i| f16::from_f32(((i * 17 + 5) % 127) as f32 / 1024.0 - 0.0625))
+            .collect();
+        let mut attended = vec![f16::ZERO; layout.query_width()];
+        for kv_head in 0..layout.kv_heads() {
+            for group in 0..layout.groups() {
+                let head = kv_head * layout.groups() + group;
+                let src = kv_head * layout.head_dim();
+                let dst = head * layout.head_dim();
+                attended[dst..dst + layout.head_dim()]
+                    .copy_from_slice(&kv_value[src..src + layout.head_dim()]);
+            }
+        }
+        let expected: Vec<f32> = weights
+            .chunks_exact(layout.query_width())
+            .map(|row| {
+                row.iter()
+                    .zip(&attended)
+                    .map(|(weight, value)| weight.to_f32() * value.to_f32())
+                    .sum()
+            })
+            .collect();
+        assert_eq!(expected.len(), super::HIDDEN);
+        assert!(expected.iter().all(|value| value.is_finite()));
+
+        let program = AneAttentionOutputCompile::compile_layer(
+            layout,
+            &weights,
+            super::HIDDEN,
+            super::AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+        )
+        .unwrap();
+        let mut request = program.create_request().unwrap();
+        let query = vec![f16::ZERO; layout.query_width()];
+        let mut encoded_query = vec![0; query.len() * 2];
+        layout.encode_query(&query, &mut encoded_query).unwrap();
+        let mut mask = vec![0; layout.capacity() * 2];
+        let mut cases = Vec::new();
+        let mut violations = 0_usize;
+        let mut evaluations = 0_usize;
+        let guard = 64_usize;
+        for tokens in [1_usize, 31, 32, 33, 1024, 1025] {
+            let keys = vec![f16::ZERO; tokens * layout.kv_width()];
+            let values: Vec<_> = (0..tokens).flat_map(|_| kv_value.iter().copied()).collect();
+            let packed = layout.import_cache(&keys, &values, tokens).unwrap();
+            let mut guarded = vec![0xa5_u8; guard + packed.len() + guard];
+            let input = &mut guarded[guard..guard + packed.len()];
+            input.copy_from_slice(&packed);
+            for (row, data) in input
+                .chunks_exact_mut(layout.row_bytes())
+                .zip(encoded_query.chunks_exact(layout.groups() * 2))
+            {
+                row[..data.len()].copy_from_slice(data);
+            }
+            layout.encode_mask(tokens, &mut mask).unwrap();
+            let mask_offset = layout.mask_offset();
+            input[mask_offset..mask_offset + mask.len()].copy_from_slice(&mask);
+
+            let mut repeat_outputs = Vec::new();
+            let mut maximum_absolute_error = 0.0_f32;
+            for _ in 0..2 {
+                let mut actual = vec![f16::ZERO; super::HIDDEN];
+                request.evaluate_packed(input, &mut actual).unwrap();
+                evaluations += 1;
+                for (actual, expected) in actual.iter().zip(&expected) {
+                    let error = (actual.to_f32() - expected).abs();
+                    let tolerance = 0.002 + 0.01 * expected.abs();
+                    if !actual.is_finite() || error > tolerance {
+                        violations += 1;
+                    }
+                    maximum_absolute_error = maximum_absolute_error.max(error);
+                }
+                repeat_outputs.push(actual);
+            }
+            let repeated_bits_identical = repeat_outputs[0]
+                .iter()
+                .zip(&repeat_outputs[1])
+                .all(|(first, second)| first.to_bits() == second.to_bits());
+            if !repeated_bits_identical {
+                violations += 1;
+            }
+            let guards_unchanged = guarded[..guard].iter().all(|&byte| byte == 0xa5)
+                && guarded[guard + packed.len()..]
+                    .iter()
+                    .all(|&byte| byte == 0xa5);
+            if !guards_unchanged {
+                violations += 1;
+            }
+            cases.push(serde_json::json!({
+                "tokens":tokens,
+                "maximum_absolute_error":maximum_absolute_error,
+                "repeated_output_bits_identical":repeated_bits_identical,
+                "input_guards_unchanged":guards_unchanged,
+            }));
+        }
+        drop(request);
+        drop(program);
+        let compiler_calls = compile_budget_used();
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_real_weight_oracle.v1",
+            "status":if violations == 0 { "passed" } else { "failed" },
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":{
+                "mil_sha256":identity.mil_sha256,
+                "weight_blob_sha256":identity.weight_blob_sha256,
+                "input_bytes":identity.input_bytes,
+                "output_bytes":identity.output_bytes,
+            },
+            "compiler_calls":compiler_calls,
+            "compiler_call_limit":1,
+            "accelerator_evaluations":evaluations,
+            "external_inputs":1,
+            "external_outputs":1,
+            "tested_tokens":[1,31,32,33,1024,1025],
+            "cases":cases,
+            "violations":violations,
+            "tolerance":"0.002 + 0.01 * abs(independent_fp32_projection_reference)",
+            "claim":"Corrected layer-0 fused attention/output component oracle only; constant-V construction makes the attention result independent of scores and exposes head/group flattening. No timing, full-route, checkpoint-quality, or promotion claim."
+        });
+        std::fs::write(
+            receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused oracle receipt"),
+        )
+        .expect("preserve fused oracle receipt");
+        assert_eq!(compiler_calls, 1);
+        assert_eq!(evaluations, 12);
+        assert_eq!(violations, 0, "inspect preserved fused oracle receipt");
+    }
+
+    #[test]
     fn interleaved_is_cached_only_and_does_not_change_projection_precision() {
         let plan = super::AneWeightPlan::StaticInt8InterleavedFfnCached;
         assert_eq!(plan.program_count(), 162);
