@@ -18,7 +18,7 @@ def main() -> None:
     parser.add_argument("--tensor", required=True)
     parser.add_argument("--role", required=True)
     parser.add_argument("--samples", type=int, required=True)
-    parser.add_argument("--candidate", choices=("scalar", "n4"))
+    parser.add_argument("--candidate", choices=("scalar", "n4", "n8"))
     args = parser.parse_args()
 
     receipt = json.loads(args.receipt.read_text())
@@ -57,7 +57,7 @@ def main() -> None:
                 require(isinstance(value, (int, float)) and math.isfinite(value) and value >= 0, f"bad {accuracy_name}.{metric} for {key}")
         timing = case.get("timing", {})
         if args.candidate is not None:
-            suffix = "_n4" if args.candidate == "n4" else ""
+            suffix = "" if args.candidate == "scalar" else f"_{args.candidate}"
             expected_kernel = (
                 f"experimental_projection_w4abf16_bf16{suffix}"
                 if key[0] == "w4a16"

@@ -305,6 +305,15 @@ impl MetalLowBitProjectionOffsets {
         }
     }
 
+    /// Eight-output-per-SIMD native-BF16 research kernel.
+    #[must_use]
+    pub const fn experimental_bf16_n8_kernel_name(self) -> &'static str {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => "experimental_projection_w4abf16_bf16_n8",
+            AppleLowBitWeightFormat::W8A16 => "experimental_projection_w8abf16_bf16_n8",
+        }
+    }
+
     /// Encode `C[M,N] = A[M,K] * W[N,K]^T` with every tensor in one arena.
     pub fn encode(
         self,
@@ -412,6 +421,33 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_n4_kernel_name(),
             4,
+        )
+    }
+
+    /// Encode with the eight-output-per-SIMD native-BF16 research schedule.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16_n8(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            self.experimental_bf16_n8_kernel_name(),
+            8,
         )
     }
 
@@ -835,6 +871,9 @@ mod tests {
             assert!(descriptor
                 .experimental_bf16_n4_kernel_name()
                 .ends_with("_n4"));
+            assert!(descriptor
+                .experimental_bf16_n8_kernel_name()
+                .ends_with("_n8"));
         }
     }
     use crate::arena::MetalBufferArena;

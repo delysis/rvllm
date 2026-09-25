@@ -40,6 +40,7 @@ mod macos {
     enum CandidateSchedule {
         Scalar,
         N4,
+        N8,
     }
 
     impl CandidateSchedule {
@@ -47,7 +48,8 @@ mod macos {
             match value {
                 "scalar" => Ok(Self::Scalar),
                 "n4" => Ok(Self::N4),
-                _ => Err("--candidate must be scalar or n4".to_owned()),
+                "n8" => Ok(Self::N8),
+                _ => Err("--candidate must be scalar, n4, or n8".to_owned()),
             }
         }
 
@@ -55,6 +57,7 @@ mod macos {
             match self {
                 Self::Scalar => "scalar",
                 Self::N4 => "n4",
+                Self::N8 => "n8",
             }
         }
     }
@@ -70,7 +73,7 @@ mod macos {
 
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
-         [--m 1,4] [--samples 5] [--candidate scalar|n4]"
+         [--m 1,4] [--samples 5] [--candidate scalar|n4|n8]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -447,6 +450,16 @@ mod macos {
                 n,
                 0,
             ),
+            CandidateSchedule::N8 => projection.encode_strided_bf16_n8(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
         };
         result.map_err(|error| error.to_string())
     }
@@ -707,6 +720,7 @@ mod macos {
                 "candidate_kernel": match schedule {
                     CandidateSchedule::Scalar => projection.experimental_bf16_kernel_name(),
                     CandidateSchedule::N4 => projection.experimental_bf16_n4_kernel_name(),
+                    CandidateSchedule::N8 => projection.experimental_bf16_n8_kernel_name(),
                 },
                 "activation_dtype": "BF16", "output_dtype": "BF16", "scale_dtype": "F16", "accumulation_dtype": "F32",
                 "native_ms": native_ms, "candidate_ms": low_ms,
@@ -748,6 +762,10 @@ mod macos {
             CandidateSchedule::N4 => [
                 "experimental_projection_w4abf16_bf16_n4",
                 "experimental_projection_w8abf16_bf16_n4",
+            ],
+            CandidateSchedule::N8 => [
+                "experimental_projection_w4abf16_bf16_n8",
+                "experimental_projection_w8abf16_bf16_n8",
             ],
         };
         for kernel in ["gemm_f16_vec8", candidate_kernels[0], candidate_kernels[1]] {
@@ -833,7 +851,11 @@ mod macos {
                 CandidateSchedule::parse("n4").unwrap(),
                 CandidateSchedule::N4
             );
-            assert!(CandidateSchedule::parse("n8").is_err());
+            assert_eq!(
+                CandidateSchedule::parse("n8").unwrap(),
+                CandidateSchedule::N8
+            );
+            assert!(CandidateSchedule::parse("n16").is_err());
         }
     }
 }
