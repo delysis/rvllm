@@ -79,6 +79,8 @@ struct InferReport {
     library_compiles: u64,
     pipeline_state_compiles: u64,
     last_step_gpu_execution_ns: Option<u64>,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    metal_stage_timing: Option<serde_json::Value>,
     research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
@@ -646,7 +648,8 @@ fn report_value(
     report: &InferReport,
     comparison: Option<&ReferenceComparison>,
 ) -> serde_json::Value {
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut value = serde_json::json!({
         "schema": JSON_SCHEMA,
         "claim": CLAIM,
         "metal_compute_dtype": report.metal_compute_dtype,
@@ -702,7 +705,19 @@ fn report_value(
         "large_model_opt_in": report.large_model_opt_in,
         "max_supported_total_tokens": report.max_supported_total_tokens,
         "hf_reference": hf_reference_value(comparison),
-    })
+    });
+    #[cfg(feature = "metal-stage-instrumentation")]
+    value
+        .as_object_mut()
+        .expect("infer report must be a JSON object")
+        .insert(
+            "metal_stage_timing".to_owned(),
+            report
+                .metal_stage_timing
+                .clone()
+                .unwrap_or(serde_json::Value::Null),
+        );
+    value
 }
 
 fn print_text_report(report: &InferReport, comparison: Option<&ReferenceComparison>) {
@@ -2607,6 +2622,8 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         library_compiles: stats.library_compiles,
         pipeline_state_compiles: stats.pipeline_state_compiles,
         last_step_gpu_execution_ns: stats.last_step_gpu_execution_ns,
+        #[cfg(feature = "metal-stage-instrumentation")]
+        metal_stage_timing: backend.last_stage_timing_receipt(),
         research_dispatch,
         command_buffers: stats.command_buffers,
         encoders: stats.encoders,
@@ -3125,6 +3142,11 @@ mod tests {
             library_compiles: 1,
             pipeline_state_compiles: 31,
             last_step_gpu_execution_ns: Some(1_000_000),
+            #[cfg(feature = "metal-stage-instrumentation")]
+            metal_stage_timing: Some(serde_json::json!({
+                "schema": "rvllm.metal_stage_timing.v1",
+                "sampling_point": "compute_stage_boundary"
+            })),
             research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
@@ -3166,6 +3188,11 @@ mod tests {
         assert_eq!(value["library_compiles"], 1);
         assert_eq!(value["pipeline_state_compiles"], 31);
         assert_eq!(value["last_step_gpu_execution_ns"], 1_000_000);
+        #[cfg(feature = "metal-stage-instrumentation")]
+        assert_eq!(
+            value["metal_stage_timing"]["schema"],
+            "rvllm.metal_stage_timing.v1"
+        );
         assert_eq!(value["research_dispatch"]["schema"], "test");
         assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
         assert_eq!(
@@ -3194,6 +3221,8 @@ mod tests {
             library_compiles: 1,
             pipeline_state_compiles: 31,
             last_step_gpu_execution_ns: Some(1_000_000),
+            #[cfg(feature = "metal-stage-instrumentation")]
+            metal_stage_timing: None,
             research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
