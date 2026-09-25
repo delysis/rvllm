@@ -44,7 +44,12 @@ pub struct AneAttentionOutputCompile {
 
 pub struct AneAttentionOutput {
     kernel: AneInMemoryKernel,
-    input_bytes: usize,
+    layout: PackedAttentionLayout,
+    tokens_seen: usize,
+    query: Vec<u8>,
+    key: Vec<u8>,
+    value: Vec<u8>,
+    mask: Vec<u8>,
     output_channels: usize,
     output: Vec<u8>,
 }
@@ -98,9 +103,16 @@ impl AneAttentionOutputCompile {
     }
 
     pub fn create_request(&self) -> Result<AneAttentionOutput, String> {
+        let mut kernel = self.program.create_request()?;
+        kernel.write_input(&self.layout.import_cache(&[], &[], 0)?)?;
         Ok(AneAttentionOutput {
-            kernel: self.program.create_request()?,
-            input_bytes: self.layout.input_bytes(),
+            kernel,
+            layout: self.layout,
+            tokens_seen: 0,
+            query: vec![0; self.layout.query_width() * 2],
+            key: vec![0; self.layout.kv_width() * 2],
+            value: vec![0; self.layout.kv_width() * 2],
+            mask: vec![0; self.layout.capacity() * 2],
             output_channels: self.output_channels,
             output: vec![0; self.layout.projected_output_bytes(self.output_channels)?],
         })
@@ -111,7 +123,7 @@ impl AneAttentionOutput {
     /// Evaluate one completely packed attention surface. The sole logical
     /// output column is decoded from ANE's 64-byte channel rows.
     pub fn evaluate_packed(&mut self, input: &[u8], output: &mut [f16]) -> Result<(), String> {
-        if input.len() != self.input_bytes || output.len() != self.output_channels {
+        if input.len() != self.layout.input_bytes() || output.len() != self.output_channels {
             return Err("fused attention/output projection I/O shape mismatch".into());
         }
         self.kernel.write_input(input)?;
@@ -122,6 +134,75 @@ impl AneAttentionOutput {
             *value = f16::from_le_bytes([self.output[offset], self.output[offset + 1]]);
         }
         Ok(())
+    }
+
+    pub fn import_cache(
+        &mut self,
+        keys: &[f16],
+        values: &[f16],
+        tokens: usize,
+    ) -> Result<(), String> {
+        let packed = self.layout.import_cache(keys, values, tokens)?;
+        self.kernel.write_input(&packed)?;
+        self.tokens_seen = tokens;
+        Ok(())
+    }
+
+    /// Append one position through the same persistent packed surface used by
+    /// the qualified attention request, but return the fused projection.
+    pub fn decode(
+        &mut self,
+        query: &[f16],
+        key: &[f16],
+        value: &[f16],
+        output: &mut [f16],
+    ) -> Result<(), String> {
+        if key.len() != self.layout.kv_width()
+            || value.len() != key.len()
+            || output.len() != self.output_channels
+        {
+            return Err("fused attention/output projection decode shape mismatch".into());
+        }
+        let position = self.tokens_seen;
+        let next_tokens = position.checked_add(1).ok_or("ANE token count overflow")?;
+        let key_offset = self
+            .layout
+            .key_offset(position)
+            .ok_or("ANE attention capacity exceeded")?;
+        let value_offset = self
+            .layout
+            .value_offset(position)
+            .ok_or("ANE attention capacity exceeded")?;
+        self.layout.encode_query(query, &mut self.query)?;
+        self.layout.encode_mask(next_tokens, &mut self.mask)?;
+        encode(key, &mut self.key);
+        encode(value, &mut self.value);
+        let stride = self.layout.row_bytes();
+        self.kernel
+            .write_tensor_strided(0, 0, stride, self.layout.groups() * 2, &self.query)?;
+        self.kernel
+            .write_tensor_strided(0, key_offset, stride, 2, &self.key)?;
+        self.kernel
+            .write_tensor_strided(0, value_offset, stride, 2, &self.value)?;
+        self.kernel.write_tensor_strided(
+            0,
+            self.layout.mask_offset(),
+            self.mask.len(),
+            self.mask.len(),
+            &self.mask,
+        )?;
+        self.kernel.evaluate()?;
+        self.kernel.read_output(&mut self.output)?;
+        for (channel, output) in output.iter_mut().enumerate() {
+            let offset = channel * 64;
+            *output = f16::from_le_bytes([self.output[offset], self.output[offset + 1]]);
+        }
+        self.tokens_seen = next_tokens;
+        Ok(())
+    }
+
+    pub fn tokens_seen(&self) -> usize {
+        self.tokens_seen
     }
 }
 
