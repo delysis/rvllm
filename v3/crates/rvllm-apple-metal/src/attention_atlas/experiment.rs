@@ -111,6 +111,8 @@ pub enum Control {
     ExistingGlobalR16P128T64,
     #[serde(rename = "existing_global_r16p128t128")]
     ExistingGlobalR16P128T128,
+    #[serde(rename = "current_matrix_r8k32p64t128")]
+    CurrentMatrixR8K32P64T128,
 }
 impl Control {
     pub fn global_tile(self) -> Option<crate::attention_global_decode::DecodeTile> {
@@ -123,6 +125,16 @@ impl Control {
             Self::ExistingGlobalR16P64T128 => (16, 64, 128),
             Self::ExistingGlobalR16P128T64 => (16, 128, 64),
             Self::ExistingGlobalR16P128T128 => (16, 128, 128),
+            Self::CurrentMatrixR8K32P64T128 => {
+                return Some(crate::attention_global_decode::DecodeTile {
+                    rows: 8,
+                    keys: 32,
+                    panel: 64,
+                    threads: 128,
+                    per_tile_softmax: true,
+                    simd_matrix: true,
+                });
+            }
             _ => return None,
         };
         Some(crate::attention_global_decode::DecodeTile {
@@ -144,6 +156,7 @@ impl Control {
             Self::ExistingGlobalR16P64T128 => Some("research_global_d512_r16p64t128"),
             Self::ExistingGlobalR16P128T64 => Some("research_global_d512_r16p128t64"),
             Self::ExistingGlobalR16P128T128 => Some("research_global_d512_r16p128t128"),
+            Self::CurrentMatrixR8K32P64T128 => Some("research_global_d512_atlas_mma_r8k32p64t128"),
             _ => None,
         }
     }

@@ -327,6 +327,14 @@ fn atlas_source_identity_varies_with_actual_candidate() {
     assert!(a.contains("attention_prefill_simdgroup_f16"));
     assert!(COMMON.contains("state+2u+d"));
     assert!(MATRIX.contains("simdgroup_multiply_accumulate"));
+    assert!(a.contains("research_global_d512_atlas_mma_r8k32p64t128"));
+    let control: e::Control = serde_json::from_str(r#""current_matrix_r8k32p64t128""#).unwrap();
+    let tile = control.global_tile().unwrap();
+    assert_eq!(
+        (tile.rows, tile.keys, tile.panel, tile.threads),
+        (8, 32, 64, 128)
+    );
+    assert!(tile.per_tile_softmax && tile.simd_matrix);
 }
 
 #[test]

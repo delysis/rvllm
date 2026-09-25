@@ -69,6 +69,12 @@ pub fn source(candidate: Candidate, dim: u32) -> Result<String> {
             "../research_shaders/global_decode_common.metal"
         ));
         out.push_str(include_str!(
+            "../research_shaders/global_decode_matrix_common.metal"
+        ));
+        out.push_str(include_str!(
+            "../research_shaders/global_decode_atlas_mma_r8k32p64t128.metal"
+        ));
+        out.push_str(include_str!(
             "../research_shaders/global_decode_r8p64t64.metal"
         ));
         out.push_str(include_str!(

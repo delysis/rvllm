@@ -94,6 +94,28 @@ The actionable design rules are:
    loads by role and stream size. Do not infer bandwidth limitation from packed
    bytes alone.
 
+## Same-harness incumbent comparison
+
+The runner was extended to compile and invoke the exact incumbent
+`research_global_d512_atlas_mma_r8k32p64t128` in the same metallib and ABBA
+sequence as split-32. Both arms independently passed the common FP64/BF16
+operator oracle at 1,025 and 2,048 keys.
+
+| Length | Run | Incumbent matrix | Split-32 | Ratio | Outer-control drift | Admitted |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 1,025 | initial | 6.727 ms | 1.445 ms | 4.66x | 2.26% | yes |
+| 1,025 | confirmation 2 | 6.307 ms | 0.965 ms | 6.53x | 9.04% | no |
+| 1,025 | confirmation 3 | 6.622 ms | 1.379 ms | 4.80x | 6.52% | no |
+| 2,048 | initial | 12.471 ms | 1.422 ms | 8.77x | 3.24% | yes |
+| 2,048 | confirmation 2 | 20.472 ms | 4.609 ms | 4.44x | 4.37% | yes |
+
+Every observed comparison favors split-32 materially, but absolute timing varied
+substantially and two 1,025-key confirmations violated the predeclared 5% drift
+bound. They are preserved as failed receipts, not silently discarded. This is
+strong evidence that split-32 deserves normal-route integration; it is not yet a
+stable promotion measurement. The earlier scalar-control ratios are superseded
+for incumbent comparison by this matched-control table.
+
 ## Current disposition
 
 At 2,048 live keys, split-16 passed the full operator oracle and measured 2.948 ms;
@@ -106,6 +128,5 @@ cross-harness speedup claims. The absolute candidate medians and within-run drif
 
 `atlas-coop-key-r8-k8-p64-t128-s32` is the prospective leader from this first
 operator screen. It is not production-selected, full-route-qualified, or
-independently confirmed. The next required work is an apples-to-apples comparison
-against the current rvLLM matrix leader inside one harness, followed by captured
-model tensors, normal-route integration, and full-token-loop timing.
+independently confirmed for promotion. The next required work is captured model
+tensors, normal-route integration, and full-token-loop timing.
