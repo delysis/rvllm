@@ -40,6 +40,43 @@ This is device work and dispatch structure, not Rust-side scheduling noise. The
 rapidly widening decode gap identifies long-context attention—especially the
 eight global D512 layers—as an urgent kernel target.
 
+## ANE layer-0 FFN probes
+
+The same campaign also exercised three resident-weight ANE FFN paths for Gemma
+4 layer 0. These are direct operation probes, not end-to-end model throughput,
+and are not comparable to the whole-model Metal/MLX rows above. All three
+receipts report verified ANE execution with no CPU or GPU fallback.
+
+| Weight path | Median ms | Minimum ms | p95 ms | Stored weight bytes | Error reference | Relative L2 | Max abs |
+|---|---:|---:|---:|---:|---|---:|---:|
+| 4-bit LUT4 | 1.530 | 1.424 | 4.041 | 88,474,240 | original BF16 | 0.156019 | 0.708801 |
+| 4-bit LUT4 | 1.530 | 1.424 | 4.041 | 88,474,240 | selected quantized CPU | 0.003156 | 0.003611 |
+| 8-bit dense int8 | 3.085 | 2.980 | 3.475 | 177,016,768 | original BF16 | 0.012147 | 0.025701 |
+| 8-bit dense int8 | 3.085 | 2.980 | 3.475 | 177,016,768 | selected quantized CPU | 0.002705 | 0.003446 |
+| 16-bit BF16 | 54.349 | 24.499 | 60.112 | 353,894,400 | BF16 CPU | 0.002756 | 0.003857 |
+
+The 4-bit path is about 2.02× faster than the 8-bit path by median, while the
+8-bit path is about 17.62× faster than this BF16 probe. Those ratios describe
+these exact implementations and measurement boundaries; they do not establish
+that quantization preserves model quality. In particular, 4-bit error against
+the original BF16 computation is large, and both quantized receipts explicitly
+set `full_model_quality_qualified=false`. The smaller error against the selected
+quantized CPU reference establishes implementation fidelity after quantization,
+not semantic equivalence to BF16.
+
+Preparation is also material but outside the steady-state medians. The 4-bit
+probe spent 5,155.06 ms loading weights, 4,002.75 ms quantizing/reconstructing,
+and 7,208.89 ms compiling/loading. The 8-bit probe spent 527.97 ms, 1,020.76 ms,
+and 5,401.36 ms respectively. BF16 compile/load was 822.13 ms and its reported
+effective weight bandwidth was 6.51 GB/s. The 4-bit queue conditions were
+ineligible because an authorized Cargo/rustc process overlapped observation;
+the 8-bit and BF16 queue conditions were eligible. No observations were
+discarded.
+
+Authoritative extracted receipts and their submitted manifests are the
+`ane-*-report.json` and `ane-*.json` files beside this document. The queue job,
+stdout, stderr, condition, and report receipts remain under `run-v3/`.
+
 The queue marked this exploratory run condition-ineligible because the locally
 authorized Cargo/rustc work used to repair the scaffold overlapped some samples.
 Those processes use CPU and can contend for unified-memory bandwidth; the raw

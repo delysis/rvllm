@@ -1,0 +1,351 @@
+{
+  "ane_execution_verified": true,
+  "claim": "Direct ANE projection with CPU numerical reference; not full-model decode or Metal-to-ANE handoff",
+  "compile_load_ms": 822.13125,
+  "cpu_or_gpu_fallback": false,
+  "diagnostic_journal_enabled": false,
+  "effective_weight_gb_per_s": 6.511531287446152,
+  "ffn_mode": "dynamic_resident_weights_explicit_gelu",
+  "ffn_prefix": "model.language_model.layers.0.mlp",
+  "input_channels": 3840,
+  "iterations": 64,
+  "linear_mode": null,
+  "logical_spatial": 1,
+  "max_abs_error": 0.0038565718568861485,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "numerical_inputs_checked": 3,
+  "operation": "gemma_gated_ffn",
+  "output_channels": 3840,
+  "prepare_includes_weight_packing": true,
+  "projection_including_io_median_ms": 54.348875,
+  "projection_including_io_min_ms": 24.499209,
+  "projection_including_io_p95_ms": 60.111875000000005,
+  "relative_l2_error": 0.0027558858937981085,
+  "schema": "rvllm.ane_projection_probe.v1",
+  "stage_samples": [
+    {
+      "evaluate_ms": 56.67058299999999,
+      "input_ms": 0.11808300000000001,
+      "output_ms": 0.025875
+    },
+    {
+      "evaluate_ms": 28.39975,
+      "input_ms": 0.085208,
+      "output_ms": 0.042833
+    },
+    {
+      "evaluate_ms": 54.954667,
+      "input_ms": 0.08825000000000001,
+      "output_ms": 0.045625
+    },
+    {
+      "evaluate_ms": 56.736917,
+      "input_ms": 0.11979100000000001,
+      "output_ms": 0.077625
+    },
+    {
+      "evaluate_ms": 55.182083,
+      "input_ms": 0.179375,
+      "output_ms": 0.023167
+    },
+    {
+      "evaluate_ms": 54.65754200000001,
+      "input_ms": 0.090916,
+      "output_ms": 0.068458
+    },
+    {
+      "evaluate_ms": 55.91725,
+      "input_ms": 0.15554199999999999,
+      "output_ms": 0.023417
+    },
+    {
+      "evaluate_ms": 56.168083,
+      "input_ms": 0.086417,
+      "output_ms": 0.058375
+    },
+    {
+      "evaluate_ms": 57.783041,
+      "input_ms": 0.167625,
+      "output_ms": 0.029375
+    },
+    {
+      "evaluate_ms": 53.313542,
+      "input_ms": 0.103916,
+      "output_ms": 0.027375
+    },
+    {
+      "evaluate_ms": 53.843458,
+      "input_ms": 0.09575,
+      "output_ms": 0.025667
+    },
+    {
+      "evaluate_ms": 57.941,
+      "input_ms": 0.102209,
+      "output_ms": 0.042624999999999996
+    },
+    {
+      "evaluate_ms": 30.063625000000002,
+      "input_ms": 0.22962500000000002,
+      "output_ms": 0.031542
+    },
+    {
+      "evaluate_ms": 40.520208000000004,
+      "input_ms": 0.10258300000000001,
+      "output_ms": 0.0235
+    },
+    {
+      "evaluate_ms": 29.308583,
+      "input_ms": 0.08825000000000001,
+      "output_ms": 2.726459
+    },
+    {
+      "evaluate_ms": 58.702916,
+      "input_ms": 0.29508399999999996,
+      "output_ms": 0.027459
+    },
+    {
+      "evaluate_ms": 29.321,
+      "input_ms": 0.0945,
+      "output_ms": 0.08425
+    },
+    {
+      "evaluate_ms": 53.772541,
+      "input_ms": 0.1305,
+      "output_ms": 0.026042
+    },
+    {
+      "evaluate_ms": 29.478917,
+      "input_ms": 0.089291,
+      "output_ms": 0.026583
+    },
+    {
+      "evaluate_ms": 27.762625,
+      "input_ms": 0.092292,
+      "output_ms": 0.031708
+    },
+    {
+      "evaluate_ms": 27.454292000000002,
+      "input_ms": 0.121708,
+      "output_ms": 0.042125
+    },
+    {
+      "evaluate_ms": 56.026959,
+      "input_ms": 0.121916,
+      "output_ms": 0.027041000000000003
+    },
+    {
+      "evaluate_ms": 51.716625,
+      "input_ms": 0.29725,
+      "output_ms": 0.038792
+    },
+    {
+      "evaluate_ms": 29.582082999999997,
+      "input_ms": 0.095917,
+      "output_ms": 0.027667
+    },
+    {
+      "evaluate_ms": 56.763332999999996,
+      "input_ms": 0.100042,
+      "output_ms": 0.030833000000000003
+    },
+    {
+      "evaluate_ms": 29.837125,
+      "input_ms": 0.110875,
+      "output_ms": 0.042667000000000004
+    },
+    {
+      "evaluate_ms": 56.292165999999995,
+      "input_ms": 0.11854200000000001,
+      "output_ms": 0.026584
+    },
+    {
+      "evaluate_ms": 41.36925,
+      "input_ms": 0.11641699999999999,
+      "output_ms": 0.049499999999999995
+    },
+    {
+      "evaluate_ms": 53.958,
+      "input_ms": 0.11075,
+      "output_ms": 0.0415
+    },
+    {
+      "evaluate_ms": 43.588333,
+      "input_ms": 0.117709,
+      "output_ms": 0.026625
+    },
+    {
+      "evaluate_ms": 58.016,
+      "input_ms": 0.088375,
+      "output_ms": 0.031124999999999996
+    },
+    {
+      "evaluate_ms": 30.571208,
+      "input_ms": 0.100458,
+      "output_ms": 0.028
+    },
+    {
+      "evaluate_ms": 58.363666,
+      "input_ms": 0.09525,
+      "output_ms": 0.040542
+    },
+    {
+      "evaluate_ms": 57.76025,
+      "input_ms": 0.356667,
+      "output_ms": 0.022916
+    },
+    {
+      "evaluate_ms": 24.355625,
+      "input_ms": 0.121625,
+      "output_ms": 0.020041999999999997
+    },
+    {
+      "evaluate_ms": 39.523875,
+      "input_ms": 0.08695800000000001,
+      "output_ms": 0.028458
+    },
+    {
+      "evaluate_ms": 27.081584,
+      "input_ms": 0.09704099999999999,
+      "output_ms": 0.02175
+    },
+    {
+      "evaluate_ms": 55.155457999999996,
+      "input_ms": 0.089084,
+      "output_ms": 0.029667
+    },
+    {
+      "evaluate_ms": 54.160792,
+      "input_ms": 0.141083,
+      "output_ms": 0.043833
+    },
+    {
+      "evaluate_ms": 55.851584,
+      "input_ms": 0.116958,
+      "output_ms": 0.047083
+    },
+    {
+      "evaluate_ms": 72.328709,
+      "input_ms": 0.11916600000000001,
+      "output_ms": 0.028
+    },
+    {
+      "evaluate_ms": 57.709583,
+      "input_ms": 0.19179200000000002,
+      "output_ms": 0.028374999999999997
+    },
+    {
+      "evaluate_ms": 54.54475,
+      "input_ms": 0.093667,
+      "output_ms": 0.022208000000000002
+    },
+    {
+      "evaluate_ms": 51.159416,
+      "input_ms": 0.100334,
+      "output_ms": 0.021041999999999998
+    },
+    {
+      "evaluate_ms": 67.615625,
+      "input_ms": 0.085166,
+      "output_ms": 0.023833999999999998
+    },
+    {
+      "evaluate_ms": 54.073417,
+      "input_ms": 0.094708,
+      "output_ms": 0.026958
+    },
+    {
+      "evaluate_ms": 53.765333999999996,
+      "input_ms": 0.089958,
+      "output_ms": 0.033125
+    },
+    {
+      "evaluate_ms": 59.979957999999996,
+      "input_ms": 0.102334,
+      "output_ms": 0.027333
+    },
+    {
+      "evaluate_ms": 29.712584,
+      "input_ms": 0.08966600000000001,
+      "output_ms": 0.041625
+    },
+    {
+      "evaluate_ms": 49.281458,
+      "input_ms": 0.11854200000000001,
+      "output_ms": 0.021542000000000002
+    },
+    {
+      "evaluate_ms": 30.663791999999997,
+      "input_ms": 0.08725000000000001,
+      "output_ms": 0.023583
+    },
+    {
+      "evaluate_ms": 57.292500000000004,
+      "input_ms": 0.087708,
+      "output_ms": 0.022459
+    },
+    {
+      "evaluate_ms": 55.135875,
+      "input_ms": 0.09241700000000001,
+      "output_ms": 0.022625000000000003
+    },
+    {
+      "evaluate_ms": 44.736542,
+      "input_ms": 0.089792,
+      "output_ms": 0.023916
+    },
+    {
+      "evaluate_ms": 29.61575,
+      "input_ms": 0.0885,
+      "output_ms": 0.025375
+    },
+    {
+      "evaluate_ms": 33.110541,
+      "input_ms": 0.118334,
+      "output_ms": 0.024834
+    },
+    {
+      "evaluate_ms": 51.390417,
+      "input_ms": 0.148291,
+      "output_ms": 0.027333
+    },
+    {
+      "evaluate_ms": 47.586666,
+      "input_ms": 0.092875,
+      "output_ms": 0.031334
+    },
+    {
+      "evaluate_ms": 66.891958,
+      "input_ms": 0.613875,
+      "output_ms": 0.022459
+    },
+    {
+      "evaluate_ms": 56.134292,
+      "input_ms": 0.08650000000000001,
+      "output_ms": 0.020583
+    },
+    {
+      "evaluate_ms": 55.305082999999996,
+      "input_ms": 0.08779200000000001,
+      "output_ms": 0.027375
+    },
+    {
+      "evaluate_ms": 54.552208,
+      "input_ms": 0.14175000000000001,
+      "output_ms": 0.021542000000000002
+    },
+    {
+      "evaluate_ms": 55.7855,
+      "input_ms": 0.084042,
+      "output_ms": 0.022125
+    },
+    {
+      "evaluate_ms": 56.068416000000006,
+      "input_ms": 0.089334,
+      "output_ms": 0.024459
+    }
+  ],
+  "tensor": "model.language_model.layers.0.mlp.gate_proj.weight",
+  "weight_bytes": 353894400,
+  "weight_f16_sha256": "2def7d665d86b519f8c50369914aa30c07f7d73282fa0633b1a47f15a17ffdd3",
+  "weight_source": "checkpoint"
+}

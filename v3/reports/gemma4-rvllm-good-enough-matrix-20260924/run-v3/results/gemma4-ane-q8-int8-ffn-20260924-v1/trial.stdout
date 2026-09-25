@@ -1,0 +1,200 @@
+{
+  "ane_execution_verified": true,
+  "ane_vs_original_cpu_reference": {
+    "elements": 11520,
+    "max_abs_error": 0.02570056915283203,
+    "relative_l2_error": 0.012146859858512172
+  },
+  "ane_vs_selected_cpu_reference": {
+    "elements": 11520,
+    "max_abs_error": 0.003445670008659363,
+    "relative_l2_error": 0.002704722960084389
+  },
+  "cache_policy": "ReuseOrCompile",
+  "claim": "One real FFN numerical/latency experiment. Source blob size is not compiled/resident size or proof of compressed runtime bandwidth. Quantization errors are observed, not full-model quality acceptance.",
+  "compile_load_ms": 5401.364084,
+  "control_backend_errors_original_dense": null,
+  "control_prepare_ms": null,
+  "cpu_or_gpu_fallback": false,
+  "cpu_quantization_errors_gate_up_gated_down": [
+    {
+      "elements": 46080,
+      "max_abs_error": 0.03564453125,
+      "relative_l2_error": 0.014331582565337113
+    },
+    {
+      "elements": 46080,
+      "max_abs_error": 0.037109375,
+      "relative_l2_error": 0.012748126902281878
+    },
+    {
+      "elements": 46080,
+      "max_abs_error": 0.0400390625,
+      "relative_l2_error": 0.018014428115253035
+    },
+    {
+      "elements": 11520,
+      "max_abs_error": 0.02561497688293457,
+      "relative_l2_error": 0.011840043722445334
+    }
+  ],
+  "dense_control_outputs_bit_identical": null,
+  "dense_reconstruction_fp16_sha256": "9ec1b72edfad27068add34669a960d971f6a52cf982db9170e451cafe158bfe5",
+  "diagnostic_journal_enabled": false,
+  "full_model_quality_qualified": false,
+  "input_sources": [
+    {
+      "sha256": "046f0afd7ce27968f30af18b925fae60cb283c644130471180ea8f5585511772",
+      "synthetic_pattern": 0
+    },
+    {
+      "sha256": "f79f239b9a63fe54ef89a2d354a2556f62ab2b63f5fa12f73862a0eceaa5298f",
+      "synthetic_pattern": 1
+    },
+    {
+      "sha256": "c6656e5f8919780dd24bcb4e1e0980ee34a076aa6a6c36a3ea67849bb9d28dc0",
+      "synthetic_pattern": 2
+    }
+  ],
+  "iterations": 64,
+  "layer": 0,
+  "median_ms": 3.0849789999999997,
+  "minimum_ms": 2.9795,
+  "mode": "dense-int8",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "numerical_inputs_checked": 3,
+  "original_fp16_sha256": "2def7d665d86b519f8c50369914aa30c07f7d73282fa0633b1a47f15a17ffdd3",
+  "original_weight_payload_bytes": 353894400,
+  "p95_ms": 3.474917,
+  "per_input_errors": [
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.02570056915283203,
+        "relative_l2_error": 0.012853459415532816
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.0029597878456115723,
+        "relative_l2_error": 0.0025245532988407513
+      },
+      "input_max_abs": 0.75
+    },
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.022316336631774902,
+        "relative_l2_error": 0.0117419478672449
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.003445670008659363,
+        "relative_l2_error": 0.0025893192889822796
+      },
+      "input_max_abs": 0.75
+    },
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.018509507179260254,
+        "relative_l2_error": 0.011696345475256673
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.0030853338539600372,
+        "relative_l2_error": 0.0030736261801774796
+      },
+      "input_max_abs": 0.75
+    }
+  ],
+  "quantization": "One stored FP16 scale per output row; scale=max_abs/127 rounded to FP16; integer=ties_even(weight/stored_scale), clamped to [-127,127]; zero rows use scale one",
+  "quantize_and_reconstruct_ms": 1020.7619160000002,
+  "quantized_source_blob_bytes": 177016768,
+  "rotating_order_samples_ms": null,
+  "samples_ms": [
+    2.9795,
+    2.9882910000000003,
+    2.998541,
+    2.999292,
+    3.008667,
+    3.017125,
+    3.0215,
+    3.028625,
+    3.031667,
+    3.032542,
+    3.033083,
+    3.040958,
+    3.0438330000000002,
+    3.0440419999999997,
+    3.04575,
+    3.057583,
+    3.059292,
+    3.060333,
+    3.06575,
+    3.06675,
+    3.067083,
+    3.0684169999999997,
+    3.071417,
+    3.072416,
+    3.075208,
+    3.0777080000000003,
+    3.078,
+    3.080166,
+    3.080625,
+    3.081041,
+    3.084,
+    3.084333,
+    3.085625,
+    3.089083,
+    3.090209,
+    3.099167,
+    3.104459,
+    3.1155419999999996,
+    3.116916,
+    3.116959,
+    3.117292,
+    3.1219170000000003,
+    3.126208,
+    3.132917,
+    3.1340830000000004,
+    3.1349590000000003,
+    3.139708,
+    3.1402919999999996,
+    3.140875,
+    3.14375,
+    3.1505,
+    3.150833,
+    3.1567079999999996,
+    3.161709,
+    3.161958,
+    3.181584,
+    3.190875,
+    3.199291,
+    3.3279170000000002,
+    3.430084,
+    3.474917,
+    3.5021660000000003,
+    3.5231250000000003,
+    4.235333
+  ],
+  "schema": "rvllm.ane_weight_ffn_probe.v2",
+  "warmups": 5,
+  "weight_load_ms": 527.969417,
+  "weight_reconstruction_errors_gate_up_down": [
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.00098419189453125,
+      "relative_l2_error": 0.014583848754015173
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.0010986328125,
+      "relative_l2_error": 0.013198931012173636
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.0008544921875,
+      "relative_l2_error": 0.01672246309603721
+    }
+  ]
+}
