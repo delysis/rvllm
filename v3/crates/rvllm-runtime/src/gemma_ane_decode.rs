@@ -13,12 +13,14 @@ use crate::gemma_head_ranking::{
 #[cfg(test)]
 use half::bf16;
 use half::f16;
-use rvllm_apple::ane_attention::{AneAttention, AneAttentionProgram};
+use rvllm_apple::ane_attention::{
+    AneAttention, AneAttentionOutput, AneAttentionOutputCompile, AneAttentionProgram,
+};
 use rvllm_apple::ane_attention_layout::{KvImportPacking, PackedAttentionLayout};
 use rvllm_apple::ane_dynamic_ffn::{AneDynamicFfn, AneDynamicFfnProgram};
 use rvllm_apple::ane_dynamic_linear::{AneDynamicLinear, AneDynamicLinearProgram};
 use rvllm_apple::ane_int8_ffn_weights::{AneInt8FfnWeights, AneInt8LinearWeights};
-use rvllm_apple::ane_linear::{AneGatedFfn, AneLinear, AneProgramCachePolicy};
+use rvllm_apple::ane_linear::{compile_budget_used, AneGatedFfn, AneLinear, AneProgramCachePolicy};
 use rvllm_apple::ane_lut4_ffn_weights::AneLut4FfnWeights;
 use rvllm_apple::gemma_decode_math::{
     add_residual_f16, rms_norm_f16_in_place, scale_layer_f16, GemmaRope,
@@ -69,6 +71,32 @@ pub enum AneWeightPlan {
     /// Qualification only: compare both FFNs on every activation, bit for bit.
     /// Requires strict cache loading and a durable driver journal.
     StaticInt8StackedFfnChecked,
+}
+
+/// Explicit, default-off attention/output execution policy.
+///
+/// The experimental arm is deliberately limited to layer 0, whose qualified
+/// sliding geometry and real output weights are sealed by the component
+/// oracle. Selecting it is fail-closed: a missing cached fused graph aborts
+/// preparation and can never fall back to the two-request route.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AneAttentionOutputPlan {
+    #[default]
+    Separate,
+    Layer0FusedCached,
+}
+
+impl AneAttentionOutputPlan {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Separate => "separate",
+            Self::Layer0FusedCached => "layer0-fused-cached",
+        }
+    }
+
+    fn fuses_layer(self, layer: usize, shape: PrefillLayerShape) -> bool {
+        self == Self::Layer0FusedCached && layer == 0 && shape.sliding_window == Some(1024)
+    }
 }
 
 impl AneWeightPlan {
@@ -557,6 +585,7 @@ struct Layer {
     shape: PrefillLayerShape,
     qkv: AneLinear,
     attention: AneAttention,
+    fused_attention_output: Option<AneAttentionOutput>,
     output: OutputProjection,
     ffn: FeedForward,
     input_norm: Vec<f16>,
@@ -579,6 +608,8 @@ pub struct AneDecodeTimes {
     pub qkv_ms: f64,
     pub attention_ms: f64,
     pub output_ms: f64,
+    /// One application call containing attention and output projection.
+    pub fused_attention_output_ms: f64,
     pub ffn_ms: f64,
     pub vocabulary_ms: f64,
     pub host_ms: f64,
@@ -615,6 +646,25 @@ pub struct GemmaAneDecode {
     head_ranking_eligible: bool,
     head_ranking_timing: bool,
     last_head_ranking: Option<(HeadRankingStats, Option<f64>)>,
+    attention_output_plan: AneAttentionOutputPlan,
+    compiler_calls_during_load: usize,
+    compiler_calls_at_load_completion: usize,
+    fused_attention_output_evaluations: usize,
+    separate_attention_evaluations: usize,
+    separate_output_evaluations: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AneAttentionOutputRouteEvidence {
+    pub plan: &'static str,
+    pub fused_layers: Vec<usize>,
+    pub compiler_calls_during_load: usize,
+    /// `None` means the process-global counter moved backwards; callers must
+    /// reject that receipt rather than treating it as zero compilation.
+    pub compiler_calls_since_load: Option<usize>,
+    pub fused_attention_output_evaluations: usize,
+    pub separate_attention_evaluations: usize,
+    pub separate_output_evaluations: usize,
 }
 
 impl GemmaAneDecode {
@@ -689,6 +739,26 @@ impl GemmaAneDecode {
         weights: AneWeightPlan,
         compile_budget: usize,
     ) -> Result<Self, String> {
+        Self::load_with_attention_output_plan(
+            model_dir,
+            capacity,
+            weights,
+            compile_budget,
+            AneAttentionOutputPlan::Separate,
+        )
+    }
+
+    /// Prepare an explicitly selected attention/output route. The fused arm
+    /// requires an already-provisioned graph even if other preparation is
+    /// allowed a bounded compile budget.
+    pub fn load_with_attention_output_plan(
+        model_dir: &Path,
+        capacity: usize,
+        weights: AneWeightPlan,
+        compile_budget: usize,
+        attention_output_plan: AneAttentionOutputPlan,
+    ) -> Result<Self, String> {
+        let compiler_calls_before = compile_budget_used();
         if matches!(
             weights,
             AneWeightPlan::StaticInt8Chunk4FfnCached
@@ -799,6 +869,19 @@ impl GemmaAneDecode {
                     cache_policy,
                 )?),
             };
+            let fused_attention_output = if attention_output_plan.fuses_layer(index, shape) {
+                let layout = PackedAttentionLayout::sliding(16, 8, 256, 1024)?;
+                let fused = AneAttentionOutputCompile::compile_layer(
+                    layout,
+                    &output_weights,
+                    HIDDEN,
+                    AneProgramCachePolicy::RequireExisting,
+                )?;
+                Some(fused.create_request()?)
+            } else {
+                None
+            };
+            let attention = if shared_value { &global } else { &sliding }.create_request()?;
             drop(output_weights);
             let gate = load("mlp.gate_proj.weight")?;
             let up = load("mlp.up_proj.weight")?;
@@ -836,7 +919,8 @@ impl GemmaAneDecode {
                 qkv,
                 output,
                 ffn: layer_ffn,
-                attention: if shared_value { &global } else { &sliding }.create_request()?,
+                attention,
+                fused_attention_output,
                 input_norm: load("input_layernorm.weight")?,
                 query_norm: load("self_attn.q_norm.weight")?,
                 key_norm: load("self_attn.k_norm.weight")?,
@@ -873,6 +957,10 @@ impl GemmaAneDecode {
                 first + HEAD_ROWS
             );
         }
+        let compiler_calls_at_load_completion = compile_budget_used();
+        let compiler_calls_during_load = compiler_calls_at_load_completion
+            .checked_sub(compiler_calls_before)
+            .ok_or("ANE compiler-call counter moved backwards")?;
         Ok(Self {
             layers,
             head,
@@ -895,7 +983,33 @@ impl GemmaAneDecode {
                 && compile_budget == 0,
             head_ranking_timing: false,
             last_head_ranking: None,
+            attention_output_plan,
+            compiler_calls_during_load,
+            compiler_calls_at_load_completion,
+            fused_attention_output_evaluations: 0,
+            separate_attention_evaluations: 0,
+            separate_output_evaluations: 0,
         })
+    }
+
+    pub fn attention_output_route_evidence(&self) -> AneAttentionOutputRouteEvidence {
+        AneAttentionOutputRouteEvidence {
+            plan: self.attention_output_plan.name(),
+            fused_layers: self
+                .layers
+                .iter()
+                .enumerate()
+                .filter_map(|(index, layer)| {
+                    layer.fused_attention_output.is_some().then_some(index)
+                })
+                .collect(),
+            compiler_calls_during_load: self.compiler_calls_during_load,
+            compiler_calls_since_load: compile_budget_used()
+                .checked_sub(self.compiler_calls_at_load_completion),
+            fused_attention_output_evaluations: self.fused_attention_output_evaluations,
+            separate_attention_evaluations: self.separate_attention_evaluations,
+            separate_output_evaluations: self.separate_output_evaluations,
+        }
     }
 
     /// Replace every layer's KV state after validating the entire snapshot.
@@ -944,24 +1058,27 @@ impl GemmaAneDecode {
         self.next_position = None;
         let mut scratch = Vec::new();
         for (layer, saved) in self.layers.iter_mut().zip(&snapshot.layers) {
-            if packing == KvImportPacking::Blocked32 {
-                layer.attention.import_cache_blocked32_with_scratch(
+            match packing {
+                KvImportPacking::Blocked32 => layer.attention.import_cache_blocked32_with_scratch(
                     &saved.keys,
                     &saved.values,
                     snapshot.tokens,
                     &mut scratch,
-                )?;
-            } else if packing == KvImportPacking::ReuseScratch {
-                layer.attention.import_cache_with_scratch(
+                )?,
+                KvImportPacking::ReuseScratch => layer.attention.import_cache_with_scratch(
                     &saved.keys,
                     &saved.values,
                     snapshot.tokens,
                     &mut scratch,
-                )?;
-            } else {
-                layer
-                    .attention
-                    .import_cache(&saved.keys, &saved.values, snapshot.tokens)?;
+                )?,
+                KvImportPacking::Baseline => {
+                    layer
+                        .attention
+                        .import_cache(&saved.keys, &saved.values, snapshot.tokens)?
+                }
+            }
+            if let Some(fused) = &mut layer.fused_attention_output {
+                fused.import_cache(&saved.keys, &saved.values, snapshot.tokens)?;
             }
         }
         self.next_position = Some(snapshot.tokens);
@@ -1028,7 +1145,11 @@ impl GemmaAneDecode {
         let scale = f16::from_f32((HIDDEN as f32).sqrt()).to_f32();
         scale_layer_f16(&mut self.hidden, scale)?;
         for (index, layer) in self.layers.iter_mut().enumerate() {
-            if layer.attention.tokens_seen() != position {
+            let route_tokens_seen = layer.fused_attention_output.as_ref().map_or_else(
+                || layer.attention.tokens_seen(),
+                AneAttentionOutput::tokens_seen,
+            );
+            if route_tokens_seen != position {
                 return Err("ANE layer KV positions disagree".into());
             }
             self.normalized.copy_from_slice(&self.hidden);
@@ -1071,14 +1192,35 @@ impl GemmaAneDecode {
             };
             rope.apply_f16(query, position as u32)?;
             rope.apply_f16(key, position as u32)?;
-            let timer = Instant::now();
-            layer
-                .attention
-                .decode(query, key, &layer.value, &mut layer.attended)?;
-            times.attention_ms += milliseconds(timer);
-            let timer = Instant::now();
-            layer.output.project(&layer.attended, &mut self.branch)?;
-            times.output_ms += milliseconds(timer);
+            if let Some(fused) = &mut layer.fused_attention_output {
+                if fused.tokens_seen() != position {
+                    return Err("fused ANE layer KV positions disagree".into());
+                }
+                let timer = Instant::now();
+                fused.decode(query, key, &layer.value, &mut self.branch)?;
+                times.fused_attention_output_ms += milliseconds(timer);
+                self.fused_attention_output_evaluations = self
+                    .fused_attention_output_evaluations
+                    .checked_add(1)
+                    .ok_or("fused attention/output evaluation count overflow")?;
+            } else {
+                let timer = Instant::now();
+                layer
+                    .attention
+                    .decode(query, key, &layer.value, &mut layer.attended)?;
+                times.attention_ms += milliseconds(timer);
+                self.separate_attention_evaluations = self
+                    .separate_attention_evaluations
+                    .checked_add(1)
+                    .ok_or("attention evaluation count overflow")?;
+                let timer = Instant::now();
+                layer.output.project(&layer.attended, &mut self.branch)?;
+                times.output_ms += milliseconds(timer);
+                self.separate_output_evaluations = self
+                    .separate_output_evaluations
+                    .checked_add(1)
+                    .ok_or("output evaluation count overflow")?;
+            }
             rms_norm_f16_in_place(
                 &mut self.branch,
                 HIDDEN,
@@ -1165,6 +1307,7 @@ impl GemmaAneDecode {
             - times.qkv_ms
             - times.attention_ms
             - times.output_ms
+            - times.fused_attention_output_ms
             - times.ffn_ms
             - times.vocabulary_ms;
         Ok(AneDecodedToken {
@@ -1413,6 +1556,39 @@ mod int8_projection_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fused_attention_output_plan_is_narrow_and_default_off() {
+        let sliding = PrefillLayerShape {
+            query_heads: 16,
+            kv_heads: 8,
+            head_dim: 256,
+            sliding_window: Some(1024),
+        };
+        let global = PrefillLayerShape {
+            query_heads: 16,
+            kv_heads: 1,
+            head_dim: 512,
+            sliding_window: None,
+        };
+        assert_eq!(
+            AneAttentionOutputPlan::default(),
+            AneAttentionOutputPlan::Separate
+        );
+        assert!(!AneAttentionOutputPlan::Separate.fuses_layer(0, sliding));
+        assert!(AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(0, sliding));
+        assert!(!AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(1, sliding));
+        assert!(!AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(0, global));
+    }
+
+    #[test]
+    fn fused_attention_output_plan_names_are_receipt_stable() {
+        assert_eq!(AneAttentionOutputPlan::Separate.name(), "separate");
+        assert_eq!(
+            AneAttentionOutputPlan::Layer0FusedCached.name(),
+            "layer0-fused-cached"
+        );
+    }
+
     #[test]
     #[ignore = "private ANE layer-0 fused attention/output compile-source probe; one compiler attempt, zero evaluations, explicit journal and receipt"]
     fn hardware_layer0_fused_attention_output_compile_source() {
