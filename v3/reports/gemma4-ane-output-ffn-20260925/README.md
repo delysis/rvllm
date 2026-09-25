@@ -58,3 +58,10 @@ dialect defect but not the only blocker. The next isolation boundary is the
 mixed FP16 output projection plus INT8 FFN graph without either RMS sequence;
 only after that compiles should reduction-plus-power be reintroduced around the
 known-good core.
+
+That mixed core compiled successfully: FP16 `Wo`, residual add, the unchanged
+row-INT8 gate/up/down constants, GELU and final projection are accepted together
+in one graph. The remaining compile blocker is therefore inside the RMS
+composition, not the mixed weight blob or the output-projection/FFN fusion.
+Next isolate `reduce_sum -> pow` composition and scalar broadcast back onto the
+hidden tensor before restoring both norms.
