@@ -113,8 +113,14 @@ pub enum Control {
     ExistingGlobalR16P128T128,
     #[serde(rename = "current_matrix_r8k32p64t128")]
     CurrentMatrixR8K32P64T128,
+    #[serde(rename = "split_matrix_r8k32s256t128")]
+    SplitMatrixR8K32S256T128,
 }
 impl Control {
+    pub const fn is_split_matrix(self) -> bool {
+        matches!(self, Self::SplitMatrixR8K32S256T128)
+    }
+
     pub fn global_tile(self) -> Option<crate::attention_global_decode::DecodeTile> {
         let (rows, panel, threads) = match self {
             Self::ExistingGlobalR8P64T64 => (8, 64, 64),
@@ -596,7 +602,7 @@ pub fn queue(request: &QueueRequest, out: &Path) -> Result<()> {
     let r = request;
     let c = &r.conditions;
     if !valid_id(&r.id)
-        || !matches!(r.stage.as_str(), "compile" | "oracle" | "bench")
+        || !matches!(r.stage.as_str(), "compile" | "oracle" | "bench" | "trial")
         || !r.cwd.is_absolute()
         || !r.cwd.is_dir()
         || !r.prepared_dir.is_absolute()
@@ -633,7 +639,7 @@ pub fn queue(request: &QueueRequest, out: &Path) -> Result<()> {
         r.stage.clone(),
         r.prepared_dir.to_string_lossy().into_owned(),
     ];
-    if r.stage != "compile" {
+    if !matches!(r.stage.as_str(), "compile" | "trial") {
         let dir = r
             .build_dir
             .as_ref()
@@ -659,15 +665,15 @@ pub fn queue(request: &QueueRequest, out: &Path) -> Result<()> {
     } else if r.oracle_receipt.is_some() {
         return Err(Error::new("oracle receipt only belongs to bench stage"));
     }
-    if r.stage == "compile" && r.build_dir.is_some() {
-        return Err(Error::new("compile cannot consume an old build"));
+    if matches!(r.stage.as_str(), "compile" | "trial") && r.build_dir.is_some() {
+        return Err(Error::new("compile/trial cannot consume an old build"));
     }
     // The existing queue expands {output} in args only. No env indirection.
     args.push("{output}/atlas".into());
     let job = QueueJob {
         schema: "rvllm.experiment_job.v1",
         id: r.id.clone(),
-        purpose: if r.stage == "bench" {
+        purpose: if matches!(r.stage.as_str(), "bench" | "trial") {
             "exploratory_timing"
         } else {
             "preparation"

@@ -328,6 +328,8 @@ fn atlas_source_identity_varies_with_actual_candidate() {
     assert!(COMMON.contains("state+2u+d"));
     assert!(MATRIX.contains("simdgroup_multiply_accumulate"));
     assert!(a.contains("research_global_d512_atlas_mma_r8k32p64t128"));
+    assert!(a.contains("research_global_d512_split_mma_r8k32s256t128_partial"));
+    assert!(a.contains("research_global_d512_split_mma_r8k32s256t128_merge"));
     let control: e::Control = serde_json::from_str(r#""current_matrix_r8k32p64t128""#).unwrap();
     let tile = control.global_tile().unwrap();
     assert_eq!(
@@ -335,6 +337,9 @@ fn atlas_source_identity_varies_with_actual_candidate() {
         (8, 32, 64, 128)
     );
     assert!(tile.per_tile_softmax && tile.simd_matrix);
+    let split: e::Control = serde_json::from_str(r#""split_matrix_r8k32s256t128""#).unwrap();
+    assert!(split.is_split_matrix());
+    assert!(split.global_tile().is_none());
 }
 
 #[test]

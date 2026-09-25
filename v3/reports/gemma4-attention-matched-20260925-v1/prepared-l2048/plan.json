@@ -1,0 +1,31 @@
+{
+  "candidate": {
+    "strategy": "cooperative",
+    "softmax": "per_key",
+    "rows": 8,
+    "keys": 8,
+    "panel": 64,
+    "threads": 128,
+    "splits": 32
+  },
+  "shape": {
+    "queries": 1,
+    "live_keys": 2048,
+    "kv_heads": 1,
+    "dim": 512,
+    "window": 0,
+    "page_size": 32,
+    "max_blocks": 66,
+    "physical_blocks": 66
+  },
+  "cache": "separate_bf16",
+  "output": "f32",
+  "grid": [
+    2,
+    1,
+    32
+  ],
+  "partial_bytes": 1052672,
+  "threadgroup_bytes": 2912,
+  "encoded_dispatches": 3
+}

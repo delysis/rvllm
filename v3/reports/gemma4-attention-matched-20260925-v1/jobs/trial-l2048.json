@@ -1,0 +1,54 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "g4attention20260925-split32-vs-splitmatrix-l2048-trial",
+  "purpose": "exploratory_timing",
+  "command": {
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm-attention-atlas",
+      "sha256": "17040e8ad1fae2678c7d2ef9f987713117121f8f406db270d0addce8a73a4467"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "trial",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-attention-matched-20260925-v1/prepared-l2048",
+      "{output}/atlas"
+    ],
+    "env": {}
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-attention-matched-20260925-v1/prepared-l2048/prepared.json",
+      "sha256": "57dba3c3ff6ac0254f80bc9fcbdb70ea592bcee630ba7ac02b09c29920ca25cb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-attention-matched-20260925-v1/prepared-l2048/spec.json",
+      "sha256": "08093aa30378649f11ed356bb5093c21d555c5081a407798d7d2e1032022ad74"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-attention-matched-20260925-v1/prepared-l2048/candidate.metal",
+      "sha256": "072efb760d38b88756981d122b0456832639c668ff48454a047f06b38cab56b1"
+    }
+  ],
+  "after": [],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george",
+    "quiet_process_names": [],
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "rvllm_disaggregated_infer",
+      "llama-server"
+    ],
+    "idle_llama_servers": []
+  },
+  "stable_seconds": 0,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600
+}

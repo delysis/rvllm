@@ -181,6 +181,7 @@ pub struct PreparedKernel {
     control_plan: Plan,
     candidate: Pso,
     control: Pso,
+    control_merge: Option<Pso>,
     validate: Pso,
     merge: Pso,
     control_kind: Control,
@@ -217,7 +218,9 @@ impl PreparedKernel {
         let candidate = context.make_pipeline("atlas_candidate").map_err(err)?;
         let validate = context.make_pipeline("atlas_validate").map_err(err)?;
         let merge = context.make_pipeline("atlas_merge").map_err(err)?;
-        let control_name = if let Some(name) = spec.control.global_name() {
+        let control_name = if spec.control.is_split_matrix() {
+            "research_global_d512_split_mma_r8k32s256t128_partial"
+        } else if let Some(name) = spec.control.global_name() {
             name
         } else {
             match spec.control {
@@ -232,6 +235,15 @@ impl PreparedKernel {
             }
         };
         let control = context.make_pipeline(control_name).map_err(err)?;
+        let control_merge = if spec.control.is_split_matrix() {
+            Some(
+                context
+                    .make_pipeline("research_global_d512_split_mma_r8k32s256t128_merge")
+                    .map_err(err)?,
+            )
+        } else {
+            None
+        };
         for (pso, p) in [
             (&candidate, plan),
             (&validate, control_plan),
@@ -248,7 +260,9 @@ impl PreparedKernel {
                 ));
             }
         }
-        let control_threads = if let Some(tile) = spec.control.global_tile() {
+        let control_threads = if spec.control.is_split_matrix() {
+            128
+        } else if let Some(tile) = spec.control.global_tile() {
             tile.threads as usize
         } else if control_name == "attention_decode_f16" || control_name == "attention_prefill_f16"
         {
@@ -261,6 +275,14 @@ impl PreparedKernel {
             || control.staticThreadgroupMemoryLength() > context.max_threadgroup_memory()
         {
             return Err(Error::new("incumbent pipeline is not admitted"));
+        }
+        if let Some(merge) = &control_merge {
+            if merge.maxTotalThreadsPerThreadgroup() < 32
+                || merge.threadExecutionWidth() != 32
+                || merge.staticThreadgroupMemoryLength() > context.max_threadgroup_memory()
+            {
+                return Err(Error::new("split-matrix merge pipeline is not admitted"));
+            }
         }
         let candidate_buffers = Buffers::new(&context, plan, data, spec.arena_limit_bytes)?;
         let control_buffers = Buffers::new(
@@ -275,6 +297,7 @@ impl PreparedKernel {
             control_plan,
             candidate,
             control,
+            control_merge,
             validate,
             merge,
             control_kind: spec.control,
@@ -301,12 +324,14 @@ impl PreparedKernel {
     }
     fn buffers(&self, arm: Arm) -> &Buffers {
         match arm {
+            Arm::Control if self.control_kind.is_split_matrix() => &self.candidate_buffers,
             Arm::Control => &self.control_buffers,
             Arm::Candidate => &self.candidate_buffers,
         }
     }
     fn arm_plan(&self, arm: Arm, output: Output) -> Plan {
         let mut p = match arm {
+            Arm::Control if self.control_kind.is_split_matrix() => self.plan,
             Arm::Control => self.control_plan,
             Arm::Candidate => self.plan,
         };
@@ -351,6 +376,116 @@ impl PreparedKernel {
         b: &Buffers,
         p: Plan,
     ) -> Result<()> {
+        if self.control_kind.is_split_matrix() {
+            use crate::attention_global_decode::{
+                DecodeBuffers, DecodeOutput, DecodeShape, SplitDecodeBuffers, SplitDecodePlan,
+                SPLIT_MATRIX_R8K32S256T128,
+            };
+            let output = match p.output {
+                Output::F32 => DecodeOutput::F32,
+                Output::Bf16 => DecodeOutput::Bf16,
+            };
+            let shape = p.shape;
+            let plan = SplitDecodePlan::new(
+                SPLIT_MATRIX_R8K32S256T128,
+                DecodeShape {
+                    sequences: 1,
+                    heads: 16,
+                    kv_heads: 1,
+                    head_dim: 512,
+                    block_size: shape.page_size,
+                    max_blocks: shape.max_blocks,
+                    num_blocks: shape.physical_blocks,
+                    window: 0,
+                    scale: 1.0,
+                },
+                output,
+            )
+            .ok_or_else(|| Error::new("split-matrix control refused plan"))?;
+            let buffers = SplitDecodeBuffers {
+                common: DecodeBuffers {
+                    q: b.offset(0),
+                    k: b.offset(1),
+                    v: b.offset(2),
+                    output: b.offset(5),
+                    block_tables: b.offset(3),
+                    context_lens: b.offset(12),
+                    positions: b.offset(4),
+                },
+                partials: b.offset(6),
+            };
+            if !plan.buffers_fit(buffers, b.arena.capacity()) {
+                return Err(Error::new("split-matrix control bindings refused"));
+            }
+            let params = plan.params();
+            let partial = command
+                .computeCommandEncoder()
+                .ok_or_else(|| Error::new("split-matrix partial encoder unavailable"))?;
+            partial.setComputePipelineState(&self.control);
+            unsafe {
+                for (index, offset) in [
+                    buffers.common.q,
+                    buffers.common.k,
+                    buffers.common.v,
+                    buffers.partials,
+                    buffers.common.block_tables,
+                    buffers.common.context_lens,
+                    buffers.common.positions,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    partial.setBuffer_offset_atIndex(Some(b.arena.buffer()), offset, index);
+                }
+                partial.setBytes_length_atIndex(
+                    std::ptr::NonNull::from(&params).cast(),
+                    std::mem::size_of_val(&params),
+                    7,
+                );
+            }
+            partial.dispatchThreadgroups_threadsPerThreadgroup(
+                size(
+                    plan.partial_grid[0],
+                    plan.partial_grid[1],
+                    plan.partial_grid[2],
+                ),
+                size(plan.partial_threads[0], 1, 1),
+            );
+            partial.endEncoding();
+            let merge = command
+                .computeCommandEncoder()
+                .ok_or_else(|| Error::new("split-matrix merge encoder unavailable"))?;
+            merge.setComputePipelineState(
+                self.control_merge
+                    .as_ref()
+                    .ok_or_else(|| Error::new("split-matrix merge pipeline missing"))?,
+            );
+            unsafe {
+                for (index, offset) in [
+                    buffers.partials,
+                    buffers.common.output,
+                    buffers.common.block_tables,
+                    buffers.common.context_lens,
+                    buffers.common.positions,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    merge.setBuffer_offset_atIndex(Some(b.arena.buffer()), offset, index);
+                }
+                merge.setBytes_length_atIndex(
+                    std::ptr::NonNull::from(&params).cast(),
+                    std::mem::size_of_val(&params),
+                    5,
+                );
+            }
+            merge.dispatchThreadgroups_threadsPerThreadgroup(
+                size(plan.merge_grid[0], 1, 1),
+                size(plan.merge_threads[0], 1, 1),
+            );
+            merge.endEncoding();
+            return Ok(());
+        }
         if self.control_kind == Control::AtlasVector {
             return self.bind_atlas(
                 command,
@@ -493,6 +628,7 @@ impl PreparedKernel {
     pub fn dispatch(&mut self, arm: Arm, output: Output) -> Result<Dispatch> {
         if matches!(arm, Arm::Control)
             && self.control_kind != Control::AtlasVector
+            && !self.control_kind.is_split_matrix()
             && output != Output::Bf16
         {
             return Err(Error::new("existing controls write BF16 only"));
@@ -517,7 +653,9 @@ impl PreparedKernel {
             )?,
             Arm::Control => self.encode_control(&command, b, p)?,
         }
-        let encoded = if p.candidate.splits > 1 {
+        let encoded = if matches!(arm, Arm::Control) && self.control_kind.is_split_matrix() {
+            3
+        } else if p.candidate.splits > 1 {
             self.bind_atlas(
                 &command,
                 &self.merge,
@@ -563,16 +701,17 @@ impl PreparedKernel {
     pub fn reset(&self, arm: Arm) -> Result<()> {
         self.buffers(arm).reset()
     }
-    fn negative_position(&mut self, data: &Data) -> Result<()> {
-        self.candidate_buffers.reset()?;
-        self.candidate_buffers
+    fn negative_position(&mut self, arm: Arm, data: &Data) -> Result<()> {
+        self.buffers(arm).reset()?;
+        self.buffers(arm)
             .overwrite_first_position(self.plan.shape.live_keys as i32)?;
-        let d = self.dispatch(Arm::Candidate, Output::F32)?;
+        let d = self.dispatch(arm, Output::F32)?;
         // Restore expected input before guard comparison. Refusal may change
         // status ONLY; all output/partial bytes must remain poisoned.
-        self.candidate_buffers
+        self.buffers(arm)
             .overwrite_first_position(data.positions[0])?;
-        self.candidate_buffers.check(self.plan, Output::F32, true)?;
+        self.buffers(arm)
+            .check(self.arm_plan(arm, Output::F32), Output::F32, true)?;
         if d.metadata_status != 2 {
             return Err(Error::new("negative position was not refused"));
         }
@@ -588,6 +727,9 @@ struct OracleDetail {
     fp32: reference::Accuracy,
     bf16: reference::Accuracy,
     control_accuracy: reference::Accuracy,
+    control_fp32: Option<reference::Accuracy>,
+    control_repeat_bits_equal: Option<bool>,
+    control_bf16_is_rounded_fp32: Option<bool>,
     repeat_bits_equal: bool,
     bf16_is_rounded_fp32: bool,
     negative_metadata_refused: bool,
@@ -640,6 +782,29 @@ fn qualify(
         .iter()
         .zip(&bfout)
         .all(|(f, b)| reference::widen(reference::round(*f)).to_bits() == b.to_bits());
+    let (control_fp32, control_repeat_bits_equal, control_bf16_is_rounded_fp32) =
+        if spec.control.is_split_matrix() {
+            owner.reset(Arm::Control)?;
+            if owner.dispatch(Arm::Control, Output::F32)?.metadata_status != 0 {
+                return Err(Error::new("control FP32 metadata refusal"));
+            }
+            owner.check(Arm::Control, Output::F32)?;
+            let first = owner.output(Arm::Control, Output::F32);
+            let accuracy = reference::compare(&first, &expected, spec.fp32_tolerance)?;
+            owner.reset(Arm::Control)?;
+            if owner.dispatch(Arm::Control, Output::F32)?.metadata_status != 0 {
+                return Err(Error::new("control repeat metadata refusal"));
+            }
+            owner.check(Arm::Control, Output::F32)?;
+            let again = owner.output(Arm::Control, Output::F32);
+            let repeat = first
+                .iter()
+                .zip(&again)
+                .all(|(a, b)| a.to_bits() == b.to_bits());
+            (Some(accuracy), Some(repeat), Some(first))
+        } else {
+            (None, None, None)
+        };
     owner.reset(Arm::Control)?;
     if owner.dispatch(Arm::Control, Output::Bf16)?.metadata_status != 0 {
         return Err(Error::new("control metadata refusal"));
@@ -650,12 +815,23 @@ fn qualify(
         &expected,
         spec.bf16_tolerance,
     )?;
-    owner.negative_position(data)?;
+    let control_bf16_is_rounded_fp32 = control_bf16_is_rounded_fp32.map(|fp32| {
+        fp32.iter()
+            .zip(owner.output(Arm::Control, Output::Bf16))
+            .all(|(f, b)| reference::widen(reference::round(*f)).to_bits() == b.to_bits())
+    });
+    owner.negative_position(Arm::Candidate, data)?;
+    if spec.control.is_split_matrix() {
+        owner.negative_position(Arm::Control, data)?;
+    }
     let passed = fp32.passed
         && bf16.passed
         && control_accuracy.passed
         && repeat_bits_equal
-        && bf16_is_rounded_fp32;
+        && bf16_is_rounded_fp32
+        && control_fp32.as_ref().is_none_or(|accuracy| accuracy.passed)
+        && control_repeat_bits_equal.is_none_or(|repeat| repeat)
+        && control_bf16_is_rounded_fp32.is_none_or(|rounded| rounded);
     experiment::write_json(
         &out.join("oracle-detail.json"),
         &OracleDetail {
@@ -665,6 +841,9 @@ fn qualify(
             fp32,
             bf16,
             control_accuracy,
+            control_fp32,
+            control_repeat_bits_equal,
+            control_bf16_is_rounded_fp32,
             repeat_bits_equal,
             bf16_is_rounded_fp32,
             negative_metadata_refused: true,

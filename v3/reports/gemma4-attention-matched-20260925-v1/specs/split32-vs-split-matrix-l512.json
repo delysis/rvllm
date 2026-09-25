@@ -1,0 +1,14 @@
+{
+  "schema": "rvllm.attention_atlas.spec.v1",
+  "id": "split32-vs-split-matrix-l512",
+  "candidate": { "strategy": "cooperative", "softmax": "per_key", "rows": 8, "keys": 8, "panel": 64, "threads": 128, "splits": 32 },
+  "shape": { "queries": 1, "live_keys": 512, "kv_heads": 1, "dim": 512, "window": 0, "page_size": 32, "max_blocks": 18, "physical_blocks": 18 },
+  "cache": "separate_bf16",
+  "control": "split_matrix_r8k32s256t128",
+  "input": { "kind": "synthetic", "fixture": { "seed": 418565087603, "first_position": 511, "pattern": "mixed" } },
+  "arena_limit_bytes": 1073741824,
+  "max_oracle_fmas": 1000000000,
+  "fp32_tolerance": { "max_abs": 0.0002, "rel_l2": 0.0002 },
+  "bf16_tolerance": { "max_abs": 0.02, "rel_l2": 0.01 },
+  "timing": { "warmups": 2, "blocks": 9, "max_drift_fraction": 0.05 }
+}
