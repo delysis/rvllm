@@ -692,6 +692,107 @@ pub fn physical_base(shape: DecodeShape, table: &[i32], token: u32) -> Option<us
         .checked_mul(DIM as usize)
 }
 
+/// Three-way decode research arms used only after a same-referee device run.
+///
+/// The single arm has one attention dispatch and no split scratch. Both split
+/// arms write partial (m, l, output) records and require a merge dispatch;
+/// therefore any short-context comparison that times only the partial stage is
+/// structurally biased in favor of split attention.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DecodeSelectorArm {
+    SingleR8P64T128,
+    CooperativeSplit32,
+    SplitMatrix,
+}
+
+impl DecodeSelectorArm {
+    #[must_use]
+    pub const fn candidate(self) -> crate::MetalResearchCandidate {
+        match self {
+            Self::SingleR8P64T128 => crate::MetalResearchCandidate::GlobalD512R8P64T128,
+            Self::CooperativeSplit32 => {
+                crate::MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32
+            }
+            Self::SplitMatrix => crate::MetalResearchCandidate::GlobalD512SplitMmaR8K32S256T128,
+        }
+    }
+}
+
+/// Exact crossover inputs from one same-referee cell.
+///
+/// Times are integer nanoseconds to keep the selector deterministic and make
+/// split accounting impossible to hide behind a derived floating-point field.
+/// newest_kv_device_visible seals the append-to-attend dependency: a cell is
+/// inadmissible if K/V visibility required CPU synchronization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecodeCrossoverInputs {
+    pub live_tokens: u32,
+    pub single_total_ns: u64,
+    pub cooperative_split32_total_ns: u64,
+    pub split_matrix_partial_ns: u64,
+    pub split_matrix_merge_ns: u64,
+    pub single_command_buffers: u8,
+    pub cooperative_command_buffers: u8,
+    pub split_matrix_command_buffers: u8,
+    pub newest_kv_device_visible: bool,
+    pub independent_oracle_passed: bool,
+    pub guards_and_repeats_passed: bool,
+}
+
+impl DecodeCrossoverInputs {
+    #[must_use]
+    pub fn split_matrix_total_ns(self) -> Option<u64> {
+        self.split_matrix_partial_ns
+            .checked_add(self.split_matrix_merge_ns)
+    }
+
+    /// Fail-closed per-length selector hypothesis.
+    ///
+    /// This is deliberately not connected to normal routing. It accepts only
+    /// the bounded campaign lengths and only evidence with one command buffer
+    /// for the low-overhead single arm, one for the cooperative arm, and at
+    /// most two for the split-matrix arm. Selection is the exact minimum
+    /// measured end-to-end GPU time after adding split partial plus merge.
+    #[must_use]
+    pub fn select(self) -> Option<DecodeSelectorArm> {
+        if !matches!(self.live_tokens, 256 | 512 | 1024 | 2048)
+            || self.single_total_ns == 0
+            || self.cooperative_split32_total_ns == 0
+            || self.split_matrix_partial_ns == 0
+            || self.split_matrix_merge_ns == 0
+            || self.single_command_buffers != 1
+            || self.cooperative_command_buffers != 1
+            || !(1..=2).contains(&self.split_matrix_command_buffers)
+            || !self.newest_kv_device_visible
+            || !self.independent_oracle_passed
+            || !self.guards_and_repeats_passed
+        {
+            return None;
+        }
+        let split_matrix_total = self.split_matrix_total_ns()?;
+        let candidates = [
+            (self.single_total_ns, DecodeSelectorArm::SingleR8P64T128),
+            (
+                self.cooperative_split32_total_ns,
+                DecodeSelectorArm::CooperativeSplit32,
+            ),
+            (split_matrix_total, DecodeSelectorArm::SplitMatrix),
+        ];
+        candidates
+            .into_iter()
+            .min_by_key(|(time_ns, arm)| (*time_ns, selector_tie_break(*arm)))
+            .map(|(_, arm)| arm)
+    }
+}
+
+const fn selector_tie_break(arm: DecodeSelectorArm) -> u8 {
+    match arm {
+        DecodeSelectorArm::SingleR8P64T128 => 0,
+        DecodeSelectorArm::CooperativeSplit32 => 1,
+        DecodeSelectorArm::SplitMatrix => 2,
+    }
+}
+
 /// Explicit BF16 nearest-even conversion. No intermediate BF16 probability or
 /// accumulator exists. NaNs remain NaNs; finite inputs are the oracle domain.
 pub fn round_bf16(value: f32) -> u16 {
