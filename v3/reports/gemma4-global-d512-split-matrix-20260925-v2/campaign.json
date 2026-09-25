@@ -1,0 +1,59 @@
+{
+  "abba_retainer": {
+    "path": "/private/tmp/rvllm-split-matrix.86dwq1/v3/v3/target/release/rvllm-retain-abba",
+    "sha256": "af75dae7ae84ba2e1dcc16cede1ed57398699d8a1211b36788a7dc050efa9fac"
+  },
+  "advancement_lengths": [
+    512,
+    1024,
+    2048
+  ],
+  "campaign": "g4d512splitmma20260925v1",
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer",
+      "rvllm_disaggregated_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "conditions_input": {
+    "path": "/private/tmp/rvllm-split-matrix.86dwq1/v3/v3/tools/global-decode/conditions.any-thermal.json",
+    "sha256": "ecf9c6193737d7be58a11c18fa27cebe40581e7e6fbda14af654a3b2a13cd644"
+  },
+  "deferred_confirmation_lengths": [
+    4096
+  ],
+  "exploratory": true,
+  "job_generator": {
+    "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm-global-decode-jobs",
+    "sha256": "7a1a8840ae851479930d06e7ee77115299b49488d03a93aa0cc77f00abdfb20a"
+  },
+  "local_prefill": false,
+  "promotion": false,
+  "queue": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue",
+  "queue_runner": {
+    "path": "/private/tmp/rvllm-split-matrix.86dwq1/v3/v3/target/release/rvllm_experiment_queue",
+    "sha256": "b851021abb6e7857fa4ccf8f2f98820373e52a5b5e07cced7309808baed70e02"
+  },
+  "schema": "rvllm.global-decode.campaign.v1",
+  "screen_length": 256,
+  "split_kv": false,
+  "status": "proposed_unqualified",
+  "test_executable": {
+    "path": "/private/tmp/rvllm-split-matrix.86dwq1/v3/v3/target/release/deps/rvllm_apple_metal-938ddf1012a82a45",
+    "sha256": "113d1af5112dc9f4a884337a43fd01421ab6354aad442279aa4dff151e1c1106"
+  }
+}

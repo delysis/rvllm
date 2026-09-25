@@ -145,3 +145,37 @@ cross-harness speedup claims. The absolute candidate medians and within-run drif
 operator screen. It is not production-selected, full-route-qualified, or
 independently confirmed for promotion. The next required work is captured model
 tensors, normal-route integration, and full-token-loop timing.
+
+## Split-matrix follow-up
+
+The bounded `metal-global-d512-split-mma_r8k32s256t128` follow-up combines the
+matrix R8/K32/P64/T128 partial kernel with sixteen fixed sequence partitions and
+a separate sufficient-state merge. The native oracle passed lengths 1, 255/256/257,
+511/512/513, 1023/1024/1025, 2047/2048/2049, and first/middle/last-hole cases.
+Every case preserved guards, repeated bitwise, produced exact once-rounded BF16,
+and remained within the independent FP64 absolute and relative-L2 bounds.
+
+The queue retained five ABBA blocks at each admitted length. Values below are
+means over all candidate samples; partial plus merge is the measured family cost.
+
+| Live keys | Partial | Merge | Total | Scalar control | Drift gate |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 256 | 1.807 ms | 0.027 ms | 1.834 ms | 33.334 ms | pass |
+| 512 | 1.619 ms | 0.050 ms | 1.668 ms | 82.134 ms | pass |
+| 1,024 | 2.102 ms | 0.110 ms | 2.212 ms | 161.362 ms | pass |
+| 2,048 | 2.159 ms | 0.037 ms | 2.196 ms | 396.938 ms | pass |
+
+The initial 256-token advancement receipt was quarantined because it used a
+pre-fix scorer binary whose exact floating-point component-sum check rejected
+the serialized receipt. No timing was rerun or discarded. A new campaign root
+sealed the corrected scorer, consumed the original immutable 256-token receipt,
+and autonomously advanced through 512, 1,024, and 2,048. The automatically
+generated 4,096-token deferred confirmation failed before execution because
+that length is not split-qualified; it is preserved as infrastructure evidence
+and is not a candidate failure.
+
+This follow-up is correctness-qualified operator evidence, but it is not a new
+leader: the cooperative split-32 family has lower point estimates in some
+2,048-key observations, while its absolute timing remains materially variable.
+The next useful comparison is both families in one sealed matched-control run,
+followed by captured-tensor and normal-route integration for the winner.

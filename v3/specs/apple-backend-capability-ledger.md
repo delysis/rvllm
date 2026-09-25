@@ -1095,7 +1095,9 @@ cargo test -p rvllm-apple production -- --nocapture
 ## Arena-backed multi-layer W4/W8 route (2026-07-29)
 
 The schema-v3 Apple package path can select multiple authenticated, non-MoE
-dense `down_proj` W4A16 or W8A16 sidecars for real Metal execution. Packed
+dense W4A16 or W8A16 sidecars for real Metal execution. It supports down-only
+replacement or a complete layer Q/K/V/O/gate/up/down set; other partial
+multi-role sets fail closed. Packed
 values and FP16 group-32 scales live inside the model arena and are charged as
 immutable weights before paged-KV capacity is selected. Runtime preparation
 sorts and validates the complete replacement set before creating a Metal
@@ -1134,6 +1136,11 @@ Hardware evidence:
   two low-bit projections.
 - `metal_low_bit_projection_offsets_match_cpu_reference_for_w4_and_w8` passed
   for both formats using offsets into one shared Metal buffer.
+- `schema_v3_complete_dense_low_bit_layer_installs_and_dispatches_every_role`
+  passed on Apple Metal for W4 and W8, proving complete sidecar installation,
+  native-buffer omission, and exactly one dispatch for each of the seven dense
+  roles. Its fixture is synthetic and its assertions are dispatch/accounting
+  checks; it does not establish seven-role numerical equivalence or timing.
 - Portable planner tests verify exact aligned byte displacement, deterministic
   sorting, mixed-format identity separation, and fail-closed duplicate,
   missing, shape, payload, and MoE cases.
@@ -1141,7 +1148,7 @@ Hardware evidence:
   ignored. The Apple-feature runtime library suite passed 148 tests with 92
   hardware/large-model tests ignored.
 
-This remains an opt-in down-projection replacement route, not whole-model
+This remains an opt-in dense-projection replacement route, not whole-model
 mobile W4/W8 qualification, an iOS default, a quality promotion, automatic
 Core ML routing, measured ANE execution, or a new performance result. A
 qualified dense 0.5B–2B package, end-to-end W4/W8 quality gates, physical iOS

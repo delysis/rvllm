@@ -1,0 +1,52 @@
+{
+  "after": [
+    "g4d512splitmma20260925v1-split-r8k32s256t128-mma-abba-L512"
+  ],
+  "command": {
+    "args": [
+      "advance",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-d512-split-matrix-20260925-v2",
+      "512",
+      "{output}",
+      "metal-global-d512-split-mma_r8k32s256t128"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-d512-split-matrix-20260925-v2",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm-global-decode-jobs",
+      "sha256": "7a1a8840ae851479930d06e7ee77115299b49488d03a93aa0cc77f00abdfb20a"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer",
+      "rvllm_disaggregated_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4d512splitmma20260925v1-advance-L512",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-d512-split-matrix-20260925-v2/campaign.json",
+      "sha256": "108e8abfb07e4f83b02d98db4a2c45cffa0933e22cd688f2757607f79e8b6ee9"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

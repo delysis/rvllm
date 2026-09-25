@@ -44,8 +44,11 @@ The evidence supports narrower statements:
   QKV, attention, O, fused FFN, vocabulary projection, host remainder, and
   total. It does not expose ANE prefill, split FFN timings, standalone
   embedding, or standalone norm/residual timings.
-- The current Metal W4A16/W8A16 package support is a tensor-level sidecar for
-  selected dense `down_proj` tensors, not a model-wide Q4/Q8 route. The ANE
+- The current Metal W4A16/W8A16 package support can replace a complete dense
+  layer's Q/K/V/O/gate/up/down projections, or selected dense `down_proj`
+  tensors, but the complete-layer path is presently installation/dispatch
+  qualified only on a synthetic F16 fixture. It is not yet a model-wide Q4/Q8
+  route or a seven-role numerical/timing qualification. The ANE
   LUT4 and INT8 plans likewise quantize selected FFN and, in some plans,
   sliding-QKV components while other projections remain FP16. Those hybrid
   plans must not be labeled as the MLX model-wide Q4 or Q8 lane.
@@ -67,8 +70,8 @@ filled.
 | Backend and weight lane | Actual implemented route | Requested lengths with existing qualifying timing evidence | Correctness boundary | Disposition for MLX comparison |
 | --- | --- | --- | --- | --- |
 | Metal 16-bit | Normal-route Metal prefill and Metal decode; runtime reports F16 or BF16 compute/weight dtype | No complete 256/512/1024/2048/4096 matrix identified. The current load4 tournament is BF16 first-token work, not the requested length grid | The load4 component oracle requires exact FP32 QKV bits, exact once-rounded BF16 stored projection bits, FP64 sampled dot products, guard integrity, rejected-dispatch integrity, and repeat stability; full-route screens cover actual 48-layer dispatch | Implement stage timing, then queue all five lengths. Existing end-to-end fields can be used immediately, but only at freshly sealed requested shapes |
-| Metal 8-bit | Hybrid W8A16 group-32 sidecars for selected dense `down_proj` tensors; remaining tensors stay native F16 | None as a model-wide Q8 lane | Sidecar delivery/execution tests qualify the selected tensor route, not Q8 Gemma 4 as a whole | Not comparable to MLX affine Q8 g64. Queue only as an explicitly named hybrid experiment until a model-wide Q8 route exists |
-| Metal 4-bit | Hybrid W4A16 group-32 sidecars for selected dense `down_proj` tensors; remaining tensors stay native F16 | None as a model-wide Q4 lane | Same tensor-scoped boundary as W8 | Not comparable to MLX affine Q4 g64. Do not relabel BF16 `load4` data as Q4 |
+| Metal 8-bit | W8A16 group-32 sidecars support down-only hybrid replacement or a complete dense-layer Q/K/V/O/gate/up/down set; the public full-model probes do not yet load package sidecars | None as a model-wide Q8 lane | Down-only synthetic numerical coverage exists; complete-layer W8 currently proves installation and exact role dispatch, not seven-role output equivalence | Not comparable to MLX affine Q8 g64. Add real-checkpoint per-role numerical/timing evidence, then package-aware full-route inference and a quantized-model reference |
+| Metal 4-bit | W4A16 group-32 sidecars have the same complete dense-layer wiring and current probe limitation as W8 | None as a model-wide Q4 lane | Same boundary as W8; BF16 `load4` candidates remain unrelated vector-load experiments | Not comparable to MLX affine Q4 g64. Exact checkpoint quantizer compatibility and model-quality qualification are required in addition to kernel correctness |
 | ANE 16-bit | Metal prefill, then 48-layer ANE decode with CPU norms/RoPE/residual/ranking and FP16 static weights | Qualified short-route receipts exist at prompt lengths 21 and 84; no five-length matrix. Capacity is 64 or 1024 | Full-route receipts prove actual KV import, ANE steps, expected tokens, zero Metal decode fallback, and compile budget where recorded | Decode-only comparison can be queued at exact contexts 256, 512, and 1024. ANE 2048/4096 and ANE prefill are unsupported by the current route |
 | ANE 8-bit | Mixed plans: INT8 FFN variants; some plans also quantize sliding QKV. Other projections, including global QKV, remain FP16 | The interleaved INT8-FFN campaign uses 84-token prompts and nine steps; no requested length matrix | `static-int8-interleaved-ffn-cached` is full-route correctness-qualified. Its controlled timing did not establish a win: only two of six process pairs passed the strict phase comparator, and both valid pairs were slower | Treat as mixed-precision candidate data, not model-wide Q8. It may be compared to FP16 rvLLM for its exact route, but not to MLX Q8 as a format match |
 | ANE 4-bit | `static-lut4-ffn-cached` quantizes FFN work while the rest remains FP16 | No requested length matrix | Existing route evidence is component/short-route scoped; it does not establish a model-wide Q4 model | Treat as mixed LUT4-FFN only. A true Q4 lane requires an explicit model-wide route and independent correctness gate |
