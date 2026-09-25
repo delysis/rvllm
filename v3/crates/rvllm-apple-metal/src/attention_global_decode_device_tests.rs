@@ -9,7 +9,8 @@ use crate::attention_global_decode::{
     SplitDecodePlan, DIM, HEADS, LIVE_LENGTHS,
 };
 use crate::attention_global_decode_metal::{
-    try_encode_global_decode, try_encode_split_global_decode,
+    try_encode_global_decode, try_encode_split_global_decode, try_encode_split_global_decode_stage,
+    SplitGlobalDecodeStage,
 };
 use crate::layer_forward::{MetalLayerDims, MetalPhase};
 use crate::{
@@ -1044,5 +1045,162 @@ fn global_decode_abba() -> TestResult {
     if drift > 0.05 {
         return Err("control drift exceeded 5%; retain all samples as invalid".into());
     }
+    Ok(())
+}
+
+#[test]
+#[ignore = "explicit bounded split-KV ABBA v2; requires matching passed split oracle and prebuilt core-only library"]
+fn global_decode_split_abba_v2() -> TestResult {
+    let setup = Setup::new(false)?;
+    setup
+        .candidate
+        .split_global_decode_tile()
+        .ok_or("explicit split-KV candidate required")?;
+    let length: u32 = std::env::var(format!("{PREFIX}LENGTH"))?.parse()?;
+    if !LIVE_LENGTHS.contains(&length) {
+        return Err("length outside sealed five-cell sweep".into());
+    }
+    let oracle_path = env_path("ORACLE_RECEIPT")?;
+    let oracle: Value = serde_json::from_slice(&std::fs::read(&oracle_path)?)?;
+    if oracle["schema"] != "rvllm.global-decode.split-oracle.v1"
+        || oracle["status"] != "passed"
+        || oracle["identity"] != setup.identity
+        || oracle["identity"]["oracle_library"] != false
+    {
+        return Err("matching native split oracle receipt required before any benchmark".into());
+    }
+    let label = format!("L{length}");
+    let case = oracle["cases"]
+        .as_array()
+        .ok_or("missing split oracle cases")?
+        .iter()
+        .find(|case| case["label"] == label)
+        .ok_or("length not split-qualified")?;
+    let expected_path = PathBuf::from(case["bf16_file"].as_str().ok_or("missing exact output")?);
+    if case["bf16_sha256"] != sha256(&expected_path)? {
+        return Err("split oracle output identity mismatch".into());
+    }
+    let expected = std::fs::read(&expected_path)?;
+    let fixture = Fixture::new(length, 32);
+    let data = Guarded::new(&setup.context, &fixture)?;
+    let layer = dims(fixture.shape);
+    let run = |arm: char, repeats: u32| -> TestResult<(f64, f64, f64, f64)> {
+        let before = setup.pipelines.research_dispatch_snapshot();
+        let wall_start = Instant::now();
+        if arm == 'A' {
+            let command = setup
+                .context
+                .queue()
+                .commandBuffer()
+                .ok_or("baseline command unavailable")?;
+            for _ in 0..repeats {
+                encode_baseline(&setup, &command, &data, fixture.shape)?;
+            }
+            complete(&command)?;
+            let total = command.GPUEndTime() - command.GPUStartTime();
+            if !total.is_finite() || total <= 0.0 {
+                return Err("baseline GPU timestamps unavailable".into());
+            }
+            expect_family_count(&setup, before, 0);
+            return Ok((0.0, 0.0, total, wall_start.elapsed().as_secs_f64()));
+        }
+        let partial = setup
+            .context
+            .queue()
+            .commandBuffer()
+            .ok_or("split partial command unavailable")?;
+        for _ in 0..repeats {
+            try_encode_split_global_decode_stage(
+                &setup.pipelines,
+                &partial,
+                data.arena.buffer(),
+                &layer,
+                MetalPhase::Decode,
+                data.split_bindings(2),
+                DecodeOutput::Bf16,
+                SplitGlobalDecodeStage::Partial,
+            )?
+            .ok_or("split partial fallback invalidates measurement")?;
+        }
+        complete(&partial)?;
+        let partial_gpu = partial.GPUEndTime() - partial.GPUStartTime();
+        let merge = setup
+            .context
+            .queue()
+            .commandBuffer()
+            .ok_or("split merge command unavailable")?;
+        for _ in 0..repeats {
+            try_encode_split_global_decode_stage(
+                &setup.pipelines,
+                &merge,
+                data.arena.buffer(),
+                &layer,
+                MetalPhase::Decode,
+                data.split_bindings(2),
+                DecodeOutput::Bf16,
+                SplitGlobalDecodeStage::Merge,
+            )?
+            .ok_or("split merge fallback invalidates measurement")?;
+        }
+        complete(&merge)?;
+        let merge_gpu = merge.GPUEndTime() - merge.GPUStartTime();
+        let total_gpu = partial_gpu + merge_gpu;
+        if !partial_gpu.is_finite()
+            || partial_gpu <= 0.0
+            || !merge_gpu.is_finite()
+            || merge_gpu <= 0.0
+            || !total_gpu.is_finite()
+        {
+            return Err("split GPU timestamps unavailable".into());
+        }
+        expect_family_count(&setup, before, u64::from(repeats));
+        data.check(false);
+        assert_eq!(data.payload(2), expected, "timed split output changed");
+        Ok((
+            partial_gpu,
+            merge_gpu,
+            total_gpu,
+            wall_start.elapsed().as_secs_f64(),
+        ))
+    };
+    for _ in 0..5 {
+        run('A', 1)?;
+        run('B', 1)?;
+    }
+    let mut samples = Vec::new();
+    for block in 0..5 {
+        for (position, arm) in ['A', 'B', 'B', 'A'].into_iter().enumerate() {
+            let before = control_snapshot()?;
+            let (partial_gpu, merge_gpu, total_gpu, wall) = run(arm, 100)?;
+            let after = control_snapshot()?;
+            let sample = json!({"block":block,"position":position,"arm":arm.to_string(),
+                "operations":100,"partial_dispatches":if arm == 'B' {100} else {0},
+                "merge_dispatches":if arm == 'B' {100} else {0},
+                "baseline_dispatches":if arm == 'A' {100} else {0},
+                "partial_gpu_seconds":partial_gpu,"merge_gpu_seconds":merge_gpu,
+                "total_gpu_seconds":total_gpu,"synchronized_wall_seconds":wall,
+                "controls_before":before,"controls_after":after});
+            write_new(
+                &setup
+                    .directory
+                    .join(format!("sample-{block}-{position}.json")),
+                &serde_json::to_vec_pretty(&sample)?,
+            )?;
+            samples.push(sample);
+        }
+    }
+    let receipt = json!({"schema":"rvllm.global-decode.abba.v2","status":"collected",
+        "identity":setup.identity,"oracle_receipt_sha256":sha256(&oracle_path)?,
+        "length":length,"baseline":"attention_decode_f16 (BF16 typed)",
+        "candidate":setup.candidate.name(),"warmups_per_arm":5,"blocks":5,
+        "operations_per_sample":100,"candidate_dispatches_per_operation":2,
+        "source_compiles_during_samples":0,"samples":samples,
+        "timing_metric":"total_gpu_seconds = partial_gpu_seconds + merge_gpu_seconds",
+        "conditions_are_observations_only":true,"correctness_prerequisite":"passed",
+        "timing_eligible":false,"promotion":false});
+    write_new(
+        &setup.directory.join("abba.json"),
+        &serde_json::to_vec_pretty(&receipt)?,
+    )?;
     Ok(())
 }

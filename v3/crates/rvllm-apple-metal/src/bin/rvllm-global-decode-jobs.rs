@@ -357,17 +357,6 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
     {
         return Err("test/generator executable identity drift".into());
     }
-    if timing
-        && candidates().into_iter().any(|candidate| {
-            candidate.split_global_decode_tile().is_some()
-                && (selected.is_empty() || selected.iter().any(|name| name == candidate.name()))
-        })
-    {
-        return Err(
-            "split-KV timing is fail-closed until the v2 two-kernel receipt/verifier is implemented"
-                .into(),
-        );
-    }
     let retainer = if timing {
         let path = absolute(
             config["abba_retainer"]["path"]
@@ -469,7 +458,9 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
             // Its exclusive result directory is results/<immutable job ID>.
             env[format!("{PREFIX}REPORT_DIR")] =
                 json!(queue.join("results").join(&job_id).join("native"));
-            let test_name = if timing {
+            let test_name = if timing && candidate.split_global_decode_tile().is_some() {
+                "global_decode_split_abba_v2"
+            } else if timing {
                 "global_decode_abba"
             } else if candidate.split_global_decode_tile().is_some() {
                 "global_decode_split_device_oracle"
@@ -538,11 +529,49 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
 struct StageScore {
     candidate: String,
     candidate_ms_per_dispatch: f64,
+    partial_ms_per_operation: Option<f64>,
+    merge_ms_per_operation: Option<f64>,
     control_drift_passed: bool,
     receipt_path: PathBuf,
     receipt_sha256: String,
     queue_report_path: PathBuf,
     queue_report_sha256: String,
+}
+
+fn sample_work_and_gpu_seconds(sample: &Value, split: bool, arm: &str) -> Result<(u64, f64)> {
+    if !split {
+        return Ok((
+            sample["dispatches"]
+                .as_u64()
+                .ok_or("sample dispatches missing")?,
+            sample["gpu_seconds"]
+                .as_f64()
+                .ok_or("sample GPU time missing")?,
+        ));
+    }
+    let operations = sample["operations"]
+        .as_u64()
+        .ok_or("sample operations missing")?;
+    let partial = sample["partial_gpu_seconds"]
+        .as_f64()
+        .ok_or("sample partial GPU time missing")?;
+    let merge = sample["merge_gpu_seconds"]
+        .as_f64()
+        .ok_or("sample merge GPU time missing")?;
+    let total = sample["total_gpu_seconds"]
+        .as_f64()
+        .ok_or("sample total GPU time missing")?;
+    let candidate_arm = arm == "B";
+    if sample["partial_dispatches"].as_u64() != Some(if candidate_arm { 100 } else { 0 })
+        || sample["merge_dispatches"].as_u64() != Some(if candidate_arm { 100 } else { 0 })
+        || sample["baseline_dispatches"].as_u64() != Some(if candidate_arm { 0 } else { 100 })
+        || (candidate_arm && total != partial + merge)
+        || (candidate_arm && (partial <= 0.0 || merge <= 0.0))
+        || (!candidate_arm && (partial != 0.0 || merge != 0.0))
+    {
+        return Err("split ABBA component work or total is inconsistent".into());
+    }
+    Ok((operations, total))
 }
 
 fn score_stage_cell(
@@ -578,15 +607,37 @@ fn score_stage_cell(
     let library = build_dir.join("kernel.metallib");
     let build_path = build_dir.join("build.json");
     let oracle_id = id(config, candidate, "oracle")?;
-    let oracle_path = succeeded(queue, &oracle_id)?.join("native/oracle.json");
+    let split = candidate.split_global_decode_tile();
+    let oracle_path = succeeded(queue, &oracle_id)?.join(if split.is_some() {
+        "native/split-oracle.json"
+    } else {
+        "native/oracle.json"
+    });
     let oracle = read(&oracle_path)?;
-    if receipt["schema"] != "rvllm.global-decode.abba.v1"
+    let expected_schema = if split.is_some() {
+        "rvllm.global-decode.abba.v2"
+    } else {
+        "rvllm.global-decode.abba.v1"
+    };
+    let expected_oracle_schema = if split.is_some() {
+        "rvllm.global-decode.split-oracle.v1"
+    } else {
+        "rvllm.global-decode.oracle.v1"
+    };
+    if receipt["schema"] != expected_schema
         || receipt["status"] != "collected"
         || receipt["candidate"] != candidate_name
         || receipt["length"] != length
         || receipt["baseline"] != "attention_decode_f16 (BF16 typed)"
         || receipt["blocks"] != 5
-        || receipt["dispatches_per_sample"] != 100
+        || (split.is_none() && receipt["dispatches_per_sample"] != 100)
+        || (split.is_some()
+            && (receipt["operations_per_sample"] != 100
+                || receipt["candidate_dispatches_per_operation"] != 2
+                || receipt["timing_metric"]
+                    != "total_gpu_seconds = partial_gpu_seconds + merge_gpu_seconds"
+                || receipt["conditions_are_observations_only"] != true
+                || receipt["correctness_prerequisite"] != "passed"))
         || receipt["warmups_per_arm"] != 5
         || receipt["source_compiles_during_samples"] != 0
         || receipt["promotion"] != false
@@ -598,22 +649,35 @@ fn score_stage_cell(
         || receipt["identity"]["build_receipt_sha256"] != hash(&build_path)?
         || receipt["identity"]["test_executable_sha256"] != config["test_executable"]["sha256"]
         || receipt["oracle_receipt_sha256"] != hash(&oracle_path)?
+        || oracle["schema"] != expected_oracle_schema
         || oracle["status"] != "passed"
+        || (split.is_some() && oracle["identity"] != receipt["identity"])
         || oracle["identity"]["candidate"] != candidate_name
         || oracle["identity"]["core_sha256"] != hash(&source)?
         || oracle["identity"]["test_executable_sha256"] != config["test_executable"]["sha256"]
     {
         return Err(format!("stage receipt identity or work mismatch: {candidate_name}").into());
     }
-    let tile = candidate
-        .global_decode_tile()
-        .ok_or("candidate has no global-decode tile")?;
-    if receipt["identity"]["rows"] != tile.rows
-        || receipt["identity"]["panel"] != tile.panel
-        || receipt["identity"]["threads"] != tile.threads
-        || receipt["identity"]["grid"] != json!([16 / tile.rows, 1, 1])
-    {
-        return Err(format!("stage receipt launch geometry mismatch: {candidate_name}").into());
+    if let Some(tile) = candidate.global_decode_tile() {
+        if receipt["identity"]["rows"] != tile.rows
+            || receipt["identity"]["panel"] != tile.panel
+            || receipt["identity"]["threads"] != tile.threads
+            || receipt["identity"]["grid"] != json!([16 / tile.rows, 1, 1])
+        {
+            return Err(format!("stage receipt launch geometry mismatch: {candidate_name}").into());
+        }
+    } else if let Some(tile) = split {
+        if receipt["identity"]["rows"] != tile.rows
+            || receipt["identity"]["panel"] != tile.panel
+            || receipt["identity"]["threads"] != tile.threads
+            || receipt["identity"]["grid"] != json!([2, 16, 1])
+            || receipt["identity"]["scratch_bytes"] != 16 * 16 * 514 * 4
+            || receipt["identity"]["kernels"].as_array().map(Vec::len) != Some(2)
+        {
+            return Err(
+                format!("split stage receipt launch geometry mismatch: {candidate_name}").into(),
+            );
+        }
     }
     let samples = receipt["samples"]
         .as_array()
@@ -624,22 +688,23 @@ fn score_stage_cell(
     let mut arms = BTreeMap::<&str, usize>::from([("A", 0), ("B", 0)]);
     let mut blocks = BTreeMap::<u64, BTreeMap<&str, usize>>::new();
     let mut candidate_seconds = 0.0;
+    let mut partial_seconds = 0.0;
+    let mut merge_seconds = 0.0;
     for sample in samples {
         let arm = sample["arm"].as_str().ok_or("sample arm missing")?;
         let block = sample["block"].as_u64().ok_or("sample block missing")?;
-        let dispatches = sample["dispatches"]
-            .as_u64()
-            .ok_or("sample dispatches missing")?;
-        let seconds = sample["gpu_seconds"]
-            .as_f64()
-            .ok_or("sample GPU time missing")?;
-        if dispatches != 100 || !seconds.is_finite() || seconds <= 0.0 {
+        let (work, seconds) = sample_work_and_gpu_seconds(sample, split.is_some(), arm)?;
+        if work != 100 || !seconds.is_finite() || seconds <= 0.0 {
             return Err("ABBA sample work or GPU time is invalid".into());
         }
         *arms.get_mut(arm).ok_or("unknown ABBA arm")? += 1;
         *blocks.entry(block).or_default().entry(arm).or_default() += 1;
         if arm == "B" {
             candidate_seconds += seconds;
+            if split.is_some() {
+                partial_seconds += sample["partial_gpu_seconds"].as_f64().unwrap();
+                merge_seconds += sample["merge_gpu_seconds"].as_f64().unwrap();
+            }
         }
     }
     if arms != BTreeMap::from([("A", 10), ("B", 10)])
@@ -653,7 +718,9 @@ fn score_stage_cell(
     Ok(StageScore {
         candidate: candidate_name.to_owned(),
         candidate_ms_per_dispatch: candidate_seconds * 1000.0 / 10.0 / 100.0,
-        control_drift_passed: receipt["control_drift_passed"] == true,
+        partial_ms_per_operation: split.map(|_| partial_seconds * 1000.0 / 10.0 / 100.0),
+        merge_ms_per_operation: split.map(|_| merge_seconds * 1000.0 / 10.0 / 100.0),
+        control_drift_passed: split.is_some() || receipt["control_drift_passed"] == true,
         receipt_sha256: hash(&receipt_path)?,
         receipt_path,
         queue_report_sha256: hash(&queue_report_path)?,
@@ -767,6 +834,9 @@ fn advance(root: &Path, length: u32, output: &Path, expected: &[String]) -> Resu
             json!({
                 "candidate":score.candidate,
                 "candidate_mean_ms_per_dispatch":score.candidate_ms_per_dispatch,
+                "partial_mean_ms_per_operation":score.partial_ms_per_operation,
+                "merge_mean_ms_per_operation":score.merge_ms_per_operation,
+                "total_mean_ms_per_operation":score.candidate_ms_per_dispatch,
                 "control_drift_passed":score.control_drift_passed,
                 "native_receipt":{"path":score.receipt_path,"sha256":score.receipt_sha256},
                 "queue_report":{"path":score.queue_report_path,"sha256":score.queue_report_sha256}
@@ -830,6 +900,8 @@ mod tests {
         StageScore {
             candidate: candidate.into(),
             candidate_ms_per_dispatch: milliseconds,
+            partial_ms_per_operation: None,
+            merge_ms_per_operation: None,
             control_drift_passed: true,
             receipt_path: PathBuf::from("receipt"),
             receipt_sha256: "a".repeat(64),
@@ -857,6 +929,27 @@ mod tests {
         assert!(validate_timing_request(512, &["not-a-candidate".to_owned()]).is_err());
         let duplicate = "metal-global-d512-r16p128t128".to_owned();
         assert!(validate_timing_request(512, &[duplicate.clone(), duplicate]).is_err());
+    }
+
+    #[test]
+    fn split_v2_sample_uses_exact_sum_and_fails_closed() {
+        let sample = json!({"operations":100,"partial_dispatches":100,
+            "merge_dispatches":100,"baseline_dispatches":0,
+            "partial_gpu_seconds":0.75,"merge_gpu_seconds":0.25,
+            "total_gpu_seconds":1.0});
+        assert_eq!(
+            sample_work_and_gpu_seconds(&sample, true, "B").unwrap(),
+            (100, 1.0)
+        );
+        let mut mismatched = sample.clone();
+        mismatched["total_gpu_seconds"] = json!(0.75);
+        assert!(sample_work_and_gpu_seconds(&mismatched, true, "B").is_err());
+        let mut incomplete = sample;
+        incomplete
+            .as_object_mut()
+            .unwrap()
+            .remove("merge_gpu_seconds");
+        assert!(sample_work_and_gpu_seconds(&incomplete, true, "B").is_err());
     }
 
     #[test]
@@ -937,7 +1030,8 @@ mod tests {
         let oracle = oracle_dir.join("native/oracle.json");
         json_new(
             &oracle,
-            &json!({"status":"passed","identity":{"candidate":candidate.name(),
+            &json!({"schema":"rvllm.global-decode.oracle.v1","status":"passed",
+                "identity":{"candidate":candidate.name(),
                 "core_sha256":hash(&source).unwrap(),"test_executable_sha256":"test-pin"}}),
         )
         .unwrap();

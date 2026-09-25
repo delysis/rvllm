@@ -28,8 +28,14 @@ pub struct EncodedSplitGlobalDecode {
     pub merge_kernel: ResearchKernel,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplitGlobalDecodeStage {
+    Partial,
+    Merge,
+}
+
 #[allow(clippy::too_many_arguments)]
-pub fn try_encode_split_global_decode(
+fn try_encode_split_global_decode_impl(
     pipelines: &PipelineCache,
     command: &ProtocolObject<dyn MTLCommandBuffer>,
     buffer: &ProtocolObject<dyn MTLBuffer>,
@@ -37,6 +43,7 @@ pub fn try_encode_split_global_decode(
     phase: MetalPhase,
     buffers: SplitDecodeBuffers,
     output: DecodeOutput,
+    stages: (bool, bool),
 ) -> Result<Option<EncodedSplitGlobalDecode>> {
     let candidate = pipelines.kernel_options().research;
     let Some(tile) = candidate.split_global_decode_tile() else {
@@ -104,84 +111,133 @@ pub fn try_encode_split_global_decode(
         depth: xyz[2],
     };
     let params = plan.params();
-    let partial = command.computeCommandEncoder().ok_or_else(|| {
-        RvllmError::apple(
-            AppleError::MetalUnavailable,
-            AppleCtx {
-                backend: "metal",
-                op: "global_d512_split_partial",
-                device: "apple-silicon",
-            },
-        )
-    })?;
-    partial.setComputePipelineState(partial_pso);
-    unsafe {
-        let offsets = [
-            buffers.common.q,
-            buffers.common.k,
-            buffers.common.v,
-            buffers.partials,
-            buffers.common.block_tables,
-            buffers.common.context_lens,
-            buffers.common.positions,
-        ];
-        for (index, offset) in offsets.into_iter().enumerate() {
-            partial.setBuffer_offset_atIndex(Some(buffer), offset, index);
+    if stages.0 {
+        let partial = command.computeCommandEncoder().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::MetalUnavailable,
+                AppleCtx {
+                    backend: "metal",
+                    op: "global_d512_split_partial",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        partial.setComputePipelineState(partial_pso);
+        unsafe {
+            let offsets = [
+                buffers.common.q,
+                buffers.common.k,
+                buffers.common.v,
+                buffers.partials,
+                buffers.common.block_tables,
+                buffers.common.context_lens,
+                buffers.common.positions,
+            ];
+            for (index, offset) in offsets.into_iter().enumerate() {
+                partial.setBuffer_offset_atIndex(Some(buffer), offset, index);
+            }
+            partial.setBytes_length_atIndex(
+                std::ptr::NonNull::from(&params).cast(),
+                std::mem::size_of_val(&params),
+                7,
+            );
         }
-        partial.setBytes_length_atIndex(
-            std::ptr::NonNull::from(&params).cast(),
-            std::mem::size_of_val(&params),
-            7,
+        partial.dispatchThreadgroups_threadsPerThreadgroup(
+            size(plan.partial_grid),
+            size(plan.partial_threads),
         );
+        partial.endEncoding();
+        pipelines.record_research_dispatch(*partial_kernel);
     }
-    partial.dispatchThreadgroups_threadsPerThreadgroup(
-        size(plan.partial_grid),
-        size(plan.partial_threads),
-    );
-    partial.endEncoding();
-    pipelines.record_research_dispatch(*partial_kernel);
 
-    let merge = command.computeCommandEncoder().ok_or_else(|| {
-        RvllmError::apple(
-            AppleError::MetalUnavailable,
-            AppleCtx {
-                backend: "metal",
-                op: "global_d512_split_merge",
-                device: "apple-silicon",
-            },
-        )
-    })?;
-    merge.setComputePipelineState(merge_pso);
-    unsafe {
-        for (index, offset) in [
-            buffers.partials,
-            buffers.common.output,
-            buffers.common.block_tables,
-            buffers.common.context_lens,
-            buffers.common.positions,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            merge.setBuffer_offset_atIndex(Some(buffer), offset, index);
+    if stages.1 {
+        let merge = command.computeCommandEncoder().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::MetalUnavailable,
+                AppleCtx {
+                    backend: "metal",
+                    op: "global_d512_split_merge",
+                    device: "apple-silicon",
+                },
+            )
+        })?;
+        merge.setComputePipelineState(merge_pso);
+        unsafe {
+            for (index, offset) in [
+                buffers.partials,
+                buffers.common.output,
+                buffers.common.block_tables,
+                buffers.common.context_lens,
+                buffers.common.positions,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                merge.setBuffer_offset_atIndex(Some(buffer), offset, index);
+            }
+            merge.setBytes_length_atIndex(
+                std::ptr::NonNull::from(&params).cast(),
+                std::mem::size_of_val(&params),
+                5,
+            );
         }
-        merge.setBytes_length_atIndex(
-            std::ptr::NonNull::from(&params).cast(),
-            std::mem::size_of_val(&params),
-            5,
+        merge.dispatchThreadgroups_threadsPerThreadgroup(
+            size(plan.merge_grid),
+            size(plan.merge_threads),
         );
+        merge.endEncoding();
+        pipelines.record_research_dispatch(*merge_kernel);
     }
-    merge.dispatchThreadgroups_threadsPerThreadgroup(
-        size(plan.merge_grid),
-        size(plan.merge_threads),
-    );
-    merge.endEncoding();
-    pipelines.record_research_dispatch(*merge_kernel);
     Ok(Some(EncodedSplitGlobalDecode {
         plan,
         partial_kernel: *partial_kernel,
         merge_kernel: *merge_kernel,
     }))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn try_encode_split_global_decode(
+    pipelines: &PipelineCache,
+    command: &ProtocolObject<dyn MTLCommandBuffer>,
+    buffer: &ProtocolObject<dyn MTLBuffer>,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    buffers: SplitDecodeBuffers,
+    output: DecodeOutput,
+) -> Result<Option<EncodedSplitGlobalDecode>> {
+    try_encode_split_global_decode_impl(
+        pipelines,
+        command,
+        buffer,
+        dims,
+        phase,
+        buffers,
+        output,
+        (true, true),
+    )
+}
+
+/// Encodes one half of the split route for identity-bound native timing. This
+/// uses the same predicate, plan, PSOs and bindings as the production adapter;
+/// callers remain responsible for ordered partial-before-merge submission.
+#[allow(clippy::too_many_arguments)]
+pub fn try_encode_split_global_decode_stage(
+    pipelines: &PipelineCache,
+    command: &ProtocolObject<dyn MTLCommandBuffer>,
+    buffer: &ProtocolObject<dyn MTLBuffer>,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    buffers: SplitDecodeBuffers,
+    output: DecodeOutput,
+    stage: SplitGlobalDecodeStage,
+) -> Result<Option<EncodedSplitGlobalDecode>> {
+    let stages = match stage {
+        SplitGlobalDecodeStage::Partial => (true, false),
+        SplitGlobalDecodeStage::Merge => (false, true),
+    };
+    try_encode_split_global_decode_impl(
+        pipelines, command, buffer, dims, phase, buffers, output, stages,
+    )
 }
 
 /// Used by the real layer path and the ignored native oracle, not an alternate
