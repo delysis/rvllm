@@ -17,6 +17,8 @@ authors.workspace = true
 [features]
 default = []
 metal-stage-instrumentation = []
+# Explicit operator experiments; never part of the shipping selector.
+attention-atlas-research = ["dep:serde"]
 
 [dependencies]
 rvllm-core = { workspace = true }
@@ -24,6 +26,7 @@ rvllm-apple = { workspace = true }
 rvllm-loader = { workspace = true }
 half = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
 serde_json.workspace = true
 sha2 = "0.10"
 
@@ -50,3 +53,8 @@ objc2-metal = { version = "0.3", features = [
 ] }
 
 [dev-dependencies]
+
+[[bin]]
+name = "rvllm-attention-atlas"
+path = "src/bin/rvllm-attention-atlas.rs"
+required-features = ["attention-atlas-research"]

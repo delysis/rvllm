@@ -54,6 +54,8 @@ impl MetalPlatformCapabilities {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod arena;
+#[cfg(feature = "attention-atlas-research")]
+pub mod attention_atlas;
 pub mod attention_global_decode;
 #[cfg(all(test, target_os = "macos"))]
 mod attention_global_decode_device_tests;
