@@ -309,6 +309,22 @@
       "min_tokens": 1, "max_tokens": 1, "window_independent": false,
       "numerical_contract": "bf16-fp32-simd-matrix-per-tile-once-rounded",
       "budgets": [{"kernel": "research_global_d512_atlas_mma_r8k32p64t128", "threads": 128, "source_shared_bytes": 12512}]
+    },
+    {
+      "name": "metal-global-d512-atlas_mma_r16k16p64t64",
+      "kernels": ["research_global_d512_atlas_mma_r16k16p64t64"],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_atlas_mma_r16k16p64t64.metal",
+      "min_tokens": 1, "max_tokens": 1, "window_independent": false,
+      "numerical_contract": "bf16-fp32-simd-matrix-per-tile-once-rounded",
+      "budgets": [{"kernel": "research_global_d512_atlas_mma_r16k16p64t64", "threads": 64, "source_shared_bytes": 10496}]
+    },
+    {
+      "name": "metal-global-d512-atlas_mma_r16k64p64t128",
+      "kernels": ["research_global_d512_atlas_mma_r16k64p64t128"],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/global_decode_atlas_mma_r16k64p64t128.metal",
+      "min_tokens": 1, "max_tokens": 1, "window_independent": false,
+      "numerical_contract": "bf16-fp32-simd-matrix-per-tile-once-rounded",
+      "budgets": [{"kernel": "research_global_d512_atlas_mma_r16k64p64t128", "threads": 128, "source_shared_bytes": 29120}]
     }
   ]
 }

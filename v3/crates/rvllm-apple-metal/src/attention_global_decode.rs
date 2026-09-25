@@ -24,7 +24,7 @@ pub struct DecodeTile {
     pub simd_matrix: bool,
 }
 
-pub const DECODE_TILES: [DecodeTile; 17] = [
+pub const DECODE_TILES: [DecodeTile; 19] = [
     DecodeTile {
         rows: 8,
         keys: 8,
@@ -161,6 +161,22 @@ pub const DECODE_TILES: [DecodeTile; 17] = [
         per_tile_softmax: true,
         simd_matrix: true,
     },
+    DecodeTile {
+        rows: 16,
+        keys: 16,
+        panel: 64,
+        threads: 64,
+        per_tile_softmax: true,
+        simd_matrix: true,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 64,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: true,
+        simd_matrix: true,
+    },
 ];
 
 impl DecodeTile {
@@ -184,10 +200,14 @@ impl DecodeTile {
                 && self.threads == 128)
             || (self.simd_matrix
                 && self.per_tile_softmax
-                && self.threads == 128
                 && matches!(
-                    (self.rows, self.keys, self.panel),
-                    (16, 16, 64) | (16, 32, 64) | (16, 16, 128) | (8, 32, 64)
+                    (self.rows, self.keys, self.panel, self.threads),
+                    (16, 16, 64, 128)
+                        | (16, 32, 64, 128)
+                        | (16, 16, 128, 128)
+                        | (8, 32, 64, 128)
+                        | (16, 16, 64, 64)
+                        | (16, 64, 64, 128)
                 ))
     }
 

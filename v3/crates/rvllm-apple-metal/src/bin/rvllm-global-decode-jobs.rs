@@ -1027,6 +1027,8 @@ mod tests {
             "metal-global-d512-atlas_mma_r16k32p64t128",
             "metal-global-d512-atlas_mma_r16k16p128t128",
             "metal-global-d512-atlas_mma_r8k32p64t128",
+            "metal-global-d512-atlas_mma_r16k16p64t64",
+            "metal-global-d512-atlas_mma_r16k64p64t128",
         ];
         let ids = names
             .into_iter()

@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 36] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 38] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -53,6 +53,8 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 36] = [
     MetalResearchCandidate::GlobalD512AtlasMmaR16K32P64T128,
     MetalResearchCandidate::GlobalD512AtlasMmaR16K16P128T128,
     MetalResearchCandidate::GlobalD512AtlasMmaR8K32P64T128,
+    MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T64,
+    MetalResearchCandidate::GlobalD512AtlasMmaR16K64P64T128,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -252,6 +254,13 @@ impl MetalResearchCandidate {
             Self::GlobalD512AtlasMmaR8K32P64T128 => {
                 atlas_matrix_decode_spec!("atlas_mma_r8k32p64t128", GlobalD512AtlasMmaR8K32P64T128)
             }
+            Self::GlobalD512AtlasMmaR16K16P64T64 => {
+                atlas_matrix_decode_spec!("atlas_mma_r16k16p64t64", GlobalD512AtlasMmaR16K16P64T64)
+            }
+            Self::GlobalD512AtlasMmaR16K64P64T128 => atlas_matrix_decode_spec!(
+                "atlas_mma_r16k64p64t128",
+                GlobalD512AtlasMmaR16K64P64T128
+            ),
             Self::Off => CandidateSpec {
                 name: "off",
                 kernels: &[],
@@ -475,7 +484,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 36);
+        assert_eq!(all.len(), 38);
         let additions = all.split_off(18);
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
@@ -483,12 +492,12 @@ mod tests {
         assert_eq!(reviewed, legacy);
         // The additive family must have all source-defined specializations.
         assert_eq!(
-            ALL_CANDIDATES[18..27].len() + ALL_CANDIDATES[28..36].len(),
+            ALL_CANDIDATES[18..27].len() + ALL_CANDIDATES[28..38].len(),
             crate::attention_global_decode::DECODE_TILES.len()
         );
         for (candidate, tile) in ALL_CANDIDATES[18..27]
             .iter()
-            .chain(ALL_CANDIDATES[28..36].iter())
+            .chain(ALL_CANDIDATES[28..38].iter())
             .zip(crate::attention_global_decode::DECODE_TILES)
         {
             assert_eq!(candidate.global_decode_tile(), Some(tile));

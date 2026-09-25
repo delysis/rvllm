@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 50;
+pub const RESEARCH_KERNEL_COUNT: usize = 52;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -59,6 +59,8 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_global_d512_atlas_mma_r16k32p64t128",
     "research_global_d512_atlas_mma_r16k16p128t128",
     "research_global_d512_atlas_mma_r8k32p64t128",
+    "research_global_d512_atlas_mma_r16k16p64t64",
+    "research_global_d512_atlas_mma_r16k64p64t128",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -114,6 +116,8 @@ pub enum ResearchKernel {
     GlobalD512AtlasMmaR16K32P64T128 = 47,
     GlobalD512AtlasMmaR16K16P128T128 = 48,
     GlobalD512AtlasMmaR8K32P64T128 = 49,
+    GlobalD512AtlasMmaR16K16P64T64 = 50,
+    GlobalD512AtlasMmaR16K64P64T128 = 51,
 }
 
 impl ResearchKernel {
@@ -144,6 +148,8 @@ impl ResearchKernel {
             Self::GlobalD512AtlasMmaR16K32P64T128 => (128, 16704),
             Self::GlobalD512AtlasMmaR16K16P128T128 => (128, 18688),
             Self::GlobalD512AtlasMmaR8K32P64T128 => (128, 12512),
+            Self::GlobalD512AtlasMmaR16K16P64T64 => (64, 10496),
+            Self::GlobalD512AtlasMmaR16K64P64T128 => (128, 29120),
             Self::ShortGemm => (128, 10496),
             Self::ShortQkv => (128, 10496),
             Self::RoundedGate => (128, 14336),
@@ -208,6 +214,12 @@ impl ResearchKernel {
             }
             Self::GlobalD512AtlasMmaR8K32P64T128 => {
                 MetalResearchCandidate::GlobalD512AtlasMmaR8K32P64T128
+            }
+            Self::GlobalD512AtlasMmaR16K16P64T64 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T64
+            }
+            Self::GlobalD512AtlasMmaR16K64P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR16K64P64T128
             }
             Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
             Self::RoundedGate => MetalResearchCandidate::RoundedGate32,

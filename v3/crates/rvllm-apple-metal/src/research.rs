@@ -44,6 +44,8 @@ pub enum MetalResearchCandidate {
     GlobalD512AtlasMmaR16K32P64T128,
     GlobalD512AtlasMmaR16K16P128T128,
     GlobalD512AtlasMmaR8K32P64T128,
+    GlobalD512AtlasMmaR16K16P64T64,
+    GlobalD512AtlasMmaR16K64P64T128,
 }
 
 impl MetalResearchCandidate {
@@ -68,6 +70,8 @@ impl MetalResearchCandidate {
             Self::GlobalD512AtlasMmaR16K32P64T128 => (16, 32, 64, 128, true, true),
             Self::GlobalD512AtlasMmaR16K16P128T128 => (16, 16, 128, 128, true, true),
             Self::GlobalD512AtlasMmaR8K32P64T128 => (8, 32, 64, 128, true, true),
+            Self::GlobalD512AtlasMmaR16K16P64T64 => (16, 16, 64, 64, true, true),
+            Self::GlobalD512AtlasMmaR16K64P64T128 => (16, 64, 64, 128, true, true),
             _ => return None,
         };
         Some(DecodeTile {
