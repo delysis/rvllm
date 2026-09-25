@@ -179,3 +179,20 @@ leader: the cooperative split-32 family has lower point estimates in some
 2,048-key observations, while its absolute timing remains materially variable.
 The next useful comparison is both families in one sealed matched-control run,
 followed by captured-tensor and normal-route integration for the winner.
+
+## Matched family tournament
+
+That comparison is now complete and recorded in
+`reports/gemma4-attention-matched-20260925-v1/`. Cooperative split-32 was
+faster than split-matrix at every tested length: 0.704 vs 3.427 ms at 256,
+0.517 vs 2.046 ms at 512, 0.748 vs 1.830 ms at 1,024, and 1.297 vs 1.948 ms at
+2,048. Both arms included metadata validation, partial attention, and merge in
+the measured interval, and all four jobs passed their independent correctness
+screen. Only the 1,024-key result met the predeclared 5% outer-control drift
+gate; the other three remain retained inconclusive observations.
+
+This makes cooperative split-32 the prospective normal-route integration
+target. Relative to separately measured MLX BF16 attention it remains about
+2.2x slower at 256/512, while its 2,048-key point estimate is about 1.15x
+faster. Those MLX ratios are engineering estimates across processes, not a
+matched ABBA promotion claim.
