@@ -1,0 +1,35 @@
+{
+  "schema": "rvllm.gemma4.split32-normal-route-counterbalanced-combined.v1",
+  "length": 512,
+  "orders": [
+    "control/candidate/candidate/control",
+    "candidate/control/control/candidate"
+  ],
+  "control_measured_decode_ms": [
+    1012.355125,
+    924.537,
+    703.6107910000001,
+    851.066291,
+    1710.992041,
+    914.808167,
+    966.1822500000001,
+    898.820125
+  ],
+  "candidate_measured_decode_ms": [
+    1871.507958,
+    1654.8684580000001,
+    729.665167,
+    854.38825,
+    804.596791,
+    907.755292,
+    886.304125,
+    951.335792
+  ],
+  "control_median_ms": 919.6725835,
+  "candidate_median_ms": 897.0297085,
+  "speedup": 1.0252420569636016,
+  "control_range_ratio": 2.431730813235921,
+  "candidate_range_ratio": 2.5648859814627825,
+  "tokens_identical": true,
+  "disposition": "inconclusive_below_margin"
+}

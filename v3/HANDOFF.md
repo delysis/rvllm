@@ -66,9 +66,12 @@ local qualification.
    a large process-first transient that would reverse the answer if second
    cases were cherry-picked. The predeclared warmup-controlled referee and its
    independent confirmation now agree at 1.0856x and 1.0868x respectively.
-   Advance this exact method to L512, then 1024/2048 only while correctness and
-   the speed signal survive; shipping selection still requires complete
-   evidence across the intended selector range.
+   At L512 the A/B/B/A and B/A/A/B orders disagreed at 0.708x and 1.048x.
+   Their combined eight-observation median is only 1.025x, with >2.4x ranges
+   in both arms, so L512 is inconclusive and below margin. A bounded L1024
+   diagnostic is still warranted by the earlier 1.113x profile-median signal
+   and plausible long-context crossover; shipping selection still requires
+   complete evidence across the intended selector range.
 3. Prefill: implement a separate tiled online-softmax experiment and an
    explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
    policy or call TensorOps ANE evidence.

@@ -101,3 +101,17 @@ Disposition: **prospective L256 winner; advance, do not promote**. The two
 warmup-controlled rounds agree closely and clear the 5% exploratory threshold,
 but they establish only this context and workload. The same predeclared method
 must now advance to L512 and, if it remains plausible, L1024 and L2048.
+
+## L512 counterbalanced result
+
+The L512 A/B/B/A order nominally reported 0.708x, but its two candidate
+processes split into 1655--1872 ms and 730--854 ms clusters. The complementary
+B/A/A/B order reported 1.048x. Combining all eight measured observations from
+both predeclared orders gives control 919.673 ms, split-32 897.030 ms, or
+**1.025x**. Control and candidate max/min ratios are 2.432 and 2.565.
+
+Disposition: **inconclusive and below margin**. No favorable order is selected,
+and L512 does not support promotion. A bounded L1024 diagnostic remains
+justified by the earlier 1.113x profile-median signal and the expectation that
+partitioning can cross over only after attention work grows; it is not an
+automatic advancement claim.
