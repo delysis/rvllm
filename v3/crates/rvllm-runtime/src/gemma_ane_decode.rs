@@ -1913,7 +1913,10 @@ mod tests {
             serde_json::to_vec_pretty(&receipt).expect("serialize fused oracle receipt"),
         )
         .expect("preserve fused oracle receipt");
-        assert_eq!(compiler_calls, 1);
+        assert!(
+            compiler_calls <= 1,
+            "oracle may reuse the exact cached graph but must never compile more than once"
+        );
         assert_eq!(evaluations, 12);
         assert_eq!(violations, 0, "inspect preserved fused oracle receipt");
     }
