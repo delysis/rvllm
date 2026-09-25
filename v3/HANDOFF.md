@@ -565,3 +565,14 @@ counts and exact kernel identities. A safe-Rust validator recomputes medians
 and reciprocal speedups from the retained samples. The 22 zero-dwell manifests
 are in `reports/gemma4-metal-low-bit-n4-vs-n8-direct-20260925/`; they remain
 operator selection evidence only, not full-route or checkpoint acceptance.
+
+That direct campaign has now completed: all 22 jobs succeeded with zero queue
+violations. The strict Rust adjudicator found four stable choices under the
+same 1.05x minimum margin and 20% three-way repeat-drift rule: N4 wins
+K/W8/M4 and O/W4/M1/M4; N8 wins Up/W8/M1. Six cells are inconclusive from
+cross-order drift, and V/W4/M4 is stable but lacks a 5% winner. The machine
+summary retains all raw dispatch-order samples, conditions, identities and
+queue evidence in
+`reports/gemma4-metal-low-bit-n4-vs-n8-direct-20260925/results/summary.json`.
+These remain operator-level selector inputs; no full-route selection or
+promotion follows automatically.
