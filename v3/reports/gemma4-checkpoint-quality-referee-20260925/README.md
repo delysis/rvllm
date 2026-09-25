@@ -7,6 +7,9 @@ partial route into a checkpoint acceptance claim.
 `rvllm_gemma4_quality_referee` binds, by SHA-256:
 
 - checkpoint repository, immutable revision, manifest, and config;
+- an exact quantized-tensor manifest binding every source tensor, packed-weight
+  payload, scale payload, role, shape and byte/count contract to the model
+  package;
 - quantizer implementation revision, bit width, group size, scale dtype,
   zero-point and rounding contracts, and optional calibration dataset;
 - BF16 control and candidate source tree, executable, model package, and
@@ -29,7 +32,8 @@ positions, changed token sets, hash mismatches, and identity mismatches fail.
   complete model route, all seven roles were not quantized, or an independent
   operator-correctness receipt was absent.
 - `full_model_accepted`: calibrated gates passed on a declared full BF16 and
-  candidate route, all seven projection roles cover the checkpoint, and an
+  candidate route, the strict tensor manifest covers exactly the seven
+  projection roles with the declared tensor count, and an
   operator-correctness receipt is bound.
 
 Thresholds must come from a separately sealed calibration artifact whose
@@ -72,6 +76,24 @@ real-weight correctness and timing, but no full model using W4/W8 packages.
 Therefore its maximum honest result today is `bounded_slice_evidence`, and only
 after empirical calibration. No ANE or Metal W4/W8 checkpoint has acquired a
 full-model quality acceptance through this scaffold.
+
+## Input v2 and tensor-manifest contract
+
+The referee now accepts only `rvllm.gemma4_quality_referee.input.v2`.
+Its `tensor_manifest` is a normal SHA-pinned `FileIdentity` and the parsed
+artifact must use `rvllm.gemma4_quantized_tensor_manifest.v1`.  The manifest
+must repeat the checkpoint-manifest, config, model-package and quantizer
+identities and enumerate every quantized tensor with:
+
+- `name`, one of the seven canonical projection `role` values, and nonzero
+  `shape`;
+- `source_tensor_sha256`, `packed_weight_sha256`, and `scales_sha256`;
+- exact `packed_bytes` and `scale_count`.
+
+Names must be unique, all seven roles must be represented, and
+`coverage.quantized_tensor_count` must equal the parsed manifest length.
+This prevents a passing quality receipt from being transplanted to a different
+packed/scales payload that happens to reuse the same quantizer metadata.
 
 ## Observation and calibration formats
 
