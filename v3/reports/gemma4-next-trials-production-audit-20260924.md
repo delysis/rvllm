@@ -26,6 +26,37 @@ Chunk4 are not ANE nominees: Down4 was 1.77% slower geometrically over 405
 usable paired steps, Interleaved lost timing, and Chunk4 failed the bounded
 equivalence oracle.
 
+## Trial 0: repair the D512 control
+
+The source audit found that the current `attention_decode_f16` timing control is
+equivalent operator work but a pathological implementation: it dispatches 16
+threadgroups with exactly one thread per query head, keeps a 512-element Q
+array and 512-element output allocation behind that thread, walks every visible
+KV token serially, and rereads the shared K/V stream independently for every
+head. The normal layer route selects the 32-lane
+`attention_decode_online_f16` kernel only when `head_dim <= 256`; Gemma's eight
+global D512 layers therefore fall through to the scalar kernel. This also
+explains a material part of the end-to-end long-context collapse.
+
+Before attributing a split-KV gain to the new algorithm, add one bounded
+research-only D512 headwise SIMD control:
+
+- one 32-lane SIMD group per query head, grid width 16;
+- 16 FP32 Q/output slots per lane for D512;
+- paged-cache and logical-length semantics identical to the incumbent;
+- online softmax in registers and one final BF16 rounding;
+- no attempt to share K/V across heads.
+
+This is deliberately not the final GQA16 design—it rereads K/V 16 times—but it
+restores ordinary GPU occupancy and establishes whether the 23.399 ms
+cooperative winner is beating GQA reuse or merely beating a scalar fallback.
+Keep it a distinct fixed-D512 kernel rather than widening the existing dynamic
+D256 kernel and risking register-footprint regressions in 40 local layers.
+
+Run its device oracle and ABBA cells at 256/512/1024/2048 first. Split-KV then
+compares against three controls: the retained scalar production fallback, the
+D512 headwise SIMD control, and the unsplit shared-K/V `r8p64t128` kernel.
+
 ## Trial 1: Metal global D512/GQA16 split-KV
 
 ### Candidate family
