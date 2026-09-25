@@ -468,4 +468,49 @@ mod tests {
         );
         compile_blob_probe(&mil, &blob, input, hidden);
     }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE reduce_sum to pow composition compile probe"]
+    fn hardware_reduce_sum_pow_compile_probe() {
+        compile_dialect_probe(
+            r#"program(1.3)
+{
+    func main<ios18>(tensor<fp16, [1, 32, 1, 1]> x) {
+        tensor<int32, [3]> axes = const()[val = tensor<int32, [3]>([1, 2, 3])];
+        bool keep_dims = const()[val = bool(true)];
+        fp16 exponent = const()[val = fp16(-0.5)];
+        tensor<fp16, [1, 32, 1, 1]> sq = mul(x = x, y = x);
+        tensor<fp16, [1, 1, 1, 1]> sum = reduce_sum(axes = axes, keep_dims = keep_dims, x = sq);
+        tensor<fp16, [1, 1, 1, 1]> y = pow(x = sum, y = exponent);
+    } -> (y);
+}
+"#,
+            32,
+            1,
+        );
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE RMS scalar broadcast compile probe"]
+    fn hardware_rms_scalar_broadcast_compile_probe() {
+        compile_dialect_probe(
+            r#"program(1.3)
+{
+    func main<ios18>(tensor<fp16, [1, 32, 1, 1]> x) {
+        tensor<int32, [3]> axes = const()[val = tensor<int32, [3]>([1, 2, 3])];
+        bool keep_dims = const()[val = bool(true)];
+        fp16 exponent = const()[val = fp16(-0.5)];
+        tensor<fp16, [1, 32, 1, 1]> sq = mul(x = x, y = x);
+        tensor<fp16, [1, 1, 1, 1]> sum = reduce_sum(axes = axes, keep_dims = keep_dims, x = sq);
+        tensor<fp16, [1, 1, 1, 1]> inv = pow(x = sum, y = exponent);
+        tensor<fp16, [1, 32, 1, 1]> y = mul(x = x, y = inv);
+    } -> (y);
+}
+"#,
+            32,
+            32,
+        );
+    }
 }
