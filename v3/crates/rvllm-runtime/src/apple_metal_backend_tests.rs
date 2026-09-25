@@ -12512,6 +12512,156 @@ fn real_gemma4_e2b_probe_profile_reports_prefill_and_decode_counters() {
 #[cfg(all(feature = "apple", target_os = "macos"))]
 #[test]
 #[ignore = "requires cached Gemma4 E2B model directory and large Metal arena opt-in"]
+fn real_gemma4_two_token_device_resident_decode_matches_host_roundtrip() {
+    let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
+        eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(model_dir);
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma4 E2B arch should parse before device-resident probe");
+    assert_eq!(arch.num_hidden_layers, 35);
+    assert_eq!(arch.hidden_size, 1536);
+    assert_eq!(arch.vocab_size, 262144);
+
+    let previous_large_probe_opt_in = std::env::var_os("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", "1");
+    let mut plan = n_layer_plan(model_dir.clone(), arch.num_hidden_layers);
+    plan.ane_hidden_size = arch.hidden_size;
+    plan.ane_intermediate_size = arch.intermediate_size;
+
+    let result = (|| -> Result<()> {
+        let prefill = || {
+            rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                vec![rvllm_core::ReqId(1)],
+                vec![rvllm_core::TokenId(2), rvllm_core::TokenId(4)],
+                vec![0, 2],
+                vec![1],
+                vec![2],
+            )
+        };
+        let decode = |token: rvllm_core::TokenId, position: u32, context_len: u32| {
+            rvllm_apple::HandoffCapsule::new(
+                rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+                vec![rvllm_core::ReqId(1)],
+                vec![token],
+                vec![0, 1],
+                vec![position],
+                vec![context_len],
+            )
+        };
+
+        // Control: preserve the current scheduler boundary and pay one
+        // collect/readback between generated tokens.
+        let expected = {
+            let mut baseline = ModelMetalBackend::new(model_dir.clone());
+            baseline.prepare(&plan)?;
+            let ticket = baseline.launch_prefill(&prefill())?;
+            assert!(baseline.collect(ticket)?.is_empty());
+            let first = baseline.launch_rollout(
+                &decode(rvllm_core::TokenId(4), 1, 2),
+                None,
+            )?;
+            let first = baseline.collect(first)?[0].token_id;
+            let second = baseline.launch_rollout(&decode(first, 2, 3), None)?;
+            let second = baseline.collect(second)?[0].token_id;
+            [first, second]
+        };
+        assert_eq!(
+            expected,
+            [rvllm_core::TokenId(954), rvllm_core::TokenId(1289)],
+            "control decode identity changed"
+        );
+
+        // Candidate: fresh cache state, same prefill, then two generated tokens
+        // from one command buffer and one terminal wait.
+        let mut candidate = ModelMetalBackend::new(model_dir.clone());
+        candidate.prepare(&plan)?;
+        let prepared_arena = candidate
+            .probe_arena_stats()
+            .expect("prepared arena stats");
+        let prepared_pipelines = candidate.probe_perf_stats().pipeline_state_compiles;
+        let ticket = candidate.launch_prefill(&prefill())?;
+        assert!(candidate.collect(ticket)?.is_empty());
+        let after_prefill_arena = candidate
+            .probe_arena_stats()
+            .expect("post-prefill arena stats");
+        assert_eq!(after_prefill_arena, prepared_arena);
+
+        let (actual, receipt) = candidate.run_two_token_device_resident_probe(
+            &decode(rvllm_core::TokenId(4), 1, 2),
+            0,
+        )?;
+        assert_eq!(actual, expected);
+        assert_eq!(receipt["command_buffers"], 1);
+        assert_eq!(receipt["tokens_per_submission"], 2);
+        assert_eq!(receipt["metadata_advance_dispatches"], 1);
+        assert_eq!(receipt["host_synchronizations_between_token0_and_token1"], 0);
+        assert_eq!(receipt["page_crossing_allowed"], false);
+        assert_eq!(receipt["token0_device_sample_feeds_token1_embedding"], true);
+        assert!(receipt["cpu_encode_ns"].as_u64().is_some_and(|x| x > 0));
+        assert!(receipt["host_wait_ns"].as_u64().is_some());
+        assert_eq!(
+            candidate
+                .probe_arena_stats()
+                .expect("post-candidate arena stats"),
+            prepared_arena,
+            "device-resident slice must not allocate Metal arena regions after prepare"
+        );
+        assert_eq!(
+            candidate.probe_perf_stats().pipeline_state_compiles,
+            prepared_pipelines,
+            "device-resident slice must not compile PSOs after prepare"
+        );
+
+        #[cfg(feature = "metal-stage-instrumentation")]
+        {
+            assert_eq!(receipt["stage_instrumentation_compiled"], true);
+            assert!(
+                receipt["stage_timing"]["stages"]
+                    .as_array()
+                    .is_some_and(|stages| !stages.is_empty()),
+                "instrumented build must produce per-stage GPU timing samples"
+            );
+        }
+        #[cfg(not(feature = "metal-stage-instrumentation"))]
+        {
+            assert_eq!(receipt["stage_instrumentation_compiled"], false);
+            assert!(
+                receipt["stage_timing"].is_null(),
+                "disabled instrumentation must not allocate/resolve a sample buffer"
+            );
+        }
+
+        if let Some(path) = std::env::var_os("RVLLM_DEVICE_RESIDENT_DECODE_JSON") {
+            let path = std::path::PathBuf::from(path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .expect("create device-resident receipt directory");
+            }
+            std::fs::write(
+                &path,
+                serde_json::to_vec_pretty(&receipt)
+                    .expect("serialize device-resident receipt"),
+            )
+            .expect("write device-resident receipt");
+            eprintln!("wrote device-resident receipt to {}", path.display());
+        }
+        Ok(())
+    })();
+
+    if let Some(previous) = previous_large_probe_opt_in {
+        std::env::set_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE", previous);
+    } else {
+        std::env::remove_var("RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE");
+    }
+    result.expect("two-token device-resident decode probe should run");
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires cached Gemma4 E2B model directory and large Metal arena opt-in"]
 fn real_gemma4_e2b_arena_and_pipeline_counters_do_not_change_after_rollout() {
     let Some(model_dir) = std::env::var_os("RVLLM_GEMMA4_MODEL_DIR") else {
         eprintln!("skipping: RVLLM_GEMMA4_MODEL_DIR is not set");
