@@ -76,6 +76,35 @@ rather than relying on an operator to join unrelated files later. At minimum:
 These fields bind evidence; they do not themselves assert tensor qualification or
 performance acceptance.
 
+## Generated-code and pipeline-resource companion evidence
+
+A Metal submission MAY attach an
+`rvllm.metal_artifact_evidence.v1` companion report. The report is relevant to a
+kernel-game receipt only when its source and metallib SHA-256 identities exactly
+match the receipt's sealed generated-source and metallib identities. The report
+itself MUST also be retained by hash; a path is not an identity.
+
+The repository collector compiles the supplied source with the resolved public
+Xcode Metal toolchain and records:
+
+- collector, source, AIR, metallib, and compiler-tool path/hash identities;
+- compiler versions, SDK identity, and exact compile/link argument vectors;
+- hashed raw `metal-objdump` build-table and disassembly captures, including a
+  failed-tool status when the installed public tool cannot produce them;
+- live public `MTLDevice` properties and an observation identity; and
+- public `MTLComputePipelineState` execution width, maximum thread count, and
+  static threadgroup-memory size for every requested entry point.
+
+Compilation, link, metallib loading, or any requested PSO failure is fatal. The
+collector does not use private Apple APIs. Public Metal tooling does not expose
+a supported register count, register residency, or occupancy value, and its raw
+disassembly is not treated as a stable semantic ISA contract. Consequently the
+report MUST leave those claims unavailable and SIMD-matrix or low-bit-unpack
+machine lowering unverified unless a separately reviewed, version-pinned
+semantic verifier is supplied. Source spelling, a successful compile, or an MLX
+trace is not such proof. Pipeline metadata also does not prove that a timed run
+used the PSO; that remains the route receipt's dispatch responsibility.
+
 ## Promotion
 
 The game may emit a promotable recommendation only after route qualification,
