@@ -84,3 +84,9 @@ large inline FP16 tensor constants, rather than RMS arithmetic or the mixed
 convolution core. The graph now serializes both gamma tensors into the sealed
 weight blob and binds them through the already accepted `BLOBFILE` constant
 form. The next clean-tree compile probe tests that corrected representation.
+
+That corrected full graph compiled with exactly one compiler call and zero
+evaluations. This establishes source viability only. The next sealed gate
+requires the identical source and weight identity to reload from the existing
+cache with zero compiler calls and zero evaluations before any execution API or
+component-correctness claim is permitted.
