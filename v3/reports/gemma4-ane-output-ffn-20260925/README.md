@@ -48,3 +48,7 @@ failed. The full graph's current blocker is therefore the ANEC `rsqrt` dialect,
 not reduction support. The next arm should replace it with a separately probed
 inverse-square-root formulation (for example `pow(x, -0.5)`) before rebuilding
 the full graph; numerical equivalence still requires device evidence.
+
+The sealed `pow(x, -0.5)` dialect probe compiled successfully. The full graph
+now uses that formulation in place of `rsqrt`; this establishes dialect
+acceptance only, not RMS numerical equivalence.

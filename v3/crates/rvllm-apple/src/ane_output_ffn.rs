@@ -185,12 +185,13 @@ fn output_ffn_mil(
         bool keep_dims = const()[val = bool(true)];
         fp16 norm_mean = const()[val = fp16({norm_mean})];
         fp16 norm_epsilon = const()[val = fp16({epsilon})];
+        fp16 negative_half = const()[val = fp16(-0.5)];
         tensor<fp16, [1, {hidden}, 1, 1]> projected = conv(dilations = ones2, groups = groups, pad = zeros4, pad_type = valid, strides = ones2, weight = Wo, x = attended);
         tensor<fp16, [1, {hidden}, 1, 1]> post_sq = mul(x = projected, y = projected);
         tensor<fp16, [1, 1, 1, 1]> post_sum = reduce_sum(axes = norm_axes, keep_dims = keep_dims, x = post_sq);
         tensor<fp16, [1, 1, 1, 1]> post_mean = mul(x = post_sum, y = norm_mean);
         tensor<fp16, [1, 1, 1, 1]> post_variance = add(x = post_mean, y = norm_epsilon);
-        tensor<fp16, [1, 1, 1, 1]> post_inv = rsqrt(x = post_variance);
+        tensor<fp16, [1, 1, 1, 1]> post_inv = pow(x = post_variance, y = negative_half);
         tensor<fp16, [1, {hidden}, 1, 1]> post_unit = mul(x = projected, y = post_inv);
         tensor<fp16, [1, {hidden}, 1, 1]> post_norm = mul(x = post_unit, y = post_gamma);
         tensor<fp16, [1, {hidden}, 1, 1]> merged = add(x = post_norm, y = residual);
@@ -198,7 +199,7 @@ fn output_ffn_mil(
         tensor<fp16, [1, 1, 1, 1]> pre_sum = reduce_sum(axes = norm_axes, keep_dims = keep_dims, x = pre_sq);
         tensor<fp16, [1, 1, 1, 1]> pre_mean = mul(x = pre_sum, y = norm_mean);
         tensor<fp16, [1, 1, 1, 1]> pre_variance = add(x = pre_mean, y = norm_epsilon);
-        tensor<fp16, [1, 1, 1, 1]> pre_inv = rsqrt(x = pre_variance);
+        tensor<fp16, [1, 1, 1, 1]> pre_inv = pow(x = pre_variance, y = negative_half);
         tensor<fp16, [1, {hidden}, 1, 1]> pre_unit = mul(x = merged, y = pre_inv);
         tensor<fp16, [1, {hidden}, 1, 1]> x = mul(x = pre_unit, y = pre_gamma);
         fp16 half = const()[val = fp16(0.5)];
@@ -256,7 +257,8 @@ mod tests {
         assert_eq!(source.identity.output_bytes, h * 64);
         assert_eq!(source.mil.matches("func main<ios18>").count(), 1);
         assert_eq!(source.mil.matches("reduce_sum(").count(), 2);
-        assert_eq!(source.mil.matches("rsqrt(").count(), 2);
+        assert_eq!(source.mil.matches("pow(").count(), 2);
+        assert!(!source.mil.contains("rsqrt("));
         assert!(!source.mil.contains("layer_norm("));
         assert_eq!(source.mil.matches("constexpr_affine_dequantize").count(), 3);
         assert_eq!(source.blob[..4], 7_u32.to_le_bytes());
