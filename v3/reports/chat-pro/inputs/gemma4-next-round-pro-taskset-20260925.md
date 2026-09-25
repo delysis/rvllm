@@ -113,3 +113,25 @@ Do not weaken strict JSON parsing, identity sealing, independent confirmation,
 zero-compile requirements, route qualification, guard checks, or failed-receipt
 retention. Do not modify shipping defaults. Do not fabricate benchmark results.
 
+## Sprint completion matrix
+
+Treat this as one persistent implementation sprint. Work through every row; do
+not stop after the first compiling kernel. If a row cannot be completed without
+Apple hardware, return the complete implementation and exact queue manifest so
+Codex can execute it locally.
+
+| CoreAI finding | Required sprint artifact | Done only when |
+| --- | --- | --- |
+| Three-way decode attention | One sealed same-referee campaign for single/cooperative/split-plus-merge arms | Identical workload/oracle, all component work counted, 256/512/1024/2048 manifests emitted |
+| Split-plus-merge accounting | Partial and merge dispatch ledger and timing fields | Receipt arithmetic, work counts, guards and executable identities validate automatically |
+| Separate prefill policy | Conventional tiled and optional TensorOps prefill candidates | Decode code is not reused by assumption; unsupported TensorOps is explicit and testable |
+| Newest K/V correctness | Production-route append-plus-attend test | Newly appended K/V is visible without CPU serialization across boundary/tail/hole cases |
+| Per-role W4/W8 | Tiled native-BF16 kernels and route descriptors for Q/K/V/O/gate/up/down | Every role passes real-weight CPU oracle, tails, guards and repeat tests at M=1 and bounded prefill M |
+| Quantization quality | Checkpoint-bound logit/perplexity referee | W4/W8 acceptance is based on documented calibrated thresholds, not operator error alone |
+| Generated code | Reproducible compiler/ISA/resource evidence collector | Claims about register residency, SIMD-matrix use and unpack arithmetic point to sealed output |
+| Device-resident loop | Measured bounded command-buffer token-loop vertical slice | Exact output matches control and receipt separates submission, wait and device stages |
+| ANE routes | Queue-native INT8/stacked/LUT4/BF16 comparison framework | Cache identity, zero compilation, exact route/evaluations, no fallback and correctness are enforced |
+
+Sequence the work so early operator screens are cheap: compile and independent
+oracle first, then 256-token or M=1 timing, then advance only plausible arms to
+512/1024/2048 or larger-M prefill. Preserve rejected and inconclusive evidence.
