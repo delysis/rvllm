@@ -2934,6 +2934,8 @@ kernel void bf16_to_f16(
 "#;
 
 const LOW_BIT_COOP_BF16_SOURCE: &str = include_str!("research_shaders/low_bit_coop_bf16.metal");
+const DEVICE_RESIDENT_DECODE_SLICE_SOURCE: &str =
+    include_str!("research_shaders/device_resident_decode_slice.metal");
 
 pub fn kernel_source_for_float_type(float_type: MetalFloatType) -> Cow<'static, str> {
     kernel_source_with_options(
@@ -2955,6 +2957,8 @@ pub fn kernel_source_with_options(
     let mut source = base.into_owned();
     source.push('\n');
     source.push_str(LOW_BIT_COOP_BF16_SOURCE);
+    source.push('\n');
+    source.push_str(DEVICE_RESIDENT_DECODE_SLICE_SOURCE);
 
     let candidate = options.research.source();
     if !candidate.is_empty() {
@@ -3145,6 +3149,7 @@ pub const KERNEL_NAMES: &[&str] = &[
     "experimental_projection_w4abf16_bf16_tg32k64",
     "experimental_projection_w8abf16_bf16_tg16k128",
     "experimental_projection_w8abf16_bf16_tg32k128",
+    "research_decode_advance_single",
     "gemm_rmsnorm_f16",
     "gemm_headwise_rmsnorm_f16",
     "gemm_headwise_rmsnorm_unit_f16",
@@ -6587,6 +6592,19 @@ mod tests {
             assert!(kernel.contains("threadgroup_barrier(mem_flags::mem_threadgroup)"));
             assert!(kernel.contains("bfloat("));
         }
+    }
+
+    #[test]
+    fn device_resident_decode_advance_source_is_dtype_independent_and_bounded() {
+        assert!(DEVICE_RESIDENT_DECODE_SLICE_SOURCE.contains(
+            "kernel void research_decode_advance_single"
+        ));
+        assert!(DEVICE_RESIDENT_DECODE_SLICE_SOURCE.contains("layer * 3u"));
+        assert!(DEVICE_RESIDENT_DECODE_SLICE_SOURCE.contains("position[0] += 1"));
+        assert!(DEVICE_RESIDENT_DECODE_SLICE_SOURCE.contains("slot[0] += 1"));
+        assert!(DEVICE_RESIDENT_DECODE_SLICE_SOURCE.contains("context[0] += 1"));
+        assert!(!DEVICE_RESIDENT_DECODE_SLICE_SOURCE.contains("half"));
+        assert!(!DEVICE_RESIDENT_DECODE_SLICE_SOURCE.contains("bfloat"));
     }
 
     #[test]
