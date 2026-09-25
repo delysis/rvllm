@@ -33,13 +33,18 @@ fn geometry_and_scratch_are_exact_for_all_tiles() {
         assert_eq!(plan.grid, [(16 / tile.rows) as usize, 1, 1]);
         assert_eq!(plan.threads, [tile.threads as usize, 1, 1]);
         assert_eq!(plan.scratch_bytes, 0);
-        assert_eq!(
-            plan.threadgroup_bytes,
+        let expected = if tile.simd_matrix {
+            (4 * (tile.rows * tile.panel + tile.keys * tile.panel)
+                + 8 * tile.rows * tile.keys
+                + 12 * tile.rows
+                + 4 * tile.keys) as usize
+        } else {
             (tile.rows * DIM * 2
                 + tile.keys * tile.panel * 2
                 + 3 * tile.rows * tile.keys * 4
                 + tile.keys * 4) as usize
-        );
+        };
+        assert_eq!(plan.threadgroup_bytes, expected);
         assert!(tile.output_floats_per_thread() <= 128);
         let (buffers, capacity) = layout(plan);
         assert!(plan.buffers_fit(buffers, capacity));
@@ -176,6 +181,7 @@ fn every_near_miss_shape_and_overflow_is_rejected() {
             panel: 64,
             threads: 32,
             per_tile_softmax: false,
+            simd_matrix: false,
         },
         DecodeTile {
             rows: 1,
@@ -183,6 +189,7 @@ fn every_near_miss_shape_and_overflow_is_rejected() {
             panel: 128,
             threads: 64,
             per_tile_softmax: false,
+            simd_matrix: false,
         },
     ] {
         assert!(DecodePlan::new(tile, good, DecodeOutput::Bf16).is_none());

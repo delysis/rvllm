@@ -789,6 +789,7 @@ fn global_decode_split_device_oracle() -> TestResult {
                 panel: tile.panel,
                 threads: tile.threads,
                 per_tile_softmax: false,
+                simd_matrix: false,
             },
             fixture.shape,
             DecodeOutput::F32,

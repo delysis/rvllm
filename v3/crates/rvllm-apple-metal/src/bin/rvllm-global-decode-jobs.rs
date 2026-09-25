@@ -167,7 +167,9 @@ fn id(config: &Value, candidate: MetalResearchCandidate, suffix: &str) -> Result
                 tile.keys,
                 tile.panel,
                 tile.threads,
-                if tile.per_tile_softmax {
+                if tile.simd_matrix {
+                    "-mma"
+                } else if tile.per_tile_softmax {
                     "-tile"
                 } else {
                     "-key"
@@ -983,6 +985,10 @@ mod tests {
             "metal-global-d512-atlas_r16k32p64t128",
             "metal-global-d512-atlas_tile_r16k16p64t128",
             "metal-global-d512-atlas_tile_r16k32p64t128",
+            "metal-global-d512-atlas_mma_r16k16p64t128",
+            "metal-global-d512-atlas_mma_r16k32p64t128",
+            "metal-global-d512-atlas_mma_r16k16p128t128",
+            "metal-global-d512-atlas_mma_r8k32p64t128",
         ];
         let ids = names
             .into_iter()

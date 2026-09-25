@@ -40,26 +40,34 @@ pub enum MetalResearchCandidate {
     GlobalD512AtlasR16K32P64T128,
     GlobalD512AtlasTileR16K16P64T128,
     GlobalD512AtlasTileR16K32P64T128,
+    GlobalD512AtlasMmaR16K16P64T128,
+    GlobalD512AtlasMmaR16K32P64T128,
+    GlobalD512AtlasMmaR16K16P128T128,
+    GlobalD512AtlasMmaR8K32P64T128,
 }
 
 impl MetalResearchCandidate {
     /// Explicit decode family, never inferred from a coincidentally matching shape.
     pub const fn global_decode_tile(self) -> Option<crate::attention_global_decode::DecodeTile> {
         use crate::attention_global_decode::DecodeTile;
-        let (rows, keys, panel, threads, per_tile_softmax) = match self {
-            Self::GlobalD512R8P64T64 => (8, 8, 64, 64, false),
-            Self::GlobalD512R8P64T128 => (8, 8, 64, 128, false),
-            Self::GlobalD512R8P128T64 => (8, 8, 128, 64, false),
-            Self::GlobalD512R8P128T128 => (8, 8, 128, 128, false),
-            Self::GlobalD512R16P64T64 => (16, 8, 64, 64, false),
-            Self::GlobalD512R16P64T128 => (16, 8, 64, 128, false),
-            Self::GlobalD512R16P128T64 => (16, 8, 128, 64, false),
-            Self::GlobalD512R16P128T128 => (16, 8, 128, 128, false),
-            Self::GlobalD512R1P128T32 => (1, 8, 128, 32, false),
-            Self::GlobalD512AtlasR16K16P64T128 => (16, 16, 64, 128, false),
-            Self::GlobalD512AtlasR16K32P64T128 => (16, 32, 64, 128, false),
-            Self::GlobalD512AtlasTileR16K16P64T128 => (16, 16, 64, 128, true),
-            Self::GlobalD512AtlasTileR16K32P64T128 => (16, 32, 64, 128, true),
+        let (rows, keys, panel, threads, per_tile_softmax, simd_matrix) = match self {
+            Self::GlobalD512R8P64T64 => (8, 8, 64, 64, false, false),
+            Self::GlobalD512R8P64T128 => (8, 8, 64, 128, false, false),
+            Self::GlobalD512R8P128T64 => (8, 8, 128, 64, false, false),
+            Self::GlobalD512R8P128T128 => (8, 8, 128, 128, false, false),
+            Self::GlobalD512R16P64T64 => (16, 8, 64, 64, false, false),
+            Self::GlobalD512R16P64T128 => (16, 8, 64, 128, false, false),
+            Self::GlobalD512R16P128T64 => (16, 8, 128, 64, false, false),
+            Self::GlobalD512R16P128T128 => (16, 8, 128, 128, false, false),
+            Self::GlobalD512R1P128T32 => (1, 8, 128, 32, false, false),
+            Self::GlobalD512AtlasR16K16P64T128 => (16, 16, 64, 128, false, false),
+            Self::GlobalD512AtlasR16K32P64T128 => (16, 32, 64, 128, false, false),
+            Self::GlobalD512AtlasTileR16K16P64T128 => (16, 16, 64, 128, true, false),
+            Self::GlobalD512AtlasTileR16K32P64T128 => (16, 32, 64, 128, true, false),
+            Self::GlobalD512AtlasMmaR16K16P64T128 => (16, 16, 64, 128, true, true),
+            Self::GlobalD512AtlasMmaR16K32P64T128 => (16, 32, 64, 128, true, true),
+            Self::GlobalD512AtlasMmaR16K16P128T128 => (16, 16, 128, 128, true, true),
+            Self::GlobalD512AtlasMmaR8K32P64T128 => (8, 32, 64, 128, true, true),
             _ => return None,
         };
         Some(DecodeTile {
@@ -68,6 +76,7 @@ impl MetalResearchCandidate {
             panel,
             threads,
             per_tile_softmax,
+            simd_matrix,
         })
     }
 

@@ -21,15 +21,17 @@ pub struct DecodeTile {
     pub panel: u32,
     pub threads: u32,
     pub per_tile_softmax: bool,
+    pub simd_matrix: bool,
 }
 
-pub const DECODE_TILES: [DecodeTile; 13] = [
+pub const DECODE_TILES: [DecodeTile; 17] = [
     DecodeTile {
         rows: 8,
         keys: 8,
         panel: 64,
         threads: 64,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 8,
@@ -37,6 +39,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 64,
         threads: 128,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 8,
@@ -44,6 +47,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 128,
         threads: 64,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 8,
@@ -51,6 +55,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 128,
         threads: 128,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -58,6 +63,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 64,
         threads: 64,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -65,6 +71,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 64,
         threads: 128,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -72,6 +79,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 128,
         threads: 64,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -79,6 +87,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 128,
         threads: 128,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 1,
@@ -86,6 +95,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 128,
         threads: 32,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -93,6 +103,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 64,
         threads: 128,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -100,6 +111,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 64,
         threads: 128,
         per_tile_softmax: false,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -107,6 +119,7 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 64,
         threads: 128,
         per_tile_softmax: true,
+        simd_matrix: false,
     },
     DecodeTile {
         rows: 16,
@@ -114,34 +127,84 @@ pub const DECODE_TILES: [DecodeTile; 13] = [
         panel: 64,
         threads: 128,
         per_tile_softmax: true,
+        simd_matrix: false,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 16,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: true,
+        simd_matrix: true,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 32,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: true,
+        simd_matrix: true,
+    },
+    DecodeTile {
+        rows: 16,
+        keys: 16,
+        panel: 128,
+        threads: 128,
+        per_tile_softmax: true,
+        simd_matrix: true,
+    },
+    DecodeTile {
+        rows: 8,
+        keys: 32,
+        panel: 64,
+        threads: 128,
+        per_tile_softmax: true,
+        simd_matrix: true,
     },
 ];
 
 impl DecodeTile {
     pub const fn supported(self) -> bool {
-        ((self.rows == 1
+        ((!self.simd_matrix
+            && self.rows == 1
             && self.keys == 8
             && !self.per_tile_softmax
             && self.panel == 128
             && self.threads == 32)
-            || (matches!(self.rows, 8 | 16)
+            || (!self.simd_matrix
+                && matches!(self.rows, 8 | 16)
                 && self.keys == 8
                 && !self.per_tile_softmax
                 && matches!(self.panel, 64 | 128)
                 && matches!(self.threads, 64 | 128)))
-            || (self.rows == 16
+            || (!self.simd_matrix
+                && self.rows == 16
                 && matches!(self.keys, 16 | 32)
                 && self.panel == 64
                 && self.threads == 128)
+            || (self.simd_matrix
+                && self.per_tile_softmax
+                && self.threads == 128
+                && matches!(
+                    (self.rows, self.keys, self.panel),
+                    (16, 16, 64) | (16, 32, 64) | (16, 16, 128) | (8, 32, 64)
+                ))
     }
 
     /// Q is staged once; one K or V panel reuses the same storage. Scores,
     /// corrections and weights are FP32. Eight signed page IDs are separate.
     pub const fn threadgroup_bytes(self) -> usize {
-        (self.rows * DIM * 2
-            + self.keys * self.panel * 2
-            + 3 * self.rows * self.keys * 4
-            + self.keys * 4) as usize
+        if self.simd_matrix {
+            (4 * (self.rows * self.panel + self.keys * self.panel)
+                + 8 * self.rows * self.keys
+                + 12 * self.rows
+                + 4 * self.keys) as usize
+        } else {
+            (self.rows * DIM * 2
+                + self.keys * self.panel * 2
+                + 3 * self.rows * self.keys * 4
+                + self.keys * 4) as usize
+        }
     }
 
     /// Source-level FP32 output state per lane. Not a compiler register count.
@@ -213,6 +276,7 @@ impl SplitDecodeTile {
             panel: self.panel,
             threads: self.threads,
             per_tile_softmax: false,
+            simd_matrix: false,
         }
         .threadgroup_bytes()
     }
