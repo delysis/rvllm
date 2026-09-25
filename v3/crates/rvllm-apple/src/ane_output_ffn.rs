@@ -309,6 +309,39 @@ mod tests {
     }
 
     #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE strict cache reload only; zero compiles and zero evaluations"]
+    fn hardware_output_ffn_strict_cache_reload_probe() {
+        use crate::ane_linear::{compile_budget_used, AneOutputFfnCompile, AneProgramCachePolicy};
+
+        let h = 32;
+        let m = 32;
+        let a = 32;
+        let dense = vec![f16::from_f32(0.01); h * m];
+        let ffn = AneInt8FfnWeights::quantize(&dense, &dense, &dense, h, m).unwrap();
+        let before = compile_budget_used();
+        let cached = AneOutputFfnCompile::compile_only(
+            &vec![f16::from_f32(0.02); h * a],
+            a,
+            &ffn,
+            &vec![f16::ONE; h],
+            &vec![f16::ONE; h],
+            1e-6,
+            AneProgramCachePolicy::RequireExisting,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before);
+        assert_eq!(
+            (
+                cached.identity().external_inputs,
+                cached.identity().external_outputs
+            ),
+            (1, 1)
+        );
+        println!("identity={:?}", cached.identity());
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
     fn compile_dialect_probe(mil: &str, input_channels: usize, output_channels: usize) {
         use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
         use rvllm_apple_ane_sys::AneInMemoryProgram;
