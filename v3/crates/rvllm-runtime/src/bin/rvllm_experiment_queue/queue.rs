@@ -562,55 +562,6 @@ fn probe_shared(
         "raw_sample_age_ms":raw_sample_age_ms}))
 }
 
-struct StableGate {
-    since: Option<Instant>,
-    last_observed: Option<Instant>,
-    controls: Option<Value>,
-}
-
-impl StableGate {
-    fn new() -> Self {
-        Self {
-            since: None,
-            last_observed: None,
-            controls: None,
-        }
-    }
-    fn observe(
-        &mut self,
-        probe: &Value,
-        conditions: &Conditions,
-        now: Instant,
-        required: Duration,
-    ) -> bool {
-        let observed = &probe["power"]["sample"]["controls"];
-        // Only controls constrained by this job define its stable stratum.
-        // Unconstrained thermal/power-mode changes remain in every raw probe
-        // and phase receipt, but may not starve an any-thermal campaign.
-        let controls = json!({
-            "power_source": observed["power_source"],
-            "low_power_mode": conditions.low_power_mode.map(|_| observed["low_power_mode"].clone()),
-            "pmset_power_mode": conditions.pmset_power_mode.map(|_| observed["pmset_power_mode"].clone()),
-            "thermal_state": conditions.thermal_state.map(|_| observed["thermal_state"].clone()),
-        });
-        if probe["ready"] != true {
-            *self = Self::new();
-            return false;
-        }
-        let continuous = self
-            .last_observed
-            .and_then(|last| now.checked_duration_since(last))
-            .is_some_and(|gap| gap <= Duration::from_millis(2500));
-        if !continuous || self.controls.as_ref() != Some(&controls) {
-            self.controls = Some(controls);
-            self.since = Some(now);
-        }
-        self.last_observed = Some(now);
-        self.since
-            .is_some_and(|start| now.duration_since(start) >= required)
-    }
-}
-
 /// Never let an early error detach a live accelerator child or release its lock.
 struct OwnedChild(Child);
 impl Drop for OwnedChild {
@@ -675,7 +626,6 @@ fn execute(
     monitor: &PowerMonitor,
     stop: &AtomicBool,
     wait_started: Instant,
-    gate: &mut StableGate,
 ) -> Result<Option<bool>> {
     let mut observe = || -> std::result::Result<bool, String> {
         if wait_started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
@@ -699,7 +649,7 @@ fn execute(
                 job.id
             ));
         }
-        Ok(gate.observe(&current, &job.conditions, Instant::now(), Duration::ZERO))
+        Ok(current["ready"] == true)
     };
     // Hashing can exceed the observation freshness budget. Keep sampling
     // readiness while the scoped verifier runs, then join it. No condition
@@ -874,7 +824,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
         &queue.join(format!("power-{stamp}-{}.jsonl", std::process::id())),
     ))?;
     let mut idle = Instant::now();
-    let mut waiting = BTreeMap::<String, (Instant, StableGate)>::new();
+    let mut waiting = BTreeMap::<String, Instant>::new();
     loop {
         if stopped(queue, &stop) {
             atomic_json(
@@ -905,9 +855,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 pending.push(json!({"id":job.id,"waiting_for_dependencies":job.after}));
                 continue;
             }
-            let (started, gate) = waiting
-                .entry(job.id.clone())
-                .or_insert_with(|| (Instant::now(), StableGate::new()));
+            let started = waiting.entry(job.id.clone()).or_insert_with(Instant::now);
             if started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
                 return Err(format!(
                     "job {} expired waiting for conditions; no trial started",
@@ -920,12 +868,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 json!({"id":job.id,"wait_seconds":started.elapsed().as_secs(),
                 "conditions":observation}),
             );
-            if gate.observe(
-                &observation,
-                &job.conditions,
-                Instant::now(),
-                Duration::ZERO,
-            ) {
+            if observation["ready"] == true {
                 selected = Some(job);
                 break;
             }
@@ -939,10 +882,10 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 &queue.join("state.json"),
                 &json!({"status":"starting","id":job.id,"pid":std::process::id()}),
             )?;
-            let (wait_started, gate) = waiting
-                .get_mut(&job.id)
-                .ok_or("selected job is missing its stable gate")?;
-            match execute(&job, queue, &monitor, &stop, *wait_started, gate)? {
+            let wait_started = waiting
+                .get(&job.id)
+                .ok_or("selected job is missing its waiting deadline")?;
+            match execute(&job, queue, &monitor, &stop, *wait_started)? {
                 Some(false) => {
                     return Err(
                         format!("job {} failed; queue stopped without retry", job.id).into(),
@@ -950,24 +893,8 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 }
                 Some(true) => {
                     waiting.remove(&job.id);
-                    // Preparation work does not touch the accelerator. Preserve
-                    // another preparation job's sampled window when the child
-                    // completed inside the 2.5 s observation budget; the gate
-                    // itself will still reject a real sampling gap. Accelerator
-                    // trials invalidate every other quiet window explicitly.
-                    if job.purpose != Purpose::Preparation {
-                        for (_, gate) in waiting.values_mut() {
-                            *gate = StableGate::new();
-                        }
-                    }
                 }
-                None => {
-                    // Hashing inputs takes time. If conditions changed, keep
-                    // the original waiting deadline and begin a fresh window.
-                    if let Some((_, gate)) = waiting.get_mut(&job.id) {
-                        *gate = StableGate::new();
-                    }
-                }
+                None => {}
             }
         } else {
             let status = if pending.is_empty() {
@@ -1122,106 +1049,6 @@ mod tests {
             assert!(!controls_match(&changed, &conditions()), "{pointer}");
         }
     }
-    #[test]
-    fn stable_window_resets_on_activity_or_any_control_change() {
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let needed = Duration::from_secs(5);
-        let mut p = json!({"ready":true,"power":observation()});
-        assert!(!gate.observe(&p, &conditions(), now, needed));
-        for seconds in 1..5 {
-            assert!(!gate.observe(
-                &p,
-                &conditions(),
-                now + Duration::from_secs(seconds),
-                needed
-            ));
-        }
-        assert!(gate.observe(&p, &conditions(), now + needed, needed));
-        p["ready"] = json!(false);
-        assert!(!gate.observe(&p, &conditions(), now + needed, needed));
-        p["ready"] = json!(true);
-        assert!(!gate.observe(&p, &conditions(), now + needed, needed));
-        p["power"]["sample"]["controls"]["available_cpus"] = json!(16);
-        assert!(!gate.observe(
-            &p,
-            &conditions(),
-            now + needed + Duration::from_secs(1),
-            needed
-        ));
-    }
-
-    #[test]
-    fn zero_window_accepts_each_ready_snapshot_immediately() {
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let mut probe = json!({"ready":true,"power":observation()});
-        assert!(gate.observe(&probe, &conditions(), now, Duration::ZERO));
-
-        probe["power"]["sample"]["controls"]["thermal_state"] = json!(1);
-        assert!(gate.observe(
-            &probe,
-            &conditions(),
-            now + Duration::from_secs(30),
-            Duration::ZERO,
-        ));
-
-        probe["ready"] = json!(false);
-        assert!(!gate.observe(
-            &probe,
-            &conditions(),
-            now + Duration::from_secs(31),
-            Duration::ZERO,
-        ));
-    }
-
-    #[test]
-    fn stable_window_ignores_unconstrained_control_changes() {
-        let mut c = conditions();
-        c.low_power_mode = None;
-        c.pmset_power_mode = None;
-        c.thermal_state = None;
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let needed = Duration::from_secs(2);
-        let mut p = json!({"ready":true,"power":observation()});
-        assert!(!gate.observe(&p, &c, now, needed));
-        p["power"]["sample"]["controls"]["low_power_mode"] = json!(false);
-        p["power"]["sample"]["controls"]["pmset_power_mode"] = json!(2);
-        p["power"]["sample"]["controls"]["thermal_state"] = json!(1);
-        assert!(!gate.observe(&p, &c, now + Duration::from_secs(1), needed));
-        assert!(gate.observe(&p, &c, now + needed, needed));
-    }
-
-    #[test]
-    fn stable_window_rejects_observation_gaps_and_backwards_time() {
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let needed = Duration::from_secs(5);
-        let p = json!({"ready":true,"power":observation()});
-        for seconds in [0, 2, 4] {
-            assert!(!gate.observe(
-                &p,
-                &conditions(),
-                now + Duration::from_secs(seconds),
-                needed
-            ));
-        }
-        assert!(gate.observe(&p, &conditions(), now + Duration::from_secs(5), needed));
-        // Equal controls on either side of an unobserved interval do not
-        // establish uninterrupted quiet. The whole window must start again.
-        for seconds in [8, 10, 12] {
-            assert!(!gate.observe(
-                &p,
-                &conditions(),
-                now + Duration::from_secs(seconds),
-                needed
-            ));
-        }
-        assert!(gate.observe(&p, &conditions(), now + Duration::from_secs(13), needed));
-        assert!(!gate.observe(&p, &conditions(), now + Duration::from_secs(12), needed));
-    }
-
     #[test]
     fn unpinned_jobs_accept_every_known_thermal_state_but_never_unknown() {
         let mut c = conditions();
@@ -1441,40 +1268,6 @@ mod tests {
             max_run_seconds: 10,
         };
         assert!(dependencies_ready(&job, dir.path()).unwrap());
-    }
-
-    #[test]
-    fn pin_verification_cannot_bridge_an_unobserved_stable_window_gap() {
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let needed = Duration::from_secs(5);
-        let p = json!({"ready":true,"power":observation()});
-        for seconds in 0..5 {
-            assert!(!gate.observe(
-                &p,
-                &conditions(),
-                now + Duration::from_secs(seconds),
-                needed
-            ));
-        }
-        assert!(gate.observe(&p, &conditions(), now + needed, needed));
-        let mut observations = 0;
-        let accepted = super::super::prelaunch::verify(
-            || Ok(()),
-            || {
-                observations += 1;
-                let seconds = if observations == 1 { 5 } else { 8 };
-                Ok(gate.observe(
-                    &p,
-                    &conditions(),
-                    now + Duration::from_secs(seconds),
-                    needed,
-                ))
-            },
-        )
-        .unwrap();
-        assert!(!accepted);
-        assert_eq!(gate.since, Some(now + Duration::from_secs(8)));
     }
 
     #[test]
