@@ -490,6 +490,101 @@ mod tests {
     }
 
     #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded asymmetric private-ANE component oracle; zero compiles and four evaluations"]
+    fn hardware_output_ffn_asymmetric_correctness_probe() {
+        use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
+        use rvllm_apple_ane_sys::AneInMemoryProgram;
+
+        let (hidden, _, attention, output, ffn, post_gamma, pre_gamma) = asymmetric_fixture();
+        let source =
+            AneOutputFfnSource::build(&output, attention, &ffn, &post_gamma, &pre_gamma, 1e-6)
+                .unwrap();
+        let before = compile_budget_used();
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &source.mil,
+            &source.blob,
+            source.identity.input_bytes,
+            source.identity.output_bytes,
+            AneProgramCachePolicy::RequireExisting,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before);
+        let mut kernel = program.create_request().unwrap();
+        let mut repeated = None;
+        for case in [0_usize, 0, 1, 2] {
+            let sample = |index: usize| {
+                f16::from_f32((((index * 19 + case * 11 + 5) % 53) as f32 - 26.0) * 0.003)
+            };
+            let attended: Vec<_> = (0..attention).map(sample).collect();
+            let residual: Vec<_> = (0..hidden).map(|index| sample(index * 5 + 7)).collect();
+            let projected: Vec<_> = output
+                .chunks_exact(attention)
+                .map(|row| {
+                    f16::from_f32(
+                        row.iter()
+                            .zip(&attended)
+                            .map(|(&weight, &value)| weight.to_f32() * value.to_f32())
+                            .sum(),
+                    )
+                })
+                .collect();
+            let (_, expected) = output_ffn_cpu_boundary_oracle(
+                &projected,
+                &residual,
+                &post_gamma,
+                &pre_gamma,
+                &ffn,
+                1e-6,
+            )
+            .unwrap();
+            let mut input = vec![0_u8; source.identity.input_bytes];
+            for (channel, value) in attended.iter().chain(&residual).enumerate() {
+                let offset = channel * 64;
+                input[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+            }
+            kernel.write_input(&input).unwrap();
+            kernel.evaluate().unwrap();
+            let mut bytes = vec![0_u8; source.identity.output_bytes];
+            kernel.read_output(&mut bytes).unwrap();
+            let actual: Vec<_> = bytes
+                .chunks_exact(64)
+                .map(|row| f16::from_le_bytes([row[0], row[1]]))
+                .collect();
+            assert!(actual.iter().all(|value| value.is_finite()));
+            assert!(
+                actual.windows(2).any(|pair| pair[0] != pair[1]),
+                "asymmetric fixture collapsed every output channel"
+            );
+            let max_absolute_error = actual
+                .iter()
+                .zip(&expected)
+                .map(|(actual, expected)| (actual.to_f32() - expected.to_f32()).abs())
+                .fold(0.0_f32, f32::max);
+            assert!(
+                max_absolute_error <= 0.02,
+                "case {case}: {max_absolute_error}"
+            );
+            if case == 0 {
+                if let Some(first) = &repeated {
+                    assert_eq!(first, &actual, "repeated execution changed output bits");
+                }
+                repeated = Some(actual.clone());
+            }
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "case": case,
+                    "maximum_absolute_error": max_absolute_error,
+                    "distinct_output_bits": actual.iter().map(|value| value.to_bits()).collect::<std::collections::BTreeSet<_>>().len(),
+                    "output_bits": actual.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
+                })
+            );
+        }
+        assert_eq!(compile_budget_used(), before);
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
     fn compile_dialect_probe(mil: &str, input_channels: usize, output_channels: usize) {
         use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
         use rvllm_apple_ane_sys::AneInMemoryProgram;
