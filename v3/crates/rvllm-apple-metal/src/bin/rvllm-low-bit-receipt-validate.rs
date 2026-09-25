@@ -130,10 +130,21 @@ struct Dispatch {
     format: String,
     role: String,
     candidate_abi: Option<String>,
+    cooperative_geometry: Option<CooperativeGeometry>,
     exact_correctness_dispatches_verified: usize,
     exact_timing_dispatch_count_verified: bool,
     timing_dispatches: Option<usize>,
     timing_dispatches_per_schedule: Option<usize>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CooperativeGeometry {
+    output_channels_per_threadgroup: usize,
+    outputs_per_simdgroup: usize,
+    threads_per_threadgroup: usize,
+    k_tile: usize,
+    threadgroup_bytes: usize,
+    fp32_accumulators_per_lane: usize,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -276,7 +287,7 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
         require(
             matches!(
                 a.candidate.as_str(),
-                "scalar" | "n4" | "n8" | "vector" | "adaptive"
+                "scalar" | "n4" | "n8" | "vector" | "coop16" | "coop32" | "adaptive"
             ),
             "invalid legacy candidate",
         )?;
@@ -415,6 +426,29 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                     && positive(c.timing.candidate_ms.as_deref().unwrap_or(&[]), count),
                 "invalid legacy timing",
             )?;
+            let expected_geometry = match (a.candidate.as_str(), c.dispatch.format.as_str()) {
+                ("coop16", "w4a16") => Some((16, 4, 128, 64, 384, 4)),
+                ("coop16", "w8a16") => Some((16, 4, 128, 128, 768, 4)),
+                ("coop32", "w4a16") => Some((32, 8, 128, 64, 512, 8)),
+                ("coop32", "w8a16") => Some((32, 8, 128, 128, 1024, 8)),
+                ("coop16" | "coop32", _) => return fail("invalid cooperative format"),
+                _ => None,
+            };
+            match (expected_geometry, c.dispatch.cooperative_geometry.as_ref()) {
+                (Some(expected), Some(g)) => require(
+                    (
+                        g.output_channels_per_threadgroup,
+                        g.outputs_per_simdgroup,
+                        g.threads_per_threadgroup,
+                        g.k_tile,
+                        g.threadgroup_bytes,
+                        g.fp32_accumulators_per_lane,
+                    ) == expected,
+                    "wrong cooperative dispatch geometry",
+                )?,
+                (None, None) => {}
+                _ => return fail("cooperative geometry presence mismatch"),
+            }
             let suffix = match a.candidate.as_str() {
                 "scalar" => "",
                 "n4" => "_n4",
@@ -425,6 +459,12 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                     } else {
                         "_n8_k4"
                     }
+                }
+                "coop16" => {
+                    if c.dispatch.format == "w4a16" { "_tg16k64" } else { "_tg16k128" }
+                }
+                "coop32" => {
+                    if c.dispatch.format == "w4a16" { "_tg32k64" } else { "_tg32k128" }
                 }
                 "adaptive" => match (c.dispatch.format.as_str(), a.role.as_str(), c.m) {
                     (
