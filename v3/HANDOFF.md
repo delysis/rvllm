@@ -541,3 +541,17 @@ split-matrix uses 12,512 B plus 0 B. All four report execution width 32 and a
 1,024-thread pipeline maximum. Apple public APIs still do not expose supported
 register-count, occupancy, residency or machine-lowering evidence, so those
 claims remain explicitly unavailable or unverified.
+
+ANE timing has now ruled out the current stacked and Down4 variants as speed
+winners. The next source-grounded boundary hypothesis is not another FFN
+retile: stacked/interleaved FFN already reach one program and the exact
+two-convolution dependency lower bound for `GELU(gate) * up`. The next credible
+arm is a single-I/O attention-plus-output-projection graph. If the private
+compiler accepts and caches 48 layer-specific variants, it would replace the
+attention and output evaluations with one evaluation per layer and change the
+full route from 162 to an expected 160 resident programs. Do not integrate the
+route before serial compile/cache qualification: the historical multi-input
+attention graph caused an AppleH16ANEInterface panic. The design and safe-Rust
+fail-closed gate are in
+`reports/gemma4-ane-next-boundary-candidate-20260925.md` and
+`rvllm_ane_boundary_referee`.
