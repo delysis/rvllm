@@ -122,11 +122,50 @@ fn validate_stacked_qualification(
 }
 
 #[cfg(target_os = "macos")]
-fn validate_interleaved_qualification(
+#[derive(Clone, Copy)]
+enum ComponentLayout {
+    Down4,
+    Interleaved,
+}
+
+#[cfg(target_os = "macos")]
+impl ComponentLayout {
+    fn plan(self) -> &'static str {
+        match self {
+            Self::Down4 => "static-int8-down4-ffn-cached",
+            Self::Interleaved => "static-int8-interleaved-ffn-cached",
+        }
+    }
+
+    fn candidate(self) -> &'static str {
+        match self {
+            Self::Down4 => "ane-int8-ffn-down4",
+            Self::Interleaved => "ane-int8-ffn-interleaved",
+        }
+    }
+
+    fn control(self) -> &'static str {
+        match self {
+            Self::Down4 => "plain-int8",
+            Self::Interleaved => "stacked-int8",
+        }
+    }
+
+    fn claim(self) -> &'static str {
+        match self {
+            Self::Down4 => "qualified-down4-int8-layout",
+            Self::Interleaved => "qualified-interleaved-int8-layout",
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn validate_component_layout_qualification(
     baseline: &Value,
     candidate: &Value,
     route: &Value,
     component_events: &[Value],
+    layout: ComponentLayout,
 ) -> Result<(), String> {
     let plans = (
         baseline["ane_weight_plan"].as_str(),
@@ -136,14 +175,14 @@ fn validate_interleaved_qualification(
         plans,
         (
             Some("static-int8-ffn-cached"),
-            Some("static-int8-interleaved-ffn-cached")
+            Some(plan)
         ) | (
-            Some("static-int8-interleaved-ffn-cached"),
+            Some(plan),
             Some("static-int8-ffn-cached")
-        )
+        ) if plan == layout.plan()
     ) {
         return Err(
-            "qualification permits only original versus interleaved INT8 FFN layouts".into(),
+            "qualification permits only original versus the selected INT8 FFN layout".into(),
         );
     }
     same_fields(
@@ -152,7 +191,7 @@ fn validate_interleaved_qualification(
         &["model_dir", "config_sha256", "global_context_capacity"],
     )?;
     if route["schema"] != "rvllm.metal_prefill_ane_decode.v1"
-        || route["ane_weight_plan"] != "static-int8-interleaved-ffn-cached"
+        || route["ane_weight_plan"] != layout.plan()
         || route["qualification_complete"] != true
         || route["inference_complete"] != true
         || route["all_references_match"] != true
@@ -162,7 +201,7 @@ fn validate_interleaved_qualification(
         || route["loaded_ane_programs"] != 162
         || route["ane_compile_budget_used"] != 0
     {
-        return Err("incomplete or unexpected interleaved full-route qualification".into());
+        return Err("incomplete or unexpected component-layout full-route qualification".into());
     }
     let qualified = cases(route)?;
     if qualified.len() != 1
@@ -171,7 +210,7 @@ fn validate_interleaved_qualification(
         || qualified[0]["matches_reference"] != true
         || qualified[0]["ane_decode_steps"].as_u64() == Some(0)
     {
-        return Err("interleaved qualification lacks one complete reference route".into());
+        return Err("component-layout qualification lacks one complete reference route".into());
     }
     for report in [baseline, candidate] {
         for timed in cases(report)? {
@@ -184,18 +223,18 @@ fn validate_interleaved_qualification(
     }
     let begin = component_events
         .first()
-        .ok_or("missing interleaved component begin event")?;
+        .ok_or("missing component-layout begin event")?;
     let end = component_events
         .last()
-        .ok_or("missing interleaved component end event")?;
+        .ok_or("missing component-layout end event")?;
     let comparisons: Vec<_> = component_events
         .iter()
         .filter(|event| event["event"] == "comparison")
         .collect();
     if begin["event"] != "begin"
         || begin["schema"] != "rvllm.ane.ffn-component-input.v1"
-        || begin["candidate"] != "ane-int8-ffn-interleaved"
-        || begin["control"] != "stacked-int8"
+        || begin["candidate"] != layout.candidate()
+        || begin["control"] != layout.control()
         || begin["layer"] != 0
         || begin["samples"] != 3
         || comparisons.len() != 3
@@ -211,7 +250,7 @@ fn validate_interleaved_qualification(
         || end["promotion"] != false
         || end["performance_qualified"] != false
     {
-        return Err("interleaved component qualification is incomplete or inexact".into());
+        return Err("component-layout qualification is incomplete or inexact".into());
     }
     Ok(())
 }
@@ -230,7 +269,7 @@ fn compare_reports_with_policy(
     baseline: &Value,
     candidate: &Value,
     qualification: Option<&Value>,
-    interleaved_qualification: Option<(&Value, &[Value])>,
+    component_qualification: Option<(&Value, &[Value], ComponentLayout)>,
     explore_fair: bool,
 ) -> Result<Value, String> {
     let compare_phase: fn(&Value, &Value) -> Result<Value, String> = if explore_fair {
@@ -250,14 +289,20 @@ fn compare_reports_with_policy(
         }
     }
     same_fields(baseline, candidate, &IDENTITY)?;
-    let weight_comparison = if qualification.is_some() && interleaved_qualification.is_some() {
+    let weight_comparison = if qualification.is_some() && component_qualification.is_some() {
         return Err("multiple layout qualifications are not allowed".into());
     } else if let Some(qualification) = qualification {
         validate_stacked_qualification(baseline, candidate, qualification)?;
         "qualified-stacked-int8-layout"
-    } else if let Some((route, component_events)) = interleaved_qualification {
-        validate_interleaved_qualification(baseline, candidate, route, component_events)?;
-        "qualified-interleaved-int8-layout"
+    } else if let Some((route, component_events, layout)) = component_qualification {
+        validate_component_layout_qualification(
+            baseline,
+            candidate,
+            route,
+            component_events,
+            layout,
+        )?;
+        layout.claim()
     } else {
         same_fields(baseline, candidate, &["ane_weight_plan"])?;
         "same-plan"
@@ -336,8 +381,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let stacked = paths.len() == 4 && paths[2] == "--stacked-qualification";
     let interleaved = paths.len() == 5 && paths[2] == "--interleaved-qualification";
-    if paths.len() != 2 && !stacked && !interleaved {
-        return Err("usage: rvllm_compare_disaggregated BASELINE_REPORT CANDIDATE_REPORT [--stacked-qualification CHECKED_REPORT | --interleaved-qualification ROUTE_REPORT COMPONENT_EVENTS_JSONL] [--stable-fair-exploratory]".into());
+    let down4 = paths.len() == 5 && paths[2] == "--down4-qualification";
+    if paths.len() != 2 && !stacked && !interleaved && !down4 {
+        return Err("usage: rvllm_compare_disaggregated BASELINE_REPORT CANDIDATE_REPORT [--stacked-qualification CHECKED_REPORT | --interleaved-qualification ROUTE_REPORT COMPONENT_EVENTS_JSONL | --down4-qualification ROUTE_REPORT COMPONENT_EVENTS_JSONL] [--stable-fair-exploratory]".into());
     }
     let baseline: Value = serde_json::from_slice(&std::fs::read(&paths[0])?)?;
     let candidate: Value = serde_json::from_slice(&std::fs::read(&paths[1])?)?;
@@ -350,7 +396,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
-    let interleaved_qualification = if interleaved {
+    let component_qualification = if interleaved || down4 {
         let route_bytes = std::fs::read(&paths[3])?;
         let events_bytes = std::fs::read(&paths[4])?;
         let route = serde_json::from_slice::<Value>(&route_bytes)?;
@@ -362,6 +408,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some((
             route,
             events,
+            if down4 {
+                ComponentLayout::Down4
+            } else {
+                ComponentLayout::Interleaved
+            },
             format!("{:x}", Sha256::digest(route_bytes)),
             format!("{:x}", Sha256::digest(events_bytes)),
         ))
@@ -369,33 +420,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     let qualified = qualification.as_ref().map(|(report, _)| report);
-    let interleaved_qualified = interleaved_qualification
+    let component_qualified = component_qualification
         .as_ref()
-        .map(|(route, events, _, _)| (route, events.as_slice()));
+        .map(|(route, events, layout, _, _)| (route, events.as_slice(), *layout));
     let mut comparison = if explore_fair {
-        compare_reports_with_policy(
-            &baseline,
-            &candidate,
-            qualified,
-            interleaved_qualified,
-            true,
-        )?
+        compare_reports_with_policy(&baseline, &candidate, qualified, component_qualified, true)?
     } else {
-        compare_reports_with_policy(
-            &baseline,
-            &candidate,
-            qualified,
-            interleaved_qualified,
-            false,
-        )?
+        compare_reports_with_policy(&baseline, &candidate, qualified, component_qualified, false)?
     };
     comparison["baseline"] = json!(paths[0]);
     comparison["candidate"] = json!(paths[1]);
     if let Some((_, digest)) = qualification {
         comparison["stacked_qualification"] = json!({"path":paths[3],"sha256":digest});
     }
-    if let Some((_, _, route_digest, events_digest)) = interleaved_qualification {
-        comparison["interleaved_qualification"] = json!({
+    if let Some((_, _, layout, route_digest, events_digest)) = component_qualification {
+        comparison[if matches!(layout, ComponentLayout::Down4) {
+            "down4_qualification"
+        } else {
+            "interleaved_qualification"
+        }] = json!({
             "route":{"path":paths[3],"sha256":route_digest},
             "component_events":{"path":paths[4],"sha256":events_digest}
         });
@@ -535,8 +578,14 @@ mod tests {
         let end = json!({"event":"end","matched_all_inputs":true,"error":null,
             "compiler_calls":2,"promotion":false,"performance_qualified":false});
         let events = vec![begin, comparison(0), comparison(1), comparison(2), end];
-        let result =
-            compare_reports_with_policy(&a, &b, None, Some((&route, &events)), false).unwrap();
+        let result = compare_reports_with_policy(
+            &a,
+            &b,
+            None,
+            Some((&route, &events, ComponentLayout::Interleaved)),
+            false,
+        )
+        .unwrap();
         assert_eq!(
             result["weight_comparison"],
             "qualified-interleaved-int8-layout"
@@ -544,22 +593,76 @@ mod tests {
 
         let mut bad_route = route.clone();
         bad_route["all_references_match"] = json!(false);
-        assert!(
-            compare_reports_with_policy(&a, &b, None, Some((&bad_route, &events)), false).is_err()
-        );
+        assert!(compare_reports_with_policy(
+            &a,
+            &b,
+            None,
+            Some((&bad_route, &events, ComponentLayout::Interleaved)),
+            false,
+        )
+        .is_err());
         let mut bad_events = events.clone();
         bad_events[2]["bit_exact_finite"] = json!(false);
-        assert!(
-            compare_reports_with_policy(&a, &b, None, Some((&route, &bad_events)), false).is_err()
-        );
+        assert!(compare_reports_with_policy(
+            &a,
+            &b,
+            None,
+            Some((&route, &bad_events, ComponentLayout::Interleaved)),
+            false,
+        )
+        .is_err());
         let mut bad_workload = b.clone();
         bad_workload["cases"][0]["generated_tokens"] = json!([10, 21]);
         assert!(compare_reports_with_policy(
             &a,
             &bad_workload,
             None,
-            Some((&route, &events)),
+            Some((&route, &events, ComponentLayout::Interleaved)),
             false
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn down4_exception_requires_matching_route_and_plain_int8_component_events() {
+        let (a, mut b, _) = fixtures();
+        b["ane_weight_plan"] = json!("static-int8-down4-ffn-cached");
+        let mut route = b.clone();
+        route["qualification_complete"] = json!(true);
+        route["all_references_match"] = json!(true);
+        route["ane_execution_verified"] = json!(true);
+        route["diagnostic_journal_enabled"] = json!(true);
+        route["loaded_ane_programs"] = json!(162);
+        route["references_requested"] = json!(1);
+        route["references_completed"] = json!(1);
+        let begin = json!({"event":"begin","schema":"rvllm.ane.ffn-component-input.v1",
+            "candidate":"ane-int8-ffn-down4","control":"plain-int8","layer":0,
+            "samples":3});
+        let comparison = |sample| {
+            json!({"event":"comparison","sample":sample,
+            "bit_exact_finite":true})
+        };
+        let end = json!({"event":"end","matched_all_inputs":true,"error":null,
+            "compiler_calls":2,"promotion":false,"performance_qualified":false});
+        let events = vec![begin, comparison(0), comparison(1), comparison(2), end];
+        let result = compare_reports_with_policy(
+            &a,
+            &b,
+            None,
+            Some((&route, &events, ComponentLayout::Down4)),
+            false,
+        )
+        .unwrap();
+        assert_eq!(result["weight_comparison"], "qualified-down4-int8-layout");
+
+        let mut wrong_control = events.clone();
+        wrong_control[0]["control"] = json!("stacked-int8");
+        assert!(compare_reports_with_policy(
+            &a,
+            &b,
+            None,
+            Some((&route, &wrong_control, ComponentLayout::Down4)),
+            false,
         )
         .is_err());
     }
