@@ -585,6 +585,45 @@ mod tests {
     }
 
     #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "one actual Gemma 4 sliding-layer-shape compile and zero evaluations"]
+    fn hardware_output_ffn_gemma_shape_compile_probe() {
+        use crate::ane_linear::{compile_budget_used, AneOutputFfnCompile, AneProgramCachePolicy};
+
+        let (hidden, intermediate, attention) = (3840, 15360, 4096);
+        let dense: Vec<_> = (0..hidden * intermediate)
+            .map(|index| f16::from_f32(((index * 17 + 3) % 31) as f32 / 512.0 - 0.03))
+            .collect();
+        let ffn =
+            AneInt8FfnWeights::quantize(&dense, &dense, &dense, hidden, intermediate).unwrap();
+        drop(dense);
+        let output: Vec<_> = (0..hidden * attention)
+            .map(|index| f16::from_f32(((index * 19 + 5) % 37) as f32 / 512.0 - 0.035))
+            .collect();
+        let post_gamma: Vec<_> = (0..hidden)
+            .map(|index| f16::from_f32(0.9 + (index % 97) as f32 / 1000.0))
+            .collect();
+        let pre_gamma: Vec<_> = (0..hidden)
+            .map(|index| f16::from_f32(1.05 - (index % 89) as f32 / 1200.0))
+            .collect();
+        let before = compile_budget_used();
+        let compiled = AneOutputFfnCompile::compile_only(
+            &output,
+            attention,
+            &ffn,
+            &post_gamma,
+            &pre_gamma,
+            1e-6,
+            AneProgramCachePolicy::Compile,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before + 1);
+        assert_eq!(compiled.identity().input_bytes, (hidden + attention) * 64);
+        assert_eq!(compiled.identity().output_bytes, hidden * 64);
+        println!("identity={:?}", compiled.identity());
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
     fn compile_dialect_probe(mil: &str, input_channels: usize, output_channels: usize) {
         use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
         use rvllm_apple_ane_sys::AneInMemoryProgram;
