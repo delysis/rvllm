@@ -1,6 +1,6 @@
 //! Strict, non-selective summary for the Gemma 4 ANE stacked-FFN tournament.
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -42,6 +42,35 @@ fn required<'a>(value: &'a Value, key: &str) -> Result<&'a Value, Box<dyn Error>
     value
         .get(key)
         .ok_or_else(|| format!("missing field {key}").into())
+}
+
+fn queue_execution_usable(queue: &Value) -> bool {
+    if queue.get("status").and_then(Value::as_str) == Some("succeeded") {
+        return queue.get("exit_code").and_then(Value::as_i64) == Some(0);
+    }
+    // Retain an otherwise clean timing observation when only changing host
+    // conditions denied promotion eligibility. This does not upgrade it to a
+    // promotion-qualified queue success.
+    queue.get("status").and_then(Value::as_str) == Some("rejected")
+        && queue.get("purpose").and_then(Value::as_str) == Some("timing")
+        && queue.get("exit_code").and_then(Value::as_i64) == Some(0)
+        && queue
+            .get("sampled_conditions_eligible")
+            .and_then(Value::as_bool)
+            == Some(false)
+        && queue.get("overdue").and_then(Value::as_bool) == Some(false)
+        && queue.get("files_unchanged").and_then(Value::as_bool) == Some(true)
+        && queue
+            .get("signal_or_missing_exit_code")
+            .and_then(Value::as_bool)
+            == Some(false)
+        && queue.get("stop_requested").and_then(Value::as_bool) == Some(false)
+        && queue.get("file_error").is_some_and(Value::is_null)
+        && queue.get("validation").is_some_and(Value::is_null)
+        && queue
+            .get("violations")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
 }
 
 fn number(value: &Value, key: &str) -> Result<f64, Box<dyn Error>> {
@@ -163,10 +192,8 @@ fn summarize(root: &Path) -> Result<Value, Box<dyn Error>> {
                 *canonical = Some(actual.clone());
             }
         }
-        if queue.get("status").and_then(Value::as_str) != Some("succeeded")
-            || queue.get("exit_code").and_then(Value::as_i64) != Some(0)
-        {
-            return fail(format!("queue arm did not succeed: {id}"));
+        if !queue_execution_usable(&queue) {
+            return fail(format!("queue arm did not complete cleanly: {id}"));
         }
         let plan = if *route == "stacked" {
             "static-int8-stacked-ffn-cached"
@@ -418,12 +445,28 @@ mod tests {
     #[test]
     fn incomplete_or_mislabeled_sequence_is_rejected() {
         let expected = vec!["one".into(), "two".into()];
-        assert!(
-            validate_observed_sequence(&expected, &["one".into()])
-                .unwrap_err()
-                .to_string()
-                .contains("incomplete or mislabeled")
-        );
+        assert!(validate_observed_sequence(&expected, &["one".into()])
+            .unwrap_err()
+            .to_string()
+            .contains("incomplete or mislabeled"));
         assert!(validate_observed_sequence(&expected, &["one".into(), "wrong".into()]).is_err());
+    }
+
+    #[test]
+    fn conditions_only_timing_rejection_is_retained_but_failures_are_not() {
+        let retained = json!({
+            "status":"rejected", "purpose":"timing", "exit_code":0,
+            "sampled_conditions_eligible":false, "overdue":false,
+            "files_unchanged":true, "signal_or_missing_exit_code":false,
+            "stop_requested":false, "file_error":null, "validation":null,
+            "violations":[]
+        });
+        assert!(queue_execution_usable(&retained));
+        let mut failed = retained.clone();
+        failed["violations"] = json!([{"observation_error":"lost observer"}]);
+        assert!(!queue_execution_usable(&failed));
+        failed = retained;
+        failed["exit_code"] = json!(1);
+        assert!(!queue_execution_usable(&failed));
     }
 }
