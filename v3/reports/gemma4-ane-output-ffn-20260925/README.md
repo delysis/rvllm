@@ -90,3 +90,12 @@ evaluations. This establishes source viability only. The next sealed gate
 requires the identical source and weight identity to reload from the existing
 cache with zero compiler calls and zero evaluations before any execution API or
 component-correctness claim is permitted.
+
+The strict reload then succeeded with an identical source/weight identity,
+zero compiler calls and zero evaluations. A first four-evaluation component
+probe also succeeded: three distinct inputs stayed within 0.001141 maximum
+absolute error of an independent CPU reference, and a repeated input produced
+bit-identical output. Because that fixture used deliberately uniform matrices,
+this is a bounded arithmetic/lifetime screen rather than broad channel-wise
+coverage. The next arm uses asymmetric output, FFN, and learned-gamma values
+before timing is allowed.

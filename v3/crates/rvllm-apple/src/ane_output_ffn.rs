@@ -212,6 +212,44 @@ fn output_ffn_mil(
 mod tests {
     use super::*;
 
+    fn asymmetric_fixture() -> (
+        usize,
+        usize,
+        usize,
+        Vec<f16>,
+        AneInt8FfnWeights,
+        Vec<f16>,
+        Vec<f16>,
+    ) {
+        let (hidden, intermediate, attention) = (32, 64, 32);
+        let values = |count: usize, multiplier: usize, offset: usize, scale: f32| {
+            (0..count)
+                .map(|index| {
+                    f16::from_f32((((index * multiplier + offset) % 61) as f32 - 30.0) * scale)
+                })
+                .collect::<Vec<_>>()
+        };
+        let gate = values(intermediate * hidden, 17, 3, 0.0015);
+        let up = values(intermediate * hidden, 23, 7, 0.0013);
+        let down = values(hidden * intermediate, 29, 11, 0.0011);
+        let output = values(hidden * attention, 31, 13, 0.0017);
+        let post_gamma = (0..hidden)
+            .map(|index| f16::from_f32(0.8 + index as f32 / 100.0))
+            .collect();
+        let pre_gamma = (0..hidden)
+            .map(|index| f16::from_f32(1.1 - index as f32 / 160.0))
+            .collect();
+        (
+            hidden,
+            intermediate,
+            attention,
+            output,
+            AneInt8FfnWeights::quantize(&gate, &up, &down, hidden, intermediate).unwrap(),
+            post_gamma,
+            pre_gamma,
+        )
+    }
+
     #[test]
     fn source_is_single_io_stable_and_fail_closed() {
         let h = 32;
@@ -355,15 +393,8 @@ mod tests {
         let ffn = AneInt8FfnWeights::quantize(&dense, &dense, &dense, h, m).unwrap();
         let output_weights = vec![f16::from_f32(0.02); h * a];
         let gamma = vec![f16::ONE; h];
-        let source = AneOutputFfnSource::build(
-            &output_weights,
-            a,
-            &ffn,
-            &gamma,
-            &gamma,
-            1e-6,
-        )
-        .unwrap();
+        let source =
+            AneOutputFfnSource::build(&output_weights, a, &ffn, &gamma, &gamma, 1e-6).unwrap();
         let before = compile_budget_used();
         let program = AneInMemoryProgram::compile_with_cache_policy(
             &source.mil,
@@ -377,9 +408,8 @@ mod tests {
         let mut kernel = program.create_request().unwrap();
         let mut previous = None;
         for case in [0_usize, 0, 1, 2] {
-            let sample = |i: usize| {
-                f16::from_f32(((i * 17 + case * 13 + 3) % 37) as f32 / 256.0 - 0.07)
-            };
+            let sample =
+                |i: usize| f16::from_f32(((i * 17 + case * 13 + 3) % 37) as f32 / 256.0 - 0.07);
             let attended: Vec<_> = (0..a).map(sample).collect();
             let residual: Vec<_> = (0..h).map(|i| sample(i * 3 + 5)).collect();
             let projected: Vec<_> = output_weights
@@ -393,15 +423,9 @@ mod tests {
                     )
                 })
                 .collect();
-            let (_, expected) = output_ffn_cpu_boundary_oracle(
-                &projected,
-                &residual,
-                &gamma,
-                &gamma,
-                &ffn,
-                1e-6,
-            )
-            .unwrap();
+            let (_, expected) =
+                output_ffn_cpu_boundary_oracle(&projected, &residual, &gamma, &gamma, &ffn, 1e-6)
+                    .unwrap();
             let mut input = vec![0_u8; source.identity.input_bytes];
             for (channel, value) in attended.iter().chain(&residual).enumerate() {
                 let offset = channel * 64;
@@ -421,7 +445,10 @@ mod tests {
                 .zip(&expected)
                 .map(|(actual, expected)| (actual.to_f32() - expected.to_f32()).abs())
                 .fold(0.0_f32, f32::max);
-            assert!(max_absolute_error <= 0.02, "case {case}: {max_absolute_error}");
+            assert!(
+                max_absolute_error <= 0.02,
+                "case {case}: {max_absolute_error}"
+            );
             if case == 0 {
                 if let Some(first) = &previous {
                     assert_eq!(first, &actual, "repeated execution changed output bits");
@@ -438,6 +465,28 @@ mod tests {
             );
         }
         assert_eq!(compile_budget_used(), before);
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded asymmetric private-ANE compile only; exactly one compile and zero evaluations"]
+    fn hardware_output_ffn_asymmetric_compile_probe() {
+        use crate::ane_linear::{compile_budget_used, AneOutputFfnCompile, AneProgramCachePolicy};
+
+        let (_, _, attention, output, ffn, post_gamma, pre_gamma) = asymmetric_fixture();
+        let before = compile_budget_used();
+        let compiled = AneOutputFfnCompile::compile_only(
+            &output,
+            attention,
+            &ffn,
+            &post_gamma,
+            &pre_gamma,
+            1e-6,
+            AneProgramCachePolicy::Compile,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before + 1);
+        println!("identity={:?}", compiled.identity());
     }
 
     #[cfg(feature = "macos-private-ane-research")]
