@@ -55,6 +55,20 @@ fn candidates() -> Vec<MetalResearchCandidate> {
         .filter(|c| c.global_decode_tile().is_some())
         .collect()
 }
+fn validate_timing_request(length: u32, selected: &[String]) -> Result {
+    if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) {
+        return Err("timing length must be 256, 512, 1024, 2048, or 4096".into());
+    }
+    let candidates = candidates();
+    for (index, name) in selected.iter().enumerate() {
+        if !candidates.iter().any(|candidate| candidate.name() == name)
+            || selected[..index].contains(name)
+        {
+            return Err(format!("unknown or duplicate selected candidate: {name}").into());
+        }
+    }
+    Ok(())
+}
 fn tool(name: &str) -> Result<PathBuf> {
     let output = Command::new("/usr/bin/xcrun")
         .args(["--sdk", "macosx", "--find", name])
@@ -199,7 +213,8 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
         "queue":queue,"test_executable":pin(test)?,"job_generator":pin(&executable)?,
         "abba_retainer":pin(&retainer)?,"exploratory":exploratory,
         "conditions":policy,"conditions_input":pin(conditions)?,
-        "lengths":[256,512,1024,2048],"deferred_confirmation_lengths":[4096],
+        "screen_length":256,"advancement_lengths":[512,1024,2048],
+        "deferred_confirmation_lengths":[4096],
         "split_kv":false,"local_prefill":false,
         "promotion":false,"status":"proposed_unqualified"});
     json_new(&root.join("campaign.json"), &config)?;
@@ -251,7 +266,7 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
     }
     json_new(&root.join("compile-jobs.json"), &json!(all))
 }
-fn generate(root: &Path, timing: bool) -> Result {
+fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String]) -> Result {
     let config_path = root.join("campaign.json");
     let config = read(&config_path)?;
     let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
@@ -278,10 +293,21 @@ fn generate(root: &Path, timing: bool) -> Result {
     } else {
         None
     };
+    let timing_length = if timing {
+        Some(length.unwrap_or(256))
+    } else {
+        None
+    };
+    if let Some(length) = timing_length {
+        validate_timing_request(length, selected)?;
+    }
     let mut all = Vec::new();
     // Never prune the family from partial results. A failed compile/oracle stops
     // generation; revised families require a new explicit campaign identity.
     for candidate in candidates() {
+        if !selected.is_empty() && !selected.iter().any(|name| name == candidate.name()) {
+            continue;
+        }
         let flavor = if timing { "core" } else { "oracle" };
         let compile_id = id(&config, candidate, &format!("compile-{flavor}"))?;
         let built = succeeded(&queue, &compile_id)?.join("build");
@@ -333,11 +359,7 @@ fn generate(root: &Path, timing: bool) -> Result {
                 inputs.push(pin(&path)?);
             }
         }
-        let lengths: Vec<Option<u32>> = if timing {
-            [256, 512, 1024, 2048].map(Some).to_vec()
-        } else {
-            vec![None]
-        };
+        let lengths = vec![timing_length];
         for length in lengths {
             let suffix = length.map_or("oracle".into(), |n| format!("abba-L{n}"));
             let job_id = id(&config, candidate, &suffix)?;
@@ -390,14 +412,37 @@ fn generate(root: &Path, timing: bool) -> Result {
             all.push(job_id);
         }
     }
-    json_new(
-        &root.join(if timing {
-            "timing-jobs.json"
-        } else {
-            "oracle-jobs.json"
-        }),
-        &json!(all),
-    )
+    let output = timing_length.map_or_else(
+        || "oracle-jobs.json".to_owned(),
+        |length| format!("timing-jobs-L{length}.json"),
+    );
+    json_new(&root.join(output), &json!(all))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timing_request_accepts_screen_and_explicit_survivors() {
+        validate_timing_request(256, &[]).unwrap();
+        validate_timing_request(
+            512,
+            &[
+                "metal-global-d512-r16p128t128".to_owned(),
+                "metal-global-d512-r16p64t128".to_owned(),
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn timing_request_rejects_unknown_length_candidate_and_duplicate() {
+        assert!(validate_timing_request(128, &[]).is_err());
+        assert!(validate_timing_request(512, &["not-a-candidate".to_owned()]).is_err());
+        let duplicate = "metal-global-d512-r16p128t128".to_owned();
+        assert!(validate_timing_request(512, &[duplicate.clone(), duplicate]).is_err());
+    }
 }
 fn main() -> Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -419,8 +464,12 @@ fn main() -> Result {
         [action,source,directory] if action=="compile" => compile(&absolute(source)?,&absolute(directory)?),
         [action,campaign,root,queue,test,conditions] if action=="prepare" =>
             prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?),
-        [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false),
-        [action,root] if action=="timing-jobs" => generate(&absolute(root)?,true),
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT | timing-jobs ROOT".into()),
+        [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false,None,&[]),
+        [action,root] if action=="timing-jobs" => generate(&absolute(root)?,true,None,&[]),
+        [action,root,length,selected @ ..] if action=="timing-jobs" && !selected.is_empty() => {
+            let length = length.parse()?;
+            generate(&absolute(root)?,true,Some(length),selected)
+        }
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT | timing-jobs ROOT [LENGTH CANDIDATE...]".into()),
     }
 }
