@@ -1,4 +1,89 @@
-# Gemma 4 Metal / ANE checkpoint — active candidate handoff, 2026-09-22
+# Gemma 4 Apple kernel campaign — current handoff, 2026-09-25
+
+This section supersedes every older status or pause statement below. Work is
+active on draft PR #4, branch `astra/gemma4-load4-tiles-20260923`, at commit
+`1288d3c5`. Shipping defaults remain unchanged. Local Codex owns Apple-device
+execution, correctness qualification, timing, evidence retention, and any
+promotion. Chat Pro may propose reviewable source changes but may not claim
+local qualification.
+
+## Current adjudicated frontier
+
+- Global D512 BF16 decode attention: split-matrix is the stable qualified
+  implementation. The opt-in split-32 route passes the independent native
+  oracle, real Gemma route, newest-K/V, tails, holes, guards, BF16 rounding,
+  exact dispatch, repeated output, and zero-compile checks, but **is not
+  promotable**. Complete normal-route speedups versus split-matrix were
+  1.149x/1.861x at L256, 1.015x/1.019x at L512, 0.737x/1.155x at L1024, and
+  0.794x/0.683x at L2048. The short-context signal is unstable and becomes a
+  repeatable long-context regression. Raw reports and condition journals are
+  checked in at
+  `reports/gemma4-split32-normal-route-20260925/`.
+- Native-BF16 Metal W4/W8 projection baseline: all seven roles (Q/K/V/O,
+  gate/up/down), both formats, and M=1/M=4 pass real-weight correctness,
+  exact dispatch, guards, and repeated-use checks. Only 3/28 cases repeated as
+  stable >=1.05x wins under the 20% drift rule: V/W4/M1 (1.291x, 1.150x),
+  Up/W4/M4 (2.220x, 2.221x), and Down/W4/M1 (1.880x, 1.945x). The campaign is
+  **not promotable**; genuinely tiled native-BF16 W4 and W8 kernels are the
+  next Metal priority. See
+  `reports/gemma4-metal-low-bit-bf16-campaign-20260925/`.
+- ANE baseline versus stacked FFN: both routes are exact for the ten-token
+  continuation, provisioned 210/210, and compile-free during inference.
+  Corrected counterbalancing found mean stacked-minus-baseline FFN +0.016 ms
+  and total +18.210 ms. Stacked is correctness-qualified but not a speed
+  winner. See `reports/gemma4-ane-stacked-baseline-exact-v2-20260925.md`.
+- Generated-code evidence seals source, AIR, metallib, compiler, device, and
+  public PSO resource data. Apple public tooling does not expose supported
+  register-count, residency, or occupancy claims; do not manufacture them.
+- Checkpoint-specific W4/W8 quality-referee contracts exist, but full-model
+  calibrated logit/perplexity observations for every checkpoint-format pair
+  are still missing.
+
+## Required next implementation round
+
+1. Metal W4/W8: replace the one-output-per-SIMD correctness baseline with at
+   least two materially different tiled native-BF16 schedules per format.
+   Reuse unpacked values and scales across outputs; keep FP32 accumulation and
+   one BF16 storage boundary. Screen every role at M=1, then advance plausible
+   arms to bounded prefill M and full-route tests.
+2. Attention: retain split-matrix as control. Do not promote split-32 or build a
+   selector from its operator-only numbers. Investigate why its full-route
+   L2048 prefill and decode regress despite isolated-kernel wins, with command
+   submission, scratch, synchronization, partial, and merge time separated.
+3. Prefill: implement a separate tiled online-softmax experiment and an
+   explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
+   policy or call TensorOps ANE evidence.
+4. Device-resident decode: implement the smallest bounded command-buffer token
+   loop that keeps dependency state, append-visible K/V, and sampling state on
+   device. Disabled instrumentation must add no per-layer allocation,
+   synchronization, or logging.
+5. ANE: prioritize graph fusion and launch reduction across INT8, BF16, and
+   storage-only LUT4 experiments. Native 4-bit arithmetic must not be claimed
+   without device evidence. Preserve exact cache identity, evaluation counts,
+   zero-compile inference, exact route, and no-fallback receipts.
+6. Quality: run the checkpoint-bound W4/W8 logit/NLL/perplexity referee after
+   calibrating thresholds against BF16. Operator agreement alone is not model
+   acceptance.
+
+The persistent experiment queue is idle after completing the split-32
+campaign. It uses `stable_seconds=0`; changing conditions are recorded rather
+than used as a thermal-stability dwell gate. Short screens must precede longer
+contexts, and failed or unfavorable receipts must remain retained.
+
+## Chat Pro status
+
+The immutable job `rvllm-gemma4-coreai-sprint-20260925-v2` contains the full
+implementation brief and current evidence. It remains unsent. Bridge fixes for
+the Chat continuation interstitial and safe same-ID exhausted recovery pass
+their regression suites and are installed, but Chrome has not reconnected the
+extension/native host after stale-host cleanup. Do not invent a new job ID or
+manually click Send. Once bridge health is responsive, resume this exact ID and
+require explicit acknowledgement plus delivered package evidence before using
+its output.
+
+---
+
+# Historical checkpoint — 2026-09-22
 
 ## Superseding Chat Pro Astra brief
 
