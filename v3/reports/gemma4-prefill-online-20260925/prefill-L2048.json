@@ -1,0 +1,12 @@
+{
+  "schema": "rvllm.gemma4.prefill_advancement.v1",
+  "id": "g4-prefill-online-conventional-L2048",
+  "candidate": "research_gemma4_prefill_tiled_online_bf16",
+  "arm": "conventional_tiled_online_softmax",
+  "tokens": 2048,
+  "default_off": true,
+  "after": ["g4-prefill-online-conventional-L1024"],
+  "requires_predecessor": {"correctness": "pass", "speed_gate": "pass"},
+  "boundaries": {"qkv": "external_bf16", "output_projection": "external_bf16"},
+  "next": null
+}

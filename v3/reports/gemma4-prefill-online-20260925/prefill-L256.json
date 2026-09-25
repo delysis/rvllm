@@ -1,0 +1,13 @@
+{
+  "schema": "rvllm.gemma4.prefill_advancement.v1",
+  "id": "g4-prefill-online-conventional-L256",
+  "candidate": "research_gemma4_prefill_tiled_online_bf16",
+  "arm": "conventional_tiled_online_softmax",
+  "tokens": 256,
+  "default_off": true,
+  "boundaries": {"qkv": "external_bf16", "output_projection": "external_bf16"},
+  "requires": ["compile_exact_source", "independent_fp64_oracle", "guards", "bitwise_repeat", "generated_code_identity"],
+  "advance_when": {"correctness": "pass", "guards_untouched": true, "repeat_bits_equal": true, "candidate_not_slower_than_control": true},
+  "next": "prefill-L512.json",
+  "tensorops": {"status": "unsupported", "reason": "no stable queried Metal TensorOps ABI"}
+}
