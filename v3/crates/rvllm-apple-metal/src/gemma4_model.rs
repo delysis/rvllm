@@ -272,6 +272,12 @@ pub struct MetalPleState {
 pub struct MetalOneLayerState {
     pub layer_idx: usize,
     /// Exact authenticated checkpoint tensor selected for this layer.
+    pub q_proj_name: String,
+    pub k_proj_name: String,
+    pub v_proj_name: String,
+    pub o_proj_name: String,
+    pub gate_proj_name: String,
+    pub up_proj_name: String,
     pub down_proj_name: String,
     /// Optional authenticated low-bit sidecars stored in the model arena.
     pub low_bit_q_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
@@ -1851,6 +1857,7 @@ impl ProbeModelPlan {
         replacements.sort_by(|left, right| left.tensor_name.cmp(&right.tensor_name));
 
         let mut validated = BTreeMap::new();
+        let mut displaced_prefused_names = Vec::new();
         let mut displaced_native_bytes = 0usize;
         let mut low_bit_arena_bytes = 0usize;
         for replacement in replacements {
@@ -1864,19 +1871,22 @@ impl ProbeModelPlan {
                     "duplicate low-bit replacement tensor name",
                 ));
             }
-            if replacement.role != AppleLowBitTensorRole::DenseDownProjection {
-                return Err(invalid_low_bit_replacement(
-                    "authenticated low-bit role is not wired into the normal Metal route",
-                ));
-            }
-
             let layer = self
                 .layer_names
                 .iter()
-                .find(|layer| layer.down_proj_name == replacement.tensor_name)
+                .find(|layer| match replacement.role {
+                    AppleLowBitTensorRole::QueryProjection => layer.q_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::KeyProjection => layer.k_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::ValueProjection => !layer.v_uses_k_proj && layer.v_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::OutputProjection => layer.o_proj_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::DenseGateProjection => layer.gate_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::DenseUpProjection => layer.up_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::DenseDownProjection => layer.down_proj_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::LmHead => false,
+                })
                 .ok_or_else(|| {
                     invalid_low_bit_replacement(
-                        "low-bit replacement does not name a prepared dense down projection",
+                        "low-bit replacement role/name does not identify a prepared dense projection",
                     )
                 })?;
             if layer.moe.is_some() {
@@ -1884,10 +1894,28 @@ impl ProbeModelPlan {
                     "low-bit replacement of a mixture-of-experts layer is unsupported",
                 ));
             }
-            let expected_shape = [self.arch.hidden_size, layer.intermediate_size];
+            let expected_shape = match replacement.role {
+                AppleLowBitTensorRole::QueryProjection => [layer.dims.q_dim, self.arch.hidden_size],
+                AppleLowBitTensorRole::KeyProjection | AppleLowBitTensorRole::ValueProjection => {
+                    [layer.dims.kv_dim, self.arch.hidden_size]
+                }
+                AppleLowBitTensorRole::OutputProjection => {
+                    [self.arch.hidden_size, layer.dims.q_dim]
+                }
+                AppleLowBitTensorRole::DenseGateProjection
+                | AppleLowBitTensorRole::DenseUpProjection => {
+                    [layer.intermediate_size, self.arch.hidden_size]
+                }
+                AppleLowBitTensorRole::DenseDownProjection => {
+                    [self.arch.hidden_size, layer.intermediate_size]
+                }
+                AppleLowBitTensorRole::LmHead => {
+                    unreachable!("LM head rejected by role/name lookup")
+                }
+            };
             if replacement.shape != expected_shape {
                 return Err(invalid_low_bit_replacement(
-                    "low-bit replacement shape does not match the prepared dense down projection",
+                    "low-bit replacement shape does not match the prepared dense projection role",
                 ));
             }
 
@@ -1908,13 +1936,40 @@ impl ProbeModelPlan {
                 ));
             }
 
-            let native = self.tensors.get(&replacement.tensor_name).ok_or_else(|| {
-                invalid_low_bit_replacement(
-                    "low-bit replacement native tensor is missing from the checkpoint",
-                )
-            })?;
+            // `weights_bytes` accounts the buffers that the loader actually
+            // materializes, not every source tensor in the checkpoint.  Split
+            // Q/K/V and gate/up tensors are fused while loading and therefore
+            // contribute only through `fused_qkv_bytes` / `fused_gate_up_bytes`.
+            // Counting their source byte lengths here would subtract bytes that
+            // were never present in the arena, underflowing complete low-bit
+            // replacement plans before the fused allocation is removed below.
+            let directly_materialized = self
+                .names
+                .iter()
+                .any(|name| name == &replacement.tensor_name);
+            let fused_source = matches!(
+                replacement.role,
+                AppleLowBitTensorRole::QueryProjection
+                    | AppleLowBitTensorRole::KeyProjection
+                    | AppleLowBitTensorRole::ValueProjection
+                    | AppleLowBitTensorRole::DenseGateProjection
+                    | AppleLowBitTensorRole::DenseUpProjection
+            );
+            let native_bytes = directly_materialized
+                .then(|| {
+                    self.tensors
+                        .get(&replacement.tensor_name)
+                        .map(|native| native.nbytes)
+                })
+                .flatten()
+                .or_else(|| fused_source.then_some(0))
+                .ok_or_else(|| {
+                    invalid_low_bit_replacement(
+                        "low-bit replacement native tensor is missing from the checkpoint",
+                    )
+                })?;
             displaced_native_bytes = displaced_native_bytes
-                .checked_add(native.nbytes)
+                .checked_add(native_bytes)
                 .ok_or_else(model_arena_overflow)?;
 
             // Sidecars are loaded into two 16-byte-aligned arena regions. The
@@ -1932,6 +1987,50 @@ impl ProbeModelPlan {
             validated.insert(replacement.tensor_name.clone(), replacement);
         }
 
+        for layer in &self.layer_names {
+            let has = |name: &str| validated.contains_key(name);
+            let roles = [
+                has(&layer.q_name),
+                has(&layer.k_name),
+                !layer.v_uses_k_proj && has(&layer.v_name),
+                has(&layer.o_proj_name),
+                has(&layer.gate_name),
+                has(&layer.up_name),
+                has(&layer.down_proj_name),
+            ];
+            let selected = roles.iter().filter(|&&value| value).count();
+            if selected != 0 && selected != 1 && selected != roles.len() {
+                return Err(invalid_low_bit_replacement(
+                    "dense low-bit layer replacement must be down-only or a complete Q/K/V/O/gate/up/down set",
+                ));
+            }
+            if selected == 1 && !roles[6] {
+                return Err(invalid_low_bit_replacement(
+                    "a partial dense low-bit layer replacement is unsupported",
+                ));
+            }
+            if selected == roles.len() {
+                let fused_bytes = layer
+                    .dims
+                    .qkv_rows
+                    .checked_mul(self.arch.hidden_size)
+                    .and_then(|value| {
+                        value.checked_add(2 * layer.intermediate_size * self.arch.hidden_size)
+                    })
+                    .and_then(|value| value.checked_mul(std::mem::size_of::<f16>()))
+                    .ok_or_else(model_arena_overflow)?;
+                displaced_native_bytes = displaced_native_bytes
+                    .checked_add(fused_bytes)
+                    .ok_or_else(model_arena_overflow)?;
+                if self.tensors.contains_key(&layer.prefused_qkv_name) {
+                    displaced_prefused_names.push(layer.prefused_qkv_name.clone());
+                }
+                if self.tensors.contains_key(&layer.prefused_gate_up_name) {
+                    displaced_prefused_names.push(layer.prefused_gate_up_name.clone());
+                }
+            }
+        }
+
         self.weights_bytes = self
             .weights_bytes
             .checked_sub(displaced_native_bytes)
@@ -1943,8 +2042,10 @@ impl ProbeModelPlan {
             .and_then(|bytes| bytes.checked_add(low_bit_arena_bytes))
             .ok_or_else(model_arena_overflow)?;
         self.arena_bytes = max(self.unfloored_arena_bytes, PROBE_METAL_ARENA_BYTES);
-        self.names
-            .retain(|name| !validated.contains_key(name.as_str()));
+        self.names.retain(|name| {
+            !validated.contains_key(name.as_str())
+                && !displaced_prefused_names.iter().any(|fused| fused == name)
+        });
         self.low_bit_replacements = validated;
         Ok(self)
     }
@@ -2568,7 +2669,14 @@ impl Gemma4MetalState {
             let kv_dim = dims.kv_dim;
 
             let attn_norm = region_lookup(&mut mapped_refs, &layer_names.attn_norm_name)?;
-            let o_proj = region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?;
+            let low_bit_o = plan
+                .low_bit_replacements
+                .contains_key(&layer_names.o_proj_name);
+            let o_proj = if low_bit_o {
+                attn_norm.clone()
+            } else {
+                region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?
+            };
             let mlp_norm = region_lookup(&mut mapped_refs, &layer_names.mlp_norm_name)?;
             let down_proj = if plan
                 .low_bit_replacements
@@ -2618,7 +2726,10 @@ impl Gemma4MetalState {
                 layer_names.post_per_layer_input_norm_name.as_deref(),
             )?;
 
-            let qkv = if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
+            let low_bit_qkv = plan.low_bit_replacements.contains_key(&layer_names.q_name);
+            let qkv = if low_bit_qkv {
+                attn_norm.clone()
+            } else if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
             } else {
                 let bytes = concat_f16_tensors(
@@ -2643,7 +2754,12 @@ impl Gemma4MetalState {
                 map_fused_bytes_to_arena(arena, &format!("metal_fused_qkv_{layer_idx}"), &bytes)?
             };
 
-            let gate_up = if plan
+            let low_bit_gate_up = plan
+                .low_bit_replacements
+                .contains_key(&layer_names.gate_name);
+            let gate_up = if low_bit_gate_up {
+                attn_norm.clone()
+            } else if plan
                 .tensors
                 .contains_key(&layer_names.prefused_gate_up_name)
             {
@@ -2863,6 +2979,12 @@ impl Gemma4MetalState {
 
             layers.push(MetalOneLayerState {
                 layer_idx,
+                q_proj_name: layer_names.q_name.clone(),
+                k_proj_name: layer_names.k_name.clone(),
+                v_proj_name: layer_names.v_name.clone(),
+                o_proj_name: layer_names.o_proj_name.clone(),
+                gate_proj_name: layer_names.gate_name.clone(),
+                up_proj_name: layer_names.up_name.clone(),
                 down_proj_name: layer_names.down_proj_name.clone(),
                 low_bit_q_proj: None,
                 low_bit_k_proj: None,
@@ -3853,15 +3975,96 @@ mod tests {
         format: rvllm_apple::AppleLowBitWeightFormat,
         shape: [usize; 2],
     ) -> MetalLowBitWeightReplacement {
+        low_bit_role_replacement(
+            tensor_name,
+            AppleLowBitTensorRole::DenseDownProjection,
+            format,
+            shape,
+        )
+    }
+
+    fn low_bit_role_replacement(
+        tensor_name: impl Into<String>,
+        role: AppleLowBitTensorRole,
+        format: rvllm_apple::AppleLowBitWeightFormat,
+        shape: [usize; 2],
+    ) -> MetalLowBitWeightReplacement {
         MetalLowBitWeightReplacement {
             tensor_name: tensor_name.into(),
-            role: AppleLowBitTensorRole::DenseDownProjection,
+            role,
             format,
             shape,
             packed_values_bytes: low_bit_packed_values_bytes(format, shape[0], shape[1])
                 .expect("packed bytes"),
             scales_bytes: low_bit_scales_bytes(shape[0], shape[1]).expect("scale bytes"),
         }
+    }
+
+    #[test]
+    fn complete_dense_low_bit_layer_plan_omits_every_projection_and_rejects_partial_set() {
+        let dir = write_two_layer_sliding_global_plan_fixture();
+        let plan = ProbeModelPlan::new(&dir).expect("build plan");
+        let layer = &plan.layer_names[0];
+        let hidden = plan.arch.hidden_size;
+        let intermediate = layer.intermediate_size;
+        let format = rvllm_apple::AppleLowBitWeightFormat::W4A16;
+        let replacements = vec![
+            low_bit_role_replacement(
+                &layer.q_name,
+                AppleLowBitTensorRole::QueryProjection,
+                format,
+                [layer.dims.q_dim, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.k_name,
+                AppleLowBitTensorRole::KeyProjection,
+                format,
+                [layer.dims.kv_dim, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.v_name,
+                AppleLowBitTensorRole::ValueProjection,
+                format,
+                [layer.dims.kv_dim, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.o_proj_name,
+                AppleLowBitTensorRole::OutputProjection,
+                format,
+                [hidden, layer.dims.q_dim],
+            ),
+            low_bit_role_replacement(
+                &layer.gate_name,
+                AppleLowBitTensorRole::DenseGateProjection,
+                format,
+                [intermediate, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.up_name,
+                AppleLowBitTensorRole::DenseUpProjection,
+                format,
+                [intermediate, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.down_proj_name,
+                AppleLowBitTensorRole::DenseDownProjection,
+                format,
+                [hidden, intermediate],
+            ),
+        ];
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("partial plan")
+            .with_low_bit_replacements(&replacements[..6])
+            .is_err());
+        let planned = ProbeModelPlan::new(&dir)
+            .expect("complete plan")
+            .with_low_bit_replacements(&replacements)
+            .expect("complete dense replacement");
+        assert_eq!(planned.low_bit_replacements.len(), 7);
+        assert!(replacements
+            .iter()
+            .all(|replacement| !planned.names.contains(&replacement.tensor_name)));
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

@@ -2798,15 +2798,6 @@ impl ModelMetalBackend {
     ) -> Result<usize> {
         let mut total = 0usize;
         for replacement in replacements {
-            if replacement.role != rvllm_apple::AppleLowBitTensorRole::DenseDownProjection {
-                return Err(RvllmError::apple(
-                    AppleError::InvalidWeightBlob {
-                        reason:
-                            "authenticated low-bit role is not wired into the normal Metal route",
-                    },
-                    model_ctx("prepare_low_bit_weights"),
-                ));
-            }
             total = total
                 .checked_add(15)
                 .map(|bytes| bytes & !15)
@@ -2870,12 +2861,35 @@ impl ModelMetalBackend {
             let layer_index = state
                 .layers
                 .iter()
-                .position(|layer| layer.down_proj_name == replacement.tensor_name)
+                .position(|layer| match replacement.role {
+                    rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                        layer.q_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::KeyProjection => {
+                        layer.k_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                        layer.v_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                        layer.o_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                        layer.gate_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                        layer.up_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                        layer.down_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::LmHead => false,
+                })
                 .ok_or_else(|| {
                     RvllmError::apple(
                         AppleError::InvalidWeightBlob {
                             reason:
-                                "low-bit tensor does not match a prepared dense down projection",
+                                "low-bit tensor does not match its prepared dense projection role",
                         },
                         model_ctx("prepare_low_bit_weights"),
                     )
@@ -2889,22 +2903,51 @@ impl ModelMetalBackend {
                     model_ctx("prepare_low_bit_weights"),
                 ));
             }
-            let half_bytes = std::mem::size_of::<f16>();
-            let intermediate = layer
-                .gate_up
-                .size
-                .checked_div(2)
-                .and_then(|elements| elements.checked_div(half_bytes))
-                .and_then(|elements| elements.checked_div(state.hidden_size))
+            let intermediate = replacements
+                .iter()
+                .find(|candidate| {
+                    candidate.role == rvllm_apple::AppleLowBitTensorRole::DenseDownProjection
+                        && candidate.tensor_name == layer.down_proj_name
+                })
+                .map(|candidate| candidate.shape[1])
+                .or_else(|| {
+                    layer.down_proj.as_ref().and_then(|region| {
+                        region
+                            .size
+                            .checked_div(std::mem::size_of::<f16>())
+                            .and_then(|elements| elements.checked_div(state.hidden_size))
+                    })
+                })
                 .ok_or_else(|| {
                     RvllmError::apple(
                         AppleError::InvalidWeightBlob {
-                            reason: "prepared dense FFN shape is invalid",
+                            reason: "prepared dense FFN intermediate size is unavailable",
                         },
                         model_ctx("prepare_low_bit_weights"),
                     )
                 })?;
-            let expected_shape = [state.hidden_size, intermediate];
+            let expected_shape = match replacement.role {
+                rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                    [layer.dims.q_dim, state.hidden_size]
+                }
+                rvllm_apple::AppleLowBitTensorRole::KeyProjection
+                | rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                    [layer.dims.kv_dim, state.hidden_size]
+                }
+                rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                    [state.hidden_size, layer.dims.q_dim]
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseGateProjection
+                | rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                    [intermediate, state.hidden_size]
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                    [state.hidden_size, intermediate]
+                }
+                rvllm_apple::AppleLowBitTensorRole::LmHead => {
+                    unreachable!("LM head rejected above")
+                }
+            };
             if replacement.shape != expected_shape
                 || tensor.shape
                     != [
@@ -2928,7 +2971,8 @@ impl ModelMetalBackend {
             {
                 return Err(RvllmError::apple(
                     AppleError::InvalidWeightBlob {
-                        reason: "low-bit tensor shape does not match prepared dense FFN",
+                        reason:
+                            "low-bit tensor shape does not match prepared dense projection role",
                     },
                     model_ctx("prepare_low_bit_weights"),
                 ));
@@ -2936,13 +2980,19 @@ impl ModelMetalBackend {
 
             let values_len = replacement.packed_values_bytes;
             let values = arena.region(
-                &format!("metal_low_bit_layer_{layer_index}_packed_values"),
+                &format!(
+                    "metal_low_bit_layer_{layer_index}_{}_packed_values",
+                    replacement.role.report_name()
+                ),
                 values_len,
                 16,
             )?;
             let scale_bytes = replacement.scales_bytes;
             let scales = arena.region(
-                &format!("metal_low_bit_layer_{layer_index}_scales"),
+                &format!(
+                    "metal_low_bit_layer_{layer_index}_{}_scales",
+                    replacement.role.report_name()
+                ),
                 scale_bytes,
                 16,
             )?;
@@ -2988,13 +3038,62 @@ impl ModelMetalBackend {
                     model_ctx("prepare_low_bit_weights"),
                 )
             })?;
-            state.layers[layer_index].low_bit_down_proj = Some(projection);
+            let layer = &mut state.layers[layer_index];
+            match replacement.role {
+                rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                    layer.low_bit_q_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::KeyProjection => {
+                    layer.low_bit_k_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                    layer.low_bit_v_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                    layer.low_bit_o_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                    layer.low_bit_gate_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                    layer.low_bit_up_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                    layer.low_bit_down_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::LmHead => {
+                    unreachable!("LM head rejected above")
+                }
+            }
         }
         for replacement in replacements {
             let layer = state
                 .layers
                 .iter()
-                .find(|layer| layer.down_proj_name == replacement.tensor_name)
+                .find(|layer| match replacement.role {
+                    rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                        layer.q_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::KeyProjection => {
+                        layer.k_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                        layer.v_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                        layer.o_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                        layer.gate_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                        layer.up_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                        layer.down_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::LmHead => false,
+                })
                 .ok_or_else(|| {
                     RvllmError::apple(
                         AppleError::InvalidWeightBlob {
@@ -3003,8 +3102,31 @@ impl ModelMetalBackend {
                         model_ctx("prepare_low_bit_weights"),
                     )
                 })?;
-            if layer.low_bit_down_proj.is_none()
-                || (self.low_bit_residency_policy == MetalLowBitResidencyPolicy::ReplaceNative
+            let installed = match replacement.role {
+                rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                    layer.low_bit_q_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::KeyProjection => layer.low_bit_k_proj.is_some(),
+                rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                    layer.low_bit_v_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                    layer.low_bit_o_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                    layer.low_bit_gate_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                    layer.low_bit_up_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                    layer.low_bit_down_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::LmHead => false,
+            };
+            if !installed
+                || (replacement.role == rvllm_apple::AppleLowBitTensorRole::DenseDownProjection
+                    && self.low_bit_residency_policy == MetalLowBitResidencyPolicy::ReplaceNative
                     && layer.down_proj.is_some())
             {
                 return Err(RvllmError::apple(
@@ -3859,7 +3981,14 @@ impl ModelMetalBackend {
             }
 
             let hidden = state.hidden_size;
-            let intermediate = one.gate_up.size / 2 / half_bytes / hidden;
+            // Replacement residency deliberately omits the native fused
+            // gate/up allocation. Preserve the authenticated logical shape
+            // from the low-bit down descriptor instead of inferring zero from
+            // that absent storage.
+            let intermediate = one.low_bit_down_proj.map_or_else(
+                || one.gate_up.size / 2 / half_bytes / hidden,
+                |projection| projection.shape()[1] as usize,
+            );
             let down_proj_offset = match (one.down_proj.as_ref(), one.low_bit_down_proj.is_some()) {
                 (Some(native), false) => Some(native.offset),
                 (_, true) => None,
@@ -4290,7 +4419,8 @@ impl ModelMetalBackend {
                 count += 3;
                 count += weights.q_norm_offset.is_some() as u64;
                 count += weights.k_norm_offset.is_some() as u64;
-                count += weights.v_norm_offset.is_some() as u64;
+                // V always receives either learned or unit headwise RMSNorm.
+                count += 1;
             }
         } else if !(weights.q_norm_offset.is_some() && weights.k_norm_offset.is_some()) {
             count += weights.q_norm_offset.is_some() as u64;

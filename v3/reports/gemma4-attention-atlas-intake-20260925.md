@@ -93,6 +93,21 @@ The actionable design rules are:
 6. For low-bit projections, profile unpack/decode instructions and scale/codebook
    loads by role and stream size. Do not infer bandwidth limitation from packed
    bytes alone.
+7. Keep the autoregressive dependency chain device-resident where possible, but
+   expose command-buffer token batching as a bounded policy. Full-route evidence
+   must report accelerator time, encode/submit, synchronization, sampling, token
+   delivery, and cache/state updates; cancellation and stop-token overshoot are
+   part of the contract.
+8. Treat every packed-weight grid as checkpoint-specific. A W4/W8 kernel can
+   enter operator screening after exact dequantization checks, but it cannot
+   claim model equivalence until the checkpoint's quantizer, scale convention,
+   and teacher-forced quality gate match. The reference's reported 12B INT4
+   mismatch is a warning, not a universal conclusion about INT4.
+9. Compiler-sensitive claims need device evidence. Source that appears
+   register-resident, algebraically equivalent, or more coalesced is only a
+   hypothesis until generated-code/resource inspection and timing confirm it.
+   Apple TensorOps are a separate prefill arm on supporting hardware, not an ANE
+   result and not an assumption that may be projected onto M4.
 
 ## Same-harness incumbent comparison
 

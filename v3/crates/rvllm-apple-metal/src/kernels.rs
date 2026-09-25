@@ -115,6 +115,37 @@ kernel void rmsnorm_headwise_f16(
     }
 }
 
+kernel void rmsnorm_headwise_unit_f16(
+    device const half *input      [[buffer(0)]],
+    device half       *output     [[buffer(1)]],
+    constant uint     &head_dim   [[buffer(2)]],
+    constant float    &eps        [[buffer(3)]],
+    constant uint     &num_heads  [[buffer(4)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid / num_heads;
+    uint head = gid % num_heads;
+    uint base = token * num_heads * head_dim + head * head_dim;
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        float v = float(input[base + i]);
+        local_sum += v * v;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) shared_sum[tid] += shared_sum[tid + s];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float rms = rsqrt(shared_sum[0] / float(head_dim) + eps);
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        output[base + i] = f16_sat(float(input[base + i]) * rms);
+    }
+}
+
 // ============================================================================
 // GEMM (f16, tiled)
 // ============================================================================
@@ -2757,6 +2788,7 @@ pub const KERNEL_COUNT: usize = KERNEL_NAMES.len();
 pub const KERNEL_NAMES: &[&str] = &[
     "rmsnorm_f16",
     "rmsnorm_headwise_f16",
+    "rmsnorm_headwise_unit_f16",
     "gemm_f16",
     "gemm_f16_tiled16",
     "gemm_f16_vec8",

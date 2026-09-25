@@ -349,6 +349,42 @@ pub struct MetalLayerDebugSkip {
     pub skip_local_kv_cache_write: bool,
 }
 
+fn validate_debug_skip(debug_skip: MetalLayerDebugSkip) -> Result<()> {
+    if debug_skip.skip_kv_projection && !debug_skip.skip_local_kv_cache_write {
+        return Err(rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::InvalidWeightBlob {
+                reason: "cannot write the local KV cache after skipping K/V projection",
+            },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "debug_skip_kv_projection",
+                device: "apple-silicon",
+            },
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod debug_skip_tests {
+    use super::*;
+
+    #[test]
+    fn skipping_kv_projection_requires_skipping_its_cache_write() {
+        assert!(validate_debug_skip(MetalLayerDebugSkip::default()).is_ok());
+        assert!(validate_debug_skip(MetalLayerDebugSkip {
+            skip_kv_projection: true,
+            skip_local_kv_cache_write: true,
+        })
+        .is_ok());
+        assert!(validate_debug_skip(MetalLayerDebugSkip {
+            skip_kv_projection: true,
+            skip_local_kv_cache_write: false,
+        })
+        .is_err());
+    }
+}
+
 /// Metadata buffer offsets (positions, slot mapping, etc).
 #[derive(Copy, Clone, Debug)]
 pub struct MetalMetadata {
@@ -837,6 +873,7 @@ pub unsafe fn metal_encode_forward_layer(
     let q_dim = dims.num_heads * dims.head_dim;
     let kv_dim = dims.num_kv_heads * dims.head_dim;
     let qkv_n = q_dim + 2 * kv_dim;
+    validate_debug_skip(debug_skip)?;
     let native_down_proj_offset = validate_down_projection_sources(
         weights.down_proj_offset,
         weights.low_bit_down_proj.is_some(),
@@ -1139,6 +1176,19 @@ pub unsafe fn metal_encode_forward_layer(
                     dims.rms_eps,
                     num_tokens,
                     "low_bit_v_norm",
+                )?;
+            } else {
+                encode_headwise_rmsnorm_unit(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.v_offset,
+                    scratch.v_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "low_bit_v_norm_unit",
                 )?;
             }
         }
@@ -3436,6 +3486,51 @@ unsafe fn encode_headwise_rmsnorm(
         depth: 1,
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_headwise_rmsnorm_unit(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    input_offset: usize,
+    output_offset: usize,
+    head_dim: u32,
+    num_heads: u32,
+    eps: f32,
+    num_tokens: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    encoder.setComputePipelineState(pipelines.get("rmsnorm_headwise_unit_f16")?);
+    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::from(&head_dim).cast(), 4, 2);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::from(&eps).cast(), 4, 3);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::from(&num_heads).cast(), 4, 4);
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens.saturating_mul(num_heads) as usize,
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        },
+    );
     encoder.endEncoding();
     Ok(())
 }
