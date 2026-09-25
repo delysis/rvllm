@@ -1806,6 +1806,42 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "private ANE layer-0 real-weight output/FFN compile; one compiler call, zero evaluations"]
+    fn hardware_layer0_output_ffn_real_weight_compile() {
+        use rvllm_apple::ane_linear::AneOutputFfnCompile;
+
+        assert_eq!(compile_budget_used(), 0, "probe requires a fresh process");
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+        let prefix = format!("{}.layers.0", arch.weight_prefix);
+        let load = |suffix: &str| load_tensor(&tensors[&format!("{prefix}.{suffix}")]);
+        let output = load("self_attn.o_proj.weight").unwrap();
+        let gate = load("mlp.gate_proj.weight").unwrap();
+        let up = load("mlp.up_proj.weight").unwrap();
+        let down = load("mlp.down_proj.weight").unwrap();
+        let ffn = AneInt8FfnWeights::quantize(&gate, &up, &down, HIDDEN, INTERMEDIATE).unwrap();
+        drop((gate, up, down));
+        let post_gamma = load("post_attention_layernorm.weight").unwrap();
+        let pre_gamma = load("pre_feedforward_layernorm.weight").unwrap();
+        let compiled = AneOutputFfnCompile::compile_only(
+            &output,
+            4096,
+            &ffn,
+            &post_gamma,
+            &pre_gamma,
+            1e-6,
+            AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), 1);
+        assert_eq!(compiled.identity().input_bytes, (HIDDEN + 4096) * 64);
+        assert_eq!(compiled.identity().output_bytes, HIDDEN * 64);
+        println!("identity={:?}", compiled.identity());
+    }
+
+    #[test]
     #[ignore = "private ANE fused full-route referee; exact-cache dependent-token baseline/candidate comparison, no timing claim"]
     fn hardware_layer0_fused_attention_output_full_route() {
         use super::two_token_reference::live_tests::{load_snapshot, signature};
