@@ -376,4 +376,22 @@ mod tests {
             32,
         );
     }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE pow inverse-square-root dialect compile probe"]
+    fn hardware_pow_negative_half_dialect_compile_probe() {
+        compile_dialect_probe(
+            r#"program(1.3)
+{
+    func main<ios18>(tensor<fp16, [1, 32, 1, 1]> x) {
+        fp16 exponent = const()[val = fp16(-0.5)];
+        tensor<fp16, [1, 32, 1, 1]> y = pow(x = x, y = exponent);
+    } -> (y);
+}
+"#,
+            32,
+            32,
+        );
+    }
 }
