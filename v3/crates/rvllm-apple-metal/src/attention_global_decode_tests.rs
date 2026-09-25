@@ -452,3 +452,90 @@ fn staging_panel_size_does_not_change_fp32_association() {
             .all(|(a, b)| a.to_bits() == b.to_bits()));
     }
 }
+
+
+#[test]
+fn crossover_selector_counts_split_merge_and_fails_closed_without_device_visibility() {
+    let base = DecodeCrossoverInputs {
+        live_tokens: 1024,
+        single_total_ns: 1_200,
+        cooperative_split32_total_ns: 1_050,
+        split_matrix_partial_ns: 700,
+        split_matrix_merge_ns: 500,
+        single_command_buffers: 1,
+        cooperative_command_buffers: 1,
+        split_matrix_command_buffers: 1,
+        newest_kv_device_visible: true,
+        independent_oracle_passed: true,
+        guards_and_repeats_passed: true,
+    };
+    // Partial-only accounting would incorrectly choose split-matrix. The
+    // selector must use 700 + 500 and therefore choose cooperative split32.
+    assert_eq!(base.split_matrix_total_ns(), Some(1_200));
+    assert_eq!(base.select(), Some(DecodeSelectorArm::CooperativeSplit32));
+
+    assert_eq!(
+        DecodeCrossoverInputs {
+            newest_kv_device_visible: false,
+            ..base
+        }
+        .select(),
+        None
+    );
+    assert_eq!(
+        DecodeCrossoverInputs {
+            independent_oracle_passed: false,
+            ..base
+        }
+        .select(),
+        None
+    );
+    assert_eq!(
+        DecodeCrossoverInputs {
+            live_tokens: 4096,
+            ..base
+        }
+        .select(),
+        None
+    );
+}
+
+#[test]
+fn crossover_selector_is_bounded_and_tie_breaks_toward_lower_overhead() {
+    let base = DecodeCrossoverInputs {
+        live_tokens: 256,
+        single_total_ns: 900,
+        cooperative_split32_total_ns: 900,
+        split_matrix_partial_ns: 450,
+        split_matrix_merge_ns: 450,
+        single_command_buffers: 1,
+        cooperative_command_buffers: 1,
+        split_matrix_command_buffers: 2,
+        newest_kv_device_visible: true,
+        independent_oracle_passed: true,
+        guards_and_repeats_passed: true,
+    };
+    assert_eq!(base.select(), Some(DecodeSelectorArm::SingleR8P64T128));
+    assert_eq!(
+        DecodeCrossoverInputs {
+            live_tokens: 512,
+            single_total_ns: 1_100,
+            cooperative_split32_total_ns: 950,
+            split_matrix_partial_ns: 470,
+            split_matrix_merge_ns: 460,
+            split_matrix_command_buffers: 1,
+            ..base
+        }
+        .select(),
+        Some(DecodeSelectorArm::SplitMatrix)
+    );
+    assert_eq!(
+        DecodeCrossoverInputs {
+            live_tokens: 2048,
+            cooperative_split32_total_ns: 700,
+            ..base
+        }
+        .select(),
+        Some(DecodeSelectorArm::CooperativeSplit32)
+    );
+}
