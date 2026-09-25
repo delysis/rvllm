@@ -17,6 +17,151 @@ const GQA_VALUE_DIM: usize = 11;
 const GQA_OUTPUT_HEAD: usize = 1;
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+fn encoder_count_low_bit_descriptor(
+    role: rvllm_apple::AppleLowBitTensorRole,
+    n: usize,
+    k: usize,
+) -> rvllm_apple_metal::low_bit_metal::MetalLowBitProjectionOffsets {
+    let values = n * k.div_ceil(2);
+    let scales = n * k.div_ceil(rvllm_apple::APPLE_LOW_BIT_GROUP_SIZE) * 2;
+    rvllm_apple_metal::low_bit_metal::MetalLowBitProjectionOffsets::new_for_role(
+        role,
+        AppleLowBitWeightFormat::W4A16,
+        n,
+        k,
+        0,
+        values,
+        values.next_multiple_of(4),
+        scales,
+    )
+    .expect("encoder-count descriptor")
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn layer_encoder_count_tracks_low_bit_projection_branches_exactly() {
+    use rvllm_apple::AppleLowBitTensorRole as Role;
+    let dims = MetalLayerDims {
+        layer_idx: 0,
+        attention_window: 0,
+        num_tokens: 4,
+        hidden: 32,
+        num_layers: 1,
+        num_heads: 4,
+        num_kv_heads: 2,
+        head_dim: 1,
+        intermediate: 64,
+        moe_num_experts: 0,
+        moe_top_k: 0,
+        moe_intermediate: 0,
+        ple_dim: 0,
+        block_size: 16,
+        max_blocks_per_seq: 1,
+        num_blocks_total: 1,
+        attn_scale: 1.0,
+        rms_eps: 1e-6,
+        rope_dim: 1,
+        softcap: 0.0,
+    };
+    let mut weights = MetalLayerWeights {
+        attn_norm_offset: 0,
+        qkv_offset: 0,
+        qkv_bias_offset: None,
+        q_norm_offset: None,
+        k_norm_offset: None,
+        v_norm_offset: None,
+        o_proj_offset: 0,
+        mlp_norm_offset: 0,
+        post_attn_norm_offset: None,
+        pre_ff_norm_offset: None,
+        post_ff_norm_offset: None,
+        layer_scalar_offset: None,
+        layer_scalar_dim: 0,
+        gate_up_offset: 0,
+        down_proj_offset: Some(0),
+        low_bit_q_proj: None,
+        low_bit_k_proj: None,
+        low_bit_v_proj: None,
+        low_bit_o_proj: None,
+        low_bit_gate_proj: None,
+        low_bit_up_proj: None,
+        low_bit_down_proj: None,
+        moe: None,
+        per_layer_inputs_offset: None,
+        per_layer_input_gate_offset: None,
+        per_layer_projection_offset: None,
+        post_per_layer_input_norm_offset: None,
+    };
+    let estimate = |weights: &MetalLayerWeights, skip_kv: bool, rounded_gate: bool| {
+        ModelMetalBackend::estimate_layer_encoder_count(
+            weights,
+            &dims,
+            false,
+            MetalLayerDebugSkip {
+                skip_kv_projection: skip_kv,
+                ..MetalLayerDebugSkip::default()
+            },
+            false,
+            false,
+            rounded_gate,
+        )
+    };
+    assert_eq!(estimate(&weights, false, false), 10);
+    assert_eq!(estimate(&weights, false, true), 9);
+    weights.low_bit_down_proj = Some(encoder_count_low_bit_descriptor(
+        Role::DenseDownProjection,
+        32,
+        64,
+    ));
+    weights.down_proj_offset = None;
+    assert_eq!(estimate(&weights, false, false), 10);
+    weights.low_bit_q_proj = Some(encoder_count_low_bit_descriptor(
+        Role::QueryProjection,
+        4,
+        32,
+    ));
+    weights.low_bit_k_proj = Some(encoder_count_low_bit_descriptor(Role::KeyProjection, 2, 32));
+    weights.low_bit_v_proj = Some(encoder_count_low_bit_descriptor(
+        Role::ValueProjection,
+        2,
+        32,
+    ));
+    assert_eq!(estimate(&weights, false, false), 13);
+    assert_eq!(estimate(&weights, true, false), 10);
+    weights.low_bit_o_proj = Some(encoder_count_low_bit_descriptor(
+        Role::OutputProjection,
+        32,
+        4,
+    ));
+    assert_eq!(estimate(&weights, false, false), 13);
+    weights.post_attn_norm_offset = Some(0);
+    assert_eq!(estimate(&weights, false, false), 15);
+    weights.low_bit_gate_proj = Some(encoder_count_low_bit_descriptor(
+        Role::DenseGateProjection,
+        64,
+        32,
+    ));
+    weights.low_bit_up_proj = Some(encoder_count_low_bit_descriptor(
+        Role::DenseUpProjection,
+        64,
+        32,
+    ));
+    assert_eq!(estimate(&weights, false, false), 16);
+    assert_eq!(estimate(&weights, false, true), 16);
+
+    let mut gate_up_only = weights;
+    gate_up_only.low_bit_q_proj = None;
+    gate_up_only.low_bit_k_proj = None;
+    gate_up_only.low_bit_v_proj = None;
+    gate_up_only.low_bit_o_proj = None;
+    gate_up_only.post_attn_norm_offset = None;
+    gate_up_only.low_bit_down_proj = None;
+    gate_up_only.down_proj_offset = Some(0);
+    assert_eq!(estimate(&gate_up_only, false, false), 11);
+    assert_eq!(estimate(&gate_up_only, false, true), 11);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -561,6 +706,7 @@ fn runtime_low_bit_replacement(
     };
     MetalLowBitWeightReplacement {
         tensor_name: tensor_name.into(),
+        role: rvllm_apple::AppleLowBitTensorRole::DenseDownProjection,
         format,
         shape,
         packed_values_bytes: shape[0] * row_bytes,

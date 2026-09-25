@@ -77,13 +77,62 @@ pub struct AppleWeightShard {
     pub file: ApplePackageFile,
 }
 
-/// The only transformer role admitted by the initial hybrid low-bit package
-/// contract. Other projections remain native until they have independent
-/// execution and quality gates.
+/// Authenticated projection roles. Admission here binds package identity; the
+/// runtime still fails closed for any role it has not explicitly installed.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppleLowBitTensorRole {
+    QueryProjection,
+    KeyProjection,
+    ValueProjection,
+    OutputProjection,
+    DenseGateProjection,
+    DenseUpProjection,
     DenseDownProjection,
+    LmHead,
+}
+
+impl AppleLowBitTensorRole {
+    pub const COUNT: usize = 8;
+    pub const fn index(self) -> usize {
+        match self {
+            Self::QueryProjection => 0,
+            Self::KeyProjection => 1,
+            Self::ValueProjection => 2,
+            Self::OutputProjection => 3,
+            Self::DenseGateProjection => 4,
+            Self::DenseUpProjection => 5,
+            Self::DenseDownProjection => 6,
+            Self::LmHead => 7,
+        }
+    }
+    pub const fn report_name(self) -> &'static str {
+        match self {
+            Self::QueryProjection => "query_projection",
+            Self::KeyProjection => "key_projection",
+            Self::ValueProjection => "value_projection",
+            Self::OutputProjection => "output_projection",
+            Self::DenseGateProjection => "dense_gate_projection",
+            Self::DenseUpProjection => "dense_up_projection",
+            Self::DenseDownProjection => "dense_down_projection",
+            Self::LmHead => "lm_head",
+        }
+    }
+
+    /// Stable schema-v3 semantic tag. Dense-down was the only original role
+    /// and must remain byte 1 for package identity compatibility.
+    pub const fn fingerprint_tag(self) -> u8 {
+        match self {
+            Self::DenseDownProjection => 1,
+            Self::QueryProjection => 2,
+            Self::KeyProjection => 3,
+            Self::ValueProjection => 4,
+            Self::OutputProjection => 5,
+            Self::DenseGateProjection => 6,
+            Self::DenseUpProjection => 7,
+            Self::LmHead => 8,
+        }
+    }
 }
 
 /// One authenticated, tensor-level low-bit sidecar.
@@ -540,16 +589,34 @@ fn validate_low_bit_metadata(tensor: &AppleLowBitTensor) -> Result<(), AppleMode
     if tensor.tensor_name.trim().is_empty() {
         return Err(invalid("tensor name must not be empty"));
     }
-    match tensor.role {
-        AppleLowBitTensorRole::DenseDownProjection
-            if !tensor.tensor_name.ends_with(".mlp.down_proj.weight")
-                || tensor.tensor_name.contains(".experts.") =>
-        {
-            return Err(invalid(
-                "dense down-projection tensor name must end in .mlp.down_proj.weight",
-            ));
+    let valid_name = match tensor.role {
+        AppleLowBitTensorRole::QueryProjection => {
+            tensor.tensor_name.ends_with(".self_attn.q_proj.weight")
         }
-        AppleLowBitTensorRole::DenseDownProjection => {}
+        AppleLowBitTensorRole::KeyProjection => {
+            tensor.tensor_name.ends_with(".self_attn.k_proj.weight")
+        }
+        AppleLowBitTensorRole::ValueProjection => {
+            tensor.tensor_name.ends_with(".self_attn.v_proj.weight")
+        }
+        AppleLowBitTensorRole::OutputProjection => {
+            tensor.tensor_name.ends_with(".self_attn.o_proj.weight")
+        }
+        AppleLowBitTensorRole::DenseGateProjection => {
+            tensor.tensor_name.ends_with(".mlp.gate_proj.weight")
+        }
+        AppleLowBitTensorRole::DenseUpProjection => {
+            tensor.tensor_name.ends_with(".mlp.up_proj.weight")
+        }
+        AppleLowBitTensorRole::DenseDownProjection => {
+            tensor.tensor_name.ends_with(".mlp.down_proj.weight")
+        }
+        AppleLowBitTensorRole::LmHead => tensor.tensor_name == "lm_head.weight",
+    } && !tensor.tensor_name.contains(".experts.");
+    if !valid_name {
+        return Err(invalid(
+            "low-bit tensor name does not match its authenticated projection role",
+        ));
     }
     if tensor.abi_version != APPLE_LOW_BIT_WEIGHT_ABI_VERSION {
         return Err(invalid("unsupported low-bit weight ABI version"));
@@ -802,9 +869,7 @@ pub(crate) fn model_assets_fingerprint(manifest: &AppleModelPackageManifest) -> 
     for tensor in descriptors {
         hasher.update((tensor.tensor_name.len() as u64).to_le_bytes());
         hasher.update(tensor.tensor_name.as_bytes());
-        hasher.update([match tensor.role {
-            AppleLowBitTensorRole::DenseDownProjection => 1,
-        }]);
+        hasher.update([tensor.role.fingerprint_tag()]);
         hasher.update([tensor.format.bits() as u8]);
         hasher.update(tensor.abi_version.to_le_bytes());
         hasher.update(tensor.group_size.to_le_bytes());
@@ -1259,6 +1324,60 @@ mod tests {
     }
 
     #[test]
+    fn low_bit_roles_require_their_exact_projection_names() {
+        let root = test_root("low-bit-roles");
+        fs::create_dir_all(&root).expect("create package root");
+        let mut package_manifest = manifest(&root);
+        add_low_bit_tensor(&root, &mut package_manifest, AppleLowBitWeightFormat::W4A16);
+        let template = package_manifest.low_bit_tensors[0].clone();
+        let cases = [
+            (
+                AppleLowBitTensorRole::QueryProjection,
+                "model.layers.0.self_attn.q_proj.weight",
+            ),
+            (
+                AppleLowBitTensorRole::KeyProjection,
+                "model.layers.0.self_attn.k_proj.weight",
+            ),
+            (
+                AppleLowBitTensorRole::ValueProjection,
+                "model.layers.0.self_attn.v_proj.weight",
+            ),
+            (
+                AppleLowBitTensorRole::OutputProjection,
+                "model.layers.0.self_attn.o_proj.weight",
+            ),
+            (
+                AppleLowBitTensorRole::DenseGateProjection,
+                "model.layers.0.mlp.gate_proj.weight",
+            ),
+            (
+                AppleLowBitTensorRole::DenseUpProjection,
+                "model.layers.0.mlp.up_proj.weight",
+            ),
+            (
+                AppleLowBitTensorRole::DenseDownProjection,
+                "model.layers.0.mlp.down_proj.weight",
+            ),
+            (AppleLowBitTensorRole::LmHead, "lm_head.weight"),
+        ];
+        for (role, name) in cases {
+            let mut tensor = template.clone();
+            tensor.role = role;
+            tensor.tensor_name = name.to_owned();
+            validate_low_bit_metadata(&tensor).expect("role/name pair must validate");
+            tensor.tensor_name = "model.layers.0.mlp.down_proj.weight".to_owned();
+            if role != AppleLowBitTensorRole::DenseDownProjection {
+                assert!(validate_low_bit_metadata(&tensor).is_err());
+            }
+        }
+        let mut expert = template;
+        expert.tensor_name = "model.layers.0.mlp.experts.0.down_proj.weight".to_owned();
+        assert!(validate_low_bit_metadata(&expert).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn validates_all_assets_and_selects_exact_metallib() {
         let root = test_root("valid");
         fs::create_dir_all(&root).expect("create package root");
@@ -1498,6 +1617,10 @@ mod tests {
         let mut manifest = manifest(&root);
         add_low_bit_tensor(&root, &mut manifest, AppleLowBitWeightFormat::W8A16);
         let original = model_assets_fingerprint(&manifest);
+        assert_eq!(
+            original,
+            "b9c37e6df9ef24c35e32c99e7edd327493aee271f065b680643a26241d1a75d2"
+        );
         manifest.low_bit_tensors[0].tensor_name = "model.layers.1.mlp.down_proj.weight".to_owned();
         let reassigned = model_assets_fingerprint(&manifest);
         assert_ne!(original, reassigned);

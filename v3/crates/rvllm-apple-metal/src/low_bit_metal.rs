@@ -18,7 +18,9 @@ use objc2_metal::{
 };
 
 use crate::{context::MetalContext, pipeline::PipelineCache};
-use rvllm_apple::{AppleLowBitWeightFormat, LowBitWeightError, PackedAppleLowBitWeights};
+use rvllm_apple::{
+    AppleLowBitTensorRole, AppleLowBitWeightFormat, LowBitWeightError, PackedAppleLowBitWeights,
+};
 
 /// Metal-side validation or setup failure for a low-bit projection.
 #[derive(Debug)]
@@ -47,6 +49,10 @@ pub enum LowBitMetalError {
         buffer: &'static str,
         expected: usize,
         actual: usize,
+    },
+    Aliasing {
+        left: &'static str,
+        right: &'static str,
     },
     CommandEncoderUnavailable,
     Metal(rvllm_core::RvllmError),
@@ -88,6 +94,9 @@ impl fmt::Display for LowBitMetalError {
                 f,
                 "low-bit {buffer} storage has {actual} bytes, expected {expected}"
             ),
+            Self::Aliasing { left, right } => {
+                write!(f, "low-bit {left} and {right} ranges overlap")
+            }
             Self::CommandEncoderUnavailable => {
                 write!(f, "Metal did not provide a low-bit compute command encoder")
             }
@@ -128,6 +137,7 @@ pub type LowBitMetalResult<T> = std::result::Result<T, LowBitMetalError>;
 /// immutable after preparation.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct MetalLowBitProjectionOffsets {
+    role: AppleLowBitTensorRole,
     format: AppleLowBitWeightFormat,
     n: u32,
     k: u32,
@@ -140,6 +150,29 @@ pub struct MetalLowBitProjectionOffsets {
 impl MetalLowBitProjectionOffsets {
     /// Validate the exact group-32 storage layout selected for an arena.
     pub fn new(
+        format: AppleLowBitWeightFormat,
+        n: usize,
+        k: usize,
+        packed_values_offset: usize,
+        packed_values_bytes: usize,
+        scales_offset: usize,
+        scales_bytes: usize,
+    ) -> LowBitMetalResult<Self> {
+        Self::new_for_role(
+            AppleLowBitTensorRole::DenseDownProjection,
+            format,
+            n,
+            k,
+            packed_values_offset,
+            packed_values_bytes,
+            scales_offset,
+            scales_bytes,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_for_role(
+        role: AppleLowBitTensorRole,
         format: AppleLowBitWeightFormat,
         n: usize,
         k: usize,
@@ -194,7 +227,19 @@ impl MetalLowBitProjectionOffsets {
                 actual: scales_bytes,
             });
         }
+        if ranges_overlap(
+            packed_values_offset,
+            packed_values_bytes,
+            scales_offset,
+            scales_bytes,
+        ) {
+            return Err(LowBitMetalError::Aliasing {
+                left: "packed weights",
+                right: "FP16 scales",
+            });
+        }
         Ok(Self {
+            role,
             format,
             n: n_u32,
             k: k_u32,
@@ -208,6 +253,10 @@ impl MetalLowBitProjectionOffsets {
     #[must_use]
     pub const fn format(self) -> AppleLowBitWeightFormat {
         self.format
+    }
+
+    pub const fn role(self) -> AppleLowBitTensorRole {
+        self.role
     }
 
     #[must_use]
@@ -248,10 +297,41 @@ impl MetalLowBitProjectionOffsets {
         output_offset: usize,
         m: usize,
     ) -> LowBitMetalResult<()> {
+        self.encode_strided(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            self.n as usize,
+            0,
+        )
+    }
+
+    /// Encode into columns `[output_column, output_column + N)` of a
+    /// row-major destination whose row contains `output_row_stride` elements.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
         if m == 0 {
             return Err(LowBitMetalError::ZeroBatch);
         }
         let m = u32_dimension("M", m)?;
+        let output_row_stride = u32_dimension("output row stride", output_row_stride)?;
+        let output_column = u32_dimension("output column", output_column)?;
+        if output_row_stride < self.n || output_column > output_row_stride - self.n {
+            return Err(LowBitMetalError::SizeOverflow);
+        }
         validate_offset("activation", activation_offset)?;
         validate_offset("output", output_offset)?;
         validate_buffer_range(
@@ -270,9 +350,13 @@ impl MetalLowBitProjectionOffsets {
             .checked_mul(self.k as usize)
             .and_then(|elements| elements.checked_mul(mem::size_of::<half::f16>()))
             .ok_or(LowBitMetalError::SizeOverflow)?;
-        let output_bytes = (m as usize)
-            .checked_mul(self.n as usize)
-            .and_then(|elements| elements.checked_mul(mem::size_of::<half::f16>()))
+        let output_elements = (m as usize - 1)
+            .checked_mul(output_row_stride as usize)
+            .and_then(|base| base.checked_add(output_column as usize))
+            .and_then(|base| base.checked_add(self.n as usize))
+            .ok_or(LowBitMetalError::SizeOverflow)?;
+        let output_bytes = output_elements
+            .checked_mul(mem::size_of::<half::f16>())
             .ok_or(LowBitMetalError::SizeOverflow)?;
         validate_buffer_range(
             "activation",
@@ -281,6 +365,49 @@ impl MetalLowBitProjectionOffsets {
             activation_bytes,
         )?;
         validate_buffer_range("output", arena.length(), output_offset, output_bytes)?;
+        if ranges_overlap(
+            activation_offset,
+            activation_bytes,
+            output_offset,
+            output_bytes,
+        ) {
+            return Err(LowBitMetalError::Aliasing {
+                left: "activation",
+                right: "output",
+            });
+        }
+        if ranges_overlap(
+            self.packed_values_offset,
+            self.packed_values_bytes,
+            output_offset,
+            output_bytes,
+        ) || ranges_overlap(
+            self.scales_offset,
+            self.scales_bytes,
+            output_offset,
+            output_bytes,
+        ) {
+            return Err(LowBitMetalError::Aliasing {
+                left: "weights",
+                right: "output",
+            });
+        }
+        if ranges_overlap(
+            activation_offset,
+            activation_bytes,
+            self.packed_values_offset,
+            self.packed_values_bytes,
+        ) || ranges_overlap(
+            activation_offset,
+            activation_bytes,
+            self.scales_offset,
+            self.scales_bytes,
+        ) {
+            return Err(LowBitMetalError::Aliasing {
+                left: "activation",
+                right: "weights",
+            });
+        }
 
         let pipeline = pipelines.get(self.kernel_name())?;
         let encoder = command_buffer
@@ -297,6 +424,8 @@ impl MetalLowBitProjectionOffsets {
             set_u32(&encoder, &m, 4);
             set_u32(&encoder, &self.n, 5);
             set_u32(&encoder, &self.k, 6);
+            set_u32(&encoder, &output_row_stride, 7);
+            set_u32(&encoder, &output_column, 8);
             encoder.dispatchThreadgroups_threadsPerThreadgroup(
                 MTLSize {
                     width: self.n as usize,
@@ -311,6 +440,7 @@ impl MetalLowBitProjectionOffsets {
             );
             encoder.endEncoding();
         }
+        pipelines.record_low_bit_dispatch(self.format, self.role);
         Ok(())
     }
 }
@@ -460,6 +590,8 @@ impl MetalLowBitProjection {
             set_u32(&encoder, &m, 4);
             set_u32(&encoder, &self.n, 5);
             set_u32(&encoder, &self.k, 6);
+            set_u32(&encoder, &self.n, 7);
+            set_u32(&encoder, &0_u32, 8);
             encoder.dispatchThreadgroups_threadsPerThreadgroup(
                 MTLSize {
                     width: self.n as usize,
@@ -500,6 +632,13 @@ fn validate_offset(buffer: &'static str, offset: usize) -> LowBitMetalResult<()>
     Ok(())
 }
 
+fn ranges_overlap(left: usize, left_bytes: usize, right: usize, right_bytes: usize) -> bool {
+    match (left.checked_add(left_bytes), right.checked_add(right_bytes)) {
+        (Some(left_end), Some(right_end)) => left < right_end && right < left_end,
+        _ => true,
+    }
+}
+
 fn validate_buffer_range(
     buffer: &'static str,
     actual: usize,
@@ -537,6 +676,26 @@ mod tests {
     use objc2_metal::{MTLCommandQueue, MTLDevice};
 
     use super::*;
+
+    #[test]
+    fn arena_descriptor_rejects_overlapping_weight_regions() {
+        assert!(matches!(
+            MetalLowBitProjectionOffsets::new_for_role(
+                AppleLowBitTensorRole::QueryProjection,
+                AppleLowBitWeightFormat::W4A16,
+                2,
+                32,
+                0,
+                32,
+                16,
+                4,
+            ),
+            Err(LowBitMetalError::Aliasing {
+                left: "packed weights",
+                right: "FP16 scales"
+            })
+        ));
+    }
     use crate::arena::MetalBufferArena;
     use crate::kernels::KERNEL_SOURCE;
     use rvllm_apple::{project_apple_low_bit_reference, quantize_apple_low_bit_reference};
@@ -680,8 +839,14 @@ mod tests {
                     16,
                 )
                 .map_err(LowBitMetalError::Metal)?;
+            let output_stride = n + 5;
+            let output_column = 2;
             let output = arena
-                .region("test_low_bit_output", m * n * mem::size_of::<f16>(), 16)
+                .region(
+                    "test_low_bit_output",
+                    m * output_stride * mem::size_of::<f16>(),
+                    16,
+                )
                 .map_err(LowBitMetalError::Metal)?;
             unsafe {
                 arena
@@ -695,8 +860,13 @@ mod tests {
                 for (index, value) in activations.iter().enumerate() {
                     input_destination.add(index).write(value.to_bits());
                 }
+                let output_destination = arena.host_ptr(&output).cast::<u16>();
+                for index in 0..m * output_stride {
+                    output_destination.add(index).write(f16::NAN.to_bits());
+                }
             }
-            let projection = MetalLowBitProjectionOffsets::new(
+            let projection = MetalLowBitProjectionOffsets::new_for_role(
+                AppleLowBitTensorRole::QueryProjection,
                 format,
                 n,
                 k,
@@ -705,32 +875,84 @@ mod tests {
                 scales.offset,
                 scales.size,
             )?;
+            let rejected = context
+                .queue()
+                .commandBuffer()
+                .ok_or(LowBitMetalError::CommandEncoderUnavailable)?;
+            assert!(matches!(
+                projection.encode_strided(
+                    &rejected,
+                    &pipelines,
+                    arena.buffer(),
+                    values.offset,
+                    output.offset,
+                    m,
+                    output_stride,
+                    output_column,
+                ),
+                Err(LowBitMetalError::Aliasing {
+                    left: "activation",
+                    right: "weights"
+                })
+            ));
+            assert!(matches!(
+                projection.encode_strided(
+                    &rejected,
+                    &pipelines,
+                    arena.buffer(),
+                    input.offset,
+                    values.offset,
+                    m,
+                    output_stride,
+                    output_column,
+                ),
+                Err(LowBitMetalError::Aliasing {
+                    left: "weights",
+                    right: "output"
+                })
+            ));
             let command_buffer = context
                 .queue()
                 .commandBuffer()
                 .ok_or(LowBitMetalError::CommandEncoderUnavailable)?;
-            projection.encode(
+            projection.encode_strided(
                 &command_buffer,
                 &pipelines,
                 arena.buffer(),
                 input.offset,
                 output.offset,
                 m,
+                output_stride,
+                output_column,
             )?;
             command_buffer.commit();
             command_buffer.waitUntilCompleted();
+            assert_eq!(
+                pipelines
+                    .low_bit_dispatch_snapshot()
+                    .count(format, AppleLowBitTensorRole::QueryProjection),
+                1
+            );
 
             let expected = project_apple_low_bit_reference(&weights, &activations, m)?;
-            let actual = unsafe {
-                std::slice::from_raw_parts(arena.host_ptr(&output).cast::<u16>(), m * n)
-                    .iter()
-                    .map(|bits| f16::from_bits(*bits))
-                    .collect::<Vec<_>>()
+            let output_values = unsafe {
+                std::slice::from_raw_parts(arena.host_ptr(&output).cast::<u16>(), m * output_stride)
             };
+            let actual = (0..m)
+                .flat_map(|row| {
+                    (0..n).map(move |column| {
+                        f16::from_bits(output_values[row * output_stride + output_column + column])
+                    })
+                })
+                .collect::<Vec<_>>();
             for (actual, expected) in actual.iter().zip(expected.iter()) {
                 let expected = expected.to_f32();
                 let tolerance = 0.015 + expected.abs() * 0.002;
                 assert!((actual.to_f32() - expected).abs() <= tolerance);
+            }
+            for row in 0..m {
+                assert!(f16::from_bits(output_values[row * output_stride]).is_nan());
+                assert!(f16::from_bits(output_values[row * output_stride + n + 4]).is_nan());
             }
         }
         Ok(())

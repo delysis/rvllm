@@ -4,6 +4,8 @@ use std::{cmp::max, collections::BTreeMap, path::Path, ptr};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use half::f16;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
+use rvllm_apple::AppleLowBitTensorRole;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use rvllm_loader::{
@@ -235,8 +237,8 @@ pub struct Gemma4MetalMemoryReport {
     pub physical_kv_pages: u32,
 }
 
-/// An authenticated low-bit tensor that will replace one native dense
-/// `down_proj` allocation in the prepared Metal model.
+/// An authenticated low-bit tensor that is intended to replace one native
+/// projection allocation in the prepared Metal model.
 ///
 /// The descriptor contains the complete storage identity needed by the
 /// planner. Callers must load the two payload regions in the same
@@ -245,6 +247,7 @@ pub struct Gemma4MetalMemoryReport {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct MetalLowBitWeightReplacement {
     pub tensor_name: String,
+    pub role: AppleLowBitTensorRole,
     pub format: rvllm_apple::AppleLowBitWeightFormat,
     /// `[N, K]`, matching the native `[hidden, intermediate]` weight.
     pub shape: [usize; 2],
@@ -270,7 +273,13 @@ pub struct MetalOneLayerState {
     pub layer_idx: usize,
     /// Exact authenticated checkpoint tensor selected for this layer.
     pub down_proj_name: String,
-    /// Optional authenticated low-bit sidecar stored in the model arena.
+    /// Optional authenticated low-bit sidecars stored in the model arena.
+    pub low_bit_q_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_k_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_v_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_o_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_gate_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_up_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
     pub low_bit_down_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
     pub dims: MetalProbeLayerDims,
     pub shared_kv_source_layer: Option<usize>,
@@ -1855,6 +1864,11 @@ impl ProbeModelPlan {
                     "duplicate low-bit replacement tensor name",
                 ));
             }
+            if replacement.role != AppleLowBitTensorRole::DenseDownProjection {
+                return Err(invalid_low_bit_replacement(
+                    "authenticated low-bit role is not wired into the normal Metal route",
+                ));
+            }
 
             let layer = self
                 .layer_names
@@ -2850,6 +2864,12 @@ impl Gemma4MetalState {
             layers.push(MetalOneLayerState {
                 layer_idx,
                 down_proj_name: layer_names.down_proj_name.clone(),
+                low_bit_q_proj: None,
+                low_bit_k_proj: None,
+                low_bit_v_proj: None,
+                low_bit_o_proj: None,
+                low_bit_gate_proj: None,
+                low_bit_up_proj: None,
                 low_bit_down_proj: None,
                 dims,
                 shared_kv_source_layer: shared_kv_source_layers[layer_idx],
@@ -3835,6 +3855,7 @@ mod tests {
     ) -> MetalLowBitWeightReplacement {
         MetalLowBitWeightReplacement {
             tensor_name: tensor_name.into(),
+            role: AppleLowBitTensorRole::DenseDownProjection,
             format,
             shape,
             packed_values_bytes: low_bit_packed_values_bytes(format, shape[0], shape[1])
@@ -3916,6 +3937,12 @@ mod tests {
         assert!(ProbeModelPlan::new(&dir)
             .expect("duplicate plan")
             .with_low_bit_replacements(&[valid.clone(), valid.clone()])
+            .is_err());
+        let mut unwired_role = valid.clone();
+        unwired_role.role = AppleLowBitTensorRole::QueryProjection;
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("unwired role plan")
+            .with_low_bit_replacements(&[unwired_role])
             .is_err());
         assert!(ProbeModelPlan::new(&dir)
             .expect("missing plan")

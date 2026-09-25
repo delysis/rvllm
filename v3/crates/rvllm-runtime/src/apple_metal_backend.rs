@@ -2782,6 +2782,7 @@ impl ModelMetalBackend {
                 })?;
                 Ok(MetalLowBitWeightReplacement {
                     tensor_name: tensor.tensor_name.clone(),
+                    role: tensor.role,
                     format: tensor.format,
                     shape: [tensor.shape[0] as usize, tensor.shape[1] as usize],
                     packed_values_bytes: values,
@@ -2797,6 +2798,15 @@ impl ModelMetalBackend {
     ) -> Result<usize> {
         let mut total = 0usize;
         for replacement in replacements {
+            if replacement.role != rvllm_apple::AppleLowBitTensorRole::DenseDownProjection {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason:
+                            "authenticated low-bit role is not wired into the normal Metal route",
+                    },
+                    model_ctx("prepare_low_bit_weights"),
+                ));
+            }
             total = total
                 .checked_add(15)
                 .map(|bytes| bytes & !15)
@@ -2960,7 +2970,8 @@ impl ModelMetalBackend {
                         )
                     })?;
             }
-            let projection = MetalLowBitProjectionOffsets::new(
+            let projection = MetalLowBitProjectionOffsets::new_for_role(
+                replacement.role,
                 replacement.format,
                 replacement.shape[0],
                 replacement.shape[1],
@@ -3904,6 +3915,12 @@ impl ModelMetalBackend {
                 layer_scalar_dim: one.layer_scalar_dim,
                 gate_up_offset: one.gate_up.offset,
                 down_proj_offset,
+                low_bit_q_proj: one.low_bit_q_proj,
+                low_bit_k_proj: one.low_bit_k_proj,
+                low_bit_v_proj: one.low_bit_v_proj,
+                low_bit_o_proj: one.low_bit_o_proj,
+                low_bit_gate_proj: one.low_bit_gate_proj,
+                low_bit_up_proj: one.low_bit_up_proj,
                 low_bit_down_proj: one.low_bit_down_proj,
                 moe: one.moe.as_ref().map(|moe| MetalMoeWeights {
                     router_proj_offset: moe.router_proj.offset,
@@ -4257,7 +4274,25 @@ impl ModelMetalBackend {
         rounded_gate_encoder_fused: bool,
     ) -> u64 {
         let mut count = 10;
-        if !(weights.q_norm_offset.is_some() && weights.k_norm_offset.is_some()) {
+        let low_bit_qkv = weights.low_bit_q_proj.is_some()
+            && weights.low_bit_k_proj.is_some()
+            && weights.low_bit_v_proj.is_some();
+        let low_bit_gate_up =
+            weights.low_bit_gate_proj.is_some() && weights.low_bit_up_proj.is_some();
+        if low_bit_qkv {
+            if debug_skip.skip_kv_projection {
+                // Native Q projection+norm is one fused encoder; low-bit Q is
+                // a projection followed by standalone normalization.
+                count += weights.q_norm_offset.is_some() as u64;
+            } else {
+                // Three projections replace one native QKV projection, then a
+                // split and standalone per-head norms replace fused handling.
+                count += 3;
+                count += weights.q_norm_offset.is_some() as u64;
+                count += weights.k_norm_offset.is_some() as u64;
+                count += weights.v_norm_offset.is_some() as u64;
+            }
+        } else if !(weights.q_norm_offset.is_some() && weights.k_norm_offset.is_some()) {
             count += weights.q_norm_offset.is_some() as u64;
             count += weights.k_norm_offset.is_some() as u64;
             count += weights.v_norm_offset.is_some() as u64;
@@ -4287,7 +4322,12 @@ impl ModelMetalBackend {
                 .saturating_sub(1)
         };
         if weights.post_attn_norm_offset.is_some() {
-            count += projection_norm_bonus(dims.hidden, dims.num_heads * dims.head_dim);
+            if weights.low_bit_o_proj.is_some() {
+                // Low-bit projection and RMSNorm are always separate.
+                count += 1;
+            } else {
+                count += projection_norm_bonus(dims.hidden, dims.num_heads * dims.head_dim);
+            }
         }
         if weights.moe.is_some() || weights.post_ff_norm_offset.is_some() {
             count += projection_norm_bonus(dims.hidden, dims.intermediate);
@@ -4300,6 +4340,7 @@ impl ModelMetalBackend {
             count += projection_norm_bonus(dims.hidden, dims.ple_dim);
         }
         if !trace_enabled
+            && !low_bit_qkv
             && !debug_skip.skip_kv_projection
             && !debug_skip.skip_local_kv_cache_write
             && weights.q_norm_offset.is_some()
@@ -4309,9 +4350,12 @@ impl ModelMetalBackend {
             count = count.saturating_sub(2);
             count += u64::from(qkv_prefill_projection_eligible);
         }
+        // Separate low-bit gate and up projections replace one native fused
+        // gate-up projection encoder.
+        count += u64::from(low_bit_gate_up);
         // The candidate replaces two encoders with one. Its predicate includes
         // live PSO limits and buffer bounds, not merely the requested selector.
-        count.saturating_sub(u64::from(rounded_gate_encoder_fused))
+        count.saturating_sub(u64::from(rounded_gate_encoder_fused && !low_bit_gate_up))
     }
 
     fn encode_prefill_first_token(

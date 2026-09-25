@@ -140,6 +140,8 @@ kernel void projection_w4a16_f16(
     constant uint      &M         [[buffer(4)]],
     constant uint      &N         [[buffer(5)]],
     constant uint      &K         [[buffer(6)]],
+    constant uint      &C_stride  [[buffer(7)]],
+    constant uint      &C_column  [[buffer(8)]],
     uint2 output                   [[threadgroup_position_in_grid]],
     ushort lane                    [[thread_index_in_simdgroup]]
 ) {
@@ -159,7 +161,7 @@ kernel void projection_w4a16_f16(
     }
     float total = simd_sum(partial);
     if (lane == 0) {
-        C[m * N + n] = half(clamp(total, -65504.0f, 65504.0f));
+        C[m * C_stride + C_column + n] = half(clamp(total, -65504.0f, 65504.0f));
     }
 }
 
@@ -171,6 +173,8 @@ kernel void projection_w8a16_f16(
     constant uint      &M         [[buffer(4)]],
     constant uint      &N         [[buffer(5)]],
     constant uint      &K         [[buffer(6)]],
+    constant uint      &C_stride  [[buffer(7)]],
+    constant uint      &C_column  [[buffer(8)]],
     uint2 output                   [[threadgroup_position_in_grid]],
     ushort lane                    [[thread_index_in_simdgroup]]
 ) {
@@ -187,7 +191,7 @@ kernel void projection_w8a16_f16(
     }
     float total = simd_sum(partial);
     if (lane == 0) {
-        C[m * N + n] = half(clamp(total, -65504.0f, 65504.0f));
+        C[m * C_stride + C_column + n] = half(clamp(total, -65504.0f, 65504.0f));
     }
 }
 

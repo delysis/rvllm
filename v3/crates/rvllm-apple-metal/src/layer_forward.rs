@@ -13,7 +13,24 @@ use objc2_metal::{
     MTLSize,
 };
 use rvllm_apple::device::AppleGpuFamily;
+use rvllm_apple::AppleLowBitTensorRole;
 use rvllm_core::Result;
+
+fn low_bit_qkv_dispatch_columns(skip_kv: bool, q_dim: u32, kv_dim: u32) -> [(bool, u32); 3] {
+    [(true, 0), (!skip_kv, q_dim), (!skip_kv, q_dim + kv_dim)]
+}
+
+fn qkv_fusion_allowed(has_low_bit_qkv: bool, otherwise_allowed: bool) -> bool {
+    !has_low_bit_qkv && otherwise_allowed
+}
+
+fn low_bit_descriptor_matches(
+    projection: MetalLowBitProjectionOffsets,
+    role: AppleLowBitTensorRole,
+    shape: [u32; 2],
+) -> bool {
+    projection.role() == role && projection.shape() == shape
+}
 
 // Shared research shape check; all FFI/resource checks stay in this boundary crate.
 fn research_layer_eligible(
@@ -244,6 +261,12 @@ pub struct MetalLayerWeights {
     pub layer_scalar_dim: u32,
     pub gate_up_offset: usize,
     pub down_proj_offset: Option<usize>,
+    pub low_bit_q_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_k_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_v_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_o_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_gate_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_up_proj: Option<MetalLowBitProjectionOffsets>,
     pub low_bit_down_proj: Option<MetalLowBitProjectionOffsets>,
     pub moe: Option<MetalMoeWeights>,
     pub per_layer_inputs_offset: Option<usize>,
@@ -823,7 +846,11 @@ pub unsafe fn metal_encode_forward_layer(
     .unwrap_or(0);
     if let Some(projection) = weights.low_bit_down_proj {
         let expected = [hidden, dims.intermediate];
-        if projection.shape() != expected {
+        if !low_bit_descriptor_matches(
+            projection,
+            AppleLowBitTensorRole::DenseDownProjection,
+            expected,
+        ) {
             return Err(rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::InvalidWeightBlob {
                     reason: "low-bit down projection shape does not match prepared layer",
@@ -836,12 +863,99 @@ pub unsafe fn metal_encode_forward_layer(
             ));
         }
     }
-    let use_fused_qkv_rope_cache = trace.is_none()
-        && !debug_skip.skip_kv_projection
-        && !debug_skip.skip_local_kv_cache_write
-        && weights.q_norm_offset.is_some()
-        && weights.k_norm_offset.is_some()
-        && supports_qkv_rope_cache_fusion(dims);
+    let low_bit_qkv = match (
+        weights.low_bit_q_proj,
+        weights.low_bit_k_proj,
+        weights.low_bit_v_proj,
+    ) {
+        (None, None, None) => None,
+        (Some(q), Some(k), Some(v)) => {
+            if !low_bit_descriptor_matches(
+                q,
+                AppleLowBitTensorRole::QueryProjection,
+                [q_dim, hidden],
+            ) || !low_bit_descriptor_matches(
+                k,
+                AppleLowBitTensorRole::KeyProjection,
+                [kv_dim, hidden],
+            ) || !low_bit_descriptor_matches(
+                v,
+                AppleLowBitTensorRole::ValueProjection,
+                [kv_dim, hidden],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit Q/K/V projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_qkv_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            Some((q, k, v))
+        }
+        _ => {
+            return Err(rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit Q/K/V projections must be installed as one complete set",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_qkv_projection_set",
+                    device: "apple-silicon",
+                },
+            ));
+        }
+    };
+    let low_bit_gate_up = match (weights.low_bit_gate_proj, weights.low_bit_up_proj) {
+        (None, None) => None,
+        (Some(gate), Some(up)) => {
+            if !low_bit_descriptor_matches(
+                gate,
+                AppleLowBitTensorRole::DenseGateProjection,
+                [dims.intermediate, hidden],
+            ) || !low_bit_descriptor_matches(
+                up,
+                AppleLowBitTensorRole::DenseUpProjection,
+                [dims.intermediate, hidden],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit gate/up projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_gate_up_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            Some((gate, up))
+        }
+        _ => {
+            return Err(rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit gate/up projections must be installed as one complete set",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_gate_up_projection_set",
+                    device: "apple-silicon",
+                },
+            ));
+        }
+    };
+    let use_fused_qkv_rope_cache = qkv_fusion_allowed(
+        low_bit_qkv.is_some(),
+        trace.is_none()
+            && !debug_skip.skip_kv_projection
+            && !debug_skip.skip_local_kv_cache_write
+            && weights.q_norm_offset.is_some()
+            && weights.k_norm_offset.is_some()
+            && supports_qkv_rope_cache_fusion(dims),
+    );
     let use_qkv_prefill_projection = use_fused_qkv_rope_cache
         && matches!(phase, MetalPhase::Prefill { .. })
         && supports_qkv_prefill_projection(pipelines, dims);
@@ -936,7 +1050,99 @@ pub unsafe fn metal_encode_forward_layer(
         );
     }
     // 2-4. QKV projection and optional Gemma-style Q/K/V norms before RoPE.
-    if let (Some(q_norm_offset), Some(k_norm_offset)) =
+    if let Some((q_projection, k_projection, v_projection)) = low_bit_qkv {
+        if !debug_skip.skip_kv_projection {
+            for ((enabled, column), projection) in
+                low_bit_qkv_dispatch_columns(debug_skip.skip_kv_projection, q_dim, kv_dim)
+                    .into_iter()
+                    .zip([q_projection, k_projection, v_projection])
+            {
+                debug_assert!(enabled);
+                encode_low_bit_projection_strided(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    projection,
+                    scratch.normed_hidden,
+                    scratch.qkv_out,
+                    num_tokens,
+                    qkv_n,
+                    column,
+                )?;
+            }
+            encode_split_qkv(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.qkv_out,
+                scratch.q_offset,
+                scratch.k_offset,
+                scratch.v_offset,
+                num_tokens,
+                q_dim,
+                kv_dim,
+            )?;
+        } else {
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                q_projection,
+                scratch.normed_hidden,
+                scratch.q_offset,
+                num_tokens,
+                q_dim,
+                0,
+            )?;
+        }
+        if let Some(q_norm_offset) = weights.q_norm_offset {
+            encode_headwise_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.q_offset,
+                scratch.q_offset,
+                q_norm_offset,
+                dims.head_dim,
+                dims.num_heads,
+                dims.rms_eps,
+                num_tokens,
+                "low_bit_q_norm",
+            )?;
+        }
+        if !debug_skip.skip_kv_projection {
+            if let Some(k_norm_offset) = weights.k_norm_offset {
+                encode_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.k_offset,
+                    scratch.k_offset,
+                    k_norm_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "low_bit_k_norm",
+                )?;
+            }
+            if let Some(v_norm_offset) = weights.v_norm_offset {
+                encode_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.v_offset,
+                    scratch.v_offset,
+                    v_norm_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "low_bit_v_norm",
+                )?;
+            }
+        }
+    } else if let (Some(q_norm_offset), Some(k_norm_offset)) =
         (weights.q_norm_offset, weights.k_norm_offset)
     {
         if let Some(trace) = trace {
@@ -1815,38 +2021,91 @@ pub unsafe fn metal_encode_forward_layer(
     }
     // 8. O projection, post-attention norm, then residual add.
     let attn_addition_offset = if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
-        if let Some(trace) = trace {
-            encode_gemm_with_output(
+        if let Some(projection) = weights.low_bit_o_proj {
+            if !low_bit_descriptor_matches(
+                projection,
+                AppleLowBitTensorRole::OutputProjection,
+                [hidden, q_dim],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit output projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_o_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                projection,
+                scratch.attn_out,
+                scratch.mlp_out,
+                num_tokens,
+                hidden,
+                0,
+            )?;
+            encode_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                scratch.normed_hidden,
+                post_attn_norm_offset,
+                hidden,
+                dims.rms_eps,
+                num_tokens,
+                "post_attn_norm_low_bit",
+            )?;
+            if let Some(trace) = trace {
+                encode_trace_copy(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.mlp_out,
+                    trace.after_o_proj,
+                    num_tokens * hidden,
+                    "trace_after_o_proj",
+                )?;
+            }
+        } else {
+            if let Some(trace) = trace {
+                encode_gemm_with_output(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.attn_out,
+                    weights.o_proj_offset,
+                    trace.after_o_proj,
+                    num_tokens,
+                    hidden,
+                    q_dim,
+                    1.0,
+                    0.0,
+                    false,
+                    allow_prefill_mma,
+                )?;
+            }
+            encode_gemm_rmsnorm(
                 &cmd_buf,
                 pipelines,
                 buf,
                 scratch.attn_out,
                 weights.o_proj_offset,
-                trace.after_o_proj,
+                post_attn_norm_offset,
+                scratch.normed_hidden,
                 num_tokens,
                 hidden,
                 q_dim,
-                1.0,
-                0.0,
-                false,
+                dims.rms_eps,
+                "post_attn_norm",
                 allow_prefill_mma,
             )?;
         }
-        encode_gemm_rmsnorm(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.attn_out,
-            weights.o_proj_offset,
-            post_attn_norm_offset,
-            scratch.normed_hidden,
-            num_tokens,
-            hidden,
-            q_dim,
-            dims.rms_eps,
-            "post_attn_norm",
-            allow_prefill_mma,
-        )?;
         if let Some(trace) = trace {
             encode_trace_copy(
                 &cmd_buf,
@@ -1860,21 +2119,51 @@ pub unsafe fn metal_encode_forward_layer(
         }
         scratch.normed_hidden
     } else {
-        encode_gemm_with_output(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.attn_out,
-            weights.o_proj_offset,
-            scratch.mlp_out,
-            num_tokens,
-            hidden,
-            q_dim,
-            1.0,
-            0.0,
-            false,
-            allow_prefill_mma,
-        )?;
+        if let Some(projection) = weights.low_bit_o_proj {
+            if !low_bit_descriptor_matches(
+                projection,
+                AppleLowBitTensorRole::OutputProjection,
+                [hidden, q_dim],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit output projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_o_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                projection,
+                scratch.attn_out,
+                scratch.mlp_out,
+                num_tokens,
+                hidden,
+                0,
+            )?;
+        } else {
+            encode_gemm_with_output(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.attn_out,
+                weights.o_proj_offset,
+                scratch.mlp_out,
+                num_tokens,
+                hidden,
+                q_dim,
+                1.0,
+                0.0,
+                false,
+                allow_prefill_mma,
+            )?;
+        }
         if let Some(trace) = trace {
             encode_trace_copy(
                 &cmd_buf,
@@ -1944,24 +2233,49 @@ pub unsafe fn metal_encode_forward_layer(
         && weights.per_layer_projection_offset.is_some()
         && weights.post_per_layer_input_norm_offset.is_some();
     let mut layer_scale_fused = false;
-    let rounded_gate = supports_research_rounded_gate(
-        pipelines,
-        dims,
-        phase,
-        weights,
-        scratch,
-        trace.is_some(),
-        buf.length(),
-    ) && try_encode_research_rounded_gate(
-        cmd_buf,
-        pipelines,
-        buf,
-        dims,
-        weights,
-        scratch,
-        trace.is_some(),
-    )?;
-    if !rounded_gate {
+    let rounded_gate = low_bit_gate_up.is_none()
+        && supports_research_rounded_gate(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            trace.is_some(),
+            buf.length(),
+        )
+        && try_encode_research_rounded_gate(
+            cmd_buf,
+            pipelines,
+            buf,
+            dims,
+            weights,
+            scratch,
+            trace.is_some(),
+        )?;
+    if let Some((gate_projection, up_projection)) = low_bit_gate_up {
+        encode_low_bit_projection_strided(
+            &cmd_buf,
+            pipelines,
+            buf,
+            gate_projection,
+            scratch.normed_hidden,
+            scratch.gate_up_out,
+            num_tokens,
+            two_inter,
+            0,
+        )?;
+        encode_low_bit_projection_strided(
+            &cmd_buf,
+            pipelines,
+            buf,
+            up_projection,
+            scratch.normed_hidden,
+            scratch.gate_up_out,
+            num_tokens,
+            two_inter,
+            dims.intermediate,
+        )?;
+    } else if !rounded_gate {
         encode_gemm_with_output(
             &cmd_buf,
             pipelines,
@@ -4615,6 +4929,50 @@ unsafe fn encode_split_qkv(
 mod tests {
     use super::*;
 
+    fn test_low_bit_descriptor(role: AppleLowBitTensorRole) -> MetalLowBitProjectionOffsets {
+        MetalLowBitProjectionOffsets::new_for_role(
+            role,
+            rvllm_apple::AppleLowBitWeightFormat::W4A16,
+            4,
+            32,
+            0,
+            64,
+            64,
+            8,
+        )
+        .expect("test descriptor")
+    }
+
+    #[test]
+    fn low_bit_qkv_forces_standalone_route_and_skip_omits_kv_dispatches() {
+        assert!(qkv_fusion_allowed(false, true));
+        assert!(!qkv_fusion_allowed(true, true));
+        assert_eq!(
+            low_bit_qkv_dispatch_columns(false, 8, 4),
+            [(true, 0), (true, 8), (true, 12)]
+        );
+        assert_eq!(
+            low_bit_qkv_dispatch_columns(true, 8, 4),
+            [(true, 0), (false, 8), (false, 12)]
+        );
+    }
+
+    #[test]
+    fn low_bit_descriptor_roles_cannot_be_swapped_at_equal_shape() {
+        let q = test_low_bit_descriptor(AppleLowBitTensorRole::QueryProjection);
+        let k = test_low_bit_descriptor(AppleLowBitTensorRole::KeyProjection);
+        assert!(low_bit_descriptor_matches(
+            q,
+            AppleLowBitTensorRole::QueryProjection,
+            [4, 32]
+        ));
+        assert!(!low_bit_descriptor_matches(
+            k,
+            AppleLowBitTensorRole::QueryProjection,
+            [4, 32]
+        ));
+    }
+
     #[test]
     fn down_projection_execution_source_is_exactly_one() {
         assert_eq!(
@@ -5654,6 +6012,43 @@ unsafe fn encode_low_bit_down_projection(
                 rvllm_core::AppleCtx {
                     backend: "metal",
                     op: "low_bit_down_projection",
+                    device: "apple-silicon",
+                },
+            )
+        })
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_low_bit_projection_strided(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    projection: MetalLowBitProjectionOffsets,
+    activation_offset: usize,
+    output_offset: usize,
+    num_tokens: u32,
+    output_row_stride: u32,
+    output_column: u32,
+) -> Result<()> {
+    projection
+        .encode_strided(
+            cmd_buf,
+            pipelines,
+            buf,
+            activation_offset,
+            output_offset,
+            num_tokens as usize,
+            output_row_stride as usize,
+            output_column as usize,
+        )
+        .map_err(|_| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit strided projection encoding failed",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_projection_strided",
                     device: "apple-silicon",
                 },
             )
