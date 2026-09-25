@@ -83,3 +83,21 @@ Disposition: **inconclusive process-first transient**. The next referee must
 predeclare one excluded warmup case in every process, retain it in the receipt,
 and compute the comparison only from subsequent measured cases. No longer
 context advances from this round.
+
+## Warmup-controlled L256 result
+
+`run-abba-v2.sh` predeclares case 0 of every fresh process as a warmup, retains
+it in each raw report, and excludes only that case from the timing estimate.
+Cases 1 and 2 are measured. The A/B/B/A order contributes four measured
+observations per arm while preserving two warmup observations per arm.
+
+The exploratory run reported control 363.736 ms and split-32 335.063 ms, or
+**1.0856x**. The independent confirmation reported control 362.150 ms and
+split-32 333.223 ms, or **1.0868x**. Both queue receipts succeeded with
+eligible sampled conditions, no violations, identical tokens across all 12
+cases, zero inference-time compilation, and exact research-route dispatch.
+
+Disposition: **prospective L256 winner; advance, do not promote**. The two
+warmup-controlled rounds agree closely and clear the 5% exploratory threshold,
+but they establish only this context and workload. The same predeclared method
+must now advance to L512 and, if it remains plausible, L1024 and L2048.

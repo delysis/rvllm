@@ -1,8 +1,8 @@
 # Gemma 4 Apple kernel campaign — current handoff, 2026-09-25
 
 This section supersedes every older status or pause statement below. Work is
-active on draft PR #4, branch `astra/gemma4-load4-tiles-20260923`, at commit
-`1288d3c5`. Shipping defaults remain unchanged. Local Codex owns Apple-device
+active on draft PR #4, branch `astra/gemma4-load4-tiles-20260923`, at or after
+commit `df1ff2c3`. Shipping defaults remain unchanged. Local Codex owns Apple-device
 execution, correctness qualification, timing, evidence retention, and any
 promotion. Chat Pro may propose reviewable source changes but may not claim
 local qualification.
@@ -10,16 +10,23 @@ local qualification.
 ## Current adjudicated frontier
 
 - Global D512 BF16 decode attention: split-matrix is the stable qualified
-  implementation. The opt-in split-32 route passes the independent native
+  control. The opt-in split-32 route passes the independent native
   oracle, real Gemma route, newest-K/V, tails, holes, guards, BF16 rounding,
   exact dispatch, repeated output, and zero-compile checks, but **is not
   promotable**. Complete normal-route speedups versus split-matrix were
   1.149x/1.861x at L256, 1.015x/1.019x at L512, 0.737x/1.155x at L1024, and
   0.794x/0.683x at L2048. Separate three-sample profile medians instead report
   0.967x, 1.017x, 1.113x, and 1.140x respectively. The disagreement in
-  direction at L256 and L2048 proves material cross-process/order variance;
-  neither favorable subset may be selected. Raw reports and condition journals are
-  checked in at
+  direction at L256 and L2048 proved material cross-process/order variance;
+  neither favorable subset was selected. A corrective A/B/B/A referee then
+  predeclared case 0 of every fresh process as a retained warmup and measured
+  cases 1 and 2. It found an L256 split-32 speedup of **1.0856x** (363.736 ms
+  versus 335.063 ms), independently repeated at **1.0868x** (362.150 ms versus
+  333.223 ms). Both runs had identical tokens, exact routes, zero inference
+  compilation, eligible recorded conditions, and no violations. Split-32 is
+  therefore a **prospective L256 winner**, not yet a production selection;
+  longer-context advancement remains required. Raw reports and condition
+  journals are checked in at
   `reports/gemma4-split32-normal-route-20260925/`.
 - Native-BF16 Metal W4/W8 projection baseline: all seven roles (Q/K/V/O,
   gate/up/down), both formats, and M=1/M=4 pass real-weight correctness,
@@ -52,15 +59,16 @@ local qualification.
    selector from its operator-only numbers. Investigate why its full-route
    route measurements disagree despite isolated-kernel wins, with command
    submission, scratch, synchronization, partial, and merge time separated.
-   The next full-route comparison must execute a predeclared counterbalanced
-   route order inside one queue job; separate control-then-candidate jobs are
-   diagnostic only. The first corrective L256 ABBA manifest is staged at
-   `reports/gemma4-split32-normal-route-20260925/jobs/abba-L256.json`.
-   That first ABBA run completed at 0.674x using every observation, but exposed
+   Full-route comparisons execute a predeclared counterbalanced route order
+   inside one queue job; separate control-then-candidate jobs are diagnostic
+   only. The first corrective L256 ABBA run completed at 0.674x using every
+   observation, but exposed
    a large process-first transient that would reverse the answer if second
-   cases were cherry-picked. Treat it as inconclusive. The next L256 referee
-   must predeclare and retain one excluded warmup case per process before any
-   measured cases; do not advance to longer context until that round is stable.
+   cases were cherry-picked. The predeclared warmup-controlled referee and its
+   independent confirmation now agree at 1.0856x and 1.0868x respectively.
+   Advance this exact method to L512, then 1024/2048 only while correctness and
+   the speed signal survive; shipping selection still requires complete
+   evidence across the intended selector range.
 3. Prefill: implement a separate tiled online-softmax experiment and an
    explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
    policy or call TensorOps ANE evidence.
@@ -76,7 +84,7 @@ local qualification.
    calibrating thresholds against BF16. Operator agreement alone is not model
    acceptance.
 
-The persistent experiment queue is idle after completing the split-32
+The persistent experiment queue is advancing the warmup-controlled split-32
 campaign. It uses `stable_seconds=0`; changing conditions are recorded rather
 than used as a thermal-stability dwell gate. Short screens must precede longer
 contexts, and failed or unfavorable receipts must remain retained.
