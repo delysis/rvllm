@@ -830,6 +830,23 @@ fn quarantine_manifest(queue: &Path, path: &Path, job: &Job, reason: &str) -> Re
     Ok(())
 }
 
+fn quarantine_receipts(queue: &Path) -> Result<Vec<Value>> {
+    let directory = queue.join("quarantined-jobs");
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if entry.file_type()?.is_file() && name.to_string_lossy().ends_with(".receipt.json") {
+            paths.push(entry.path());
+        }
+    }
+    paths.sort();
+    paths.into_iter().map(|path| read_json(&path)).collect()
+}
+
 fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -> Result<()> {
     let _queue_lock = lock(&queue.join("worker.lock"))?;
     let result = run_owned(queue, accelerator_lock, idle_seconds);
@@ -1013,7 +1030,13 @@ pub(super) fn main() -> Result<()> {
             // The producer lock prevents two submitters from replacing an id.
             let _producer = lock(&queue.join("submit.lock"))?;
             let destination = queue.join("jobs").join(format!("{}.json", job.id));
-            if destination.exists() || queue.join("results").join(&job.id).exists() {
+            if destination.exists()
+                || queue.join("results").join(&job.id).exists()
+                || queue
+                    .join("quarantined-jobs")
+                    .join(format!("{}.json", job.id))
+                    .exists()
+            {
                 return Err("job id already exists".into());
             }
             for dependency in &job.after {
@@ -1074,7 +1097,8 @@ pub(super) fn main() -> Result<()> {
             println!(
                 "{}",
                 serde_json::to_string_pretty(
-                    &json!({"state":if state.exists(){read_json(&state)?}else{Value::Null},"jobs":jobs})
+                    &json!({"state":if state.exists(){read_json(&state)?}else{Value::Null},
+                        "jobs":jobs,"quarantined":quarantine_receipts(&queue)?})
                 )?
             );
             Ok(())
@@ -1392,6 +1416,7 @@ mod tests {
         assert_eq!(receipt["reason"], "test failure");
         assert_eq!(receipt["manifest"]["sha256"], manifest_hash);
         assert_eq!(receipt["report"]["sha256"], report_hash);
+        assert_eq!(quarantine_receipts(dir.path()).unwrap(), vec![receipt]);
         assert!(quarantine_manifest(dir.path(), &quarantined, &job, "retry").is_err());
     }
 
