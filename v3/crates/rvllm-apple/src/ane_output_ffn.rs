@@ -342,6 +342,105 @@ mod tests {
     }
 
     #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE component oracle; zero compiles and four evaluations"]
+    fn hardware_output_ffn_component_correctness_probe() {
+        use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
+        use rvllm_apple_ane_sys::AneInMemoryProgram;
+
+        let h = 32;
+        let m = 32;
+        let a = 32;
+        let dense = vec![f16::from_f32(0.01); h * m];
+        let ffn = AneInt8FfnWeights::quantize(&dense, &dense, &dense, h, m).unwrap();
+        let output_weights = vec![f16::from_f32(0.02); h * a];
+        let gamma = vec![f16::ONE; h];
+        let source = AneOutputFfnSource::build(
+            &output_weights,
+            a,
+            &ffn,
+            &gamma,
+            &gamma,
+            1e-6,
+        )
+        .unwrap();
+        let before = compile_budget_used();
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &source.mil,
+            &source.blob,
+            source.identity.input_bytes,
+            source.identity.output_bytes,
+            AneProgramCachePolicy::RequireExisting,
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), before);
+        let mut kernel = program.create_request().unwrap();
+        let mut previous = None;
+        for case in [0_usize, 0, 1, 2] {
+            let sample = |i: usize| {
+                f16::from_f32(((i * 17 + case * 13 + 3) % 37) as f32 / 256.0 - 0.07)
+            };
+            let attended: Vec<_> = (0..a).map(sample).collect();
+            let residual: Vec<_> = (0..h).map(|i| sample(i * 3 + 5)).collect();
+            let projected: Vec<_> = output_weights
+                .chunks_exact(a)
+                .map(|row| {
+                    f16::from_f32(
+                        row.iter()
+                            .zip(&attended)
+                            .map(|(&weight, &value)| weight.to_f32() * value.to_f32())
+                            .sum(),
+                    )
+                })
+                .collect();
+            let (_, expected) = output_ffn_cpu_boundary_oracle(
+                &projected,
+                &residual,
+                &gamma,
+                &gamma,
+                &ffn,
+                1e-6,
+            )
+            .unwrap();
+            let mut input = vec![0_u8; source.identity.input_bytes];
+            for (channel, value) in attended.iter().chain(&residual).enumerate() {
+                let offset = channel * 64;
+                input[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+            }
+            kernel.write_input(&input).unwrap();
+            kernel.evaluate().unwrap();
+            let mut bytes = vec![0_u8; source.identity.output_bytes];
+            kernel.read_output(&mut bytes).unwrap();
+            let actual: Vec<_> = bytes
+                .chunks_exact(64)
+                .map(|row| f16::from_le_bytes([row[0], row[1]]))
+                .collect();
+            assert!(actual.iter().all(|value| value.is_finite()));
+            let max_absolute_error = actual
+                .iter()
+                .zip(&expected)
+                .map(|(actual, expected)| (actual.to_f32() - expected.to_f32()).abs())
+                .fold(0.0_f32, f32::max);
+            assert!(max_absolute_error <= 0.02, "case {case}: {max_absolute_error}");
+            if case == 0 {
+                if let Some(first) = &previous {
+                    assert_eq!(first, &actual, "repeated execution changed output bits");
+                }
+                previous = Some(actual.clone());
+            }
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "case": case,
+                    "maximum_absolute_error": max_absolute_error,
+                    "output_bits": actual.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
+                })
+            );
+        }
+        assert_eq!(compile_budget_used(), before);
+    }
+
+    #[cfg(feature = "macos-private-ane-research")]
     fn compile_dialect_probe(mil: &str, input_channels: usize, output_channels: usize) {
         use crate::ane_linear::{compile_budget_used, AneProgramCachePolicy};
         use rvllm_apple_ane_sys::AneInMemoryProgram;
