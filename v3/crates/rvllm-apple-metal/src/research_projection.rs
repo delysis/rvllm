@@ -74,6 +74,35 @@ pub struct ProjectionRequest {
 impl ProjectionRequest {
     pub fn plan(self) -> Result<ProjectionPlan, FallbackReason> {
         use MetalResearchCandidate::*;
+
+        // Decode GEMV has a deliberately narrower contract than the prefill
+        // families below. It exists to reproduce the high-performing MLX
+        // geometry on the exact Gemma 4 12B dense projection shapes without
+        // changing any production selector.
+        if self.candidate == DecodeGemvMlx16 {
+            if !self.native_bf16 {
+                return Err(FallbackReason::StoragePrecision);
+            }
+            if self.alpha != 1.0 || self.beta != 0.0 {
+                return Err(FallbackReason::ProjectionScale);
+            }
+            let [m, n, k] = self.shape;
+            if self.output_f32 || !decode_gemv_mlx16_shape(m, n, k) {
+                return Err(FallbackReason::Shape);
+            }
+            if !projection_buffers_fit(self.offsets, self.shape, 2, self.arena_bytes) {
+                return Err(FallbackReason::BufferOrAlias);
+            }
+            let [kernel] = self.candidate.kernels() else {
+                return Err(FallbackReason::NotThisOperation);
+            };
+            return Ok(ProjectionPlan {
+                kernel: *kernel,
+                tile_m: 1,
+                tile_n: 16,
+            });
+        }
+
         let (tile_m, tile_n) =
             projection_tile(self.candidate).ok_or(FallbackReason::NotThisOperation)?;
         let [gemm, qkv] = self.candidate.kernels() else {
@@ -122,9 +151,22 @@ impl ProjectionRequest {
 
 /// Intrinsic output tile, not runtime shape admission. Component oracles use
 /// this geometry with their own explicitly guarded synthetic tail fixtures.
+pub const fn decode_gemv_mlx16_shape(m: u32, n: u32, k: u32) -> bool {
+    m == 1
+        && n % 16 == 0
+        && k % 128 == 0
+        && matches!(
+            (n, k),
+            (8192 | 9216, 3840)
+                | (30720, 3840)
+                | (3840, 4096 | 8192 | 15360)
+        )
+}
+
 pub fn projection_tile(candidate: MetalResearchCandidate) -> Option<(usize, usize)> {
     use MetalResearchCandidate::*;
     match candidate {
+        DecodeGemvMlx16 => Some((1, 16)),
         ShortMma16x64 => Some((16, 64)),
         LongMma32x64 => Some((32, 64)),
         Mma32Prefetch | Mma32F32 | Mma32Load4 => Some((32, 32)),
