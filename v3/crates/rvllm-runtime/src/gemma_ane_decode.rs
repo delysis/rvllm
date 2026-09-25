@@ -88,6 +88,43 @@ pub enum AneAttentionOutputPlan {
     AllSlidingFusedCached,
 }
 
+/// Evidence-only selector review for the qualified all-sliding fusion.
+///
+/// It is intentionally disconnected from runtime routing. A speed ranking may
+/// only be considered after exact dependent-token parity, zero compiler calls,
+/// broader (>=16 token) state coverage, and independent opposite-order timing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AneAttentionOutputSelectorEvidence {
+    pub baseline_median_ms_per_token: f64,
+    pub candidate_median_ms_per_token: f64,
+    pub exact_dependent_tokens: usize,
+    pub compiler_calls_delta: usize,
+    pub route_evaluation_counts_exact: bool,
+    pub opposite_order_confirmation: bool,
+}
+
+impl AneAttentionOutputSelectorEvidence {
+    #[must_use]
+    pub fn reviewed_plan(self) -> Option<AneAttentionOutputPlan> {
+        if !self.baseline_median_ms_per_token.is_finite()
+            || !self.candidate_median_ms_per_token.is_finite()
+            || self.baseline_median_ms_per_token <= 0.0
+            || self.candidate_median_ms_per_token <= 0.0
+            || self.exact_dependent_tokens < 16
+            || self.compiler_calls_delta != 0
+            || !self.route_evaluation_counts_exact
+            || !self.opposite_order_confirmation
+        {
+            return None;
+        }
+        if self.candidate_median_ms_per_token < self.baseline_median_ms_per_token {
+            Some(AneAttentionOutputPlan::AllSlidingFusedCached)
+        } else {
+            Some(AneAttentionOutputPlan::Separate)
+        }
+    }
+}
+
 impl AneAttentionOutputPlan {
     pub fn name(self) -> &'static str {
         match self {
@@ -1714,6 +1751,46 @@ mod tests {
         assert_eq!(
             AneAttentionOutputPlan::AllSlidingFusedCached.name(),
             "all-sliding-fused-cached"
+        );
+    }
+
+    #[test]
+    fn ane_attention_output_selector_review_is_fail_closed() {
+        let qualified = AneAttentionOutputSelectorEvidence {
+            baseline_median_ms_per_token: 10.0,
+            candidate_median_ms_per_token: 8.0,
+            exact_dependent_tokens: 16,
+            compiler_calls_delta: 0,
+            route_evaluation_counts_exact: true,
+            opposite_order_confirmation: true,
+        };
+        assert_eq!(
+            qualified.reviewed_plan(),
+            Some(AneAttentionOutputPlan::AllSlidingFusedCached)
+        );
+        assert_eq!(
+            AneAttentionOutputSelectorEvidence {
+                opposite_order_confirmation: false,
+                ..qualified
+            }
+            .reviewed_plan(),
+            None
+        );
+        assert_eq!(
+            AneAttentionOutputSelectorEvidence {
+                exact_dependent_tokens: 8,
+                ..qualified
+            }
+            .reviewed_plan(),
+            None
+        );
+        assert_eq!(
+            AneAttentionOutputSelectorEvidence {
+                candidate_median_ms_per_token: 11.0,
+                ..qualified
+            }
+            .reviewed_plan(),
+            Some(AneAttentionOutputPlan::Separate)
         );
     }
 
