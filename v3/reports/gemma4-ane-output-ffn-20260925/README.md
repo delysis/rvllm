@@ -71,3 +71,9 @@ and the resulting scalar broadcasts back across the hidden tensor through
 `mul`. The remaining candidates are interaction with the mixed convolution
 graph or the presence of two RMS sequences in one program; the next smallest
 probe is two sequential RMS blocks without convolutions.
+
+Two sequential RMS blocks also compiled. The full failure is therefore an
+interaction with the mixed graph or its learned-gamma multiplications, not a
+simple ANEC limit on repeated reductions or inverse square roots. The next arm
+adds two learned gamma tensors to the accepted dual-RMS probe before testing
+each norm boundary around the mixed convolution core.

@@ -1,0 +1,57 @@
+{
+  "after": [],
+  "command": {
+    "args": [
+      "ane_output_ffn::tests::hardware_two_rms_blocks_compile_probe",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3",
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "{output}/ane-driver-journal.jsonl"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/target/release/deps/rvllm_apple-aa074227ce319fa3",
+      "sha256": "b5c3ceb8b96531070fd0e8a52c349a067b874bbce5db5f2190f851627d7c4f03"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_disaggregated_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "gemma4-ane-output-ffn-11-two-rms-blocks-20260925",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/Cargo.lock",
+      "sha256": "0be254102e4ebb8cd70434ef54619493b44709dcfc1748a25fcdd3ae183ae7de"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/crates/rvllm-apple/src/ane_output_ffn.rs",
+      "sha256": "b60e8053944b9aaaaa71a8483fdb42fd199a483778be7bf1a2b3f5884a0b76aa"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 1800,
+  "max_wait_seconds": 86400,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0,
+  "validator": null
+}
