@@ -27,3 +27,13 @@ Evidence boundary: pooled measurements motivating this work were approximately
 FFN 562 ms, QKV 473 ms, and vocabulary 168 ms. Stacked FFN was neutral;
 interleaved and down4 lost. Current QKV is already one evaluation per layer.
 
+## Compile adjudication
+
+The sealed clean-tree probe made exactly one compile attempt and zero
+evaluations. ANEC rejected the graph with `ANECCompile() FAILED`; the driver
+journal records `compile_requested`, `descriptor_created`, `compile_begin`, and
+`compile_failed`. The graph therefore remains compile-blocked and default-off.
+No reload, correctness, timing, or full-route claim follows. The next iteration
+must isolate the unsupported MIL dialect boundary (the new explicit RMS
+`reduce_sum`/`rsqrt` sequence is the leading hypothesis) with separately sealed
+compile probes before any evaluation API is added.

@@ -1,0 +1,65 @@
+{
+  "after": [],
+  "command": {
+    "args": [
+      "ane_output_ffn::tests::hardware_output_ffn_compile_only_probe",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3",
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "{output}/ane-driver-journal.jsonl"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/target/release/deps/rvllm_apple-aa074227ce319fa3",
+      "sha256": "8055ad6c43b533e4e165c650195a88c6d92b785d5e9af1e3b0f631d1c707c902"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_disaggregated_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "gemma4-ane-output-ffn-01-compile-probe-20260925",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/Cargo.lock",
+      "sha256": "0be254102e4ebb8cd70434ef54619493b44709dcfc1748a25fcdd3ae183ae7de"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/crates/rvllm-apple/src/ane_output_ffn.rs",
+      "sha256": "076de9683374f49c5e5153a893bbb0b7f0a26d8598af1654d4aecadd0146ea01"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/crates/rvllm-apple/src/ane_int8_ffn_weights.rs",
+      "sha256": "f2f4e96258fb1b1d89c41f427981b1fbf76ac58293b0d75340f784861e7e2796"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-ane-output-ffn-clean/v3/crates/rvllm-apple/src/ane_linear.rs",
+      "sha256": "06eaea26ecf0f61d31728412b63cebcd7ca7527f5670d3f6e0463261aaf72f73"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 1800,
+  "max_wait_seconds": 86400,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0,
+  "validator": null
+}
