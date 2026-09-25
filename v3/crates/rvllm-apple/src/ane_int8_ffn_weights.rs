@@ -226,6 +226,58 @@ pub struct AneInt8MatrixView<'a> {
 }
 
 impl AneInt8FfnWeights {
+    /// Serialize one FP16 output projection followed by the exact gate/up/down
+    /// INT8 matrices. This is the single-blob ABI needed by an experimental
+    /// output-projection/FFN graph; it does not alter the quantized FFN bytes.
+    pub(crate) fn output_ffn_blob_and_constants(
+        &self,
+        output: &[f16],
+        output_input: usize,
+    ) -> Result<(Vec<u8>, String), String> {
+        let output_count = self
+            .hidden
+            .checked_mul(output_input)
+            .filter(|&count| count > 0 && count == output.len())
+            .ok_or("ANE output/FFN output projection shape mismatch or overflow")?;
+        let output_bytes = output_count
+            .checked_mul(2)
+            .ok_or("ANE output/FFN output projection size overflow")?;
+        let capacity = self
+            .source_blob_bytes()
+            .checked_add(64 + output_bytes)
+            .ok_or("ANE output/FFN blob size overflow")?;
+        if capacity > u32::MAX as usize {
+            return Err("ANE output/FFN blob exceeds 4 GiB".into());
+        }
+
+        let mut blob = Vec::with_capacity(capacity);
+        blob.resize(64, 0);
+        blob[..4].copy_from_slice(&7_u32.to_le_bytes());
+        blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
+        let output_offset = append_descriptor(&mut blob, 1, output_bytes);
+        for weight in output {
+            blob.extend_from_slice(&weight.to_le_bytes());
+        }
+        let mut constants = format!(
+            "        tensor<fp16, [{}, {}, 1, 1]> Wo = const()[name = string(\"Wo\"), val = tensor<fp16, [{}, {}, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({output_offset})))];\n",
+            self.hidden, output_input, self.hidden, output_input
+        );
+        for (matrix, name) in self.matrices.iter().zip(["Wg", "Wu", "Wd"]) {
+            let q_offset = append_descriptor(&mut blob, 4, matrix.values.len());
+            blob.extend(matrix.values.iter().map(|&value| value.to_le_bytes()[0]));
+            let scale_offset = append_descriptor(&mut blob, 1, matrix.scales.len() * 2);
+            for scale in &matrix.scales {
+                blob.extend_from_slice(&scale.to_le_bytes());
+            }
+            let (rows, columns) = (matrix.rows, matrix.columns);
+            constants.push_str(&format!(
+                "        tensor<fp16, [{rows}, {columns}, 1, 1]> {name} = constexpr_affine_dequantize()[axis = int32(0), name = string(\"{name}\"), quantized_data = tensor<int8, [{rows}, {columns}, 1, 1]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({q_offset}))), scale = tensor<fp16, [{rows}]>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64({scale_offset}))), zero_point = int8(0)];\n"
+            ));
+        }
+        debug_assert_eq!(blob.len(), capacity);
+        Ok((blob, constants))
+    }
+
     pub fn quantize(
         gate: &[f16],
         up: &[f16],
@@ -835,5 +887,39 @@ mod tests {
         assert_eq!(offset, blob.len());
         assert_eq!(constants.matches("constexpr_affine_dequantize").count(), 3);
         assert_eq!(constants.matches("axis = int32(0)").count(), 3);
+    }
+
+    #[test]
+    fn output_ffn_blob_preserves_int8_matrices_after_fp16_projection() {
+        let source: Vec<_> = (0..32 * 64)
+            .map(|i| f16::from_f32((i % 31) as f32 / 32.0 - 0.5))
+            .collect();
+        let weights = AneInt8FfnWeights::quantize(&source, &source, &source, 32, 64).unwrap();
+        let output: Vec<_> = (0..32 * 48)
+            .map(|i| f16::from_f32((i % 17) as f32 / 16.0 - 0.5))
+            .collect();
+        let (mixed, constants) = weights.output_ffn_blob_and_constants(&output, 48).unwrap();
+        assert_eq!(&mixed[..4], &7_u32.to_le_bytes());
+        assert_eq!(constants.matches("BLOBFILE").count(), 7);
+        assert_eq!(constants.matches("constexpr_affine_dequantize").count(), 3);
+        let mut descriptor = 64 + 64 + output.len() * 2;
+        for matrix in &weights.matrices {
+            assert_eq!(&mixed[descriptor + 4..descriptor + 8], &4_u32.to_le_bytes());
+            let data = descriptor + 64;
+            let expected: Vec<_> = matrix
+                .values
+                .iter()
+                .map(|value| value.to_le_bytes()[0])
+                .collect();
+            assert_eq!(&mixed[data..data + matrix.values.len()], expected);
+            descriptor = data + matrix.values.len();
+            assert_eq!(&mixed[descriptor + 4..descriptor + 8], &1_u32.to_le_bytes());
+            descriptor += 64 + matrix.scales.len() * 2;
+        }
+        assert_eq!(descriptor, mixed.len());
+        assert!(weights
+            .output_ffn_blob_and_constants(&output[..output.len() - 1], 48)
+            .is_err());
+        assert!(weights.output_ffn_blob_and_constants(&output, 0).is_err());
     }
 }
