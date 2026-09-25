@@ -3,7 +3,7 @@
 Remain in ordinary Chat; do not switch to Work.
 
 Work directly from PR #4, branch `astra/gemma4-load4-tiles-20260923`, at or
-after commit `149f0cbd`. Produce reviewable source patches or a complete source
+after commit `22d1f4d6`. Produce reviewable source patches or a complete source
 archive, not merely recommendations. Do not claim Apple-device performance you
 cannot measure. Preserve safe Rust, exact dispatch evidence, independent
 correctness oracles, and the existing kernel-game admission boundaries.
@@ -24,9 +24,19 @@ correctness oracles, and the existing kernel-game admission boundaries.
   at M=1 and M=4, but timing is highly variable. A seven-role Q/K/V/O/gate/up/
   down campaign is being staged.
 - The ANE baseline INT8 and stacked-FFN routes have exact cached programs,
-  zero-compile inference, and exact 10-token correctness. A 12-arm
-  ABBA/BAAB/ABBA timing sequence is running. Early pairs are directionally
-  favorable to stacked FFN but are not a final result.
+  zero-compile inference, and exact 10-token correctness. A corrected fused
+  attention-to-output-projection component now uses a persistent KV surface,
+  writes only newest Q/K/V plus mask per token, and returns the 3,840-wide
+  projected result in one accelerator evaluation. Its real layer-0 oracle
+  passed all 3,840 outputs at lengths 1/31/32/33/1024/1025, with guards,
+  bit-identical repeats, independent FP32 projection reference, and zero
+  inference compilation. The first complete-pair ABBA timing screen measured
+  10.1311 ms/token fused versus 19.9215 ms/token for separate attention and
+  o_proj (1.966x), with the slowest fused arm still faster than the fastest
+  baseline arm. This is a prospective component winner, not a promotion:
+  range drift was 10.86% fused and 9.25% baseline, an opposite-order
+  confirmation is queued, and the production-selected full autoregressive
+  route remains unproven.
 - MLX isolated-stage evidence says FFN dominates PP4096, while FFN, attention,
   QKV and O projection are all material in long-context decode. The captured
   MLX trace and generated Metal evidence are diagnostic, not a speed oracle.
@@ -88,6 +98,15 @@ compile-cache identity, zero-compile inference, graph availability, exact
 route, evaluation count and fallback absence first-class receipt fields.
 Separate 4-bit storage/quality experiments from claims of native 4-bit ANE
 arithmetic.
+
+Extend the corrected fused attention-to-o_proj candidate into a default-off
+production-route vertical slice. Preserve persistent KV state and strided
+newest-token writes; do not reintroduce full-surface host copies. Prove the
+selected route, exact first-token and multi-token output, newest-K/V visibility,
+cache identity, evaluation count, and zero compiler calls during inference.
+Add independently ordered timing manifests and variance-stratified receipts;
+the existing 1.966x component observation is a hypothesis to confirm, not a
+license to select the route.
 
 ## Deliverable F: checkpoint-quality gates
 
