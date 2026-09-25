@@ -37,3 +37,8 @@ No reload, correctness, timing, or full-route claim follows. The next iteration
 must isolate the unsupported MIL dialect boundary (the new explicit RMS
 `reduce_sum`/`rsqrt` sequence is the leading hypothesis) with separately sealed
 compile probes before any evaluation API is added.
+
+The first isolation arm lowered every nested expression to explicit SSA values;
+ANEC still rejected it. Nested-expression syntax is therefore ruled out as the
+sole cause. The next bounded probes must test `reduce_sum` and `rsqrt`
+independently in otherwise minimal known-good graphs.
