@@ -1,0 +1,86 @@
+{
+  "after": [
+    "g4metalbf16lowbit-n4-up-m1m4-screen-20260925"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--tensor",
+      "model.language_model.layers.0.mlp.up_proj.weight",
+      "--m",
+      "1,4",
+      "--samples",
+      "3",
+      "--candidate",
+      "n4"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm-low-bit-real-weight",
+      "sha256": "95d019e8d81e19e6d704e403e00409c7d381a6b0e97fa7e8edb723f968b1d154"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_disaggregated_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4metalbf16lowbit-n4-up-m1m4-confirm-20260925",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/Cargo.lock",
+      "sha256": "0be254102e4ebb8cd70434ef54619493b44709dcfc1748a25fcdd3ae183ae7de"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/tools/validate_low_bit_real_weight_receipt.py",
+      "sha256": "b180b256d523529d8ad890aebfaaa379c701eacb923bd1a47a393fd44700aabe"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 86400,
+  "purpose": "exploratory_timing",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0,
+  "validator": {
+    "args": [
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/tools/validate_low_bit_real_weight_receipt.py",
+      "--receipt",
+      "{output}/trial.stdout",
+      "--tensor",
+      "model.language_model.layers.0.mlp.up_proj.weight",
+      "--role",
+      "dense_up_projection",
+      "--samples",
+      "3",
+      "--candidate",
+      "n4"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "env": {},
+    "executable": {
+      "path": "/usr/bin/python3",
+      "sha256": "7588ceab299393618d6f8861502ac0588d1594025f301d9a61a898215b5571d3"
+    }
+  }
+}
