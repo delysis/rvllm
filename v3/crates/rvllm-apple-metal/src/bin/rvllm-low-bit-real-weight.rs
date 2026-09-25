@@ -1391,7 +1391,11 @@ mod macos {
                         projection.experimental_bf16_core8_qmv_kernel_name()
                     }
                     CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
-                    CandidateSchedule::N4VsN8 => unreachable!("direct mode has a separate referee"),
+                    CandidateSchedule::N4VsN8
+                    | CandidateSchedule::N4VsMlxQmv
+                    | CandidateSchedule::N4VsCore8Qmv => {
+                        unreachable!("direct mode has a separate referee")
+                    }
                 },
                 "activation_dtype": "BF16", "output_dtype": "BF16", "scale_dtype": "F16", "accumulation_dtype": "F32",
                 "native_ms": native_ms, "candidate_ms": low_ms,
