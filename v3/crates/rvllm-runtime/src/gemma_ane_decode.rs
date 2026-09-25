@@ -1618,6 +1618,139 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "private ANE layer-0 fused attention/output compile-then-reload probe; one compiler call, two loads, zero evaluations"]
+    fn hardware_layer0_fused_attention_output_compile_then_reload() {
+        use rvllm_apple::ane_attention::AneAttentionOutputCompile;
+        use rvllm_apple::ane_linear::compile_budget_used;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        let journal_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").expect("driver journal path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite fused compile-reload receipt"
+        );
+        assert!(
+            !journal_path.exists(),
+            "refusing to append to an old driver journal"
+        );
+        assert_eq!(compile_budget_used(), 0, "probe requires a fresh process");
+
+        let prepared = (|| -> Result<_, String> {
+            let (arch, entries) = super::validated_weights(&model, 1024)?;
+            let shape = super::layer_shape(&arch, 0);
+            let layout = match shape.sliding_window {
+                Some(window) => rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    window,
+                )?,
+                None => rvllm_apple::ane_attention_layout::PackedAttentionLayout::new(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    1024,
+                )?,
+            };
+            let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+            let weights = super::load_tensor(
+                entries
+                    .get(&name)
+                    .ok_or_else(|| format!("missing ANE tensor {name}"))?,
+            )?;
+            let identity =
+                AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN)?;
+            let first = AneAttentionOutputCompile::compile_layer(
+                layout,
+                &weights,
+                super::HIDDEN,
+                super::AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+            )?;
+            let compiler_calls_after_first_load = compile_budget_used();
+            drop(first);
+            let second = AneAttentionOutputCompile::compile_layer(
+                layout,
+                &weights,
+                super::HIDDEN,
+                super::AneProgramCachePolicy::RequireExisting,
+            )?;
+            let compiler_calls_after_second_load = compile_budget_used();
+            drop(second);
+            drop(weights);
+            Ok((
+                identity,
+                compiler_calls_after_first_load,
+                compiler_calls_after_second_load,
+            ))
+        })();
+        let compiler_calls = compile_budget_used();
+        let (status, identity, after_first, after_second, error) = match prepared {
+            Ok((identity, after_first, after_second)) => (
+                "loaded_twice",
+                Some(identity),
+                Some(after_first),
+                Some(after_second),
+                None,
+            ),
+            Err(error) => ("failed", None, None, None, Some(error)),
+        };
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_compile_then_reload.v1",
+            "status":status,
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":identity.as_ref().map(|value| serde_json::json!({
+                "mil_sha256":value.mil_sha256,
+                "weight_blob_sha256":value.weight_blob_sha256,
+                "input_bytes":value.input_bytes,
+                "output_bytes":value.output_bytes,
+            })),
+            "compiler_calls_after_first_load":after_first,
+            "compiler_calls_after_second_load":after_second,
+            "compiler_calls":compiler_calls,
+            "compiler_call_limit":1,
+            "loads":2,
+            "accelerator_evaluations":0,
+            "external_inputs":1,
+            "external_outputs":1,
+            "driver_journal":journal_path,
+            "error":error,
+            "claim":"Layer-0 same-client compile/reload evidence only; no inference, correctness, speed, route, cross-process persistence, or promotion claim."
+        });
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused compile-reload receipt"),
+        )
+        .expect("preserve fused compile-reload receipt");
+        assert_eq!(
+            compiler_calls, 1,
+            "second load must reuse the compiled graph"
+        );
+        assert_eq!(
+            after_first,
+            Some(1),
+            "first load must consume the single compiler call"
+        );
+        assert_eq!(
+            after_second,
+            Some(1),
+            "second load must not call the compiler"
+        );
+        assert_eq!(
+            status, "loaded_twice",
+            "fused same-client reload failed; inspect preserved receipt and journal"
+        );
+    }
+
+    #[test]
     fn interleaved_is_cached_only_and_does_not_change_projection_precision() {
         let plan = super::AneWeightPlan::StaticInt8InterleavedFfnCached;
         assert_eq!(plan.program_count(), 162);
