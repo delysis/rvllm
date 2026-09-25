@@ -1802,53 +1802,6 @@ mod tests {
         assert_eq!(compile_budget_used(), 0, "timing requires a fresh process");
         let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
 
-        // Loading and snapshot import are deliberately outside every timed
-        // interval. Both persistent decoders use the same sealed checkpoint,
-        // cache-only program policy, and captured prefill state.
-        let mut baseline = GemmaAneDecode::load_with_attention_output_plan(
-            &model,
-            1024,
-            AneWeightPlan::StaticInt8FfnCached,
-            0,
-            AneAttentionOutputPlan::Separate,
-        )
-        .unwrap();
-        let mut candidate = GemmaAneDecode::load_with_attention_output_plan(
-            &model,
-            1024,
-            AneWeightPlan::StaticInt8FfnCached,
-            0,
-            AneAttentionOutputPlan::Layer0FusedCached,
-        )
-        .unwrap();
-        assert_eq!(
-            baseline
-                .attention_output_route_evidence()
-                .compiler_calls_during_load,
-            0
-        );
-        assert_eq!(
-            candidate
-                .attention_output_route_evidence()
-                .compiler_calls_during_load,
-            0
-        );
-        let compiler_calls_after_load = compile_budget_used();
-        assert_eq!(
-            compiler_calls_after_load, 0,
-            "all programs must be exact cache hits"
-        );
-
-        // Equal untimed warmup work. Re-importing the exact snapshot before
-        // each decode also prevents a preceding arm from changing position or
-        // KV state for the arm that follows it.
-        baseline.import_prefill(&snapshot).unwrap();
-        let baseline_warmup = baseline.decode(anchor).unwrap();
-        candidate.import_prefill(&snapshot).unwrap();
-        let candidate_warmup = candidate.decode(anchor).unwrap();
-        let expected = signature(&baseline_warmup);
-        assert_eq!(signature(&candidate_warmup), expected);
-
         let reverse_order = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_ORDER")
             .map(|value| value == "BAAB_FIRST")
             .unwrap_or(false);
@@ -1905,32 +1858,72 @@ mod tests {
         let mut observations = Vec::with_capacity(sequence.len());
         let mut baseline_ms = Vec::with_capacity(6);
         let mut candidate_ms = Vec::with_capacity(6);
+        let mut expected = None;
+        let mut baseline_fused_evaluations = 0;
+        let mut baseline_attention_evaluations = 0;
+        let mut baseline_output_evaluations = 0;
+        let mut candidate_fused_evaluations = 0;
+        let mut candidate_attention_evaluations = 0;
+        let mut candidate_output_evaluations = 0;
         for (index, arm) in sequence.into_iter().enumerate() {
-            let (decoded, elapsed_ms) = match arm {
-                "baseline" => {
-                    baseline.import_prefill(&snapshot).unwrap();
-                    let started = Instant::now();
-                    let decoded = baseline.decode(anchor).unwrap();
-                    (decoded, started.elapsed().as_secs_f64() * 1000.0)
-                }
-                "candidate" => {
-                    candidate.import_prefill(&snapshot).unwrap();
-                    let started = Instant::now();
-                    let decoded = candidate.decode(anchor).unwrap();
-                    (decoded, started.elapsed().as_secs_f64() * 1000.0)
-                }
+            let plan = match arm {
+                "baseline" => AneAttentionOutputPlan::Separate,
+                "candidate" => AneAttentionOutputPlan::Layer0FusedCached,
                 _ => unreachable!(),
             };
+            // The private runtime gives a deterministic model-directory lease
+            // to one live decoder.  Keep exactly one decoder alive per arm;
+            // load, snapshot import and equal warmup remain outside timing.
+            let mut decoder = GemmaAneDecode::load_with_attention_output_plan(
+                &model,
+                1024,
+                AneWeightPlan::StaticInt8FfnCached,
+                0,
+                plan,
+            )
+            .unwrap();
+            assert_eq!(
+                decoder
+                    .attention_output_route_evidence()
+                    .compiler_calls_during_load,
+                0
+            );
+            assert_eq!(
+                compile_budget_used(),
+                0,
+                "all programs must be exact cache hits"
+            );
+            decoder.import_prefill(&snapshot).unwrap();
+            let warmup = signature(&decoder.decode(anchor).unwrap());
+            if let Some(expected) = &expected {
+                assert_eq!(&warmup, expected, "full-route warmup drift in arm {index}");
+            } else {
+                expected = Some(warmup);
+            }
+            decoder.import_prefill(&snapshot).unwrap();
+            let started = Instant::now();
+            let decoded = decoder.decode(anchor).unwrap();
+            let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
             assert_eq!(
                 signature(&decoded),
-                expected,
+                *expected.as_ref().unwrap(),
                 "full-route output drift in arm {index}"
             );
+            let route = decoder.attention_output_route_evidence();
             if arm == "baseline" {
                 baseline_ms.push(elapsed_ms);
+                assert_eq!(route.fused_layers, Vec::<usize>::new());
+                baseline_fused_evaluations += route.fused_attention_output_evaluations;
+                baseline_attention_evaluations += route.separate_attention_evaluations;
+                baseline_output_evaluations += route.separate_output_evaluations;
             } else {
                 candidate_ms.push(elapsed_ms);
+                assert_eq!(route.fused_layers, vec![0]);
+                candidate_fused_evaluations += route.fused_attention_output_evaluations;
+                candidate_attention_evaluations += route.separate_attention_evaluations;
+                candidate_output_evaluations += route.separate_output_evaluations;
             }
+            assert_eq!(route.compiler_calls_since_load, Some(0));
             observations.push(json!({
                 "index":index,
                 "block":index / 4,
@@ -1959,20 +1952,15 @@ mod tests {
         let candidate_median_ms = median(&mut candidate_ms);
         let baseline_drift = baseline_ms[baseline_ms.len() - 1] / baseline_ms[0] - 1.0;
         let candidate_drift = candidate_ms[candidate_ms.len() - 1] / candidate_ms[0] - 1.0;
-        let baseline_route = baseline.attention_output_route_evidence();
-        let candidate_route = candidate.attention_output_route_evidence();
-        assert_eq!(baseline_route.fused_layers, Vec::<usize>::new());
-        assert_eq!(baseline_route.fused_attention_output_evaluations, 0);
-        assert_eq!(baseline_route.separate_attention_evaluations, 7 * 48);
-        assert_eq!(baseline_route.separate_output_evaluations, 7 * 48);
-        assert_eq!(candidate_route.fused_layers, vec![0]);
-        assert_eq!(candidate_route.fused_attention_output_evaluations, 7);
-        assert_eq!(candidate_route.separate_attention_evaluations, 7 * 47);
-        assert_eq!(candidate_route.separate_output_evaluations, 7 * 47);
+        assert_eq!(baseline_fused_evaluations, 0);
+        assert_eq!(baseline_attention_evaluations, 12 * 48);
+        assert_eq!(baseline_output_evaluations, 12 * 48);
+        assert_eq!(candidate_fused_evaluations, 12);
+        assert_eq!(candidate_attention_evaluations, 12 * 47);
+        assert_eq!(candidate_output_evaluations, 12 * 47);
         let compiler_calls_after_timing = compile_budget_used();
-        assert_eq!(compiler_calls_after_timing, compiler_calls_after_load);
-        assert_eq!(baseline_route.compiler_calls_since_load, Some(0));
-        assert_eq!(candidate_route.compiler_calls_since_load, Some(0));
+        assert_eq!(compiler_calls_after_timing, 0);
+        let expected = expected.unwrap();
 
         let report = json!({
             "schema":"rvllm.gemma4_ane_fused_attention_output_full_route_timing.v1",
@@ -1982,6 +1970,7 @@ mod tests {
             "sequence":sequence_name,
             "warmup_tokens_per_arm":1,
             "measured_tokens_per_arm":6,
+            "decoder_lifetime":"one exact-cache decoder per observation; load excluded from timing",
             "state_reset":"identical sealed prefill imported outside every timed interval",
             "timed_scope":"one complete decode from embedding through vocabulary ranking",
             "baseline_median_ms_per_token":baseline_median_ms,
@@ -1992,18 +1981,18 @@ mod tests {
             "outputs_exact":true,
             "expected_output":expected,
             "baseline_route":{
-                "plan":baseline_route.plan,
-                "fused_evaluations":baseline_route.fused_attention_output_evaluations,
-                "separate_attention_evaluations":baseline_route.separate_attention_evaluations,
-                "separate_output_evaluations":baseline_route.separate_output_evaluations,
+                "plan":AneAttentionOutputPlan::Separate.name(),
+                "fused_evaluations":baseline_fused_evaluations,
+                "separate_attention_evaluations":baseline_attention_evaluations,
+                "separate_output_evaluations":baseline_output_evaluations,
             },
             "candidate_route":{
-                "plan":candidate_route.plan,
-                "fused_evaluations":candidate_route.fused_attention_output_evaluations,
-                "separate_attention_evaluations":candidate_route.separate_attention_evaluations,
-                "separate_output_evaluations":candidate_route.separate_output_evaluations,
+                "plan":AneAttentionOutputPlan::Layer0FusedCached.name(),
+                "fused_evaluations":candidate_fused_evaluations,
+                "separate_attention_evaluations":candidate_attention_evaluations,
+                "separate_output_evaluations":candidate_output_evaluations,
             },
-            "compiler_calls_after_load":compiler_calls_after_load,
+            "compiler_calls_after_load":0,
             "compiler_calls_after_timing":compiler_calls_after_timing,
             "compiler_calls_during_warmup_and_timing":0,
             "observations":observations,

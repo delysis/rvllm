@@ -33,10 +33,16 @@ correctness oracles, and the existing kernel-game admission boundaries.
   inference compilation. The first complete-pair ABBA timing screen measured
   10.1311 ms/token fused versus 19.9215 ms/token for separate attention and
   o_proj (1.966x), with the slowest fused arm still faster than the fastest
-  baseline arm. This is a prospective component winner, not a promotion:
-  range drift was 10.86% fused and 9.25% baseline, an opposite-order
-  confirmation is queued, and the production-selected full autoregressive
-  route remains unproven.
+  baseline arm. Independent opposite-order component timing confirmed 1.958x.
+  A default-off production-route vertical slice now fuses layer 0, passes exact
+  two-dependent-token output and route accounting, and performs zero inference
+  compilation. Two complete-route campaigns have also finished. ABBA measured
+  2053.065 ms/token fused versus 2107.921 baseline (1.0267x), but reverse-order
+  BAAB measured 2076.822 fused versus 2065.441 baseline (0.9945x). Pooled
+  medians differ by only 0.09%, far below observed variation. Treat the
+  one-layer route as correctness-qualified and full-route timing-inconclusive,
+  not promotable. The next meaningful arm must fuse all eligible sliding
+  layers while retaining separate global-layer handling.
 - MLX isolated-stage evidence says FFN dominates PP4096, while FFN, attention,
   QKV and O projection are all material in long-context decode. The captured
   MLX trace and generated Metal evidence are diagnostic, not a speed oracle.
@@ -99,14 +105,15 @@ route, evaluation count and fallback absence first-class receipt fields.
 Separate 4-bit storage/quality experiments from claims of native 4-bit ANE
 arithmetic.
 
-Extend the corrected fused attention-to-o_proj candidate into a default-off
-production-route vertical slice. Preserve persistent KV state and strided
-newest-token writes; do not reintroduce full-surface host copies. Prove the
-selected route, exact first-token and multi-token output, newest-K/V visibility,
-cache identity, evaluation count, and zero compiler calls during inference.
-Add independently ordered timing manifests and variance-stratified receipts;
-the existing 1.966x component observation is a hypothesis to confirm, not a
-license to select the route.
+Extend the correctness-qualified layer-0 vertical slice to all eligible sliding
+layers, leaving global layers on the separate route unless independently
+qualified. Preserve persistent KV state and strided newest-token writes; do not
+reintroduce full-surface host copies. Prove the selected route, exact first-token
+and multi-token output, newest-K/V visibility, cache identity, evaluation count,
+and zero compiler calls during inference. Add independently ordered timing
+manifests and variance-stratified receipts. The confirmed ~1.96x component gain
+and inconclusive one-layer full-route result are evidence for a larger measured
+arm, not a license to select the route.
 
 ## Deliverable F: checkpoint-quality gates
 
