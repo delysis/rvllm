@@ -513,4 +513,37 @@ mod tests {
             32,
         );
     }
+
+    #[cfg(feature = "macos-private-ane-research")]
+    #[test]
+    #[ignore = "bounded private-ANE two sequential RMS blocks compile probe"]
+    fn hardware_two_rms_blocks_compile_probe() {
+        compile_dialect_probe(
+            r#"program(1.3)
+{
+    func main<ios18>(tensor<fp16, [1, 32, 1, 1]> x) {
+        tensor<int32, [3]> axes = const()[val = tensor<int32, [3]>([1, 2, 3])];
+        bool keep_dims = const()[val = bool(true)];
+        fp16 exponent = const()[val = fp16(-0.5)];
+        fp16 mean = const()[val = fp16(0.03125)];
+        fp16 epsilon = const()[val = fp16(0.000001)];
+        tensor<fp16, [1, 32, 1, 1]> sq0 = mul(x = x, y = x);
+        tensor<fp16, [1, 1, 1, 1]> sum0 = reduce_sum(axes = axes, keep_dims = keep_dims, x = sq0);
+        tensor<fp16, [1, 1, 1, 1]> mean0 = mul(x = sum0, y = mean);
+        tensor<fp16, [1, 1, 1, 1]> variance0 = add(x = mean0, y = epsilon);
+        tensor<fp16, [1, 1, 1, 1]> inv0 = pow(x = variance0, y = exponent);
+        tensor<fp16, [1, 32, 1, 1]> normalized0 = mul(x = x, y = inv0);
+        tensor<fp16, [1, 32, 1, 1]> sq1 = mul(x = normalized0, y = normalized0);
+        tensor<fp16, [1, 1, 1, 1]> sum1 = reduce_sum(axes = axes, keep_dims = keep_dims, x = sq1);
+        tensor<fp16, [1, 1, 1, 1]> mean1 = mul(x = sum1, y = mean);
+        tensor<fp16, [1, 1, 1, 1]> variance1 = add(x = mean1, y = epsilon);
+        tensor<fp16, [1, 1, 1, 1]> inv1 = pow(x = variance1, y = exponent);
+        tensor<fp16, [1, 32, 1, 1]> y = mul(x = normalized0, y = inv1);
+    } -> (y);
+}
+"#,
+            32,
+            32,
+        );
+    }
 }
