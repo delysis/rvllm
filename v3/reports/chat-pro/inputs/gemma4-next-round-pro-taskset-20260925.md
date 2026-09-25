@@ -46,9 +46,12 @@ correctness oracles, and the existing kernel-game admission boundaries.
   bits after every layer for two dependent tokens, exact final outputs, exact
   route accounting and zero compilation. Complete-route medians improved from
   2070.572 to 1724.747 ms/token (1.2005x) and, under reverse ordering, from
-  2150.135 to 1821.671 ms/token (1.1803x). Treat it as a confirmed prospective
-  winner that still needs longer dependent-token stability and bounded
-  multi-token timing before production selection.
+  2150.135 to 1821.671 ms/token (1.1803x). The subsequent stability gate also
+  passed exact per-layer residual and final-output identity over 16 dependent
+  tokens. Four-token-per-observation timing measured 1.2156x under ABBA and
+  1.2068x under reverse BAAB, with zero inference compilation. Treat it as a
+  confirmed prospective winner that still needs broader prompt/state coverage,
+  selector review and checkpoint-level quality before production selection.
 - MLX isolated-stage evidence says FFN dominates PP4096, while FFN, attention,
   QKV and O projection are all material in long-context decode. The captured
   MLX trace and generated Metal evidence are diagnostic, not a speed oracle.
@@ -111,15 +114,13 @@ route, evaluation count and fallback absence first-class receipt fields.
 Separate 4-bit storage/quality experiments from claims of native 4-bit ANE
 arithmetic.
 
-Advance the new `all-sliding-fused-cached` prospective winner through a 10- to
-32-token dependent decode referee and bounded multi-token timing. Leave global
-layers on the separate route unless independently qualified. Preserve
-persistent KV state and strided newest-token writes; do not reintroduce
-full-surface host copies. Prove exact multi-token output and sampled intermediate
-residuals, newest-K/V visibility, cache identity, evaluation count, and zero
-compiler calls during inference. Keep the shipping default unchanged until
-those gates and selector review pass. In parallel, target FFN and QKV, now the
-largest remaining measured phases.
+Build on the completed `all-sliding-fused-cached` 16-token exact referee and
+opposite-order bounded multi-token timing. Leave global layers on the separate
+route unless independently qualified. Preserve persistent KV state and strided
+newest-token writes; do not reintroduce full-surface host copies. Add broader
+prompt/state coverage and selector review while keeping the shipping default
+unchanged. In parallel, target FFN and QKV, now the largest remaining measured
+phases at pooled medians of approximately 562 and 473 ms/token respectively.
 
 ## Deliverable F: checkpoint-quality gates
 
