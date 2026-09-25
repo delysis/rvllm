@@ -107,6 +107,22 @@ impl AneAttentionOutputPlan {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AnePrecisionContract {
+    /// Serialized constant representation before ANE constexpr expansion.
+    pub ffn_weight_storage: &'static str,
+    pub stored_weight_bits: u8,
+    /// The graph consumed by convolution after constexpr reconstruction.
+    pub dense_weight_dtype: &'static str,
+    pub activation_dtype: &'static str,
+    pub output_dtype: &'static str,
+    /// Always false for the present LUT4/INT8 experiments: they exercise
+    /// compressed constant storage plus constexpr reconstruction, not a
+    /// documented native 4-bit/8-bit MAC instruction contract.
+    pub native_low_bit_arithmetic_claim: bool,
+    pub requires_full_model_quality_referee: bool,
+}
+
 impl AneWeightPlan {
     pub fn name(self) -> &'static str {
         match self {
@@ -128,6 +144,43 @@ impl AneWeightPlan {
             Self::StaticInt8StackedFfnCached => "static-int8-stacked-ffn-cached",
             Self::StaticInt8StackedFfnChecked => "static-int8-stacked-ffn-checked",
             Self::DynamicQkvStaticInt8FfnCached => "dynamic-qkv-static-int8-ffn-cached",
+        }
+    }
+
+    #[must_use]
+    pub fn precision_contract(self) -> AnePrecisionContract {
+        match self.static_ffn_precision() {
+            StaticFfnPrecision::Lut4 => AnePrecisionContract {
+                ffn_weight_storage: "uint4-indices-plus-fp16-codebook",
+                stored_weight_bits: 4,
+                dense_weight_dtype: "fp16-after-constexpr_lut_to_dense",
+                activation_dtype: "fp16",
+                output_dtype: "fp16",
+                native_low_bit_arithmetic_claim: false,
+                requires_full_model_quality_referee: true,
+            },
+            StaticFfnPrecision::Int8
+            | StaticFfnPrecision::Int8Stacked
+            | StaticFfnPrecision::Int8Chunk4
+            | StaticFfnPrecision::Int8Down4
+            | StaticFfnPrecision::Int8Interleaved => AnePrecisionContract {
+                ffn_weight_storage: "int8-plus-fp16-per-output-scale",
+                stored_weight_bits: 8,
+                dense_weight_dtype: "fp16-after-constexpr_affine_dequantize",
+                activation_dtype: "fp16",
+                output_dtype: "fp16",
+                native_low_bit_arithmetic_claim: false,
+                requires_full_model_quality_referee: true,
+            },
+            StaticFfnPrecision::Fp16 => AnePrecisionContract {
+                ffn_weight_storage: "fp16",
+                stored_weight_bits: 16,
+                dense_weight_dtype: "fp16",
+                activation_dtype: "fp16",
+                output_dtype: "fp16",
+                native_low_bit_arithmetic_claim: false,
+                requires_full_model_quality_referee: false,
+            },
         }
     }
 
@@ -1662,6 +1715,32 @@ mod tests {
             AneAttentionOutputPlan::AllSlidingFusedCached.name(),
             "all-sliding-fused-cached"
         );
+    }
+
+    #[test]
+    fn precision_contract_distinguishes_storage_from_arithmetic() {
+        let lut4 = AneWeightPlan::StaticLut4FfnCached.precision_contract();
+        assert_eq!(lut4.stored_weight_bits, 4);
+        assert_eq!(
+            lut4.dense_weight_dtype,
+            "fp16-after-constexpr_lut_to_dense"
+        );
+        assert!(!lut4.native_low_bit_arithmetic_claim);
+        assert!(lut4.requires_full_model_quality_referee);
+
+        let int8 = AneWeightPlan::StaticInt8StackedFfnCached.precision_contract();
+        assert_eq!(int8.stored_weight_bits, 8);
+        assert_eq!(
+            int8.dense_weight_dtype,
+            "fp16-after-constexpr_affine_dequantize"
+        );
+        assert!(!int8.native_low_bit_arithmetic_claim);
+        assert!(int8.requires_full_model_quality_referee);
+
+        let fp16 = AneWeightPlan::StaticAllCached.precision_contract();
+        assert_eq!(fp16.stored_weight_bits, 16);
+        assert_eq!(fp16.dense_weight_dtype, "fp16");
+        assert!(!fp16.requires_full_model_quality_referee);
     }
 
     #[test]
