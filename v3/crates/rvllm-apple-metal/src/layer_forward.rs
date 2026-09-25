@@ -59,6 +59,58 @@ fn research_layer_eligible(
         .supports(candidate)
 }
 
+/// Decode-only Gate||Up fusion. Unlike the older rounded-gate prefill
+/// candidate, this is deliberately M=1 and does not materialize gate_up_out.
+/// Tracing disables it because the trace contract requires that intermediate.
+#[allow(clippy::too_many_arguments)]
+fn supports_research_decode_gateup(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    tracing_enabled: bool,
+    arena_bytes: usize,
+) -> bool {
+    let candidate = crate::MetalResearchCandidate::DecodeGateupMlx16;
+    pipelines.kernel_options().research == candidate
+        && !pipelines.kernel_options().quantized_bf16_accumulation
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(phase, MetalPhase::Decode)
+        && !tracing_enabled
+        && (crate::research::Gemma12bResearchShape {
+            tokens: dims.num_tokens,
+            hidden: dims.hidden,
+            intermediate: dims.intermediate,
+            layers: dims.num_layers,
+            heads: dims.num_heads,
+            kv_heads: dims.num_kv_heads,
+            head_dim: dims.head_dim,
+            attention_window: dims.attention_window,
+            moe_experts: dims.moe_num_experts,
+            moe_top_k: dims.moe_top_k,
+            moe_intermediate: dims.moe_intermediate,
+            ple: dims.ple_dim,
+        })
+        .supports(candidate)
+        && pipelines
+            .research_pso("research_decode_gateup_mlx16", 128, 0)
+            .is_some()
+        && crate::research::rounded_gate_buffers_fit(
+            [
+                scratch.normed_hidden,
+                weights.gate_up_offset,
+                scratch.gate_up_out,
+                scratch.activated,
+            ],
+            dims.num_tokens,
+            dims.hidden,
+            dims.intermediate,
+            arena_bytes,
+            false,
+        )
+}
+
 /// The same decision drives execution and diagnostic encoder accounting.
 /// No savings are attributed to a missing PSO, unsupported layer or aliasing
 /// scratch plan. This is a dispatch predicate, not a hardware acceptance flag.
