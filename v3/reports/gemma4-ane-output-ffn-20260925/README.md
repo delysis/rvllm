@@ -108,3 +108,12 @@ contained 31 or 32 distinct FP16 bit patterns, closing the uniform-channel
 coverage weakness. This admits the boundary to representative-shape and
 real-weight screening, but it is still not timing, full-route, or checkpoint
 quality evidence.
+
+The synthetic representative-shape arm then exercised the exact Gemma 4
+sliding-layer dimensions: hidden 3840, intermediate 15360, and attention width
+4096. It compiled once, reloaded from the sealed cache with zero compiler
+calls, and passed two repeated device evaluations with bit-identical output.
+Against the independent full-dimension CPU oracle, relative L2 error was
+0.01928 and maximum absolute error was 0.04248 across 3840 outputs. These are
+explicitly bounded synthetic-shape results; real checkpoint weights, paired
+latency, and production-route behavior remain open gates.
