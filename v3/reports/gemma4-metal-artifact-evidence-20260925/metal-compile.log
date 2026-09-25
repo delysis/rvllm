@@ -1,0 +1,9 @@
+
+--- stderr ---
+reports/gemma4-attention-matched-20260925-v1/prepared-l1024/candidate.metal:1664:10: warning: unused variable 'q_offset' [-Wunused-variable]
+    uint q_offset = q_pos - seq_start;  // position within this sequence
+         ^
+reports/gemma4-attention-matched-20260925-v1/prepared-l1024/candidate.metal:9:21: warning: unused function 'bf16_acc' [-Wunused-function]
+static inline float bf16_acc(float x) {
+                    ^
+2 warnings generated.
