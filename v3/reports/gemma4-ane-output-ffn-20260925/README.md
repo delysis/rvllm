@@ -65,3 +65,9 @@ in one graph. The remaining compile blocker is therefore inside the RMS
 composition, not the mixed weight blob or the output-projection/FFN fusion.
 Next isolate `reduce_sum -> pow` composition and scalar broadcast back onto the
 hidden tensor before restoring both norms.
+
+Both RMS composition probes compiled: `reduce_sum -> pow(-0.5)` is accepted,
+and the resulting scalar broadcasts back across the hidden tensor through
+`mul`. The remaining candidates are interaction with the mixed convolution
+graph or the presence of two RMS sequences in one program; the next smallest
+probe is two sequential RMS blocks without convolutions.
