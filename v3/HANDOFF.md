@@ -556,6 +556,15 @@ fail-closed gate are in
 `reports/gemma4-ane-next-boundary-candidate-20260925.md` and
 `rvllm_ane_boundary_referee`.
 
+The default-off layer-0 compile-source slice is now implemented. It preserves
+one external input/output, appends one constant `o_proj` convolution, reuses
+the existing FP16 blob serialization, seals MIL/blob/I/O identity, and exposes
+no inference API. Its ignored device probe allows one compiler attempt and
+zero evaluations with mandatory fresh receipt and driver journal. Host layout
+tests pass; a serial queue run must now establish whether the private compiler
+accepts and caches the graph before any component oracle or runtime route is
+added.
+
 The N4/N8 selector prerequisite is now implemented as a direct real-weight
 referee rather than inferred from two separate native-BF16 comparisons. It
 admits only the 11 cells in the union of independently repeated N4/N8 wins and

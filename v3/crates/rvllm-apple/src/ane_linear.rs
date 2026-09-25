@@ -63,25 +63,12 @@ impl AneLinear {
         spatial: usize,
         policy: AneProgramCachePolicy,
     ) -> Result<Self, String> {
-        let elements = input_channels
+        input_channels
             .checked_mul(output_channels)
             .filter(|&n| n != 0 && n == weights.len())
             .ok_or("ANE linear weight shape mismatch or overflow")?;
-        let weight_bytes = elements
-            .checked_mul(2)
-            .filter(|&n| n <= u32::MAX as usize)
-            .ok_or("ANE linear weight blob exceeds 4 GiB")?;
         let layout = LinearLayout::new(input_channels, output_channels, spatial)?;
-        let mut blob = vec![0_u8; 128 + weight_bytes];
-        blob[0..4].copy_from_slice(&1_u32.to_le_bytes());
-        blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
-        blob[64..68].copy_from_slice(&0xDEAD_BEEF_u32.to_le_bytes());
-        blob[68..72].copy_from_slice(&1_u32.to_le_bytes());
-        blob[72..80].copy_from_slice(&(weight_bytes as u64).to_le_bytes());
-        blob[80..88].copy_from_slice(&128_u64.to_le_bytes());
-        for (bytes, weight) in blob[128..].chunks_exact_mut(2).zip(weights) {
-            bytes.copy_from_slice(&weight.to_le_bytes());
-        }
+        let blob = fp16_linear_weight_blob(weights)?;
         let mil = linear_mil(input_channels, output_channels, spatial);
         Self::compile_program(&mil, &blob, input_channels, output_channels, layout, policy)
     }
@@ -198,6 +185,25 @@ impl AneLinear {
             output,
         )
     }
+}
+
+pub(crate) fn fp16_linear_weight_blob(weights: &[f16]) -> Result<Vec<u8>, String> {
+    let weight_bytes = weights
+        .len()
+        .checked_mul(2)
+        .filter(|&n| n != 0 && n <= u32::MAX as usize)
+        .ok_or("ANE linear weight blob is empty or exceeds 4 GiB")?;
+    let mut blob = vec![0_u8; 128 + weight_bytes];
+    blob[0..4].copy_from_slice(&1_u32.to_le_bytes());
+    blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    blob[64..68].copy_from_slice(&0xDEAD_BEEF_u32.to_le_bytes());
+    blob[68..72].copy_from_slice(&1_u32.to_le_bytes());
+    blob[72..80].copy_from_slice(&(weight_bytes as u64).to_le_bytes());
+    blob[80..88].copy_from_slice(&128_u64.to_le_bytes());
+    for (bytes, weight) in blob[128..].chunks_exact_mut(2).zip(weights) {
+        bytes.copy_from_slice(&weight.to_le_bytes());
+    }
+    Ok(blob)
 }
 
 fn io_bytes(channels: usize, spatial: usize) -> Result<usize, String> {

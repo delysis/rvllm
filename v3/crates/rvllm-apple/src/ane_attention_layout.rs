@@ -158,6 +158,12 @@ impl PackedAttentionLayout {
     pub fn output_bytes(self) -> usize {
         self.output_bytes
     }
+    pub fn projected_output_bytes(self, output_channels: usize) -> Result<usize, String> {
+        output_channels
+            .checked_mul(64)
+            .filter(|&bytes| bytes != 0 && bytes <= u32::MAX as usize)
+            .ok_or_else(|| "packed attention projection output exceeds 4 GiB".into())
+    }
     pub fn row_bytes(self) -> usize {
         self.spatial * 2
     }
@@ -436,11 +442,71 @@ impl PackedAttentionLayout {
 "#
         )
     }
+
+    /// Compile-source candidate only: append one constant 1x1 output
+    /// projection while retaining the packed attention graph's sole external
+    /// input and sole external output. `weight_offset` names an existing ANE
+    /// FP16 weight-blob chunk; this method never serializes weights itself.
+    pub fn mil_with_output_projection(
+        self,
+        output_channels: usize,
+        weight_offset: u64,
+    ) -> Result<String, String> {
+        if output_channels == 0 || weight_offset % 64 != 0 {
+            return Err("fused attention output projection geometry is invalid".into());
+        }
+        self.projected_output_bytes(output_channels)?;
+        let source = self.mil();
+        let old = format!(
+            "        tensor<fp16, [1, {}, 1, {}]> y = reshape(x = transposed, shape = sq)[name = string(\"y\")];\n    }} -> (y);",
+            self.kv_width(),
+            self.groups()
+        );
+        let new = format!(
+            r#"        tensor<fp16, [1, {input}, 1, {groups}]> attention_output = reshape(x = transposed, shape = sq)[name = string("attention_output")];
+        string projection_pad_type = const()[name = string("projection_pad_type"), val = string("valid")];
+        tensor<int32, [2]> projection_strides = const()[name = string("projection_strides"), val = tensor<int32, [2]>([1, 1])];
+        tensor<int32, [4]> projection_pad = const()[name = string("projection_pad"), val = tensor<int32, [4]>([0, 0, 0, 0])];
+        tensor<int32, [2]> projection_dilations = const()[name = string("projection_dilations"), val = tensor<int32, [2]>([1, 1])];
+        int32 projection_groups = const()[name = string("projection_groups"), val = int32(1)];
+        tensor<fp16, [{output}, {input}, 1, 1]> Wo = const()[name = string("Wo"), val = tensor<fp16, [{output}, {input}, 1, 1]>(BLOBFILE(path = string("@model_path/weights/weight.bin"), offset = uint64({weight_offset})))];
+        tensor<fp16, [1, {output}, 1, {groups}]> y = conv(dilations = projection_dilations, groups = projection_groups, pad = projection_pad, pad_type = projection_pad_type, strides = projection_strides, weight = Wo, x = attention_output)[name = string("output_projection")];
+    }} -> (y);"#,
+            input = self.query_width(),
+            output = output_channels,
+            groups = self.groups(),
+        );
+        if !source.contains(&old) {
+            return Err("packed attention MIL tail changed; refusing fused rewrite".into());
+        }
+        Ok(source.replacen(&old, &new, 1))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fused_output_source_preserves_single_io_and_appends_one_projection() {
+        let layout = PackedAttentionLayout::sliding(16, 8, 256, 1024).unwrap();
+        let source = layout.mil_with_output_projection(3840, 64).unwrap();
+        assert_eq!(source.matches("func main<ios18>(tensor<fp16,").count(), 1);
+        assert_eq!(source.matches("} -> (y);").count(), 1);
+        assert_eq!(source.matches(" = conv(").count(), 1);
+        assert!(source.contains("tensor<fp16, [3840, 4096, 1, 1]> Wo"));
+        assert!(source.contains("offset = uint64(64)"));
+        assert!(source.contains("tensor<fp16, [1, 3840, 1, 2]> y"));
+        assert_eq!(layout.projected_output_bytes(3840).unwrap(), 3840 * 64);
+    }
+
+    #[test]
+    fn fused_output_source_rejects_invalid_geometry() {
+        let layout = PackedAttentionLayout::new(16, 1, 512, 64).unwrap();
+        assert!(layout.mil_with_output_projection(0, 64).is_err());
+        assert!(layout.mil_with_output_projection(3840, 65).is_err());
+        assert!(layout.projected_output_bytes(usize::MAX).is_err());
+    }
 
     #[test]
     fn kv_import_scratch_matches_all_bytes_across_sizes_prefixes_and_wraps() {

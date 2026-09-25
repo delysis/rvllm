@@ -18,16 +18,22 @@ single-input/single-output evaluation.  Per layer it changes two programs and
 two evaluations to one program and one evaluation; it does not alter attention
 math, quantization, normalization, residuals, or shipping defaults.
 
-## Why source implementation stops here
+## Implemented compile-source boundary
 
 The repository deliberately quarantines ANE attention to a single external
 input/output after the former four-input graph caused an AppleH16ANEInterface
-kernel panic (`crates/rvllm-apple/src/ane_attention.rs`).  The proposed graph
-preserves that ABI, but no checked-in evidence establishes that the private
-compiler accepts a 3,840-channel output after the attention matmuls or that a
-per-layer constant-bearing attention graph is cache-stable.  Inventing a route
-without that compiler/cache evidence would risk the same private-driver failure
-class.  Provision must therefore precede runtime integration.
+kernel panic (`crates/rvllm-apple/src/ane_attention.rs`). The default-off
+compile-source implementation preserves that ABI, appends exactly one constant
+1x1 convolution, reuses the existing FP16 linear-weight blob format, and seals
+the MIL/blob hashes and padded I/O byte counts. It deliberately exposes no
+request or evaluation method.
+
+An ignored layer-0 device probe now permits exactly one compiler attempt and
+zero evaluations in a fresh process, requires fresh receipt and driver-journal
+paths, and preserves either success or the exact compiler failure. Host MIL and
+shape tests pass. The private compiler probe has not yet run, so acceptance of
+the 3,840-channel output and cache stability remain unproved; provision must
+still precede runtime integration.
 
 ## Serial queue stages
 

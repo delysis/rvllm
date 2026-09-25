@@ -7,8 +7,10 @@
 //! private API call. See reports/ane-panic-20260914.md for the evidence boundary.
 
 use crate::ane_attention_layout::PackedAttentionLayout;
+use crate::ane_linear::fp16_linear_weight_blob;
 use half::f16;
 use rvllm_apple_ane_sys::{AneInMemoryKernel, AneInMemoryProgram, AneProgramCachePolicy};
+use sha2::{Digest, Sha256};
 
 // No runtime override: a new shape requires an explicit qualification change.
 fn qualified_layout(layout: PackedAttentionLayout) -> bool {
@@ -29,6 +31,80 @@ fn qualified_layout(layout: PackedAttentionLayout) -> bool {
 pub struct AneAttentionProgram {
     layout: PackedAttentionLayout,
     program: AneInMemoryProgram,
+}
+
+/// Default-off compile-source owner for one layer's fused attention and output
+/// projection. It intentionally exposes no request/evaluation API.
+pub struct AneAttentionOutputCompile {
+    _program: AneInMemoryProgram,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AneAttentionOutputIdentity {
+    pub mil_sha256: String,
+    pub weight_blob_sha256: String,
+    pub input_bytes: usize,
+    pub output_bytes: usize,
+}
+
+impl AneAttentionOutputCompile {
+    pub fn source_identity(
+        layout: PackedAttentionLayout,
+        output_weights: &[f16],
+        output_channels: usize,
+    ) -> Result<AneAttentionOutputIdentity, String> {
+        validate_fused_shape(layout, output_weights, output_channels)?;
+        let blob = fp16_linear_weight_blob(output_weights)?;
+        let mil = layout.mil_with_output_projection(output_channels, 64)?;
+        Ok(AneAttentionOutputIdentity {
+            mil_sha256: hex_sha256(mil.as_bytes()),
+            weight_blob_sha256: hex_sha256(&blob),
+            input_bytes: layout.input_bytes(),
+            output_bytes: layout.projected_output_bytes(output_channels)?,
+        })
+    }
+
+    pub fn compile_layer(
+        layout: PackedAttentionLayout,
+        output_weights: &[f16],
+        output_channels: usize,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        validate_fused_shape(layout, output_weights, output_channels)?;
+        let blob = fp16_linear_weight_blob(output_weights)?;
+        let mil = layout.mil_with_output_projection(output_channels, 64)?;
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &mil,
+            &blob,
+            layout.input_bytes(),
+            layout.projected_output_bytes(output_channels)?,
+            policy,
+        )?;
+        Ok(Self { _program: program })
+    }
+}
+
+fn validate_fused_shape(
+    layout: PackedAttentionLayout,
+    output_weights: &[f16],
+    output_channels: usize,
+) -> Result<(), String> {
+    if !qualified_layout(layout)
+        || output_weights.len() != output_channels.saturating_mul(layout.query_width())
+    {
+        return Err(
+            "fused attention output projection shape is outside the qualified single-I/O boundary"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub struct AneAttention {
