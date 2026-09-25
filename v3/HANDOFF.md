@@ -507,3 +507,27 @@ The research agent returned its reports earlier and is not running a hardware
 trial. Further delegation is not required to resume the Rust queue. Continue
 source review and coding independent variants while conditions gate trials;
 keep inputs pinned until their queued checks finish.
+
+## 2026-09-25 native-BF16 low-bit schedule frontier
+
+The default-off Metal N4 and N8 W4/W8 schedules have completed real Gemma
+seven-role screen and independent-confirmation campaigns at M=1 and M=4. Both
+retain BF16 activations/output, FP16 group-32 scales, FP32 accumulation, exact
+dispatch accounting, guards and bitwise repeat checks. Shipping defaults are
+unchanged.
+
+- N4 has eight stable cells out of 28 under the repeated >=1.05x speedup and
+  <=20% candidate/native/speedup drift policy.
+- N8 has four stable cells out of 28. Its wins are K/W8/M4, O/W4/M1,
+  O/W4/M4 and Down/W8/M4.
+- The union is 11/28 because Down/W8/M4 overlaps. N8 therefore adds three
+  stable cells.
+- These are partial operator wins, not a campaign-wide or full-model winner.
+  N4 and N8 were each compared with native BF16, not directly against each
+  other. A production selector requires a counterbalanced N4-versus-N8 referee
+  on plausible cells plus checkpoint-bound logit/perplexity acceptance.
+
+Evidence is in `reports/gemma4-metal-low-bit-n4-20260925/` and
+`reports/gemma4-metal-low-bit-n8-20260925/`. The latter's `summary.json` is the
+compact current adjudication; its `queue-receipts/` directory preserves all
+fourteen unaltered job receipts.

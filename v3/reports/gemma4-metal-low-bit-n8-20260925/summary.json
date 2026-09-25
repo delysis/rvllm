@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "candidate": "n8",
+  "candidate_kernels": {
+    "w4": "experimental_projection_w4abf16_bf16_n8",
+    "w8": "experimental_projection_w8abf16_bf16_n8"
+  },
+  "comparison": "candidate versus typed native BF16",
+  "jobs": {
+    "screen": 7,
+    "independent_confirmation": 7,
+    "completed": 14
+  },
+  "cases": {
+    "correctness_passed": 56,
+    "speed_cells": 28,
+    "stable_wins": 4
+  },
+  "policy": {
+    "minimum_speedup_each_repetition": 1.05,
+    "maximum_candidate_median_drift": 0.20,
+    "maximum_native_median_drift": 0.20,
+    "maximum_speedup_drift": 0.20,
+    "thermal_stability_gate": false,
+    "conditions_recorded": true
+  },
+  "stable_wins": [
+    {"role": "k", "format": "w8a16", "m": 4, "screen_speedup": 1.2726417858, "confirmation_speedup": 1.2492708499},
+    {"role": "o", "format": "w4a16", "m": 1, "screen_speedup": 1.0798838164, "confirmation_speedup": 1.1402757638},
+    {"role": "o", "format": "w4a16", "m": 4, "screen_speedup": 1.6436653773, "confirmation_speedup": 1.6619476061},
+    {"role": "down", "format": "w8a16", "m": 4, "screen_speedup": 1.6883195234, "confirmation_speedup": 1.6069052804}
+  ],
+  "cross_schedule_context": {
+    "n4_stable_cells": 8,
+    "n8_stable_cells": 4,
+    "union_stable_cells": 11,
+    "total_cells": 28,
+    "n8_unique_cells": 3,
+    "direct_n4_n8_comparison": false
+  },
+  "disposition": "not_promotable_partial_operator_wins",
+  "claim_boundary": "No production selector or full-model speed claim; N4 and N8 require a direct counterbalanced comparison and checkpoint-quality gate."
+}
