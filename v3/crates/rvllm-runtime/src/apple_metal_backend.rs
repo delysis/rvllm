@@ -5180,6 +5180,332 @@ impl ModelMetalBackend {
             .finish_step(true, num_tokens as u64, perf_before, wall_start.elapsed());
         Ok(ModelLaunchResult::Ready(outputs))
     }
+
+    /// Research-only two-token greedy decode vertical slice.
+    ///
+    /// This deliberately bypasses the scheduler-facing launch path: one
+    /// already-collected execution slot is encoded twice into one command
+    /// buffer. Token 0 is sampled on GPU, consumed directly as token 1's
+    /// embedding/PLE token ID, and only then is the command buffer committed.
+    /// The metadata transition between tokens is one GPU dispatch. The slice
+    /// rejects page crossings so block tables remain immutable.
+    #[cfg(test)]
+    pub(crate) fn run_two_token_device_resident_probe(
+        &self,
+        handoff: &HandoffCapsule,
+        execution_slot: usize,
+    ) -> Result<([TokenId; 2], serde_json::Value)> {
+        if self.debug_sync
+            || (self.explicit_options.is_none() && metal_debug_layer_controls_enabled())
+            || handoff.num_sequences() != 1
+            || handoff.tokens_flat.len() != 1
+            || handoff.positions.len() != 1
+            || handoff.context_lens.len() != 1
+        {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "device_resident_decode_slice_admission",
+                },
+                model_ctx("device_resident_decode_slice"),
+            ));
+        }
+        let state = self.execution_states.get(execution_slot).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        if state.max_batch_tokens < 2 || state.layers.is_empty() {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "device_resident_decode_slice_workspace",
+                },
+                model_ctx("device_resident_decode_slice"),
+            ));
+        }
+        let token = handoff.tokens_flat[0];
+        if token.raw() as usize >= state.vocab_size {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "device-resident input token exceeds vocabulary",
+                },
+                model_ctx("device_resident_decode_slice"),
+            ));
+        }
+        let current_position = handoff.positions[0];
+        let current_context = handoff.context_lens[0];
+        if current_context == 0
+            || current_position as usize >= state.max_probe_tokens
+            || current_context as usize >= state.max_probe_tokens
+        {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "device_resident_decode_slice_context",
+                },
+                model_ctx("device_resident_decode_slice"),
+            ));
+        }
+        let first_layer = &state.layers[0];
+        let current_slot = if handoff.slot_mapping.is_empty() {
+            let block_size = first_layer.block_size as usize;
+            let position = current_position as usize;
+            let block = position / block_size;
+            i32::try_from(block * block_size + position % block_size).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "device-resident identity slot exceeds i32",
+                    },
+                    model_ctx("device_resident_decode_slice"),
+                )
+            })?
+        } else {
+            Self::validated_slot_mapping(state, &handoff.slot_mapping)?[0]
+        };
+
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        let pipelines = self.pipelines.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        unsafe {
+            (arena.host_ptr(&state.token_ids) as *mut u32).write(token.raw());
+        }
+        self.write_decode_layer_metadata(state, handoff)?;
+
+        let hidden = u32::try_from(state.hidden_size).map_err(|_| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "hidden size exceeds u32",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        let vocab = u32::try_from(state.vocab_size).map_err(|_| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "vocab size exceeds u32",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        let queue = ctx.queue_retained();
+        let cmd_buf = queue.commandBuffer().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::MetalUnavailable,
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        #[cfg(feature = "metal-stage-instrumentation")]
+        let mut stage_profiler =
+            MetalStageProfiler::new(ctx.device(), state.num_layers * 14 + 4).map_err(|_| {
+                RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "device_resident_decode_slice_stage_timing",
+                    },
+                    model_ctx("device_resident_decode_slice"),
+                )
+            })?;
+
+        let encode_start = Instant::now();
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.begin(&cmd_buf, MetalStage::Embedding);
+        }
+        self.encode_embedding_gather_from(&cmd_buf, state, 1, state.token_ids.offset)?;
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.end(&cmd_buf);
+        }
+        self.encode_ple_inputs_from(&cmd_buf, state, 1, state.token_ids.offset)?;
+        self.enqueue_probe_layers(
+            Some(&cmd_buf),
+            #[cfg(feature = "metal-stage-instrumentation")]
+            Some(&mut stage_profiler),
+            state,
+            1,
+            MetalPhase::Decode,
+            "device_resident_decode_slice_token0",
+        )?;
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.begin(&cmd_buf, MetalStage::LmHead);
+        }
+        unsafe {
+            metal_encode_finalize_sample(
+                &cmd_buf,
+                pipelines,
+                arena,
+                1,
+                hidden,
+                vocab,
+                state.rms_norm_eps,
+                state.final_logit_softcap,
+                state.residual.offset,
+                state.final_norm.offset,
+                state.lm_head.offset,
+                state.logits.offset,
+                state.normed_hidden.offset,
+                state.sampled.offset,
+                state.final_argmax_partial_max.offset,
+                state.final_argmax_partial_idx.offset,
+            )?;
+        }
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.end(&cmd_buf);
+        }
+
+        self.encode_device_resident_decode_advance_single(
+            &cmd_buf,
+            state,
+            current_position,
+            current_slot,
+        )?;
+
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.begin(&cmd_buf, MetalStage::Embedding);
+        }
+        self.encode_embedding_gather_from(&cmd_buf, state, 1, state.sampled.offset)?;
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.end(&cmd_buf);
+        }
+        self.encode_ple_inputs_from(&cmd_buf, state, 1, state.sampled.offset)?;
+        self.enqueue_probe_layers(
+            Some(&cmd_buf),
+            #[cfg(feature = "metal-stage-instrumentation")]
+            Some(&mut stage_profiler),
+            state,
+            1,
+            MetalPhase::Decode,
+            "device_resident_decode_slice_token1",
+        )?;
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.begin(&cmd_buf, MetalStage::LmHead);
+        }
+        unsafe {
+            metal_encode_finalize_sample(
+                &cmd_buf,
+                pipelines,
+                arena,
+                1,
+                hidden,
+                vocab,
+                state.rms_norm_eps,
+                state.final_logit_softcap,
+                state.residual.offset,
+                state.final_norm.offset,
+                state.lm_head.offset,
+                state.logits.offset,
+                state.normed_hidden.offset,
+                state.sampled.offset + std::mem::size_of::<i32>(),
+                state.final_argmax_partial_max.offset,
+                state.final_argmax_partial_idx.offset,
+            )?;
+        }
+        #[cfg(feature = "metal-stage-instrumentation")]
+        unsafe {
+            stage_profiler.end(&cmd_buf);
+        }
+
+        cmd_buf.commit();
+        let cpu_encode_ns = encode_start.elapsed().as_nanos();
+        let wait_start = Instant::now();
+        cmd_buf.waitUntilCompleted();
+        let host_wait_ns = wait_start.elapsed().as_nanos();
+        if let Some(error) = metal_command_buffer_completion_error(cmd_buf.status()) {
+            return Err(error);
+        }
+        let gpu_start = cmd_buf.GPUStartTime();
+        let gpu_end = cmd_buf.GPUEndTime();
+        let gpu_execution_ns = (gpu_start.is_finite()
+            && gpu_end.is_finite()
+            && gpu_start > 0.0
+            && gpu_end > gpu_start)
+            .then(|| ((gpu_end - gpu_start) * 1e9) as u64);
+
+        #[cfg(feature = "metal-stage-instrumentation")]
+        let stage_timing = unsafe { stage_profiler.receipt() }.map_err(|_| {
+            RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "device_resident_decode_slice_stage_resolve",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        #[cfg(not(feature = "metal-stage-instrumentation"))]
+        let stage_timing = serde_json::Value::Null;
+
+        let sampled_ptr = unsafe { arena.host_ptr(&state.sampled) as *const i32 };
+        let first = unsafe { sampled_ptr.read() };
+        let second = unsafe { sampled_ptr.add(1).read() };
+        if first < 0
+            || second < 0
+            || first as usize >= state.vocab_size
+            || second as usize >= state.vocab_size
+        {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "device-resident sampled token outside vocabulary",
+                },
+                model_ctx("device_resident_decode_slice"),
+            ));
+        }
+        let tokens = [TokenId(first as u32), TokenId(second as u32)];
+        let receipt = serde_json::json!({
+            "schema": "rvllm.gemma4.device_resident_decode_slice.v1",
+            "scope": "research-only single-sequence greedy two-token vertical slice",
+            "tokens_per_submission": 2,
+            "command_buffers": 1,
+            "metadata_advance_dispatches": 1,
+            "host_synchronizations_between_token0_and_token1": 0,
+            "page_crossing_allowed": false,
+            "token0_device_sample_feeds_token1_embedding": true,
+            "token0_device_sample_feeds_token1_ple": state.ple.is_some(),
+            "cpu_encode_ns": u64::try_from(cpu_encode_ns).ok(),
+            "host_wait_ns": u64::try_from(host_wait_ns).ok(),
+            "gpu_execution_ns": gpu_execution_ns,
+            "stage_instrumentation_compiled": cfg!(feature = "metal-stage-instrumentation"),
+            "stage_timing": stage_timing,
+            "first_position": current_position,
+            "second_position": current_position + 1,
+            "first_context_len": current_context,
+            "second_context_len": current_context + 1,
+            "first_slot": current_slot,
+            "second_slot": current_slot + 1,
+            "sampled_tokens": [tokens[0].raw(), tokens[1].raw()],
+            "claim_boundary": "no production routing; live-device result required before performance claims",
+        });
+        Ok((tokens, receipt))
+    }
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
