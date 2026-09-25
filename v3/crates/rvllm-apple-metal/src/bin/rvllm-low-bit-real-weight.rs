@@ -42,6 +42,8 @@ mod macos {
         N4,
         N8,
         Vector,
+        Coop16,
+        Coop32,
         Adaptive,
         N4VsN8,
     }
@@ -53,10 +55,12 @@ mod macos {
                 "n4" => Ok(Self::N4),
                 "n8" => Ok(Self::N8),
                 "vector" => Ok(Self::Vector),
+                "coop16" => Ok(Self::Coop16),
+                "coop32" => Ok(Self::Coop32),
                 "adaptive" => Ok(Self::Adaptive),
                 "n4-vs-n8" => Ok(Self::N4VsN8),
                 _ => Err(
-                    "--candidate must be scalar, n4, n8, vector, adaptive, or n4-vs-n8".to_owned(),
+                    "--candidate must be scalar, n4, n8, vector, coop16, coop32, adaptive, or n4-vs-n8".to_owned(),
                 ),
             }
         }
@@ -67,6 +71,8 @@ mod macos {
                 Self::N4 => "n4",
                 Self::N8 => "n8",
                 Self::Vector => "vector",
+                Self::Coop16 => "coop16",
+                Self::Coop32 => "coop32",
                 Self::Adaptive => "adaptive",
                 Self::N4VsN8 => "n4-vs-n8",
             }
@@ -109,7 +115,7 @@ mod macos {
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
          [--m 1,4] [--format w4a16|w8a16|both] [--samples 5] \
-         [--candidate scalar|n4|n8|vector|adaptive|n4-vs-n8] [--order abba|baab]"
+         [--candidate scalar|n4|n8|vector|coop16|coop32|adaptive|n4-vs-n8] [--order abba|baab]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -567,6 +573,26 @@ mod macos {
                 0,
             ),
             CandidateSchedule::Vector => projection.encode_strided_bf16_vector(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
+            CandidateSchedule::Coop16 => projection.encode_strided_bf16_coop16(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
+            CandidateSchedule::Coop32 => projection.encode_strided_bf16_coop32(
                 command,
                 pipelines,
                 buffer,
@@ -1078,6 +1104,31 @@ mod macos {
             },
             "dispatch": {"format": format.name(), "role": role.report_name(),
                 "candidate_abi": match format { AppleLowBitWeightFormat::W4A16 => "W4ABF16", AppleLowBitWeightFormat::W8A16 => "W8ABF16" },
+                "cooperative_geometry": match resolve_schedule(schedule, projection, m) {
+                    CandidateSchedule::Coop16 => {
+                        let s = projection.experimental_bf16_coop16_schedule();
+                        Some(json!({
+                            "output_channels_per_threadgroup": s.output_channels_per_threadgroup,
+                            "outputs_per_simdgroup": s.outputs_per_simdgroup,
+                            "threads_per_threadgroup": s.threads_per_threadgroup,
+                            "k_tile": s.k_tile,
+                            "threadgroup_bytes": s.threadgroup_bytes,
+                            "fp32_accumulators_per_lane": s.fp32_accumulators_per_lane,
+                        }))
+                    }
+                    CandidateSchedule::Coop32 => {
+                        let s = projection.experimental_bf16_coop32_schedule();
+                        Some(json!({
+                            "output_channels_per_threadgroup": s.output_channels_per_threadgroup,
+                            "outputs_per_simdgroup": s.outputs_per_simdgroup,
+                            "threads_per_threadgroup": s.threads_per_threadgroup,
+                            "k_tile": s.k_tile,
+                            "threadgroup_bytes": s.threadgroup_bytes,
+                            "fp32_accumulators_per_lane": s.fp32_accumulators_per_lane,
+                        }))
+                    }
+                    _ => None,
+                },
                 "exact_correctness_dispatches_verified": 2,
                 "exact_timing_dispatch_count_verified": true,
                 "timing_dispatches": 1 + samples * 2},
@@ -1088,6 +1139,8 @@ mod macos {
                     CandidateSchedule::N4 => projection.experimental_bf16_n4_kernel_name(),
                     CandidateSchedule::N8 => projection.experimental_bf16_n8_kernel_name(),
                     CandidateSchedule::Vector => projection.experimental_bf16_vector_kernel_name(),
+                    CandidateSchedule::Coop16 => projection.experimental_bf16_coop16_schedule().kernel_name,
+                    CandidateSchedule::Coop32 => projection.experimental_bf16_coop32_schedule().kernel_name,
                     CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
                     CandidateSchedule::N4VsN8 => unreachable!("direct mode has a separate referee"),
                 },
@@ -1142,6 +1195,16 @@ mod macos {
             CandidateSchedule::Vector => [
                 "experimental_projection_w4abf16_bf16_n4_packed2",
                 "experimental_projection_w8abf16_bf16_n8_k4",
+            ]
+            .as_slice(),
+            CandidateSchedule::Coop16 => [
+                "experimental_projection_w4abf16_bf16_tg16k64",
+                "experimental_projection_w8abf16_bf16_tg16k128",
+            ]
+            .as_slice(),
+            CandidateSchedule::Coop32 => [
+                "experimental_projection_w4abf16_bf16_tg32k64",
+                "experimental_projection_w8abf16_bf16_tg32k128",
             ]
             .as_slice(),
             CandidateSchedule::Adaptive => [
