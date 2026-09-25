@@ -52,3 +52,9 @@ the full graph; numerical equivalence still requires device evidence.
 The sealed `pow(x, -0.5)` dialect probe compiled successfully. The full graph
 now uses that formulation in place of `rsqrt`; this establishes dialect
 acceptance only, not RMS numerical equivalence.
+
+The rebuilt full graph still failed compilation. Therefore `rsqrt` was a real
+dialect defect but not the only blocker. The next isolation boundary is the
+mixed FP16 output projection plus INT8 FFN graph without either RMS sequence;
+only after that compiles should reduction-plus-power be reintroduced around the
+known-good core.
