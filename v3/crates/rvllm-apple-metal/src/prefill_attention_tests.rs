@@ -91,9 +91,10 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut ctx = MetalContext::new()?;
     ctx.compile_library(&format!(
-        "{}\n{SIMD_PREFILL}\n{}",
+        "{}\n{SIMD_PREFILL}\n{}\n{}",
         crate::kernels::kernel_source_for_float_type(MetalFloatType::Bf16),
         crate::prefill_attention_candidate::CONVENTIONAL_MSL,
+        crate::prefill_attention_candidate::TENSOR_OPS_MSL,
     ))?;
     let mut pipelines = PipelineCache::new();
     for name in [
@@ -101,17 +102,48 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
         "attention_prefill_simdgroup_probe",
         "attention_prefill_simdgroup_f16",
         crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT,
+        crate::prefill_attention_candidate::TENSOR_OPS_ENTRYPOINT,
     ] {
         pipelines.compile(&ctx, name)?;
     }
     let candidate_pipeline =
         pipelines.get(crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT)?;
+    let tensorops_pipeline =
+        pipelines.get(crate::prefill_attention_candidate::TENSOR_OPS_ENTRYPOINT)?;
     let pipeline_resources = serde_json::json!({
-        "thread_execution_width": candidate_pipeline.threadExecutionWidth(),
-        "max_total_threads_per_threadgroup": candidate_pipeline.maxTotalThreadsPerThreadgroup(),
-        "static_threadgroup_memory_bytes": candidate_pipeline.staticThreadgroupMemoryLength(),
-        "provenance": "public MTLComputePipelineState getters on the JIT-compiled candidate"
+        "conventional": {
+            "thread_execution_width": candidate_pipeline.threadExecutionWidth(),
+            "max_total_threads_per_threadgroup": candidate_pipeline.maxTotalThreadsPerThreadgroup(),
+            "static_threadgroup_memory_bytes": candidate_pipeline.staticThreadgroupMemoryLength(),
+        },
+        "tensorops": {
+            "thread_execution_width": tensorops_pipeline.threadExecutionWidth(),
+            "max_total_threads_per_threadgroup": tensorops_pipeline.maxTotalThreadsPerThreadgroup(),
+            "static_threadgroup_memory_bytes": tensorops_pipeline.staticThreadgroupMemoryLength(),
+        },
+        "queried_max_threadgroup_memory_bytes": ctx.max_threadgroup_memory(),
+        "provenance": "public MTLComputePipelineState/MTLDevice getters after successful candidate compilation"
     });
+    let tensor_admission = crate::prefill_attention_candidate::PrefillPlan {
+        arm: crate::prefill_attention_candidate::PrefillArm::TensorOps,
+        tokens: 256,
+        heads: 16,
+        kv_heads: 8,
+        head_dim: 256,
+        window: 1024,
+        qkv_boundary: crate::prefill_attention_candidate::Boundary::ExternalQkvBf16,
+        output_boundary: crate::prefill_attention_candidate::Boundary::ExternalOutputBf16,
+    }
+    .admit(crate::prefill_attention_candidate::QueriedHardware {
+        tensor_ops: true,
+        max_threadgroup_memory: ctx.max_threadgroup_memory(),
+    });
+    if !matches!(
+        tensor_admission,
+        crate::prefill_attention_candidate::Admission::Ready(_)
+    ) {
+        return Err("compiled TensorOps source failed its queried-hardware admission".into());
+    }
     let requested = std::env::var("RVLLM_METAL_PREFILL_LENGTH")
         .ok()
         .map(|value| value.parse::<u32>())
@@ -311,22 +343,33 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
         let output_bytes = query.len() * 2;
         let outputs = [
             upload("scalar", &vec![0xA5; output_bytes + 64])?,
-            upload("simd", &vec![0xA5; output_bytes + 64])?,
+            upload("candidate", &vec![0xA5; output_bytes + 64])?,
+            upload("tensorops", &vec![0xA5; output_bytes + 64])?,
         ];
         drop(upload);
-        let run = |candidate: bool,
-                   production: bool|
+        // mode 0 = scalar control, 1 = conventional candidate,
+        // mode 2 = existing SIMD control, 3 = TensorOps candidate.
+        let run = |mode: u8|
          -> std::result::Result<(f64, f64), Box<dyn std::error::Error>> {
             let timer = std::time::Instant::now();
             let command = ctx.queue().commandBuffer().ok_or("command missing")?;
             let encoder = command.computeCommandEncoder().ok_or("encoder missing")?;
-            encoder.setComputePipelineState(pipelines.get(if production {
-                "attention_prefill_simdgroup_f16"
-            } else if candidate {
-                crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT
-            } else {
-                "attention_prefill_f16"
-            })?);
+            let (kernel, output_index, cooperative) = match mode {
+                0 => ("attention_prefill_f16", 0usize, false),
+                1 => (
+                    crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT,
+                    1,
+                    true,
+                ),
+                2 => ("attention_prefill_simdgroup_f16", 1, true),
+                3 => (
+                    crate::prefill_attention_candidate::TENSOR_OPS_ENTRYPOINT,
+                    2,
+                    true,
+                ),
+                _ => return Err("invalid prefill referee mode".into()),
+            };
+            encoder.setComputePipelineState(pipelines.get(kernel)?);
             // SAFETY: exact tensor allocations above, guarded outputs, complete
             // per-sequence page tables, live uniform values copied by Metal.
             // Both kernels use the same ABI; the candidate requires one SIMD group.
@@ -335,7 +378,7 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                     q.offset,
                     k.offset,
                     v.offset,
-                    outputs[usize::from(candidate)].offset + 32,
+                    outputs[output_index].offset + 32,
                     table.offset,
                     context.offset,
                     cumulative.offset,
@@ -366,11 +409,11 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                 depth: 1,
             };
             let threads = MTLSize {
-                width: if candidate { 32 } else { 1 },
+                width: if cooperative { 32 } else { 1 },
                 height: 1,
                 depth: 1,
             };
-            if candidate {
+            if cooperative {
                 encoder.dispatchThreadgroups_threadsPerThreadgroup(grid, threads);
             } else {
                 encoder.dispatchThreads_threadsPerThreadgroup(grid, threads);
@@ -387,9 +430,10 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
             ))
         };
         if !label.ends_with("hole") {
-            run(false, false)?;
+            run(0)?;
         }
-        run(true, false)?;
+        run(1)?;
+        run(3)?;
         let read = |region: &MetalRegion| -> Vec<f32> {
             // SAFETY: synchronous completion precedes this bounded read; no
             // CPU access occurs while either output is in use by the GPU.
@@ -405,6 +449,7 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
         };
         let scalar = read(&outputs[0]);
         let candidate = read(&outputs[1]);
+        let tensorops = read(&outputs[2]);
         let mut production_poison = vec![0xA5; output_bytes + 64];
         production_poison[32..32 + output_bytes].fill(0xFF); // BF16 NaNs
                                                              // SAFETY: prototype completion was synchronous. Re-poison its exact
@@ -412,22 +457,32 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
         unsafe {
             arena.write_region(&outputs[1], &production_poison)?;
         }
-        run(true, false)?;
+        run(1)?;
         assert_eq!(
             candidate,
             read(&outputs[1]),
             "candidate output bits changed on repeat"
         );
         unsafe {
+            arena.write_region(&outputs[2], &production_poison)?;
+        }
+        run(3)?;
+        assert_eq!(
+            tensorops,
+            read(&outputs[2]),
+            "TensorOps output bits changed on repeat"
+        );
+        unsafe {
             arena.write_region(&outputs[1], &production_poison)?;
         }
-        run(true, true)?;
+        run(2)?;
         assert_eq!(
             candidate,
             read(&outputs[1]),
             "existing SIMD control must match tiled candidate"
         );
-        assert!(candidate.iter().all(|x| x.is_finite()), "{label} finite");
+        assert!(candidate.iter().all(|x| x.is_finite()), "{label} conventional finite");
+        assert!(tensorops.iter().all(|x| x.is_finite()), "{label} TensorOps finite");
         let relative_l2 = if label.ends_with("hole") {
             0.0
         } else {
@@ -450,11 +505,38 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
         };
         assert!(
             relative_l2 < 0.003 && max_difference < 0.032,
-            "{label}: L2 {relative_l2} max {max_difference}"
+            "{label}: conventional L2 {relative_l2} max {max_difference}"
+        );
+        let tensor_reference = if label.ends_with("hole") {
+            &candidate
+        } else {
+            &scalar
+        };
+        let tensor_relative_l2 = (tensor_reference
+            .iter()
+            .zip(&tensorops)
+            .map(|(&a, &b)| f64::from(a - b).powi(2))
+            .sum::<f64>()
+            / tensor_reference
+                .iter()
+                .map(|&x| f64::from(x).powi(2))
+                .sum::<f64>()
+                .max(1e-30))
+        .sqrt();
+        let tensor_max_difference = tensor_reference
+            .iter()
+            .zip(&tensorops)
+            .map(|(&a, &b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            tensor_relative_l2 < 0.004 && tensor_max_difference < 0.032,
+            "{label}: TensorOps L2 {tensor_relative_l2} max {tensor_max_difference}"
         );
         let mut squared_error = 0.0;
         let mut squared_reference = 0.0;
         let mut max_cpu_error = 0.0_f64;
+        let mut tensor_squared_error = 0.0;
+        let mut tensor_max_cpu_error = 0.0_f64;
         let mut sample_rows = vec![0, total / 2, total - 1];
         if total > 1 {
             sample_rows.push(1);
@@ -505,32 +587,40 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                         .sum::<f64>()
                         / sum;
                     let error = f64::from(candidate[qb + d]) - expected;
+                    let tensor_error = f64::from(tensorops[qb + d]) - expected;
                     squared_error += error * error;
+                    tensor_squared_error += tensor_error * tensor_error;
                     squared_reference += expected * expected;
                     max_cpu_error = max_cpu_error.max(error.abs());
+                    tensor_max_cpu_error = tensor_max_cpu_error.max(tensor_error.abs());
                 }
             }
         }
         let cpu_relative_l2 = (squared_error / squared_reference).sqrt();
         assert!(
             cpu_relative_l2 < 0.004 && max_cpu_error < 0.01,
-            "{label}: FP64 L2 {cpu_relative_l2} max {max_cpu_error}"
+            "{label}: conventional FP64 L2 {cpu_relative_l2} max {max_cpu_error}"
         );
-        let mut gpu = [Vec::new(), Vec::new()];
-        let mut wall = [Vec::new(), Vec::new()];
+        let tensor_cpu_relative_l2 =
+            (tensor_squared_error / squared_reference.max(1e-30)).sqrt();
+        assert!(
+            tensor_cpu_relative_l2 < 0.004 && tensor_max_cpu_error < 0.01,
+            "{label}: TensorOps FP64 L2 {tensor_cpu_relative_l2} max {tensor_max_cpu_error}"
+        );
+        let mut gpu = [Vec::new(), Vec::new(), Vec::new()];
+        let mut wall = [Vec::new(), Vec::new(), Vec::new()];
         for i in 0..6 {
-            for path in if i % 2 == 0 {
-                [false, true]
-            } else {
-                [true, false]
-            } {
-                let (g, w) = if path {
-                    run(true, false)?
-                } else {
-                    run(true, true)?
+            let order = if i % 2 == 0 { [2u8, 1, 3] } else { [3u8, 1, 2] };
+            for mode in order {
+                let (g, w) = run(mode)?;
+                let index = match mode {
+                    2 => 0,
+                    1 => 1,
+                    3 => 2,
+                    _ => unreachable!(),
                 };
-                gpu[usize::from(path)].push(g);
-                wall[usize::from(path)].push(w);
+                gpu[index].push(g);
+                wall[index].push(w);
             }
         }
         let median = |v: &[f64]| {
@@ -538,14 +628,51 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
             v.sort_by(f64::total_cmp);
             (v[2] + v[3]) * 0.5
         };
-        reports.push(serde_json::json!({"label":label,"tokens":total,"head_dim":hd,"kv_heads":kv_heads,"window":window,"contexts":contexts,"starts":starts,"commands":15,"guards_unchanged":true,"repeatable_output_bits":true,"relative_l2_vs_scalar":relative_l2,"max_abs_vs_scalar":max_difference,"sampled_fp64_relative_l2":cpu_relative_l2,"sampled_fp64_max_abs":max_cpu_error,"gpu_ms":{"existing_simd_control":gpu[0],"tiled_candidate":gpu[1]},"wall_ms":{"existing_simd_control":wall[0],"tiled_candidate":wall[1]},"gpu_median_ratio":median(&gpu[0])/median(&gpu[1])}));
+        reports.push(serde_json::json!({
+            "label":label,"tokens":total,"head_dim":hd,"kv_heads":kv_heads,
+            "window":window,"contexts":contexts,"starts":starts,"commands":25,
+            "guards_unchanged":true,"repeatable_output_bits":true,
+            "conventional":{"relative_l2_vs_scalar":relative_l2,
+                "max_abs_vs_scalar":max_difference,
+                "sampled_fp64_relative_l2":cpu_relative_l2,
+                "sampled_fp64_max_abs":max_cpu_error},
+            "tensorops":{"relative_l2_vs_reference":tensor_relative_l2,
+                "max_abs_vs_reference":tensor_max_difference,
+                "sampled_fp64_relative_l2":tensor_cpu_relative_l2,
+                "sampled_fp64_max_abs":tensor_max_cpu_error},
+            "gpu_ms":{"existing_simd_control":gpu[0],"tiled_candidate":gpu[1],"tensorops_candidate":gpu[2]},
+            "wall_ms":{"existing_simd_control":wall[0],"tiled_candidate":wall[1],"tensorops_candidate":wall[2]},
+            "gpu_median_ratio":{"control_over_conventional":median(&gpu[0])/median(&gpu[1]),
+                "control_over_tensorops":median(&gpu[0])/median(&gpu[2]),
+                "conventional_over_tensorops":median(&gpu[1])/median(&gpu[2])}
+        }));
     }
     let executable = std::fs::read(std::env::current_exe()?)?;
     let generated = crate::prefill_attention_candidate::identity(
         crate::prefill_attention_candidate::CONVENTIONAL_MSL,
         crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT,
     );
-    let report = serde_json::json!({"schema":"rvllm.gemma4.metal_prefill_referee.v1","status":"qualified","candidate":crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT,"requested_tokens":requested,"default_off":true,"qkv_boundary":"external_bf16","output_projection_boundary":"external_bf16","generated":{"generator_version":generated.generator_version,"entrypoint":generated.entrypoint,"source_sha256":generated.source_sha256,"executable_sha256":format!("{:x}",sha2::Sha256::digest(&executable)),"compiler_artifacts":"jit-library; offline AIR/metallib/disassembly required separately","pipeline_resources":pipeline_resources},"tensorops":{"status":"unsupported","reason":"no stable queried Metal TensorOps ABI"},"cases":reports,"scope":"Controlled BF16 inputs, permuted physical KV pages, absolute causal positions, windows, tails and holes, guarded outputs, sampled independent FP64 softmax/PV; no ANE execution."});
+    let tensor_generated = crate::prefill_attention_candidate::identity(
+        crate::prefill_attention_candidate::TENSOR_OPS_MSL,
+        crate::prefill_attention_candidate::TENSOR_OPS_ENTRYPOINT,
+    );
+    let report = serde_json::json!({
+        "schema":"rvllm.gemma4.metal_prefill_referee.v2","status":"qualified",
+        "candidates":[generated.entrypoint,tensor_generated.entrypoint],
+        "requested_tokens":requested,"default_off":true,
+        "qkv_boundary":"external_bf16","output_projection_boundary":"external_bf16",
+        "generated":{
+            "generator_version":generated.generator_version,
+            "conventional":{"entrypoint":generated.entrypoint,"source_sha256":generated.source_sha256},
+            "tensorops":{"entrypoint":tensor_generated.entrypoint,"source_sha256":tensor_generated.source_sha256},
+            "executable_sha256":format!("{:x}",sha2::Sha256::digest(&executable)),
+            "compiler_artifacts":"jit-library; offline AIR/metallib/disassembly/resource identity still required before promotion",
+            "pipeline_resources":pipeline_resources},
+        "tensorops":{"status":"compiled-and-refereed",
+            "capability_evidence":"candidate source compiled and PSO instantiated on the live MTLDevice; no GPU-family inference"},
+        "cases":reports,
+        "scope":"Controlled BF16 inputs, permuted physical KV pages, absolute causal positions, windows, tails and holes, guarded outputs, sampled independent FP64 softmax/PV; no ANE execution."
+    });
     if let Some(path) = std::env::var_os("RVLLM_METAL_PREFILL_ATTENTION_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report)?)?;
     }
