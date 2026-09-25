@@ -136,6 +136,17 @@ pub type LowBitMetalResult<T> = std::result::Result<T, LowBitMetalError>;
 /// copy into every preallocated execution-slot view. Both weight regions are
 /// immutable after preparation.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct ExperimentalBf16TileSchedule {
+    pub kernel_name: &'static str,
+    pub output_channels_per_threadgroup: usize,
+    pub outputs_per_simdgroup: usize,
+    pub threads_per_threadgroup: usize,
+    pub k_tile: usize,
+    pub threadgroup_bytes: usize,
+    pub fp32_accumulators_per_lane: usize,
+}
+
 pub struct MetalLowBitProjectionOffsets {
     role: AppleLowBitTensorRole,
     format: AppleLowBitWeightFormat,
@@ -332,6 +343,56 @@ impl MetalLowBitProjectionOffsets {
         }
     }
 
+    /// Conservative four-SIMDgroup cooperative BF16 schedule.
+    #[must_use]
+    pub const fn experimental_bf16_coop16_schedule(self) -> ExperimentalBf16TileSchedule {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => ExperimentalBf16TileSchedule {
+                kernel_name: "experimental_projection_w4abf16_bf16_tg16k64",
+                output_channels_per_threadgroup: 16,
+                outputs_per_simdgroup: 4,
+                threads_per_threadgroup: 128,
+                k_tile: 64,
+                threadgroup_bytes: 384,
+                fp32_accumulators_per_lane: 4,
+            },
+            AppleLowBitWeightFormat::W8A16 => ExperimentalBf16TileSchedule {
+                kernel_name: "experimental_projection_w8abf16_bf16_tg16k128",
+                output_channels_per_threadgroup: 16,
+                outputs_per_simdgroup: 4,
+                threads_per_threadgroup: 128,
+                k_tile: 128,
+                threadgroup_bytes: 768,
+                fp32_accumulators_per_lane: 4,
+            },
+        }
+    }
+
+    /// Aggressive four-SIMDgroup cooperative BF16 schedule.
+    #[must_use]
+    pub const fn experimental_bf16_coop32_schedule(self) -> ExperimentalBf16TileSchedule {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => ExperimentalBf16TileSchedule {
+                kernel_name: "experimental_projection_w4abf16_bf16_tg32k64",
+                output_channels_per_threadgroup: 32,
+                outputs_per_simdgroup: 8,
+                threads_per_threadgroup: 128,
+                k_tile: 64,
+                threadgroup_bytes: 512,
+                fp32_accumulators_per_lane: 8,
+            },
+            AppleLowBitWeightFormat::W8A16 => ExperimentalBf16TileSchedule {
+                kernel_name: "experimental_projection_w8abf16_bf16_tg32k128",
+                output_channels_per_threadgroup: 32,
+                outputs_per_simdgroup: 8,
+                threads_per_threadgroup: 128,
+                k_tile: 128,
+                threadgroup_bytes: 1024,
+                fp32_accumulators_per_lane: 8,
+            },
+        }
+    }
+
     /// Encode `C[M,N] = A[M,K] * W[N,K]^T` with every tensor in one arena.
     pub fn encode(
         self,
@@ -379,6 +440,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.kernel_name(),
             1,
+            32,
         )
     }
 
@@ -412,6 +474,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_kernel_name(),
             1,
+            32,
         )
     }
 
@@ -439,6 +502,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_n4_kernel_name(),
             4,
+            32,
         )
     }
 
@@ -466,6 +530,7 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_n8_kernel_name(),
             8,
+            32,
         )
     }
 
@@ -494,6 +559,65 @@ impl MetalLowBitProjectionOffsets {
             output_column,
             self.experimental_bf16_vector_kernel_name(),
             width,
+            32,
+        )
+    }
+
+    /// Encode with the conservative four-SIMDgroup cooperative schedule.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16_coop16(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        let schedule = self.experimental_bf16_coop16_schedule();
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            schedule.kernel_name,
+            schedule.output_channels_per_threadgroup,
+            schedule.threads_per_threadgroup,
+        )
+    }
+
+    /// Encode with the aggressive four-SIMDgroup cooperative schedule.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16_coop32(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        let schedule = self.experimental_bf16_coop32_schedule();
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            schedule.kernel_name,
+            schedule.output_channels_per_threadgroup,
+            schedule.threads_per_threadgroup,
         )
     }
 
@@ -510,6 +634,7 @@ impl MetalLowBitProjectionOffsets {
         output_column: usize,
         kernel_name: &'static str,
         output_tile_width: usize,
+        threads_per_threadgroup: usize,
     ) -> LowBitMetalResult<()> {
         if m == 0 {
             return Err(LowBitMetalError::ZeroBatch);
@@ -621,7 +746,7 @@ impl MetalLowBitProjectionOffsets {
                     depth: 1,
                 },
                 MTLSize {
-                    width: 32,
+                    width: threads_per_threadgroup,
                     height: 1,
                     depth: 1,
                 },
@@ -942,6 +1067,60 @@ mod tests {
     use crate::arena::MetalBufferArena;
     use crate::kernels::KERNEL_SOURCE;
     use rvllm_apple::{project_apple_low_bit_reference, quantize_apple_low_bit_reference};
+
+    #[test]
+    fn cooperative_bf16_schedule_resources_and_geometry_are_sealed() {
+        for format in [
+            AppleLowBitWeightFormat::W4A16,
+            AppleLowBitWeightFormat::W8A16,
+        ] {
+            let k = if format == AppleLowBitWeightFormat::W4A16 { 33 } else { 65 };
+            let descriptor = MetalLowBitProjectionOffsets::new_for_role(
+                format,
+                AppleLowBitTensorRole::QueryProjection,
+                17,
+                k,
+                0,
+                4096,
+            )
+            .unwrap();
+            let conservative = descriptor.experimental_bf16_coop16_schedule();
+            let aggressive = descriptor.experimental_bf16_coop32_schedule();
+            assert_eq!(
+                (
+                    conservative.output_channels_per_threadgroup,
+                    conservative.outputs_per_simdgroup,
+                    conservative.threads_per_threadgroup,
+                ),
+                (16, 4, 128)
+            );
+            assert_eq!(
+                (
+                    aggressive.output_channels_per_threadgroup,
+                    aggressive.outputs_per_simdgroup,
+                    aggressive.threads_per_threadgroup,
+                ),
+                (32, 8, 128)
+            );
+            assert_eq!(
+                (
+                    conservative.fp32_accumulators_per_lane,
+                    aggressive.fp32_accumulators_per_lane,
+                ),
+                (4, 8)
+            );
+            match format {
+                AppleLowBitWeightFormat::W4A16 => {
+                    assert_eq!((conservative.k_tile, conservative.threadgroup_bytes), (64, 384));
+                    assert_eq!((aggressive.k_tile, aggressive.threadgroup_bytes), (64, 512));
+                }
+                AppleLowBitWeightFormat::W8A16 => {
+                    assert_eq!((conservative.k_tile, conservative.threadgroup_bytes), (128, 768));
+                    assert_eq!((aggressive.k_tile, aggressive.threadgroup_bytes), (128, 1024));
+                }
+            }
+        }
+    }
 
     fn test_context() -> LowBitMetalResult<(MetalContext, PipelineCache)> {
         let mut context = MetalContext::new()?;
