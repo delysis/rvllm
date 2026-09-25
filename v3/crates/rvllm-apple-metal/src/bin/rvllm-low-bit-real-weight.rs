@@ -1424,7 +1424,10 @@ mod macos {
         let mut generated_msl = kernel_source_for_float_type(MetalFloatType::Bf16).into_owned();
         if matches!(
             args.candidate,
-            CandidateSchedule::MlxQmv | CandidateSchedule::Core8Qmv
+            CandidateSchedule::MlxQmv
+                | CandidateSchedule::Core8Qmv
+                | CandidateSchedule::N4VsMlxQmv
+                | CandidateSchedule::N4VsCore8Qmv
         ) {
             generated_msl.push('\n');
             generated_msl.push_str(include_str!("../research_shaders/low_bit_qmv_mlx.metal"));
@@ -1479,8 +1482,22 @@ mod macos {
                 "experimental_projection_w8abf16_bf16_n8",
             ]
             .as_slice(),
+            CandidateSchedule::N4VsMlxQmv => [
+                "experimental_projection_w4abf16_bf16_n4",
+                "experimental_projection_w8abf16_bf16_n4",
+                "research_projection_w4abf16_bf16_qmv_mlx",
+                "research_projection_w8abf16_bf16_qmv_mlx",
+            ]
+            .as_slice(),
+            CandidateSchedule::N4VsCore8Qmv => [
+                "experimental_projection_w4abf16_bf16_n4",
+                "experimental_projection_w8abf16_bf16_n4",
+                "research_projection_w4abf16_bf16_qmv_core8",
+                "research_projection_w8abf16_bf16_qmv_core8",
+            ]
+            .as_slice(),
         };
-        if args.candidate != CandidateSchedule::N4VsN8 {
+        if !args.candidate.is_direct() {
             pipelines
                 .compile(&ctx, "gemm_f16_vec8")
                 .map_err(|e| e.to_string())?;
@@ -1491,8 +1508,8 @@ mod macos {
         let mut cases = Vec::new();
         for &format in &args.formats {
             for &m in &args.ms {
-                cases.push(if args.candidate == CandidateSchedule::N4VsN8 {
-                    run_direct_shape(
+                cases.push(match args.candidate {
+                    CandidateSchedule::N4VsN8 => run_direct_shape(
                         &ctx,
                         &pipelines,
                         role,
@@ -1503,9 +1520,34 @@ mod macos {
                         k,
                         args.samples,
                         args.order,
-                    )?
-                } else {
-                    run_shape(
+                    )?,
+                    CandidateSchedule::N4VsMlxQmv => run_n4_vs_qmv_shape(
+                        &ctx,
+                        &pipelines,
+                        role,
+                        format,
+                        &source_f32,
+                        m,
+                        n,
+                        k,
+                        args.samples,
+                        args.order,
+                        CandidateSchedule::MlxQmv,
+                    )?,
+                    CandidateSchedule::N4VsCore8Qmv => run_n4_vs_qmv_shape(
+                        &ctx,
+                        &pipelines,
+                        role,
+                        format,
+                        &source_f32,
+                        m,
+                        n,
+                        k,
+                        args.samples,
+                        args.order,
+                        CandidateSchedule::Core8Qmv,
+                    )?,
+                    _ => run_shape(
                         &ctx,
                         &pipelines,
                         role,
@@ -1518,7 +1560,7 @@ mod macos {
                         args.samples,
                         args.candidate,
                         args.order,
-                    )?
+                    )?,
                 });
             }
         }
@@ -1535,7 +1577,13 @@ mod macos {
             "generated_msl_sha256": sha256(generated_msl.as_bytes()), "executable_sha256": hash_file(&executable)?,
             "direct_order": Some(args.order.name()),
             "conditions_policy": "observed externally; never a wait gate",
-            "compile_counts": {"metal_libraries": 1, "pipeline_states": match args.candidate { CandidateSchedule::N4VsN8 => 4, CandidateSchedule::Adaptive => 7, _ => 3 }}, "cases": cases
+            "compile_counts": {"metal_libraries": 1, "pipeline_states": match args.candidate {
+                CandidateSchedule::N4VsN8
+                | CandidateSchedule::N4VsMlxQmv
+                | CandidateSchedule::N4VsCore8Qmv => 4,
+                CandidateSchedule::Adaptive => 7,
+                _ => 3
+            }}, "cases": cases
         });
         println!(
             "{}",
@@ -1598,6 +1646,14 @@ mod macos {
             assert_eq!(
                 CandidateSchedule::parse("core8-qmv").unwrap(),
                 CandidateSchedule::Core8Qmv
+            );
+            assert_eq!(
+                CandidateSchedule::parse("n4-vs-mlx-qmv").unwrap(),
+                CandidateSchedule::N4VsMlxQmv
+            );
+            assert_eq!(
+                CandidateSchedule::parse("n4-vs-core8-qmv").unwrap(),
+                CandidateSchedule::N4VsCore8Qmv
             );
             assert_eq!(
                 CandidateSchedule::parse("adaptive").unwrap(),
