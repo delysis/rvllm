@@ -2933,6 +2933,8 @@ kernel void bf16_to_f16(
 }
 "#;
 
+const LOW_BIT_COOP_BF16_SOURCE: &str = include_str!("research_shaders/low_bit_coop_bf16.metal");
+
 pub fn kernel_source_for_float_type(float_type: MetalFloatType) -> Cow<'static, str> {
     kernel_source_with_options(
         float_type,
@@ -2950,17 +2952,19 @@ pub fn kernel_source_with_options(
             Cow::Owned(bfloat_kernel_source(options.quantized_bf16_accumulation))
         }
     };
-    let candidate = options.research.source();
-    if candidate.is_empty() {
-        return base;
-    }
     let mut source = base.into_owned();
     source.push('\n');
-    match float_type {
-        MetalFloatType::F16 => source.push_str(candidate),
-        MetalFloatType::Bf16 => source.push_str(
-            &replace_msl_word(candidate, "half", "bfloat").replace("f16_sat", "bf16_sat"),
-        ),
+    source.push_str(LOW_BIT_COOP_BF16_SOURCE);
+
+    let candidate = options.research.source();
+    if !candidate.is_empty() {
+        source.push('\n');
+        match float_type {
+            MetalFloatType::F16 => source.push_str(candidate),
+            MetalFloatType::Bf16 => source.push_str(
+                &replace_msl_word(candidate, "half", "bfloat").replace("f16_sat", "bf16_sat"),
+            ),
+        }
     }
     Cow::Owned(source)
 }
@@ -3137,6 +3141,10 @@ pub const KERNEL_NAMES: &[&str] = &[
     "experimental_projection_w8abf16_bf16_n8",
     "experimental_projection_w4abf16_bf16_n4_packed2",
     "experimental_projection_w8abf16_bf16_n8_k4",
+    "experimental_projection_w4abf16_bf16_tg16k64",
+    "experimental_projection_w4abf16_bf16_tg32k64",
+    "experimental_projection_w8abf16_bf16_tg16k128",
+    "experimental_projection_w8abf16_bf16_tg32k128",
     "gemm_rmsnorm_f16",
     "gemm_headwise_rmsnorm_f16",
     "gemm_headwise_rmsnorm_unit_f16",
@@ -6553,6 +6561,31 @@ mod tests {
             assert!(kernel.contains("device bfloat       *C"));
             assert!(kernel.contains("float partial = 0.0f"));
             assert!(kernel.contains("float total = simd_sum(partial)"));
+        }
+    }
+
+    #[test]
+    fn cooperative_low_bit_bf16_sources_preserve_the_explicit_abi() {
+        let source = format!("{}\n{}", bfloat_kernel_source(false), LOW_BIT_COOP_BF16_SOURCE);
+        for name in [
+            "experimental_projection_w4abf16_bf16_tg16k64",
+            "experimental_projection_w4abf16_bf16_tg32k64",
+            "experimental_projection_w8abf16_bf16_tg16k128",
+            "experimental_projection_w8abf16_bf16_tg32k128",
+        ] {
+            let start = source.find(&format!("kernel void {name}")).unwrap();
+            let tail = &source[start..];
+            let end = tail[1..]
+                .find("kernel void ")
+                .map_or(tail.len(), |relative| relative + 1);
+            let kernel = &tail[..end];
+            assert!(kernel.contains("device const bfloat *A"));
+            assert!(kernel.contains("device const half *scales"));
+            assert!(kernel.contains("device bfloat *C"));
+            assert!(kernel.contains("threadgroup float a_tile"));
+            assert!(kernel.contains("threadgroup float s_tile"));
+            assert!(kernel.contains("threadgroup_barrier(mem_flags::mem_threadgroup)"));
+            assert!(kernel.contains("bfloat("));
         }
     }
 
