@@ -1922,6 +1922,204 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "cached-only ANE fused attention/output timing; 12 alternating arms, zero compiler calls"]
+    fn hardware_layer0_fused_attention_output_abba_timing() {
+        use rvllm_apple::ane_attention::{AneAttentionOutputCompile, AneAttentionProgram};
+        use rvllm_apple::ane_linear::{compile_budget_used, AneLinear};
+        use std::time::Instant;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite timing receipt"
+        );
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        assert_eq!(compile_budget_used(), 0, "timing requires a fresh process");
+
+        let (arch, entries) = super::validated_weights(&model, 1024).unwrap();
+        let shape = super::layer_shape(&arch, 0);
+        let layout = rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+            shape.query_heads,
+            shape.kv_heads,
+            shape.head_dim,
+            shape.sliding_window.unwrap(),
+        )
+        .unwrap();
+        let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+        let weights = super::load_tensor(entries.get(&name).unwrap()).unwrap();
+        let identity =
+            AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN).unwrap();
+        let policy = super::AneProgramCachePolicy::RequireExisting;
+        let mut baseline_attention = AneAttentionProgram::compile_sliding_with_cache_policy(
+            shape.query_heads,
+            shape.kv_heads,
+            shape.head_dim,
+            shape.sliding_window.unwrap(),
+            policy,
+        )
+        .unwrap()
+        .create_request()
+        .unwrap();
+        let mut baseline_output = AneLinear::compile_with_cache_policy(
+            &weights,
+            layout.query_width(),
+            super::HIDDEN,
+            1,
+            policy,
+        )
+        .unwrap();
+        let mut fused =
+            AneAttentionOutputCompile::compile_layer(layout, &weights, super::HIDDEN, policy)
+                .unwrap()
+                .create_request()
+                .unwrap();
+        assert_eq!(compile_budget_used(), 0, "timing must be cache-only");
+
+        let imported = 1024_usize;
+        let keys: Vec<_> = (0..imported * layout.kv_width())
+            .map(|i| f16::from_f32(((i * 13 + 7) % 97) as f32 / 1024.0 - 0.046875))
+            .collect();
+        let values: Vec<_> = (0..keys.len())
+            .map(|i| f16::from_f32(((i * 17 + 5) % 127) as f32 / 1024.0 - 0.0625))
+            .collect();
+        baseline_attention
+            .import_cache(&keys, &values, imported)
+            .unwrap();
+        fused.import_cache(&keys, &values, imported).unwrap();
+        let query: Vec<_> = (0..layout.query_width())
+            .map(|i| f16::from_f32(((i * 19 + 3) % 113) as f32 / 1024.0 - 0.0546875))
+            .collect();
+        let key: Vec<_> = (0..layout.kv_width())
+            .map(|i| f16::from_f32(((i * 23 + 11) % 109) as f32 / 1024.0 - 0.052734375))
+            .collect();
+        let value: Vec<_> = (0..layout.kv_width())
+            .map(|i| f16::from_f32(((i * 29 + 13) % 131) as f32 / 1024.0 - 0.0634765625))
+            .collect();
+        let mut attended = vec![f16::ZERO; layout.query_width()];
+        let mut baseline_projected = vec![f16::ZERO; super::HIDDEN];
+        let mut fused_projected = vec![f16::ZERO; super::HIDDEN];
+
+        // Equal warmup work establishes both persistent request paths before
+        // any measured block. Sliding positions remain comparable thereafter.
+        for _ in 0..8 {
+            baseline_attention
+                .decode(&query, &key, &value, &mut attended)
+                .unwrap();
+            baseline_output
+                .project(&attended, &mut baseline_projected)
+                .unwrap();
+            fused
+                .decode(&query, &key, &value, &mut fused_projected)
+                .unwrap();
+        }
+        let maximum_warmup_difference = baseline_projected
+            .iter()
+            .zip(&fused_projected)
+            .map(|(baseline, fused)| (baseline.to_f32() - fused.to_f32()).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(maximum_warmup_difference < 0.004);
+
+        let repetitions = 64_usize;
+        let sequence = [
+            "baseline", "fused", "fused", "baseline", // ABBA
+            "fused", "baseline", "baseline", "fused", // BAAB
+            "baseline", "fused", "fused", "baseline", // ABBA
+        ];
+        let mut observations = Vec::new();
+        let mut baseline_ms = Vec::new();
+        let mut fused_ms = Vec::new();
+        for (index, arm) in sequence.into_iter().enumerate() {
+            let started = Instant::now();
+            match arm {
+                "baseline" => {
+                    for _ in 0..repetitions {
+                        baseline_attention
+                            .decode(&query, &key, &value, &mut attended)
+                            .unwrap();
+                        baseline_output
+                            .project(&attended, &mut baseline_projected)
+                            .unwrap();
+                    }
+                }
+                "fused" => {
+                    for _ in 0..repetitions {
+                        fused
+                            .decode(&query, &key, &value, &mut fused_projected)
+                            .unwrap();
+                    }
+                }
+                _ => unreachable!(),
+            }
+            let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+            let per_token_ms = elapsed_ms / repetitions as f64;
+            if arm == "baseline" {
+                baseline_ms.push(per_token_ms);
+            } else {
+                fused_ms.push(per_token_ms);
+            }
+            observations.push(serde_json::json!({
+                "index":index,
+                "block":index / 4,
+                "order":match index / 4 { 1 => "BAAB", _ => "ABBA" },
+                "arm":arm,
+                "repetitions":repetitions,
+                "elapsed_ms":elapsed_ms,
+                "milliseconds_per_token":per_token_ms,
+            }));
+        }
+        let median = |values: &mut Vec<f64>| {
+            values.sort_by(f64::total_cmp);
+            (values[(values.len() - 1) / 2] + values[values.len() / 2]) * 0.5
+        };
+        let baseline_median_ms = median(&mut baseline_ms);
+        let fused_median_ms = median(&mut fused_ms);
+        let ratio = baseline_median_ms / fused_median_ms;
+        let baseline_drift = baseline_ms[baseline_ms.len() - 1] / baseline_ms[0] - 1.0;
+        let fused_drift = fused_ms[fused_ms.len() - 1] / fused_ms[0] - 1.0;
+        let compiler_calls = compile_budget_used();
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_abba_timing.v1",
+            "status":"measured",
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":{
+                "mil_sha256":identity.mil_sha256,
+                "weight_blob_sha256":identity.weight_blob_sha256,
+                "input_bytes":identity.input_bytes,
+                "output_bytes":identity.output_bytes,
+            },
+            "compiler_calls":compiler_calls,
+            "compiler_call_limit":0,
+            "warmup_tokens_per_arm":8,
+            "measured_tokens_per_arm":repetitions * 6,
+            "sequence":"ABBA/BAAB/ABBA",
+            "baseline_evaluations_per_token":2,
+            "fused_evaluations_per_token":1,
+            "baseline_median_ms_per_token":baseline_median_ms,
+            "fused_median_ms_per_token":fused_median_ms,
+            "median_baseline_over_fused":ratio,
+            "baseline_range_drift_fraction":baseline_drift,
+            "fused_range_drift_fraction":fused_drift,
+            "maximum_warmup_output_difference":maximum_warmup_difference,
+            "observations":observations,
+            "claim":"Layer-0 component timing only. Both arms use persistent KV surfaces and incremental newest-Q/K/V/mask writes. Baseline includes attention evaluation/read plus output-projection write/evaluation/read; fused includes one evaluation/read. No full-route or promotion claim."
+        });
+        std::fs::write(
+            receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused timing receipt"),
+        )
+        .expect("preserve fused timing receipt");
+        assert_eq!(compiler_calls, 0);
+        assert_eq!(baseline_attention.tokens_seen(), fused.tokens_seen());
+    }
+
+    #[test]
     fn interleaved_is_cached_only_and_does_not_change_projection_precision() {
         let plan = super::AneWeightPlan::StaticInt8InterleavedFfnCached;
         assert_eq!(plan.program_count(), 162);
