@@ -43,6 +43,7 @@ mod macos {
         N8,
         Vector,
         MlxQmv,
+        Core8Qmv,
         Adaptive,
         N4VsN8,
     }
@@ -55,10 +56,11 @@ mod macos {
                 "n8" => Ok(Self::N8),
                 "vector" => Ok(Self::Vector),
                 "mlx-qmv" => Ok(Self::MlxQmv),
+                "core8-qmv" => Ok(Self::Core8Qmv),
                 "adaptive" => Ok(Self::Adaptive),
                 "n4-vs-n8" => Ok(Self::N4VsN8),
                 _ => Err(
-                    "--candidate must be scalar, n4, n8, vector, mlx-qmv, adaptive, or n4-vs-n8".to_owned(),
+                    "--candidate must be scalar, n4, n8, vector, mlx-qmv, core8-qmv, adaptive, or n4-vs-n8".to_owned(),
                 ),
             }
         }
@@ -70,6 +72,7 @@ mod macos {
                 Self::N8 => "n8",
                 Self::Vector => "vector",
                 Self::MlxQmv => "mlx-qmv",
+                Self::Core8Qmv => "core8-qmv",
                 Self::Adaptive => "adaptive",
                 Self::N4VsN8 => "n4-vs-n8",
             }
@@ -112,7 +115,7 @@ mod macos {
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
          [--m 1,4] [--format w4a16|w8a16|both] [--samples 5] \
-         [--candidate scalar|n4|n8|vector|mlx-qmv|adaptive|n4-vs-n8] [--order abba|baab]"
+         [--candidate scalar|n4|n8|vector|mlx-qmv|core8-qmv|adaptive|n4-vs-n8] [--order abba|baab]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -580,6 +583,16 @@ mod macos {
                 0,
             ),
             CandidateSchedule::MlxQmv => projection.encode_strided_bf16_mlx_qmv(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
+            CandidateSchedule::Core8Qmv => projection.encode_strided_bf16_core8_qmv(
                 command,
                 pipelines,
                 buffer,
@@ -1102,6 +1115,9 @@ mod macos {
                     CandidateSchedule::N8 => projection.experimental_bf16_n8_kernel_name(),
                     CandidateSchedule::Vector => projection.experimental_bf16_vector_kernel_name(),
                     CandidateSchedule::MlxQmv => projection.experimental_bf16_mlx_qmv_kernel_name(),
+                    CandidateSchedule::Core8Qmv => {
+                        projection.experimental_bf16_core8_qmv_kernel_name()
+                    }
                     CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
                     CandidateSchedule::N4VsN8 => unreachable!("direct mode has a separate referee"),
                 },
@@ -1134,7 +1150,10 @@ mod macos {
         }
         let mut ctx = MetalContext::new().map_err(|e| e.to_string())?;
         let mut generated_msl = kernel_source_for_float_type(MetalFloatType::Bf16).into_owned();
-        if args.candidate == CandidateSchedule::MlxQmv {
+        if matches!(
+            args.candidate,
+            CandidateSchedule::MlxQmv | CandidateSchedule::Core8Qmv
+        ) {
             generated_msl.push('\n');
             generated_msl.push_str(include_str!("../research_shaders/low_bit_qmv_mlx.metal"));
         }
@@ -1165,6 +1184,11 @@ mod macos {
             CandidateSchedule::MlxQmv => [
                 "research_projection_w4abf16_bf16_qmv_mlx",
                 "research_projection_w8abf16_bf16_qmv_mlx",
+            ]
+            .as_slice(),
+            CandidateSchedule::Core8Qmv => [
+                "research_projection_w4abf16_bf16_qmv_core8",
+                "research_projection_w8abf16_bf16_qmv_core8",
             ]
             .as_slice(),
             CandidateSchedule::Adaptive => [
@@ -1298,6 +1322,10 @@ mod macos {
             assert_eq!(
                 CandidateSchedule::parse("mlx-qmv").unwrap(),
                 CandidateSchedule::MlxQmv
+            );
+            assert_eq!(
+                CandidateSchedule::parse("core8-qmv").unwrap(),
+                CandidateSchedule::Core8Qmv
             );
             assert_eq!(
                 CandidateSchedule::parse("adaptive").unwrap(),
