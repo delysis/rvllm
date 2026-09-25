@@ -64,6 +64,14 @@ fn bounded_split_plan_has_exact_two_stage_geometry_and_disjoint_scratch() {
     assert_eq!(plan.merge_threadgroup_bytes, 0);
     assert_eq!(plan.partial_count, 16);
     assert_eq!(plan.scratch_bytes, 16 * 16 * 514 * 4);
+    let matrix =
+        SplitDecodePlan::new(SPLIT_MATRIX_R8K32S256T128, shape(), DecodeOutput::Bf16).unwrap();
+    assert_eq!(matrix.partial_grid, plan.partial_grid);
+    assert_eq!(matrix.merge_grid, plan.merge_grid);
+    assert_eq!(matrix.scratch_bytes, plan.scratch_bytes);
+    assert_eq!(matrix.partial_threadgroup_bytes, 12512);
+    assert!(matrix.tile.simd_matrix);
+    assert_eq!(matrix.tile.keys, 32);
 
     let unsplit = DecodePlan::new(DECODE_TILES[0], shape(), DecodeOutput::Bf16).unwrap();
     let (common, mut capacity) = layout(unsplit);

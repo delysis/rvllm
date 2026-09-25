@@ -130,11 +130,13 @@ impl Setup {
         }
         let tile = candidate.global_decode_tile();
         let split = candidate.split_global_decode_tile();
-        let (rows, panel, threads, grid, scratch_bytes) = if let Some(tile) = tile {
+        let (rows, keys, panel, threads, matrix, grid, scratch_bytes) = if let Some(tile) = tile {
             (
                 tile.rows,
+                tile.keys,
                 tile.panel,
                 tile.threads,
+                tile.simd_matrix,
                 json!([HEADS / tile.rows, 1, 1]),
                 0,
             )
@@ -142,8 +144,10 @@ impl Setup {
             let tile = split.unwrap();
             (
                 tile.rows,
+                tile.keys,
                 tile.panel,
                 tile.threads,
+                tile.simd_matrix,
                 json!([2, 16, 1]),
                 16 * 16 * 514 * 4,
             )
@@ -153,7 +157,8 @@ impl Setup {
             "build_receipt_sha256":sha256(&build_path)?,
             "test_executable_sha256":sha256(&std::env::current_exe()?)?, "kernels":kernels,
             "kernel":candidate.kernels()[0].name(),
-            "rows":rows, "panel":panel, "threads":threads, "grid":grid,
+            "rows":rows, "keys":keys, "panel":panel, "threads":threads,
+            "simd_matrix":matrix, "grid":grid,
             "scratch_bytes":scratch_bytes,
             "gpu_family":format!("{:?}",pipelines.gpu_family()),
             "device_name":context.device().name().to_string(), "oracle_library":oracle});
@@ -827,11 +832,24 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
 #[test]
 #[ignore = "explicit bounded split-KV D512 device oracle; requires Apple9 and prebuilt strict-math library"]
 fn global_decode_split_device_oracle() -> TestResult {
+    run_global_decode_split_device_oracle(false)
+}
+
+#[test]
+#[ignore = "explicit bounded split-matrix D512 device oracle; requires Apple9 and prebuilt strict-math library"]
+fn global_decode_split_matrix_device_oracle() -> TestResult {
+    run_global_decode_split_device_oracle(true)
+}
+
+fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
     let setup = Setup::new(false)?;
     let tile = setup
         .candidate
         .split_global_decode_tile()
         .ok_or("explicit split-KV candidate required")?;
+    if tile.simd_matrix != matrix_bounded {
+        return Err("split candidate does not match requested oracle contract".into());
+    }
     let mut fixtures: Vec<(String, Fixture)> = [
         1_u32, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 2047, 2048, 2049,
     ]
@@ -860,56 +878,90 @@ fn global_decode_split_device_oracle() -> TestResult {
         let reference_plan = DecodePlan::new(
             crate::attention_global_decode::DecodeTile {
                 rows: tile.rows,
-                keys: crate::attention_global_decode::KV_TILE,
+                keys: tile.keys,
                 panel: tile.panel,
                 threads: tile.threads,
-                per_tile_softmax: false,
-                simd_matrix: false,
+                per_tile_softmax: tile.simd_matrix,
+                simd_matrix: tile.simd_matrix,
             },
             fixture.shape,
             DecodeOutput::F32,
         )
         .ok_or("reference plan rejected split fixture")?;
         let cpu = reference::output_f32(&fixture, reference_plan)?;
+        let cpu_f64 = reference::output_f64(&fixture, reference_plan)?;
         let data = Guarded::new(&setup.context, &fixture)?;
-        let before = setup.pipelines.research_dispatch_snapshot();
-        let command = setup
-            .context
-            .queue()
-            .commandBuffer()
-            .ok_or("command unavailable")?;
-        for (output_index, output_kind) in [(0, DecodeOutput::F32), (2, DecodeOutput::Bf16)] {
-            let encoded = try_encode_split_global_decode(
-                &setup.pipelines,
-                &command,
-                data.arena.buffer(),
-                &dims(fixture.shape),
-                MetalPhase::Decode,
-                data.split_bindings(output_index),
-                output_kind,
-            )?
-            .ok_or("normal-route split predicate refused positive fixture")?;
-            assert_eq!(encoded.plan.partial_count, 16);
-            assert_eq!(encoded.plan.scratch_bytes, 16 * 16 * 514 * 4);
+        let repeats = if matrix_bounded { 3 } else { 1 };
+        let mut first_output = None;
+        for _ in 0..repeats {
+            data.reset()?;
+            let before = setup.pipelines.research_dispatch_snapshot();
+            let command = setup
+                .context
+                .queue()
+                .commandBuffer()
+                .ok_or("command unavailable")?;
+            for (output_index, output_kind) in [(0, DecodeOutput::F32), (2, DecodeOutput::Bf16)] {
+                let encoded = try_encode_split_global_decode(
+                    &setup.pipelines,
+                    &command,
+                    data.arena.buffer(),
+                    &dims(fixture.shape),
+                    MetalPhase::Decode,
+                    data.split_bindings(output_index),
+                    output_kind,
+                )?
+                .ok_or("normal-route split predicate refused positive fixture")?;
+                assert_eq!(encoded.plan.partial_count, 16);
+                assert_eq!(encoded.plan.scratch_bytes, 16 * 16 * 514 * 4);
+            }
+            complete(&command)?;
+            expect_family_count(&setup, before, 2);
+            data.check(false);
+            let output = data.payload(0);
+            if let Some(first) = &first_output {
+                assert_eq!(
+                    &output, first,
+                    "split-matrix repeated-use stability: {label}"
+                );
+            }
+            first_output = Some(output);
         }
-        complete(&command)?;
-        expect_family_count(&setup, before, 2);
-        data.check(false);
-        let actual = data.payload(0);
+        let actual = first_output.unwrap();
         let mut max_cpu_error = 0.0_f32;
+        let mut max_fp64_error = 0.0_f64;
+        let mut squared_error = 0.0_f64;
+        let mut squared_reference = 0.0_f64;
         let mut rounded = Vec::with_capacity(FLOAT_BYTES / 2);
-        for (bytes, &reference) in actual.chunks_exact(4).zip(&cpu) {
+        for ((bytes, &reference), &reference_f64) in actual.chunks_exact(4).zip(&cpu).zip(&cpu_f64)
+        {
             let value = f32::from_le_bytes(bytes.try_into().unwrap());
             assert!(value.is_finite(), "nonfinite split result: {label}");
             max_cpu_error = max_cpu_error.max((value - reference).abs());
+            let fp64_error = value as f64 - reference_f64;
+            max_fp64_error = max_fp64_error.max(fp64_error.abs());
+            squared_error += fp64_error * fp64_error;
+            squared_reference += reference_f64 * reference_f64;
             rounded.extend_from_slice(&round_bf16(value).to_le_bytes());
         }
+        let relative_l2 = squared_error.sqrt() / squared_reference.sqrt().max(1e-30);
         // Split reduction changes FP32 association; this is an explicit
         // numerical bound, not a false bitwise-serial-parity claim.
-        assert!(
-            max_cpu_error <= 5e-5,
-            "split CPU error: {label}: {max_cpu_error}"
-        );
+        if matrix_bounded {
+            assert!(
+                max_fp64_error <= 5e-4,
+                "split-matrix FP64 absolute error: {label}: {max_fp64_error}"
+            );
+            assert!(
+                relative_l2 <= 1e-4,
+                "split-matrix FP64 relative-L2 error: {label}: {relative_l2}"
+            );
+        } else {
+            assert!(
+                max_cpu_error <= 5e-5,
+                "split CPU error: {label}: {max_cpu_error}"
+            );
+        }
         assert_eq!(
             data.payload(2),
             rounded,
@@ -918,15 +970,31 @@ fn global_decode_split_device_oracle() -> TestResult {
         let bf16_path = setup.directory.join(format!("{label}.split.bf16"));
         write_new(&bf16_path, &data.payload(2))?;
         reports.push(json!({"label":label,"max_cpu_fp32_abs_error":max_cpu_error,
+            "independent_cpu_reference":"scalar FP64","max_fp64_abs_error":max_fp64_error,
+            "relative_l2_error":relative_l2,
             "bitwise_serial_parity_claimed":false,"once_rounded_bf16":true,
+            "repeats":repeats,"repeatable":true,"guard_bytes_preserved":true,
             "partial_count":plan.partial_count,"scratch_bytes":plan.scratch_bytes,
             "bf16_file":bf16_path,"bf16_sha256":sha256(&bf16_path)?}));
     }
-    let receipt = json!({"schema":"rvllm.global-decode.split-oracle.v1","status":"passed",
+    let schema = if matrix_bounded {
+        "rvllm.global-decode.split-matrix-oracle.v1"
+    } else {
+        "rvllm.global-decode.split-oracle.v1"
+    };
+    let filename = if matrix_bounded {
+        "split-matrix-oracle.json"
+    } else {
+        "split-oracle.json"
+    };
+    let receipt = json!({"schema":schema,"status":"passed",
         "scope":"synthetic bounded split-KV attention operator; not model/full-route qualification",
+        "numerical_contract":if matrix_bounded { "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16" } else { "bounded-split-fp32" },
+        "fp64_max_abs_bound":if matrix_bounded { Some(5e-4) } else { None },
+        "fp64_relative_l2_bound":if matrix_bounded { Some(1e-4) } else { None },
         "identity":setup.identity,"cases":reports,"timing_eligible":false});
     write_new(
-        &setup.directory.join("split-oracle.json"),
+        &setup.directory.join(filename),
         &serde_json::to_vec_pretty(&receipt)?,
     )?;
     Ok(())
@@ -1144,7 +1212,7 @@ fn global_decode_abba() -> TestResult {
 #[ignore = "explicit bounded split-KV ABBA v2; requires matching passed split oracle and prebuilt core-only library"]
 fn global_decode_split_abba_v2() -> TestResult {
     let setup = Setup::new(false)?;
-    setup
+    let tile = setup
         .candidate
         .split_global_decode_tile()
         .ok_or("explicit split-KV candidate required")?;
@@ -1154,10 +1222,20 @@ fn global_decode_split_abba_v2() -> TestResult {
     }
     let oracle_path = env_path("ORACLE_RECEIPT")?;
     let oracle: Value = serde_json::from_slice(&std::fs::read(&oracle_path)?)?;
-    if oracle["schema"] != "rvllm.global-decode.split-oracle.v1"
+    let expected_schema = if tile.simd_matrix {
+        "rvllm.global-decode.split-matrix-oracle.v1"
+    } else {
+        "rvllm.global-decode.split-oracle.v1"
+    };
+    if oracle["schema"] != expected_schema
         || oracle["status"] != "passed"
         || oracle["identity"] != setup.identity
         || oracle["identity"]["oracle_library"] != false
+        || (tile.simd_matrix
+            && (oracle["numerical_contract"]
+                != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
+                || oracle["fp64_max_abs_bound"] != 5e-4
+                || oracle["fp64_relative_l2_bound"] != 1e-4))
     {
         return Err("matching native split oracle receipt required before any benchmark".into());
     }

@@ -184,10 +184,17 @@ fn id(config: &Value, candidate: MetalResearchCandidate, suffix: &str) -> Result
         let tile = candidate
             .split_global_decode_tile()
             .ok_or("candidate has no global decode identity")?;
-        Ok(format!(
-            "{campaign}-split-r{}s{}t{}-{suffix}",
-            tile.rows, tile.partition, tile.threads
-        ))
+        Ok(if tile.simd_matrix {
+            format!(
+                "{campaign}-split-r{}k{}s{}t{}-mma-{suffix}",
+                tile.rows, tile.keys, tile.partition, tile.threads
+            )
+        } else {
+            format!(
+                "{campaign}-split-r{}s{}t{}-{suffix}",
+                tile.rows, tile.partition, tile.threads
+            )
+        })
     }
 }
 fn succeeded(queue: &Path, id: &str) -> Result<PathBuf> {
@@ -434,26 +441,32 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         env[format!("{PREFIX}SOURCE")] = json!(source);
         env[format!("{PREFIX}METALLIB")] = json!(library);
         env[format!("{PREFIX}BUILD_RECEIPT")] = json!(build_path);
+        let split_matrix = candidate
+            .split_global_decode_tile()
+            .is_some_and(|tile| tile.simd_matrix);
         if timing {
             inputs.push(pin(&test)?);
             let oracle_id = id(&config, candidate, "oracle")?;
-            let oracle_path = succeeded(&queue, &oracle_id)?.join(
-                if candidate.split_global_decode_tile().is_some() {
-                    "native/split-oracle.json"
-                } else if candidate
-                    .global_decode_tile()
-                    .is_some_and(|tile| tile.simd_matrix)
-                {
-                    "native/matrix-oracle.json"
-                } else {
-                    "native/oracle.json"
-                },
-            );
+            let oracle_path = succeeded(&queue, &oracle_id)?.join(if split_matrix {
+                "native/split-matrix-oracle.json"
+            } else if candidate.split_global_decode_tile().is_some() {
+                "native/split-oracle.json"
+            } else if candidate
+                .global_decode_tile()
+                .is_some_and(|tile| tile.simd_matrix)
+            {
+                "native/matrix-oracle.json"
+            } else {
+                "native/oracle.json"
+            });
             let oracle = read(&oracle_path)?;
             let matrix = candidate
                 .global_decode_tile()
-                .is_some_and(|tile| tile.simd_matrix);
-            let expected_oracle_schema = if candidate.split_global_decode_tile().is_some() {
+                .is_some_and(|tile| tile.simd_matrix)
+                || split_matrix;
+            let expected_oracle_schema = if split_matrix {
+                "rvllm.global-decode.split-matrix-oracle.v1"
+            } else if candidate.split_global_decode_tile().is_some() {
                 "rvllm.global-decode.split-oracle.v1"
             } else if matrix {
                 "rvllm.global-decode.matrix-oracle.v1"
@@ -499,6 +512,8 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 "global_decode_split_abba_v2"
             } else if timing {
                 "global_decode_abba"
+            } else if split_matrix {
+                "global_decode_split_matrix_device_oracle"
             } else if candidate.split_global_decode_tile().is_some() {
                 "global_decode_split_device_oracle"
             } else if candidate
@@ -650,10 +665,14 @@ fn score_stage_cell(
     let build_path = build_dir.join("build.json");
     let oracle_id = id(config, candidate, "oracle")?;
     let split = candidate.split_global_decode_tile();
+    let split_matrix = split.is_some_and(|tile| tile.simd_matrix);
     let matrix = candidate
         .global_decode_tile()
-        .is_some_and(|tile| tile.simd_matrix);
-    let oracle_path = succeeded(queue, &oracle_id)?.join(if split.is_some() {
+        .is_some_and(|tile| tile.simd_matrix)
+        || split_matrix;
+    let oracle_path = succeeded(queue, &oracle_id)?.join(if split_matrix {
+        "native/split-matrix-oracle.json"
+    } else if split.is_some() {
         "native/split-oracle.json"
     } else if matrix {
         "native/matrix-oracle.json"
@@ -666,7 +685,9 @@ fn score_stage_cell(
     } else {
         "rvllm.global-decode.abba.v1"
     };
-    let expected_oracle_schema = if split.is_some() {
+    let expected_oracle_schema = if split_matrix {
+        "rvllm.global-decode.split-matrix-oracle.v1"
+    } else if split.is_some() {
         "rvllm.global-decode.split-oracle.v1"
     } else if matrix {
         "rvllm.global-decode.matrix-oracle.v1"
@@ -722,8 +743,10 @@ fn score_stage_cell(
         }
     } else if let Some(tile) = split {
         if receipt["identity"]["rows"] != tile.rows
+            || receipt["identity"]["keys"] != tile.keys
             || receipt["identity"]["panel"] != tile.panel
             || receipt["identity"]["threads"] != tile.threads
+            || receipt["identity"]["simd_matrix"] != tile.simd_matrix
             || receipt["identity"]["grid"] != json!([2, 16, 1])
             || receipt["identity"]["scratch_bytes"] != 16 * 16 * 514 * 4
             || receipt["identity"]["kernels"].as_array().map(Vec::len) != Some(2)
@@ -1029,6 +1052,8 @@ mod tests {
             "metal-global-d512-atlas_mma_r8k32p64t128",
             "metal-global-d512-atlas_mma_r16k16p64t64",
             "metal-global-d512-atlas_mma_r16k64p64t128",
+            "metal-global-d512-split-r8s256t128",
+            "metal-global-d512-split-mma_r8k32s256t128",
         ];
         let ids = names
             .into_iter()

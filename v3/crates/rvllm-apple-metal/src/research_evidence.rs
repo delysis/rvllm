@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 52;
+pub const RESEARCH_KERNEL_COUNT: usize = 54;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -61,6 +61,8 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_global_d512_atlas_mma_r8k32p64t128",
     "research_global_d512_atlas_mma_r16k16p64t64",
     "research_global_d512_atlas_mma_r16k64p64t128",
+    "research_global_d512_split_mma_r8k32s256t128_partial",
+    "research_global_d512_split_mma_r8k32s256t128_merge",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,6 +120,8 @@ pub enum ResearchKernel {
     GlobalD512AtlasMmaR8K32P64T128 = 49,
     GlobalD512AtlasMmaR16K16P64T64 = 50,
     GlobalD512AtlasMmaR16K64P64T128 = 51,
+    GlobalD512SplitMmaR8K32S256T128Partial = 52,
+    GlobalD512SplitMmaR8K32S256T128Merge = 53,
 }
 
 impl ResearchKernel {
@@ -150,6 +154,8 @@ impl ResearchKernel {
             Self::GlobalD512AtlasMmaR8K32P64T128 => (128, 12512),
             Self::GlobalD512AtlasMmaR16K16P64T64 => (64, 10496),
             Self::GlobalD512AtlasMmaR16K64P64T128 => (128, 29120),
+            Self::GlobalD512SplitMmaR8K32S256T128Partial => (128, 12512),
+            Self::GlobalD512SplitMmaR8K32S256T128Merge => (32, 0),
             Self::ShortGemm => (128, 10496),
             Self::ShortQkv => (128, 10496),
             Self::RoundedGate => (128, 14336),
@@ -220,6 +226,10 @@ impl ResearchKernel {
             }
             Self::GlobalD512AtlasMmaR16K64P64T128 => {
                 MetalResearchCandidate::GlobalD512AtlasMmaR16K64P64T128
+            }
+            Self::GlobalD512SplitMmaR8K32S256T128Partial
+            | Self::GlobalD512SplitMmaR8K32S256T128Merge => {
+                MetalResearchCandidate::GlobalD512SplitMmaR8K32S256T128
             }
             Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
             Self::RoundedGate => MetalResearchCandidate::RoundedGate32,

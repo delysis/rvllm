@@ -279,24 +279,30 @@ pub struct DecodeBuffers {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SplitDecodeTile {
     pub rows: u32,
+    pub keys: u32,
     pub partition: u32,
     pub panel: u32,
     pub threads: u32,
+    pub simd_matrix: bool,
 }
 
 impl SplitDecodeTile {
     pub const fn supported(self) -> bool {
-        self.rows == 8 && self.partition == 256 && self.panel == 64 && self.threads == 128
+        self.rows == 8
+            && matches!((self.keys, self.simd_matrix), (8, false) | (32, true))
+            && self.partition == 256
+            && self.panel == 64
+            && self.threads == 128
     }
 
     pub const fn partial_threadgroup_bytes(self) -> usize {
         DecodeTile {
             rows: self.rows,
-            keys: KV_TILE,
+            keys: self.keys,
             panel: self.panel,
             threads: self.threads,
-            per_tile_softmax: false,
-            simd_matrix: false,
+            per_tile_softmax: self.simd_matrix,
+            simd_matrix: self.simd_matrix,
         }
         .threadgroup_bytes()
     }
@@ -304,9 +310,20 @@ impl SplitDecodeTile {
 
 pub const SPLIT_R8S256T128: SplitDecodeTile = SplitDecodeTile {
     rows: 8,
+    keys: 8,
     partition: 256,
     panel: 64,
     threads: 128,
+    simd_matrix: false,
+};
+
+pub const SPLIT_MATRIX_R8K32S256T128: SplitDecodeTile = SplitDecodeTile {
+    rows: 8,
+    keys: 32,
+    partition: 256,
+    panel: 64,
+    threads: 128,
+    simd_matrix: true,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
