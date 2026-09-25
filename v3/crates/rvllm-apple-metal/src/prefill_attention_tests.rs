@@ -630,7 +630,8 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
         };
         reports.push(serde_json::json!({
             "label":label,"tokens":total,"head_dim":hd,"kv_heads":kv_heads,
-            "window":window,"contexts":contexts,"starts":starts,"commands":25,
+            "window":window,"contexts":contexts,"starts":starts,
+            "commands":if label.ends_with("hole") { 23 } else { 24 },
             "guards_unchanged":true,"repeatable_output_bits":true,
             "conventional":{"relative_l2_vs_scalar":relative_l2,
                 "max_abs_vs_scalar":max_difference,
