@@ -3488,6 +3488,147 @@ impl ModelMetalBackend {
         Ok(4)
     }
 
+    #[cfg(test)]
+    fn encode_device_resident_decode_advance_single(
+        &self,
+        cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+        state: &Gemma4MetalState,
+        current_position: u32,
+        current_slot: i32,
+    ) -> Result<()> {
+        const MAX_RESEARCH_LAYERS: usize = 64;
+        if state.layers.is_empty()
+            || state.layers.len() > MAX_RESEARCH_LAYERS
+            || current_slot < 0
+        {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "device_resident_decode_slice_shape",
+                },
+                model_ctx("device_resident_decode_slice"),
+            ));
+        }
+        let block_size = state.layers[0].block_size;
+        let next_position = current_position.checked_add(1).ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "device-resident decode position overflow",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        if block_size == 0
+            || next_position as usize >= state.max_probe_tokens
+            || current_position % block_size == block_size - 1
+            || (current_slot as u32) % block_size != current_position % block_size
+        {
+            return Err(RvllmError::apple(
+                AppleError::FeatureNotAvailable {
+                    backend: "model-metal-backend",
+                    op: "device_resident_decode_slice_page_crossing",
+                },
+                model_ctx("device_resident_decode_slice"),
+            ));
+        }
+
+        let pipelines = self.pipelines.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        let arena = self.arena.as_ref().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::NotPrepared {
+                    backend: "model-metal-backend",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        let pso = pipelines.get("research_decode_advance_single")?;
+        let mut offsets = [0u32; MAX_RESEARCH_LAYERS * 3];
+        for (layer_idx, layer) in state.layers.iter().enumerate() {
+            if layer.block_size != block_size {
+                return Err(RvllmError::apple(
+                    AppleError::InvalidWeightBlob {
+                        reason: "device-resident decode layer block-size mismatch",
+                    },
+                    model_ctx("device_resident_decode_slice"),
+                ));
+            }
+            for (slot, offset) in [
+                layer.positions.offset,
+                layer.slot_mapping.offset,
+                layer.context_lens.offset,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                offsets[layer_idx * 3 + slot] = u32::try_from(offset).map_err(|_| {
+                    RvllmError::apple(
+                        AppleError::InvalidWeightBlob {
+                            reason: "device-resident metadata offset exceeds u32",
+                        },
+                        model_ctx("device_resident_decode_slice"),
+                    )
+                })?;
+            }
+        }
+        let num_layers = u32::try_from(state.layers.len()).map_err(|_| {
+            RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "device-resident layer count exceeds u32",
+                },
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        let byte_len = state.layers.len() * 3 * std::mem::size_of::<u32>();
+        let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+            RvllmError::apple(
+                AppleError::MetalUnavailable,
+                model_ctx("device_resident_decode_slice"),
+            )
+        })?;
+        unsafe {
+            encoder.setComputePipelineState(pso);
+            encoder.setBuffer_offset_atIndex(Some(arena.buffer()), 0, 0);
+            encoder.setBytes_length_atIndex(
+                ptr::NonNull::new_unchecked(offsets.as_ptr() as *mut _),
+                byte_len,
+                1,
+            );
+            encoder.setBytes_length_atIndex(
+                ptr::NonNull::new_unchecked(&num_layers as *const _ as *mut _),
+                std::mem::size_of_val(&num_layers),
+                2,
+            );
+        }
+        let threads = max(
+            1,
+            state
+                .layers
+                .len()
+                .min(pso.maxTotalThreadsPerThreadgroup()),
+        );
+        encoder.dispatchThreads_threadsPerThreadgroup(
+            MTLSize {
+                width: state.layers.len(),
+                height: 1,
+                depth: 1,
+            },
+            MTLSize {
+                width: threads,
+                height: 1,
+                depth: 1,
+            },
+        );
+        encoder.endEncoding();
+        Ok(())
+    }
+
     fn write_i32_metadata_region(
         arena: &MetalBufferArena,
         region: &MetalRegion,
