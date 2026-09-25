@@ -102,3 +102,31 @@ separate confirmation campaign passes the drift gate and the full inference rout
 is correctness-qualified. The 2048 gap to MLX also says the next architectural
 round must reduce serialized context traversal and barrier/launch cost rather than
 merely polish another unsplit tile.
+
+## 2026-09-25 probe and split-matrix results
+
+Both one-axis probes passed strict Metal compilation and the bounded Apple9 native
+oracle. R16/K16/P64/T64 measured `1.973 ms` at L256 and was eliminated. The
+R16/K64/P64/T128 probe measured `0.906 ms` at L256 with the drift gate passing,
+about `15.3%` faster than the prior `1.070 ms` short-context leader. It remained
+promising at L512 (`3.378 ms`, about `11.3%` faster than `3.810 ms`) but that cell
+failed drift. At L1024 it measured `6.687 ms`, slower than the R8/K32 leader's
+`6.293 ms`, and was eliminated before L2048. K64 is therefore a short-context
+specialist, not the new overall leader.
+
+Commit `06b36a9e` adds the bounded
+`metal-global-d512-split-mma_r8k32s256t128` candidate: matrix QK/PV within sixteen
+fixed 256-token partitions followed by a sealed stable-state merge. All sixteen
+tail, partition-boundary and page-hole cases passed the new native oracle with
+three-run repeatability. Worst observed error was `4.23132e-6` absolute and
+`1.87520e-6` relative L2, with exact once-rounded BF16 and preserved guards.
+Its L256 partial-plus-merge time was `1.834 ms` (`1.807 ms` partial, `0.027 ms`
+merge), slower than the unsplit matrix leaders, so it was screened out before
+longer contexts. This does not answer whether a coarser or context-adaptive split
+wins at long context; it rejects this exact fixed-S256 schedule at the first gate.
+
+The first split timing receipt also exposed a referee defect: bitwise equality was
+required between a serialized total and the sum of separately serialized floating
+components. Commit `10f046da` replaces that transport-fragile equality with an
+eight-ULP-scale consistency bound while retaining rejection of material mismatch;
+focused positive and negative scorer tests pass.
