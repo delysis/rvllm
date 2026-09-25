@@ -440,16 +440,37 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
             let oracle_path = succeeded(&queue, &oracle_id)?.join(
                 if candidate.split_global_decode_tile().is_some() {
                     "native/split-oracle.json"
+                } else if candidate
+                    .global_decode_tile()
+                    .is_some_and(|tile| tile.simd_matrix)
+                {
+                    "native/matrix-oracle.json"
                 } else {
                     "native/oracle.json"
                 },
             );
             let oracle = read(&oracle_path)?;
-            if oracle["status"] != "passed"
+            let matrix = candidate
+                .global_decode_tile()
+                .is_some_and(|tile| tile.simd_matrix);
+            let expected_oracle_schema = if candidate.split_global_decode_tile().is_some() {
+                "rvllm.global-decode.split-oracle.v1"
+            } else if matrix {
+                "rvllm.global-decode.matrix-oracle.v1"
+            } else {
+                "rvllm.global-decode.oracle.v1"
+            };
+            if oracle["schema"] != expected_oracle_schema
+                || oracle["status"] != "passed"
                 || oracle["identity"]["candidate"] != candidate.name()
                 || oracle["identity"]["core_sha256"] != hash(&source)?
                 || oracle["identity"]["test_executable_sha256"]
                     != config["test_executable"]["sha256"]
+                || (matrix
+                    && (oracle["numerical_contract"]
+                        != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
+                        || oracle["fp64_max_abs_bound"] != 5.0e-4
+                        || oracle["fp64_relative_l2_bound"] != 1.0e-4))
             {
                 return Err(
                     "passed native oracle with exact source/executable identity required".into(),
@@ -480,6 +501,11 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 "global_decode_abba"
             } else if candidate.split_global_decode_tile().is_some() {
                 "global_decode_split_device_oracle"
+            } else if candidate
+                .global_decode_tile()
+                .is_some_and(|tile| tile.simd_matrix)
+            {
+                "global_decode_matrix_device_oracle"
             } else {
                 "global_decode_device_oracle"
             };
@@ -624,8 +650,13 @@ fn score_stage_cell(
     let build_path = build_dir.join("build.json");
     let oracle_id = id(config, candidate, "oracle")?;
     let split = candidate.split_global_decode_tile();
+    let matrix = candidate
+        .global_decode_tile()
+        .is_some_and(|tile| tile.simd_matrix);
     let oracle_path = succeeded(queue, &oracle_id)?.join(if split.is_some() {
         "native/split-oracle.json"
+    } else if matrix {
+        "native/matrix-oracle.json"
     } else {
         "native/oracle.json"
     });
@@ -637,6 +668,8 @@ fn score_stage_cell(
     };
     let expected_oracle_schema = if split.is_some() {
         "rvllm.global-decode.split-oracle.v1"
+    } else if matrix {
+        "rvllm.global-decode.matrix-oracle.v1"
     } else {
         "rvllm.global-decode.oracle.v1"
     };
@@ -667,6 +700,11 @@ fn score_stage_cell(
         || receipt["oracle_receipt_sha256"] != hash(&oracle_path)?
         || oracle["schema"] != expected_oracle_schema
         || oracle["status"] != "passed"
+        || (matrix
+            && (oracle["numerical_contract"]
+                != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
+                || oracle["fp64_max_abs_bound"] != 5.0e-4
+                || oracle["fp64_relative_l2_bound"] != 1.0e-4))
         || (split.is_some() && oracle["identity"] != receipt["identity"])
         || oracle["identity"]["candidate"] != candidate_name
         || oracle["identity"]["core_sha256"] != hash(&source)?

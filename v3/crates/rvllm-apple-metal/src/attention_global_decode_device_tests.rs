@@ -428,9 +428,28 @@ fn expect_family_count(
 #[test]
 #[ignore = "explicit global D512 device oracle; requires Apple9 and prebuilt strict-math oracle library"]
 fn global_decode_device_oracle() -> TestResult {
+    run_global_decode_device_oracle(false)
+}
+
+#[test]
+#[ignore = "explicit bounded SIMD-matrix global D512 oracle; requires Apple9 and prebuilt strict-math oracle library"]
+fn global_decode_matrix_device_oracle() -> TestResult {
+    run_global_decode_device_oracle(true)
+}
+
+fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
     let setup = Setup::new(true)?;
     let serial = setup.context.make_pipeline("global_decode_serial_oracle")?;
     let tile = setup.candidate.global_decode_tile().unwrap();
+    if tile.simd_matrix != matrix_bounded {
+        return Err("candidate does not match the requested oracle contract".into());
+    }
+    // Two independently rounded 8x8 SIMD-matrix reductions plus online-softmax
+    // reassociation are allowed a small FP32 envelope. Requiring both bounds
+    // protects near-zero outputs (absolute) and normally scaled outputs (L2),
+    // while remaining far tighter than one BF16 quantum around unit magnitude.
+    const MATRIX_MAX_ABS: f64 = 5.0e-4;
+    const MATRIX_REL_L2: f64 = 1.0e-4;
     let mut fixtures: Vec<(String, Fixture)> = LIVE_LENGTHS
         .into_iter()
         .map(|n| (format!("L{n}"), Fixture::new(n, 32)))
@@ -463,10 +482,15 @@ fn global_decode_device_oracle() -> TestResult {
         let plan =
             DecodePlan::new(tile, f.shape, DecodeOutput::F32).ok_or("oracle plan rejected")?;
         let cpu = reference::output_f32(f, plan)?;
+        let cpu_f64 = reference::output_f64(f, plan)?;
         let sampled = reference::sampled_dots(f, plan)?;
         let data = Guarded::new(&setup.context, f)?;
         let mut first: Option<Vec<u8>> = None;
         let mut max_cpu_error = 0.0_f32;
+        let mut max_fp64_error = 0.0_f64;
+        let mut relative_l2 = 0.0_f64;
+        let mut serial_max_abs = 0.0_f64;
+        let mut serial_exact = true;
         for _ in 0..3 {
             data.reset()?;
             let before = setup.pipelines.research_dispatch_snapshot();
@@ -531,22 +555,53 @@ fn global_decode_device_oracle() -> TestResult {
                 }
             }
             let actual = data.payload(0);
-            assert_eq!(
-                actual,
-                data.payload(1),
-                "exact FP32 serial-GPU oracle: {label}"
-            );
+            let serial_actual = data.payload(1);
+            if matrix_bounded {
+                serial_exact &= actual == serial_actual;
+                for (lhs, rhs) in actual.chunks_exact(4).zip(serial_actual.chunks_exact(4)) {
+                    let lhs = f32::from_le_bytes(lhs.try_into().unwrap()) as f64;
+                    let rhs = f32::from_le_bytes(rhs.try_into().unwrap()) as f64;
+                    serial_max_abs = serial_max_abs.max((lhs - rhs).abs());
+                }
+            } else {
+                assert_eq!(
+                    actual, serial_actual,
+                    "exact FP32 serial-GPU oracle: {label}"
+                );
+            }
             let mut rounded = Vec::new();
-            for (bytes, &reference) in actual.chunks_exact(4).zip(&cpu) {
+            let mut squared_error = 0.0_f64;
+            let mut squared_reference = 0.0_f64;
+            for ((bytes, &reference), &reference_f64) in
+                actual.chunks_exact(4).zip(&cpu).zip(&cpu_f64)
+            {
                 let value = f32::from_le_bytes(bytes.try_into().unwrap());
                 assert!(value.is_finite());
                 let error = (value - reference).abs();
-                assert!(
-                    error <= 2e-5,
-                    "fixed CPU/GPU FP32 tolerance: {label}: {error}"
-                );
+                if !matrix_bounded {
+                    assert!(
+                        error <= 2e-5,
+                        "fixed CPU/GPU FP32 tolerance: {label}: {error}"
+                    );
+                }
                 max_cpu_error = max_cpu_error.max(error);
+                let fp64_error = value as f64 - reference_f64;
+                max_fp64_error = max_fp64_error.max(fp64_error.abs());
+                squared_error += fp64_error * fp64_error;
+                squared_reference += reference_f64 * reference_f64;
                 rounded.extend_from_slice(&round_bf16(value).to_le_bytes());
+            }
+            relative_l2 =
+                relative_l2.max(squared_error.sqrt() / squared_reference.sqrt().max(1e-30));
+            if matrix_bounded {
+                assert!(
+                    max_fp64_error <= MATRIX_MAX_ABS,
+                    "matrix FP64 absolute bound: {label}: {max_fp64_error}"
+                );
+                assert!(
+                    relative_l2 <= MATRIX_REL_L2,
+                    "matrix FP64 relative-L2 bound: {label}: {relative_l2}"
+                );
             }
             assert_eq!(data.payload(2), rounded, "exact once-rounded BF16: {label}");
             if let Some(previous) = &first {
@@ -564,9 +619,15 @@ fn global_decode_device_oracle() -> TestResult {
         write_new(&bf16_path, &data.payload(2))?;
         reports.push(
             json!({"label":label,"context":f.context,"position":f.position,
-            "block_size":f.shape.block_size,"repeats":3,"exact_fp32_gpu_oracle":true,
+            "block_size":f.shape.block_size,"repeats":3,
+            "exact_fp32_gpu_oracle":if matrix_bounded { serial_exact } else { true },
             "exact_once_rounded_bf16":true,"read_inputs_and_guard_bytes_preserved":true,
             "max_cpu_fp32_abs_error":max_cpu_error,
+            "independent_cpu_reference":"scalar FP64",
+            "max_fp64_abs_error":max_fp64_error,"relative_l2_error":relative_l2,
+            "fp64_max_abs_bound":if matrix_bounded { Some(MATRIX_MAX_ABS) } else { None },
+            "fp64_relative_l2_bound":if matrix_bounded { Some(MATRIX_REL_L2) } else { None },
+            "serial_fp32_exact":serial_exact,"serial_fp32_max_abs_difference":serial_max_abs,
             "sampled_dot_source":"independent serial GPU oracle, not instrumented candidate",
             "sampled_gpu_dots_match_cpu_fp32":true,
             "sampled_gpu_dots_pass_fp64_bound":true,"sampled_fp64_dots":sampled,
@@ -738,12 +799,26 @@ fn global_decode_device_oracle() -> TestResult {
         guarded.check(true);
         shader_refusals += 1;
     }
-    let receipt = json!({"schema":"rvllm.global-decode.oracle.v1","status":"passed",
+    let schema = if matrix_bounded {
+        "rvllm.global-decode.matrix-oracle.v1"
+    } else {
+        "rvllm.global-decode.oracle.v1"
+    };
+    let filename = if matrix_bounded {
+        "matrix-oracle.json"
+    } else {
+        "oracle.json"
+    };
+    let receipt = json!({"schema":schema,"status":"passed",
         "scope":"synthetic attention operator; not model or full-route qualification",
+        "numerical_contract":if matrix_bounded { "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16" } else { "exact-serial-fp32" },
+        "fp64_max_abs_bound":if matrix_bounded { Some(MATRIX_MAX_ABS) } else { None },
+        "fp64_relative_l2_bound":if matrix_bounded { Some(MATRIX_REL_L2) } else { None },
+        "serial_fp32_role":if matrix_bounded { "diagnostic-only; mismatch is retained, not silently accepted as exact" } else { "required-exact" },
         "identity":setup.identity,"cases":reports,"host_rejected_dispatches":rejected,
         "encoded_metadata_refusals":shader_refusals,"timing_eligible":false});
     write_new(
-        &setup.directory.join("oracle.json"),
+        &setup.directory.join(filename),
         &serde_json::to_vec_pretty(&receipt)?,
     )?;
     Ok(())
@@ -920,17 +995,31 @@ fn control_snapshot() -> TestResult<Value> {
 #[ignore = "explicit raw operator ABBA; requires matching passed oracle and prebuilt core-only library"]
 fn global_decode_abba() -> TestResult {
     let setup = Setup::new(false)?;
+    let matrix = setup
+        .candidate
+        .global_decode_tile()
+        .is_some_and(|tile| tile.simd_matrix);
     let length: u32 = std::env::var(format!("{PREFIX}LENGTH"))?.parse()?;
     if !LIVE_LENGTHS.contains(&length) {
         return Err("length outside sealed five-cell sweep".into());
     }
     let oracle_path = env_path("ORACLE_RECEIPT")?;
     let oracle: Value = serde_json::from_slice(&std::fs::read(&oracle_path)?)?;
-    if oracle["schema"] != "rvllm.global-decode.oracle.v1"
+    let expected_oracle_schema = if matrix {
+        "rvllm.global-decode.matrix-oracle.v1"
+    } else {
+        "rvllm.global-decode.oracle.v1"
+    };
+    if oracle["schema"] != expected_oracle_schema
         || oracle["status"] != "passed"
         || oracle["identity"]["candidate"] != setup.identity["candidate"]
         || oracle["identity"]["core_sha256"] != setup.identity["core_sha256"]
         || oracle["identity"]["test_executable_sha256"] != setup.identity["test_executable_sha256"]
+        || (matrix
+            && (oracle["numerical_contract"]
+                != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
+                || oracle["fp64_max_abs_bound"] != 5.0e-4
+                || oracle["fp64_relative_l2_bound"] != 1.0e-4))
     {
         return Err("matching native oracle receipt required before any benchmark".into());
     }
