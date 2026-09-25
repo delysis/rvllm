@@ -3196,6 +3196,21 @@ impl ModelMetalBackend {
         state: &Gemma4MetalState,
         num_tokens: usize,
     ) -> Result<()> {
+        self.encode_embedding_gather_from(
+            cmd_buf,
+            state,
+            num_tokens,
+            state.token_ids.offset,
+        )
+    }
+
+    fn encode_embedding_gather_from(
+        &self,
+        cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+        state: &Gemma4MetalState,
+        num_tokens: usize,
+        token_ids_offset: usize,
+    ) -> Result<()> {
         let pipelines = self.pipelines.as_ref().ok_or_else(|| {
             RvllmError::apple(
                 AppleError::NotPrepared {
@@ -3249,7 +3264,7 @@ impl ModelMetalBackend {
         unsafe {
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), state.embedding.offset, 0);
-            encoder.setBuffer_offset_atIndex(Some(buf), state.token_ids.offset, 1);
+            encoder.setBuffer_offset_atIndex(Some(buf), token_ids_offset, 1);
             encoder.setBuffer_offset_atIndex(Some(buf), state.residual.offset, 2);
             encoder.setBytes_length_atIndex(
                 ptr::NonNull::new_unchecked(&num_tokens_u32 as *const _ as *mut _),
@@ -3383,6 +3398,21 @@ impl ModelMetalBackend {
         state: &Gemma4MetalState,
         num_tokens: usize,
     ) -> Result<u64> {
+        self.encode_ple_inputs_from(
+            cmd_buf,
+            state,
+            num_tokens,
+            state.token_ids.offset,
+        )
+    }
+
+    fn encode_ple_inputs_from(
+        &self,
+        cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+        state: &Gemma4MetalState,
+        num_tokens: usize,
+        token_ids_offset: usize,
+    ) -> Result<u64> {
         let Some(ple) = &state.ple else {
             return Ok(0);
         };
@@ -3404,7 +3434,7 @@ impl ModelMetalBackend {
         })?;
         let params = MetalPlePrepare {
             embedding_offset: ple.embed_tokens_per_layer.offset,
-            token_ids_offset: state.token_ids.offset,
+            token_ids_offset,
             residual_offset: state.residual.offset,
             per_layer_model_projection_offset: ple.per_layer_model_projection.offset,
             per_layer_projection_norm_offset: ple.per_layer_projection_norm.offset,
