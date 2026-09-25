@@ -17,7 +17,7 @@ pub struct DecodeTile {
     pub threads: u32,
 }
 
-pub const DECODE_TILES: [DecodeTile; 8] = [
+pub const DECODE_TILES: [DecodeTile; 9] = [
     DecodeTile {
         rows: 8,
         panel: 64,
@@ -57,14 +57,20 @@ pub const DECODE_TILES: [DecodeTile; 8] = [
         rows: 16,
         panel: 128,
         threads: 128,
+    },
+    DecodeTile {
+        rows: 1,
+        panel: 128,
+        threads: 32,
     },
 ];
 
 impl DecodeTile {
     pub const fn supported(self) -> bool {
-        matches!(self.rows, 8 | 16)
-            && matches!(self.panel, 64 | 128)
-            && matches!(self.threads, 64 | 128)
+        (self.rows == 1 && self.panel == 128 && self.threads == 32)
+            || (matches!(self.rows, 8 | 16)
+                && matches!(self.panel, 64 | 128)
+                && matches!(self.threads, 64 | 128))
     }
 
     /// Q is staged once; one K or V panel reuses the same storage. Scores,

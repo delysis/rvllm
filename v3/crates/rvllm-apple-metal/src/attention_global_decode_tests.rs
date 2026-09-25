@@ -27,7 +27,7 @@ fn layout(plan: DecodePlan) -> (DecodeBuffers, usize) {
 }
 
 #[test]
-fn geometry_and_scratch_are_exact_for_all_eight_tiles() {
+fn geometry_and_scratch_are_exact_for_all_tiles() {
     for tile in DECODE_TILES {
         let plan = DecodePlan::new(tile, shape(), DecodeOutput::Bf16).unwrap();
         assert_eq!(plan.grid, [(16 / tile.rows) as usize, 1, 1]);
@@ -36,6 +36,7 @@ fn geometry_and_scratch_are_exact_for_all_eight_tiles() {
         assert_eq!(
             plan.threadgroup_bytes,
             match (tile.rows, tile.panel) {
+                (1, 128) => 3200,
                 (8, 64) => 10016,
                 (8, 128) => 11040,
                 (16, 64) => 18976,
@@ -127,6 +128,21 @@ fn every_near_miss_shape_and_overflow_is_rejected() {
         DecodeTile {
             threads: 32,
             ..DECODE_TILES[0]
+        },
+        DecodeTile {
+            rows: 16,
+            threads: 32,
+            ..DECODE_TILES[0]
+        },
+        DecodeTile {
+            rows: 1,
+            panel: 64,
+            threads: 32,
+        },
+        DecodeTile {
+            rows: 1,
+            panel: 128,
+            threads: 64,
         },
     ] {
         assert!(DecodePlan::new(tile, good, DecodeOutput::Bf16).is_none());

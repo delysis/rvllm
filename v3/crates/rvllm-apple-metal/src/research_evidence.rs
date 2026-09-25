@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 39;
+pub const RESEARCH_KERNEL_COUNT: usize = 40;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -48,6 +48,7 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_global_d512_r16p64t128",
     "research_global_d512_r16p128t64",
     "research_global_d512_r16p128t128",
+    "research_global_d512_r1p128t32",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,6 +93,7 @@ pub enum ResearchKernel {
     GlobalD512R16P64T128 = 36,
     GlobalD512R16P128T64 = 37,
     GlobalD512R16P128T128 = 38,
+    GlobalD512R1P128T32 = 39,
 }
 
 impl ResearchKernel {
@@ -109,6 +111,7 @@ impl ResearchKernel {
             Self::GlobalD512R16P64T128 => (128, 18976),
             Self::GlobalD512R16P128T64 => (64, 20000),
             Self::GlobalD512R16P128T128 => (128, 20000),
+            Self::GlobalD512R1P128T32 => (32, 3200),
             Self::ShortGemm => (128, 10496),
             Self::ShortQkv => (128, 10496),
             Self::RoundedGate => (128, 14336),
@@ -146,6 +149,7 @@ impl ResearchKernel {
             Self::GlobalD512R16P64T128 => MetalResearchCandidate::GlobalD512R16P64T128,
             Self::GlobalD512R16P128T64 => MetalResearchCandidate::GlobalD512R16P128T64,
             Self::GlobalD512R16P128T128 => MetalResearchCandidate::GlobalD512R16P128T128,
+            Self::GlobalD512R1P128T32 => MetalResearchCandidate::GlobalD512R1P128T32,
             Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
             Self::RoundedGate => MetalResearchCandidate::RoundedGate32,
             Self::Gqa256 | Self::Gqa512 => MetalResearchCandidate::GqaKv8,

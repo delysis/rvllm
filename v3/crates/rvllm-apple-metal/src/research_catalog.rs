@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 26] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 27] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -43,6 +43,7 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 26] = [
     MetalResearchCandidate::GlobalD512R16P64T128,
     MetalResearchCandidate::GlobalD512R16P128T64,
     MetalResearchCandidate::GlobalD512R16P128T128,
+    MetalResearchCandidate::GlobalD512R1P128T32,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -110,6 +111,9 @@ impl MetalResearchCandidate {
             Self::GlobalD512R16P128T64 => global_decode_spec!("r16p128t64", GlobalD512R16P128T64),
             Self::GlobalD512R16P128T128 => {
                 global_decode_spec!("r16p128t128", GlobalD512R16P128T128)
+            }
+            Self::GlobalD512R1P128T32 => {
+                global_decode_spec!("r1p128t32", GlobalD512R1P128T32)
             }
             Self::Off => CandidateSpec {
                 name: "off",
@@ -334,13 +338,13 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 26);
+        assert_eq!(all.len(), 27);
         let additions = all.split_off(18);
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
         assert_eq!(reviewed_global["candidates"], serde_json::json!(additions));
         assert_eq!(reviewed, legacy);
-        // The additive family must have all eight source-defined specializations.
+        // The additive family must have all source-defined specializations.
         assert_eq!(
             ALL_CANDIDATES[18..].len(),
             crate::attention_global_decode::DECODE_TILES.len()

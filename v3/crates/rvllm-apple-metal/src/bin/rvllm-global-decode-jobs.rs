@@ -74,10 +74,7 @@ fn candidates() -> Vec<MetalResearchCandidate> {
         .filter(|c| c.global_decode_tile().is_some())
         .collect()
 }
-fn validate_timing_request(length: u32, selected: &[String]) -> Result {
-    if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) {
-        return Err("timing length must be 256, 512, 1024, 2048, or 4096".into());
-    }
+fn validate_selected(selected: &[String]) -> Result {
     let candidates = candidates();
     for (index, name) in selected.iter().enumerate() {
         if !candidates.iter().any(|candidate| candidate.name() == name)
@@ -87,6 +84,12 @@ fn validate_timing_request(length: u32, selected: &[String]) -> Result {
         }
     }
     Ok(())
+}
+fn validate_timing_request(length: u32, selected: &[String]) -> Result {
+    if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) {
+        return Err("timing length must be 256, 512, 1024, 2048, or 4096".into());
+    }
+    validate_selected(selected)
 }
 fn tool(name: &str) -> Result<PathBuf> {
     let output = Command::new("/usr/bin/xcrun")
@@ -363,6 +366,7 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
     } else {
         None
     };
+    validate_selected(selected)?;
     if let Some(length) = timing_length {
         validate_timing_request(length, selected)?;
     }
@@ -572,7 +576,7 @@ fn score_stage_cell(
     if receipt["identity"]["rows"] != tile.rows
         || receipt["identity"]["panel"] != tile.panel
         || receipt["identity"]["threads"] != tile.threads
-        || receipt["identity"]["grid"] != json!([1, 1, 1])
+        || receipt["identity"]["grid"] != json!([16 / tile.rows, 1, 1])
     {
         return Err(format!("stage receipt launch geometry mismatch: {candidate_name}").into());
     }
@@ -631,6 +635,9 @@ fn select_survivors(length: u32, scores: &mut [StageScore]) -> Result<Vec<String
             .total_cmp(&right.candidate_ms_per_dispatch)
             .then_with(|| left.candidate.cmp(&right.candidate))
     });
+    if scores.len() == 1 && matches!(length, 256 | 512 | 1024 | 2048) {
+        return Ok(vec![scores[0].candidate.clone()]);
+    }
     let (anchor, multiplier) = match length {
         256 | 512 | 1024 if scores.len() >= 2 => (scores[1].candidate_ms_per_dispatch, 1.10),
         2048 => (scores[0].candidate_ms_per_dispatch, 1.05),
@@ -818,6 +825,14 @@ mod tests {
     }
 
     #[test]
+    fn selected_oracle_candidates_are_strictly_validated() {
+        validate_selected(&["metal-global-d512-r1p128t32".to_owned()]).unwrap();
+        assert!(validate_selected(&["not-a-candidate".to_owned()]).is_err());
+        let duplicate = "metal-global-d512-r1p128t32".to_owned();
+        assert!(validate_selected(&[duplicate.clone(), duplicate]).is_err());
+    }
+
+    #[test]
     fn successive_halving_uses_absolute_candidate_time_and_widens_ties() {
         let mut screen = vec![
             score("slow", 12.0),
@@ -838,6 +853,8 @@ mod tests {
             select_survivors(2048, &mut finalists).unwrap(),
             ["winner", "tie"]
         );
+        let mut control = vec![score("control", 3.5)];
+        assert_eq!(select_survivors(256, &mut control).unwrap(), ["control"]);
     }
 
     #[test]
@@ -915,7 +932,7 @@ mod tests {
                 "source_sha256":hash(&source).unwrap(),"core_sha256":hash(&source).unwrap(),
                 "metallib_sha256":hash(&library).unwrap(),"build_receipt_sha256":hash(&build).unwrap(),
                 "test_executable_sha256":"test-pin","rows":tile.rows,"panel":tile.panel,
-                "threads":tile.threads,"grid":[1,1,1]},"samples":samples});
+                "threads":tile.threads,"grid":[16 / tile.rows,1,1]},"samples":samples});
         json_new(&receipt_path, &receipt).unwrap();
         json_new(
             &timing_dir.join("report.json"),
@@ -953,6 +970,8 @@ fn main() -> Result {
         [action,campaign,root,queue,test,conditions] if action=="prepare" =>
             prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?),
         [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false,None,&[]),
+        [action,root,selected @ ..] if action=="oracle-jobs" && !selected.is_empty() =>
+            generate(&absolute(root)?,false,None,selected),
         [action,root] if action=="timing-jobs" => generate(&absolute(root)?,true,None,&[]),
         [action,root,length,selected @ ..] if action=="timing-jobs" && !selected.is_empty() => {
             let length = length.parse()?;
@@ -960,6 +979,6 @@ fn main() -> Result {
         }
         [action,root,length,output,expected @ ..] if action=="advance" && !expected.is_empty() =>
             advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
     }
 }
