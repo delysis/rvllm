@@ -19,3 +19,14 @@ validator by SHA-256. It JIT-compiles and dispatches the candidate and incumbent
 SIMD control, then validates the independent FP64 comparisons, tails, holes,
 guards, repeatability, source/executable identity and public PSO resource
 fields. The 512, 1024, and 2048 jobs form a strict predecessor chain.
+
+## L256 screen result
+
+The L256 job passed its correctness and receipt validator, but the candidate did
+not pass the speed gate. It was slower than the existing SIMD control in 12 of
+14 cases. The exact 256-token boundary was 1.138x faster, but its adjacent
+255- and 257-token cases were only 0.914x and 0.985x as fast as the control.
+Longer built-in screens were also losses: 652-token sliding was 0.910x and
+652-token global was 0.804x. The 512/1024/2048 jobs are therefore not submitted.
+This conventional tiled arm is rejected as a general prefill candidate; the
+receipt is retained as a correctness-qualified negative result.
