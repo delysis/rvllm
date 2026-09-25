@@ -332,6 +332,15 @@ impl MetalLowBitProjectionOffsets {
         }
     }
 
+    /// CoreAIKit-like 8-SIMD-group contender; package ABI is unchanged.
+    #[must_use]
+    pub const fn experimental_bf16_core8_qmv_kernel_name(self) -> &'static str {
+        match self.format {
+            AppleLowBitWeightFormat::W4A16 => "research_projection_w4abf16_bf16_qmv_core8",
+            AppleLowBitWeightFormat::W8A16 => "research_projection_w8abf16_bf16_qmv_core8",
+        }
+    }
+
     /// Exact number of adjacent output rows owned by one SIMD group.
     #[must_use]
     pub const fn experimental_bf16_vector_output_width(self) -> usize {
@@ -538,6 +547,34 @@ impl MetalLowBitProjectionOffsets {
             self.experimental_bf16_mlx_qmv_kernel_name(),
             8,
             64,
+        )
+    }
+
+    /// Encode the CoreAIKit-like eight-SIMD-group native-BF16 schedule.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_strided_bf16_core8_qmv(
+        self,
+        command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+        pipelines: &PipelineCache,
+        arena: &ProtocolObject<dyn MTLBuffer>,
+        activation_offset: usize,
+        output_offset: usize,
+        m: usize,
+        output_row_stride: usize,
+        output_column: usize,
+    ) -> LowBitMetalResult<()> {
+        self.encode_strided_with_kernel(
+            command_buffer,
+            pipelines,
+            arena,
+            activation_offset,
+            output_offset,
+            m,
+            output_row_stride,
+            output_column,
+            self.experimental_bf16_core8_qmv_kernel_name(),
+            32,
+            256,
         )
     }
 
@@ -978,6 +1015,13 @@ mod tests {
             assert_ne!(
                 descriptor.experimental_bf16_mlx_qmv_kernel_name(),
                 descriptor.experimental_bf16_vector_kernel_name()
+            );
+            assert!(descriptor
+                .experimental_bf16_core8_qmv_kernel_name()
+                .ends_with("_qmv_core8"));
+            assert_ne!(
+                descriptor.experimental_bf16_core8_qmv_kernel_name(),
+                descriptor.experimental_bf16_mlx_qmv_kernel_name()
             );
             let width = descriptor.experimental_bf16_vector_output_width();
             assert_eq!(
