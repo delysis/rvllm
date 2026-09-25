@@ -586,7 +586,11 @@ fn launch_verified(
         .env_clear()
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .env("LANG", "C")
-        .envs(&call.env)
+        .envs(
+            call.env
+                .iter()
+                .map(|(key, value)| (key, value.replace("{output}", directory))),
+        )
         .args(
             call.args
                 .iter()
@@ -1442,6 +1446,33 @@ mod tests {
         });
         assert!(checked);
         assert!(matches!(result, Err(error) if error.to_string() == "stale launch gate"));
+    }
+
+    #[test]
+    fn output_placeholder_expands_in_environment_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = PathBuf::from("/usr/bin/env");
+        let call = Invocation {
+            executable: Pin {
+                sha256: digest(&executable).unwrap(),
+                path: executable,
+            },
+            cwd: dir.path().to_owned(),
+            args: vec![],
+            env: BTreeMap::from([(
+                "RVLLM_QUEUE_OUTPUT_TEST".into(),
+                "{output}/receipt.json".into(),
+            )]),
+        };
+        let mut child = launch_verified(&call, dir.path(), "trial", || Ok(())).unwrap();
+        assert!(child.0.wait().unwrap().success());
+        let stdout = fs::read_to_string(dir.path().join("trial.stdout")).unwrap();
+        assert!(stdout.lines().any(|line| {
+            line == format!(
+                "RVLLM_QUEUE_OUTPUT_TEST={}/receipt.json",
+                dir.path().display()
+            )
+        }));
     }
 
     #[test]
