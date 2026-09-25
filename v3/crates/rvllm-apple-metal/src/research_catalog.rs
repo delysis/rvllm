@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 41] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 42] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -58,6 +58,7 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 41] = [
     MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T64,
     MetalResearchCandidate::GlobalD512AtlasMmaR16K64P64T128,
     MetalResearchCandidate::DecodeGemvMlx16,
+    MetalResearchCandidate::DecodeGateupMlx16,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -436,6 +437,18 @@ impl MetalResearchCandidate {
                 numerical_contract: "bf16-fp32-simd4x4k4-once-rounded",
                 source: include_str!("research_shaders/decode_gemv_mlx16.metal"),
             },
+            Self::DecodeGateupMlx16 => CandidateSpec {
+                name: "metal-decode-gateup-mlx16",
+                kernels: &[DecodeGateupMlx16],
+                source_file: Some(
+                    "crates/rvllm-apple-metal/src/research_shaders/decode_gateup_mlx16.metal",
+                ),
+                min_tokens: 1,
+                max_tokens: 1,
+                window_independent: true,
+                numerical_contract: "bf16-fp32-fused-gate-up-preserve-storage-rounds",
+                source: include_str!("research_shaders/decode_gateup_mlx16.metal"),
+            },
             Self::Load4M16N32K64 => {
                 load4_tile_spec!("m16n32k64", Tile16x32K64Gemm, Tile16x32K64Qkv, 6)
             }
@@ -537,7 +550,9 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 41);
+        assert_eq!(all.len(), 42);
+        let gateup = all.pop().unwrap();
+        assert_eq!(gateup["name"], "metal-decode-gateup-mlx16");
         let decode = all.pop().unwrap();
         assert_eq!(decode["name"], "metal-decode-gemv-mlx16");
         let additions = all.split_off(18);
