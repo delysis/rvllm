@@ -33,10 +33,20 @@ pub struct AneAttentionProgram {
     program: AneInMemoryProgram,
 }
 
-/// Default-off compile-source owner for one layer's fused attention and output
-/// projection. It intentionally exposes no request/evaluation API.
+/// Default-off program owner for one layer's fused attention and output
+/// projection. Production routing remains unchanged until the component and
+/// full-route gates qualify this exact graph.
 pub struct AneAttentionOutputCompile {
-    _program: AneInMemoryProgram,
+    layout: PackedAttentionLayout,
+    output_channels: usize,
+    program: AneInMemoryProgram,
+}
+
+pub struct AneAttentionOutput {
+    kernel: AneInMemoryKernel,
+    input_bytes: usize,
+    output_channels: usize,
+    output: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,7 +90,38 @@ impl AneAttentionOutputCompile {
             layout.projected_output_bytes(output_channels)?,
             policy,
         )?;
-        Ok(Self { _program: program })
+        Ok(Self {
+            layout,
+            output_channels,
+            program,
+        })
+    }
+
+    pub fn create_request(&self) -> Result<AneAttentionOutput, String> {
+        Ok(AneAttentionOutput {
+            kernel: self.program.create_request()?,
+            input_bytes: self.layout.input_bytes(),
+            output_channels: self.output_channels,
+            output: vec![0; self.layout.projected_output_bytes(self.output_channels)?],
+        })
+    }
+}
+
+impl AneAttentionOutput {
+    /// Evaluate one completely packed attention surface. The sole logical
+    /// output column is decoded from ANE's 64-byte channel rows.
+    pub fn evaluate_packed(&mut self, input: &[u8], output: &mut [f16]) -> Result<(), String> {
+        if input.len() != self.input_bytes || output.len() != self.output_channels {
+            return Err("fused attention/output projection I/O shape mismatch".into());
+        }
+        self.kernel.write_input(input)?;
+        self.kernel.evaluate()?;
+        self.kernel.read_output(&mut self.output)?;
+        for (channel, value) in output.iter_mut().enumerate() {
+            let offset = channel * 64;
+            *value = f16::from_le_bytes([self.output[offset], self.output[offset + 1]]);
+        }
+        Ok(())
     }
 }
 
