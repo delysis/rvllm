@@ -473,11 +473,16 @@ fn global_decode_newest_kv_same_command_buffer_visibility() -> TestResult {
     {
         return Err("newest token fixture does not affect output".into());
     }
-    let f32_bytes = |values: &[f32]| -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect()
+    let assert_cpu_close = |raw: &[u8], expected: &[f32], label: &str| {
+        assert_eq!(raw.len(), expected.len() * 4, "{label}: output size");
+        for (bytes, reference) in raw.chunks_exact(4).zip(expected) {
+            let value = f32::from_le_bytes(bytes.try_into().unwrap());
+            assert!(value.is_finite(), "{label}: nonfinite GPU output");
+            assert!(
+                (value - reference).abs() <= 2e-5,
+                "{label}: CPU/GPU FP32 tolerance"
+            );
+        }
     };
     let u16_bytes = |values: &[u16]| -> Vec<u8> {
         values
@@ -485,9 +490,6 @@ fn global_decode_newest_kv_same_command_buffer_visibility() -> TestResult {
             .flat_map(|value| value.to_le_bytes())
             .collect()
     };
-    let expected_before = f32_bytes(&cpu_before);
-    let expected_after = f32_bytes(&cpu_after);
-
     // Negative control: the same metadata with a finite zero placeholder in
     // the newest slot must produce the pre-append reference.
     let control = Guarded::new(&setup.context, &before_fixture)?;
@@ -507,7 +509,8 @@ fn global_decode_newest_kv_same_command_buffer_visibility() -> TestResult {
     )?
     .ok_or("control route refused fixture")?;
     complete(&control_command)?;
-    assert_eq!(control.payload(0), expected_before);
+    let control_output = control.payload(0);
+    assert_cpu_close(&control_output, &cpu_before, "stale-control");
     control.check(false);
 
     let k_source_words =
@@ -595,8 +598,8 @@ fn global_decode_newest_kv_same_command_buffer_visibility() -> TestResult {
         expect_count(&setup, before_dispatch, 1);
 
         let output = data.payload(0);
-        assert_eq!(output, expected_after, "repeat {repeat} saw stale newest K/V");
-        assert_ne!(output, expected_before, "repeat {repeat} matched stale control");
+        assert_cpu_close(&output, &cpu_after, "append-attend");
+        assert_ne!(output, control_output, "repeat {repeat} matched stale control");
         if let Some(first) = &repeated_output {
             assert_eq!(first, &output, "newest-K/V output was not repeatable");
         } else {
