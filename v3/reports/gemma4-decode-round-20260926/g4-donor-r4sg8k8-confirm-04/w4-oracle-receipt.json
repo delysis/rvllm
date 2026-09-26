@@ -1,0 +1,58 @@
+{
+  "cases": [
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-r4sg8k8-confirm-04-qmv-w4-g32-r4-sg8-k8-oracle/native/w4-M1-N3840-K15360.bf16",
+      "bf16_sha256": "4a69754419c7f05561fea86042b7d55839a00c653d7802b357d52f9eb1336ace",
+      "exact_dispatch_accounting": true,
+      "guards_untouched": true,
+      "host_refusals_without_dispatch": 4,
+      "incumbent_max_fp64_abs_error": 0.0,
+      "k": 15360,
+      "label": "w4-M1-N3840-K15360",
+      "max_fp64_abs_error": 0.0,
+      "persistent_arena_unchanged": true,
+      "predeclared_bound": "0.015625*abs(reference)+1e-5",
+      "reference": "independent scalar FP64 with incumbent BF16 boundaries",
+      "repeated_bit_exact": true,
+      "repeats": 3,
+      "shader_guarded_encoded_dispatches": 3
+    }
+  ],
+  "checkpoint_qualified": false,
+  "identity": {
+    "build_receipt_sha256": "de15d64169f98aa4abb6b11ed2d70c978cc37d999338ae63ecb600db8b10fa6e",
+    "candidate": "metal-qmv-w4-g32-r4-sg8-k8",
+    "core_sha256": "f74e67aa911b101575a770b7803e59b0fda95b07c1b127c135113e905b61b918",
+    "device_name": "Apple M4 Max",
+    "gpu_family": "Apple9",
+    "grid": [
+      120,
+      1,
+      1
+    ],
+    "kernel": "research_qmv_w4_g32_r4_sg8_k8",
+    "kernels": [
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_qmv_w4_g32_r4_sg8_k8",
+        "source_threadgroup_bytes": 0,
+        "threads": 256
+      }
+    ],
+    "keys": 1,
+    "metallib_sha256": "5bbda735656a5502a3c7f7394f0692f8f74ce53ffa1aad089a1a674fd14747af",
+    "oracle_library": true,
+    "panel": 32,
+    "rows": 32,
+    "scratch_bytes": 0,
+    "simd_matrix": false,
+    "source_sha256": "f74e67aa911b101575a770b7803e59b0fda95b07c1b127c135113e905b61b918",
+    "test_executable_sha256": "1417b0991cf94b2e962b15495fc468ce3ffde75ec8fe6f2f507ab8e5f649be6b",
+    "threads": 256
+  },
+  "promotion": false,
+  "schema": "rvllm.decode-round.oracle.v1",
+  "status": "passed"
+}
