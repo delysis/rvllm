@@ -590,6 +590,7 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
             let keys: &[u32] = match candidate {
                 MetalResearchCandidate::FfnBf16R4Sg2 => &[3840],
                 MetalResearchCandidate::QmvW4G32R8Sg2 => &[15360],
+                MetalResearchCandidate::QmvW4G32R4Sg8K8 => &[15360],
                 MetalResearchCandidate::QmvW8G32R8Sg2 => &[4096, 8192],
                 _ => unreachable!(),
             };

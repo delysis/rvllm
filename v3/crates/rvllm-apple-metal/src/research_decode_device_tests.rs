@@ -47,7 +47,10 @@ impl Data {
                 "ffn-M1-K3840-I15360".to_owned(),
             )
         } else {
-            let bits = if setup.candidate == MetalResearchCandidate::QmvW4G32R8Sg2 {
+            let bits = if matches!(
+                setup.candidate,
+                MetalResearchCandidate::QmvW4G32R8Sg2 | MetalResearchCandidate::QmvW4G32R4Sg8K8
+            ) {
                 4
             } else {
                 8
@@ -91,7 +94,10 @@ impl Data {
         let projection = if ffn {
             None
         } else {
-            let w4 = setup.candidate == MetalResearchCandidate::QmvW4G32R8Sg2;
+            let w4 = matches!(
+                setup.candidate,
+                MetalResearchCandidate::QmvW4G32R8Sg2 | MetalResearchCandidate::QmvW4G32R4Sg8K8
+            );
             Some(MetalLowBitProjectionOffsets::new_for_role(
                 if w4 {
                     Role::DenseDownProjection
@@ -206,7 +212,7 @@ impl Data {
             let output = self.outputs[0].0.offset + GUARD;
             let stride = self.expected.len() + 2 * self.column;
             if candidate {
-                if !p.try_encode_strided_bf16_r8_sg2(
+                if !p.try_encode_strided_bf16_decode_candidate(
                     command,
                     &setup.pipelines,
                     self.arena.buffer(),
@@ -346,7 +352,7 @@ fn guarded_bad_launch(data: &Data, setup: &Setup, k: usize, case: usize) -> Test
             depth: 1,
         },
         MTLSize {
-            width: if case == 0 { 32 } else { 64 },
+            width: if case == 0 { 32 } else { kernel.limits().0 },
             height: 1,
             depth: 1,
         },
@@ -367,6 +373,7 @@ fn cases(candidate: MetalResearchCandidate) -> &'static [usize] {
     match candidate {
         MetalResearchCandidate::FfnBf16R4Sg2 => &[3840],
         MetalResearchCandidate::QmvW4G32R8Sg2 => &[15360],
+        MetalResearchCandidate::QmvW4G32R4Sg8K8 => &[15360],
         MetalResearchCandidate::QmvW8G32R8Sg2 => &[4096, 8192],
         _ => &[],
     }
@@ -448,7 +455,7 @@ fn decode_round_oracle() -> TestResult {
             if let Some(p) = data.projection {
                 let input = data.inputs[0].0.offset + GUARD;
                 let output = data.outputs[0].0.offset + GUARD;
-                let result = p.try_encode_strided_bf16_r8_sg2(
+                let result = p.try_encode_strided_bf16_decode_candidate(
                     &command,
                     &setup.pipelines,
                     data.arena.buffer(),

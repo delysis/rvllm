@@ -80,9 +80,18 @@ fn exact_shape_route_and_each_refusal_boundary() {
 }
 #[test]
 fn qmv_role_format_shape_are_separate_requirements() {
+    assert_eq!(ResearchKernel::QmvW4G32R4Sg8K8.limits(), (256, 0));
+    assert_eq!(ResearchKernel::QmvW4G32R4Sg8K8.qmv_output_rows(), Some(32));
+    assert_eq!(ResearchKernel::QmvW4G32R8Sg2.qmv_output_rows(), Some(16));
     for (selector, format, role, k) in [
         (
             Candidate::QmvW4G32R8Sg2,
+            Format::W4A16,
+            Role::DenseDownProjection,
+            15360,
+        ),
+        (
+            Candidate::QmvW4G32R4Sg8K8,
             Format::W4A16,
             Role::DenseDownProjection,
             15360,
@@ -100,12 +109,19 @@ fn qmv_role_format_shape_are_separate_requirements() {
             8192,
         ),
     ] {
-        assert!(qmv_r8_contract(selector, format, role, 1, 3840, k));
+        assert!(qmv_decode_contract(selector, format, role, 1, 3840, k));
         for (m, n, badk) in [(0, 3840, k), (2, 3840, k), (1, 3839, k), (1, 3840, k - 1)] {
-            assert!(!qmv_r8_contract(selector, format, role, m, n, badk));
+            assert!(!qmv_decode_contract(selector, format, role, m, n, badk));
         }
-        assert!(!qmv_r8_contract(Candidate::Off, format, role, 1, 3840, k));
-        assert!(!qmv_r8_contract(
+        assert!(!qmv_decode_contract(
+            Candidate::Off,
+            format,
+            role,
+            1,
+            3840,
+            k
+        ));
+        assert!(!qmv_decode_contract(
             selector,
             format,
             Role::QueryProjection,
@@ -118,7 +134,7 @@ fn qmv_role_format_shape_are_separate_requirements() {
         } else {
             Format::W4A16
         };
-        assert!(!qmv_r8_contract(selector, other, role, 1, 3840, k));
+        assert!(!qmv_decode_contract(selector, other, role, 1, 3840, k));
     }
 }
 #[test]
@@ -148,6 +164,7 @@ fn generated_qmv_source_retains_fp16_scale_abi_and_defaults() {
     for c in [
         Candidate::FfnBf16R4Sg2,
         Candidate::QmvW4G32R8Sg2,
+        Candidate::QmvW4G32R4Sg8K8,
         Candidate::QmvW8G32R8Sg2,
         Candidate::GlobalD512ShortR4T128,
     ] {
@@ -165,7 +182,10 @@ fn generated_qmv_source_retains_fp16_scale_abi_and_defaults() {
                 .count(),
             1
         );
-        if matches!(c, Candidate::QmvW4G32R8Sg2 | Candidate::QmvW8G32R8Sg2) {
+        if matches!(
+            c,
+            Candidate::QmvW4G32R8Sg2 | Candidate::QmvW4G32R4Sg8K8 | Candidate::QmvW8G32R8Sg2
+        ) {
             assert!(source.contains("device const half *scales"));
             assert!(!source.contains("device const bfloat *scales"));
         }

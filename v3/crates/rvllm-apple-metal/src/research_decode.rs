@@ -67,7 +67,7 @@ impl GateUpRequest {
 /// Role and precision are independent admission criteria, not inferred from N/K.
 /// The descriptor's constructor/loader remain responsible for authentication,
 /// signed payload validity, exact byte counts, and immutable scale ownership.
-pub fn qmv_r8_contract(
+pub fn qmv_decode_contract(
     selected: MetalResearchCandidate,
     format: AppleLowBitWeightFormat,
     role: AppleLowBitTensorRole,
@@ -82,6 +82,11 @@ pub fn qmv_r8_contract(
         (selected, format, role, k),
         (
             MetalResearchCandidate::QmvW4G32R8Sg2,
+            AppleLowBitWeightFormat::W4A16,
+            AppleLowBitTensorRole::DenseDownProjection,
+            15360
+        ) | (
+            MetalResearchCandidate::QmvW4G32R4Sg8K8,
             AppleLowBitWeightFormat::W4A16,
             AppleLowBitTensorRole::DenseDownProjection,
             15360

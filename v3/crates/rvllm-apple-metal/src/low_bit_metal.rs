@@ -500,7 +500,7 @@ impl MetalLowBitProjectionOffsets {
     /// Default-off decode schedule on the SAME authenticated descriptor. False
     /// means no encode and no ledger delta; invalid buffer ranges remain errors.
     #[allow(clippy::too_many_arguments)]
-    pub fn try_encode_strided_bf16_r8_sg2(
+    pub fn try_encode_strided_bf16_decode_candidate(
         self,
         command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
         pipelines: &PipelineCache,
@@ -513,7 +513,7 @@ impl MetalLowBitProjectionOffsets {
     ) -> LowBitMetalResult<bool> {
         let selected = pipelines.kernel_options().research;
         if pipelines.float_type() != Some(crate::MetalFloatType::Bf16)
-            || !crate::research_decode::qmv_r8_contract(
+            || !crate::research_decode::qmv_decode_contract(
                 selected,
                 self.format,
                 self.role,
@@ -527,7 +527,14 @@ impl MetalLowBitProjectionOffsets {
         let [kernel] = selected.kernels() else {
             return Ok(false);
         };
-        if pipelines.research_pso(kernel.name(), 64, 0).is_none() {
+        let Some(output_tile_width) = kernel.qmv_output_rows() else {
+            return Ok(false);
+        };
+        let (threads, scratch_bytes) = kernel.limits();
+        if pipelines
+            .research_pso(kernel.name(), threads, scratch_bytes)
+            .is_none()
+        {
             return Ok(false);
         }
         self.encode_strided_with_kernel(
@@ -540,7 +547,7 @@ impl MetalLowBitProjectionOffsets {
             output_row_stride,
             output_column,
             kernel.name(),
-            16,
+            output_tile_width,
         )?;
         Ok(true)
     }
@@ -645,15 +652,13 @@ impl MetalLowBitProjectionOffsets {
             });
         }
 
-        let research_kernel = if kernel_name
-            == crate::research_evidence::ResearchKernel::QmvW4G32R8Sg2.name()
-        {
-            Some(crate::research_evidence::ResearchKernel::QmvW4G32R8Sg2)
-        } else if kernel_name == crate::research_evidence::ResearchKernel::QmvW8G32R8Sg2.name() {
-            Some(crate::research_evidence::ResearchKernel::QmvW8G32R8Sg2)
-        } else {
-            None
-        };
+        let research_kernel = [
+            crate::research_evidence::ResearchKernel::QmvW4G32R8Sg2,
+            crate::research_evidence::ResearchKernel::QmvW8G32R8Sg2,
+            crate::research_evidence::ResearchKernel::QmvW4G32R4Sg8K8,
+        ]
+        .into_iter()
+        .find(|kernel| kernel_name == kernel.name());
         let pipeline = pipelines.get(kernel_name)?;
         let encoder = command_buffer
             .computeCommandEncoder()
@@ -678,7 +683,7 @@ impl MetalLowBitProjectionOffsets {
                     depth: 1,
                 },
                 MTLSize {
-                    width: if research_kernel.is_some() { 64 } else { 32 },
+                    width: research_kernel.map_or(32, |kernel| kernel.limits().0),
                     height: 1,
                     depth: 1,
                 },

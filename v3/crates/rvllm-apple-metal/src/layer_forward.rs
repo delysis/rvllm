@@ -6203,6 +6203,9 @@ unsafe fn encode_low_bit_down_projection(
             crate::MetalResearchCandidate::QmvW4G32R8Sg2,
             AppleLowBitTensorRole::DenseDownProjection
         ) | (
+            crate::MetalResearchCandidate::QmvW4G32R4Sg8K8,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
             crate::MetalResearchCandidate::QmvW8G32R8Sg2,
             AppleLowBitTensorRole::OutputProjection
         )
@@ -6216,7 +6219,7 @@ unsafe fn encode_low_bit_down_projection(
         // Never reinterpret BF16 activations as the legacy F16 low-bit ABI on
         // refusal. The existing n4 BF16 schedule is the role-specific control.
         let encoded = projection
-            .try_encode_strided_bf16_r8_sg2(
+            .try_encode_strided_bf16_decode_candidate(
                 cmd_buf,
                 pipelines,
                 buf,
@@ -6287,6 +6290,9 @@ unsafe fn encode_low_bit_projection_strided(
             crate::MetalResearchCandidate::QmvW4G32R8Sg2,
             AppleLowBitTensorRole::DenseDownProjection
         ) | (
+            crate::MetalResearchCandidate::QmvW4G32R4Sg8K8,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
             crate::MetalResearchCandidate::QmvW8G32R8Sg2,
             AppleLowBitTensorRole::OutputProjection
         )
@@ -6300,7 +6306,7 @@ unsafe fn encode_low_bit_projection_strided(
         // Never reinterpret BF16 activations as the legacy F16 low-bit ABI on
         // refusal. The existing n4 BF16 schedule is the role-specific control.
         let encoded = projection
-            .try_encode_strided_bf16_r8_sg2(
+            .try_encode_strided_bf16_decode_candidate(
                 cmd_buf,
                 pipelines,
                 buf,
