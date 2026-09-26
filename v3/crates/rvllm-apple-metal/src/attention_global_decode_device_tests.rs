@@ -26,12 +26,12 @@ use std::{
     time::Instant,
 };
 
-type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+pub(crate) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 const PREFIX: &str = "RVLLM_METAL_GLOBAL_DECODE_";
 const GUARD: usize = 32;
 const FLOAT_BYTES: usize = HEADS as usize * DIM as usize * 4;
 
-fn write_new(path: &Path, bytes: &[u8]) -> TestResult {
+pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> TestResult {
     use std::io::Write;
     let mut file = std::fs::File::create_new(path)?;
     file.write_all(bytes)?;
@@ -39,7 +39,7 @@ fn write_new(path: &Path, bytes: &[u8]) -> TestResult {
     Ok(())
 }
 
-fn env_path(suffix: &str) -> TestResult<PathBuf> {
+pub(crate) fn env_path(suffix: &str) -> TestResult<PathBuf> {
     let path = PathBuf::from(std::env::var(format!("{PREFIX}{suffix}"))?);
     if !path.is_absolute() {
         return Err("all gate paths must be absolute".into());
@@ -47,7 +47,7 @@ fn env_path(suffix: &str) -> TestResult<PathBuf> {
     Ok(path)
 }
 
-fn sha256(path: &Path) -> TestResult<String> {
+pub(crate) fn sha256(path: &Path) -> TestResult<String> {
     let result = Command::new("/usr/bin/shasum")
         .args(["-a", "256", "--"])
         .arg(path)
@@ -63,20 +63,21 @@ fn sha256(path: &Path) -> TestResult<String> {
     Ok(digest.to_ascii_lowercase())
 }
 
-struct Setup {
-    context: MetalContext,
-    pipelines: PipelineCache,
-    candidate: MetalResearchCandidate,
-    directory: PathBuf,
-    identity: Value,
+pub(crate) struct Setup {
+    pub(crate) context: MetalContext,
+    pub(crate) pipelines: PipelineCache,
+    pub(crate) candidate: MetalResearchCandidate,
+    pub(crate) directory: PathBuf,
+    pub(crate) identity: Value,
 }
 
 impl Setup {
-    fn new(oracle: bool) -> TestResult<Self> {
+    pub(crate) fn new(oracle: bool) -> TestResult<Self> {
         let candidate: MetalResearchCandidate =
             std::env::var(format!("{PREFIX}CANDIDATE"))?.parse()?;
         if candidate.global_decode_tile().is_none()
             && candidate.split_global_decode_tile().is_none()
+            && !candidate.decode_round_operator()
         {
             return Err("explicit global decode candidate required".into());
         }
@@ -91,7 +92,7 @@ impl Setup {
         };
         let core = crate::kernels::kernel_source_with_options(MetalFloatType::Bf16, options);
         let mut expected = core.as_bytes().to_vec();
-        if oracle {
+        if oracle && !candidate.decode_round_operator() {
             expected.push(b'\n');
             expected.extend_from_slice(include_bytes!(
                 "research_shaders/global_decode_oracle.metal"
@@ -138,6 +139,17 @@ impl Setup {
                 tile.threads,
                 tile.simd_matrix,
                 json!([HEADS / tile.rows, 1, 1]),
+                0,
+            )
+        } else if candidate.decode_round_operator() {
+            let ffn = candidate == MetalResearchCandidate::FfnBf16R4Sg2;
+            (
+                if ffn { 8 } else { 16 },
+                1,
+                32,
+                64,
+                false,
+                json!([if ffn { 1920 } else { 240 }, 1, 1]),
                 0,
             )
         } else {
@@ -324,7 +336,7 @@ impl Guarded {
     }
 }
 
-fn complete(command: &ProtocolObject<dyn MTLCommandBuffer>) -> TestResult {
+pub(crate) fn complete(command: &ProtocolObject<dyn MTLCommandBuffer>) -> TestResult {
     command.commit();
     command.waitUntilCompleted();
     if let Some(error) = command.error() {
@@ -347,7 +359,11 @@ fn encode_serial(
         .ok_or("serial encoder unavailable")?;
     encoder.setComputePipelineState(pso);
     let params = plan.params();
-    let panel = plan.tile.panel;
+    let panel = if plan.tile.short_unsplit() {
+        64
+    } else {
+        plan.tile.panel
+    };
     // SAFETY: Guarded allocated exact complete spans and plan validates metadata.
     unsafe {
         for (i, offset) in data.bindings(1).offsets().into_iter().enumerate() {
@@ -457,7 +473,8 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
     const MATRIX_REL_L2: f64 = 1.0e-4;
     let mut fixtures: Vec<(String, Fixture)> = LIVE_LENGTHS
         .into_iter()
-        .map(|n| (format!("L{n}"), Fixture::new(n, 32)))
+        .filter(|&n| !tile.short_unsplit() || n <= 512)
+        .map(|n| (format!("L{n}"), Fixture::for_tile(n, 32, tile)))
         .collect();
     for n in [1, 7, 8, 9, 31, 32, 33, 257] {
         fixtures.push((format!("tail{n}"), Fixture::new(n, 7)));
@@ -481,6 +498,17 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
     let mut tied = Fixture::new(33, 7);
     tied.q.fill(0);
     fixtures.push(("equal-logits".into(), tied));
+    if tile.short_unsplit() {
+        let mut suffix = Fixture::for_tile(256, 32, tile);
+        suffix.position = 31;
+        suffix.table[2] = i32::MAX; // unobserved suffix must not veto restored visibility
+        fixtures.push(("future-page-metadata-poison".into(), suffix));
+        let mut newest = Fixture::for_tile(256, 32, tile);
+        let base = physical_base(newest.shape, &newest.table, 255).unwrap();
+        newest.k[base..base + 512].fill(round_bf16(0.125));
+        newest.v[base..base + 512].fill(round_bf16(3.0));
+        fixtures.push(("newest-owner-page-noncontiguous".into(), newest));
+    }
     let mut reports = Vec::new();
     let mut prefix_output: Option<Vec<u8>> = None;
     for (label, f) in &fixtures {
@@ -598,7 +626,7 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
             }
             relative_l2 =
                 relative_l2.max(squared_error.sqrt() / squared_reference.sqrt().max(1e-30));
-            if matrix_bounded {
+            if matrix_bounded || tile.short_unsplit() {
                 assert!(
                     max_fp64_error <= MATRIX_MAX_ABS,
                     "matrix FP64 absolute bound: {label}: {max_fp64_error}"
@@ -630,8 +658,8 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
             "max_cpu_fp32_abs_error":max_cpu_error,
             "independent_cpu_reference":"scalar FP64",
             "max_fp64_abs_error":max_fp64_error,"relative_l2_error":relative_l2,
-            "fp64_max_abs_bound":if matrix_bounded { Some(MATRIX_MAX_ABS) } else { None },
-            "fp64_relative_l2_bound":if matrix_bounded { Some(MATRIX_REL_L2) } else { None },
+            "fp64_max_abs_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_MAX_ABS) } else { None },
+            "fp64_relative_l2_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_REL_L2) } else { None },
             "serial_fp32_exact":serial_exact,"serial_fp32_max_abs_difference":serial_max_abs,
             "sampled_dot_source":"independent serial GPU oracle, not instrumented candidate",
             "sampled_gpu_dots_match_cpu_fp32":true,
@@ -739,6 +767,28 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
         data.check(true);
         rejected += 1;
     }
+    if tile.short_unsplit() {
+        // Reject a larger logical capacity on the host even though its live
+        // context is only 33: no encoded/no-write success can escape this gate.
+        let mut too_large = good;
+        too_large.max_blocks_per_seq = 513;
+        let before = setup.pipelines.research_dispatch_snapshot();
+        let command = setup.context.queue().commandBuffer().ok_or("no command")?;
+        assert!(try_encode_global_decode(
+            &setup.pipelines,
+            &command,
+            data.arena.buffer(),
+            &too_large,
+            MetalPhase::Decode,
+            data.bindings(0),
+            DecodeOutput::F32
+        )?
+        .is_none());
+        complete(&command)?;
+        expect_count(&setup, before, 0);
+        data.check(true);
+        rejected += 1;
+    }
     for options in [
         MetalKernelOptions::default(),
         MetalKernelOptions {
@@ -816,9 +866,9 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
     };
     let receipt = json!({"schema":schema,"status":"passed",
         "scope":"synthetic attention operator; not model or full-route qualification",
-        "numerical_contract":if matrix_bounded { "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16" } else { "exact-serial-fp32" },
-        "fp64_max_abs_bound":if matrix_bounded { Some(MATRIX_MAX_ABS) } else { None },
-        "fp64_relative_l2_bound":if matrix_bounded { Some(MATRIX_REL_L2) } else { None },
+        "numerical_contract":if matrix_bounded || tile.short_unsplit() { "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16" } else { "exact-serial-fp32" },
+        "fp64_max_abs_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_MAX_ABS) } else { None },
+        "fp64_relative_l2_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_REL_L2) } else { None },
         "serial_fp32_role":if matrix_bounded { "diagnostic-only; mismatch is retained, not silently accepted as exact" } else { "required-exact" },
         "identity":setup.identity,"cases":reports,"host_rejected_dispatches":rejected,
         "encoded_metadata_refusals":shader_refusals,"timing_eligible":false});
@@ -1050,7 +1100,7 @@ fn encode_baseline(
     Ok(())
 }
 
-fn control_snapshot() -> TestResult<Value> {
+pub(crate) fn control_snapshot() -> TestResult<Value> {
     let mut values = Vec::new();
     for args in [["-g", "batt"], ["-g", "therm"], ["-g", "custom"]] {
         let output = Command::new("/usr/bin/pmset").args(args).output()?;
@@ -1086,7 +1136,7 @@ fn global_decode_abba() -> TestResult {
         || oracle["identity"]["candidate"] != setup.identity["candidate"]
         || oracle["identity"]["core_sha256"] != setup.identity["core_sha256"]
         || oracle["identity"]["test_executable_sha256"] != setup.identity["test_executable_sha256"]
-        || (matrix
+        || ((matrix || setup.candidate == MetalResearchCandidate::GlobalD512ShortR4T128)
             && (oracle["numerical_contract"]
                 != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
                 || oracle["fp64_max_abs_bound"] != 5.0e-4
@@ -1106,9 +1156,21 @@ fn global_decode_abba() -> TestResult {
         return Err("oracle output identity mismatch".into());
     }
     let expected = std::fs::read(&expected_path)?;
-    let f = Fixture::new(length, 32);
+    let tile = setup
+        .candidate
+        .global_decode_tile()
+        .ok_or("unsplit tile required")?;
+    if tile.short_unsplit() && !matches!(length, 256 | 512) {
+        return Err("short candidate is bounded to L=256/512".into());
+    }
+    let f = Fixture::for_tile(length, 32, tile);
     let data = Guarded::new(&setup.context, &f)?;
     let layer = dims(f.shape);
+    let arena_identity = (
+        data.arena.allocated(),
+        data.arena.regions().len(),
+        data.arena.buffer().contents(),
+    );
     // All allocation, file IO, environment reads, PSO construction and controls
     // are outside the encode loop. Only the existing atomic receipt hook stays.
     let run = |arm: char, repeats: u32| -> TestResult<(f64, f64)> {
@@ -1142,6 +1204,14 @@ fn global_decode_abba() -> TestResult {
             return Err("GPU timestamps unavailable".into());
         }
         expect_count(&setup, before, if arm == 'B' { repeats as u64 } else { 0 });
+        assert_eq!(
+            arena_identity,
+            (
+                data.arena.allocated(),
+                data.arena.regions().len(),
+                data.arena.buffer().contents()
+            )
+        );
         data.check(false);
         if arm == 'B' {
             assert_eq!(
@@ -1167,8 +1237,14 @@ fn global_decode_abba() -> TestResult {
         run('B', 1)?;
     }
     let mut samples = Vec::new();
-    for block in 0..5 {
-        for (position, arm) in ['A', 'B', 'B', 'A'].into_iter().enumerate() {
+    let blocks = if tile.short_unsplit() { 10 } else { 5 };
+    for block in 0..blocks {
+        let order = if tile.short_unsplit() && block % 2 == 1 {
+            ['B', 'A', 'A', 'B']
+        } else {
+            ['A', 'B', 'B', 'A']
+        };
+        for (position, arm) in order.into_iter().enumerate() {
             let before = control_snapshot()?;
             let (gpu, wall) = run(arm, 100)?;
             let after = control_snapshot()?;
@@ -1195,7 +1271,8 @@ fn global_decode_abba() -> TestResult {
     let receipt = json!({"schema":"rvllm.global-decode.abba.v1","status":"collected",
         "identity":setup.identity,"oracle_receipt_sha256":sha256(&oracle_path)?,
         "length":length,"baseline":"attention_decode_f16 (BF16 typed)",
-        "candidate":setup.candidate.name(),"warmups_per_arm":5,"blocks":5,
+        "candidate":setup.candidate.name(),"warmups_per_arm":5,"blocks":blocks,
+        "balanced_abba_baab":tile.short_unsplit(),
         "dispatches_per_sample":100,"control_drift_fraction":drift,"control_drift_limit":0.05,
         "control_drift_passed":drift <= 0.05,"source_compiles_during_samples":0,
         "samples":samples,"timing_eligible":false,

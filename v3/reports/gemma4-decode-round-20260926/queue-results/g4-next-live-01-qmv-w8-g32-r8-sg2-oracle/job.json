@@ -1,0 +1,63 @@
+{
+  "after": [
+    "g4-next-live-01-qmv-w8-g32-r8-sg2-compile-core"
+  ],
+  "command": {
+    "args": [
+      "--ignored",
+      "--exact",
+      "research_decode_device_tests::decode_round_oracle",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01",
+    "env": {
+      "RVLLM_METAL_GLOBAL_DECODE_BUILD_RECEIPT": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-qmv-w8-g32-r8-sg2-compile-core/build/build.json",
+      "RVLLM_METAL_GLOBAL_DECODE_CANDIDATE": "metal-qmv-w8-g32-r8-sg2",
+      "RVLLM_METAL_GLOBAL_DECODE_METALLIB": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-qmv-w8-g32-r8-sg2-compile-core/build/kernel.metallib",
+      "RVLLM_METAL_GLOBAL_DECODE_REPORT_DIR": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-qmv-w8-g32-r8-sg2-oracle/native",
+      "RVLLM_METAL_GLOBAL_DECODE_SOURCE": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01/metal-qmv-w8-g32-r8-sg2-core.metal"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/deps/rvllm_apple_metal-938ddf1012a82a45",
+      "sha256": "f6a7aa9a91b5eda7b04bd6c4ba54da26a4a1aeaa8ec7149eaa2adc25d3a993fa"
+    }
+  },
+  "conditions": {
+    "disk_path": "/",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 8589934592,
+    "observe_process_names": [],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-next-live-01-qmv-w8-g32-r8-sg2-oracle",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01/metal-qmv-w8-g32-r8-sg2-core.metal",
+      "sha256": "50ee27f859fa4d17e29db18c726cae60c1906a94e434507a0a27743254738311"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-qmv-w8-g32-r8-sg2-compile-core/build/kernel.metallib",
+      "sha256": "de4a7242b90c1432c0e5c4d303a980188bff89c04dd12e89c2b09f27be04953a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-qmv-w8-g32-r8-sg2-compile-core/build/build.json",
+      "sha256": "479991bb160ae7378ae1e1c92d15f439a3f25e9d256c28eb21c9f18e2d825160"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01/campaign.json",
+      "sha256": "1d8ad13ef31d410017fdd8989e850f2ab0c5d8d47276f7a0ce0aa2f91911d8a4"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0,
+  "validator": null
+}

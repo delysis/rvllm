@@ -1,0 +1,57 @@
+{
+  "after": [],
+  "command": {
+    "args": [
+      "compile",
+      "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01/metal-global-d512-short-r4t128-core.metal",
+      "{output}/build"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/rvllm-global-decode-jobs",
+      "sha256": "73e6ff62400f9b9c4064451d0c2be9354b82b5e3bbf73b19c949468ca57327bd"
+    }
+  },
+  "conditions": {
+    "disk_path": "/",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 8589934592,
+    "observe_process_names": [],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-next-live-01-r4k1p512t128-key-compile-core",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01/metal-global-d512-short-r4t128-core.metal",
+      "sha256": "faf3c8e738a6d824bc547aaf3a0d25cab155be9a04369a77e3688faa28d2c51c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-next-live-01/campaign.json",
+      "sha256": "1d8ad13ef31d410017fdd8989e850f2ab0c5d8d47276f7a0ce0aa2f91911d8a4"
+    },
+    {
+      "path": "/usr/bin/xcrun",
+      "sha256": "583d56907aafdf0634bd23d58af21a78cae0cb0727bc12a4ea2565271a8b57af"
+    },
+    {
+      "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metal",
+      "sha256": "3c7420a3853873c8bdfa6b532a71e7ed3dc3af4f46c1d215eef4b78d419ad392"
+    },
+    {
+      "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metallib",
+      "sha256": "92a9f7c97e4a54c5889f32c03c0ce28fc4743e18dad26ec0a0c9bde132e1716b"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0,
+  "validator": null
+}

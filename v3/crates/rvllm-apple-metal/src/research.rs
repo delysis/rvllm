@@ -48,11 +48,18 @@ pub enum MetalResearchCandidate {
     GlobalD512AtlasMmaR8K32P64T128,
     GlobalD512AtlasMmaR16K16P64T64,
     GlobalD512AtlasMmaR16K64P64T128,
+    FfnBf16R4Sg2,
+    QmvW4G32R8Sg2,
+    QmvW8G32R8Sg2,
+    GlobalD512ShortR4T128,
 }
 
 impl MetalResearchCandidate {
     /// Explicit decode family, never inferred from a coincidentally matching shape.
     pub const fn global_decode_tile(self) -> Option<crate::attention_global_decode::DecodeTile> {
+        if matches!(self, Self::GlobalD512ShortR4T128) {
+            return Some(crate::attention_global_decode::SHORT_R4T128);
+        }
         use crate::attention_global_decode::DecodeTile;
         let (rows, keys, panel, threads, per_tile_softmax, simd_matrix) = match self {
             Self::GlobalD512R8P64T64 => (8, 8, 64, 64, false, false),
@@ -101,6 +108,26 @@ impl MetalResearchCandidate {
             }
             _ => None,
         }
+    }
+
+    /// Native-storage decode operator arms in the additive next-round packet.
+    pub const fn decode_round_operator(self) -> bool {
+        matches!(
+            self,
+            Self::FfnBf16R4Sg2 | Self::QmvW4G32R8Sg2 | Self::QmvW8G32R8Sg2
+        )
+    }
+
+    /// These sources have explicit BF16 operands and (for QMV) FP16 scales.
+    /// They must never participate in the generic half -> bfloat rewrite.
+    pub const fn explicit_storage_abi(self) -> bool {
+        matches!(
+            self,
+            Self::FfnBf16R4Sg2
+                | Self::QmvW4G32R8Sg2
+                | Self::QmvW8G32R8Sg2
+                | Self::GlobalD512ShortR4T128
+        )
     }
 
     pub const fn name(self) -> &'static str {

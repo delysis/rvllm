@@ -1,0 +1,1335 @@
+{
+  "cases": [
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/L256.bf16",
+      "bf16_sha256": "ed156db7190d11e2ea6401626ade55ca8656e727e15781e88f7a84e8c2509ddc",
+      "block_size": 32,
+      "context": 256,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "L256",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 5.878570879525036e-7,
+      "position": 255,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.976633370986202e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          128,
+          -0.00008750037522986531,
+          -0.00008750035431148717
+        ],
+        [
+          0,
+          255,
+          -0.0007250782218761742,
+          -0.0007250781952734542
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          128,
+          -12.808124542236328,
+          -12.808124780654907
+        ],
+        [
+          7,
+          255,
+          -11.6264009475708,
+          -11.626400887966156
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          128,
+          -17.853565216064453,
+          -17.853565573692322
+        ],
+        [
+          15,
+          255,
+          5.40286111831665,
+          5.40286123752594
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/L512.bf16",
+      "bf16_sha256": "2b7993801c7322b81407edf7d3b57cf6f32f20448b3ca57895f9033076e707db",
+      "block_size": 32,
+      "context": 512,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "L512",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 7.327893452035994e-7,
+      "position": 511,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 3.1810782296344944e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          256,
+          -0.000029332280973903835,
+          -0.00002933229370682966
+        ],
+        [
+          0,
+          511,
+          0.00006155413575470448,
+          0.00006155412785346925
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          256,
+          12.317572593688965,
+          12.317572444677353
+        ],
+        [
+          7,
+          511,
+          -22.122116088867188,
+          -22.12211549282074
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          256,
+          -3.638551712036133,
+          -3.638552337884903
+        ],
+        [
+          15,
+          511,
+          23.912925720214844,
+          23.912926018238068
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail1.bf16",
+      "bf16_sha256": "4db40270a87bb0eb17ed28bb24340055eef721c88d210715d7d622c62a094938",
+      "block_size": 7,
+      "context": 1,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail1",
+      "max_cpu_fp32_abs_error": 0.0,
+      "max_fp64_abs_error": 0.0,
+      "position": 0,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 0.0,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail7.bf16",
+      "bf16_sha256": "a7071bc7be84d2ad911437c10a38e06fe22d20fe0ec8998ae1d12d47d1f7cef4",
+      "block_size": 7,
+      "context": 7,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail7",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 3.215671603995496e-7,
+      "position": 6,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 1.4784347812658272e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          3,
+          -0.0002260648034280166,
+          -0.00022606481070397422
+        ],
+        [
+          0,
+          6,
+          0.000037147859984543175,
+          0.00003714786362252198
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          3,
+          4.2139997482299805,
+          4.213998734951019
+        ],
+        [
+          7,
+          6,
+          -2.2617180347442627,
+          -2.2617177963256836
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          3,
+          -6.684432029724121,
+          -6.684431970119476
+        ],
+        [
+          15,
+          6,
+          -3.208493709564209,
+          -3.208493560552597
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail8.bf16",
+      "bf16_sha256": "687e6ba2330e6fb64eeafeca284b15b2db18bddd219a8a8979888a958cd38b61",
+      "block_size": 7,
+      "context": 8,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail8",
+      "max_cpu_fp32_abs_error": 1.7881393432617188e-7,
+      "max_fp64_abs_error": 3.2156707596708856e-7,
+      "position": 7,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 1.3560482042525491e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          4,
+          -0.00034665572457015514,
+          -0.00034665573184611276
+        ],
+        [
+          0,
+          7,
+          0.00025146943517029285,
+          0.0002514694187425448
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          4,
+          0.7166156768798828,
+          0.716615617275238
+        ],
+        [
+          7,
+          7,
+          -6.4363112449646,
+          -6.436311453580856
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          4,
+          13.606161117553711,
+          13.606160759925842
+        ],
+        [
+          15,
+          7,
+          -13.434611320495605,
+          -13.43461063504219
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail9.bf16",
+      "bf16_sha256": "65880fecf0498cd505f7c90cf796c921995fbef473fea097223b698f2a581c43",
+      "block_size": 7,
+      "context": 9,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail9",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 3.1359948587939e-7,
+      "position": 8,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 1.4157430038267903e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          4,
+          -0.00034665572457015514,
+          -0.00034665573184611276
+        ],
+        [
+          0,
+          8,
+          0.0003066887438762933,
+          0.0003066887456952827
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          4,
+          0.7166156768798828,
+          0.716615617275238
+        ],
+        [
+          7,
+          8,
+          -5.006358623504639,
+          -5.00635826587677
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          4,
+          13.606161117553711,
+          13.606160759925842
+        ],
+        [
+          15,
+          8,
+          10.709527969360352,
+          10.70952907204628
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail31.bf16",
+      "bf16_sha256": "cd9fb63ff8bb3a27e3f70ea1752227a37851a26b6465d1c98f80071c4d12f06e",
+      "block_size": 7,
+      "context": 31,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail31",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 6.734922253781583e-7,
+      "position": 30,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.742326259631087e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          15,
+          0.00009041535668075085,
+          0.00009041535759024555
+        ],
+        [
+          0,
+          30,
+          0.000351809139829129,
+          0.00035180912709620316
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          15,
+          -11.096343994140625,
+          -11.096343412995338
+        ],
+        [
+          7,
+          30,
+          22.928003311157227,
+          22.92800283432007
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          15,
+          -15.532943725585938,
+          -15.532944321632385
+        ],
+        [
+          15,
+          30,
+          4.952200889587402,
+          4.9522011280059814
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail32.bf16",
+      "bf16_sha256": "2ba8e64e94d1defa8b0461e2ac792ec9733eee10e4a218f8781ce628b49975c5",
+      "block_size": 7,
+      "context": 32,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail32",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 6.734922253781583e-7,
+      "position": 31,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.6197680190454125e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          16,
+          0.0004436486051417887,
+          0.0004436486069607781
+        ],
+        [
+          0,
+          31,
+          -0.0001939626963576302,
+          -0.0001939627054525772
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          16,
+          11.585068702697754,
+          11.585068345069885
+        ],
+        [
+          7,
+          31,
+          5.777775764465332,
+          5.777774438261986
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          16,
+          9.469965934753418,
+          9.469964981079102
+        ],
+        [
+          15,
+          31,
+          -2.3086142539978027,
+          -2.3086140751838684
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail33.bf16",
+      "bf16_sha256": "e4efe370c0ac4b76c4ae3720f41672fe735c178606d88db05b4046665427360f",
+      "block_size": 7,
+      "context": 33,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail33",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 6.734922253226472e-7,
+      "position": 32,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.73475757783208e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          16,
+          0.0004436486051417887,
+          0.0004436486069607781
+        ],
+        [
+          0,
+          32,
+          -0.0005771087598986924,
+          -0.0005771087999164592
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          16,
+          11.585068702697754,
+          11.585068345069885
+        ],
+        [
+          7,
+          32,
+          -24.937353134155273,
+          -24.93735295534134
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          16,
+          9.469965934753418,
+          9.469964981079102
+        ],
+        [
+          15,
+          32,
+          -6.458396911621094,
+          -6.458397269248962
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/tail257.bf16",
+      "bf16_sha256": "81d42e518623c4dbaa717a8d73dda7ec74bd635b2e65ddf3696e520812894cc5",
+      "block_size": 7,
+      "context": 257,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "tail257",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 6.369868015276836e-7,
+      "position": 256,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 3.02958229894719e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          128,
+          -0.00008750037522986531,
+          -0.00008750035431148717
+        ],
+        [
+          0,
+          256,
+          -0.000029332280973903835,
+          -0.00002933229370682966
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          128,
+          -12.808124542236328,
+          -12.808124780654907
+        ],
+        [
+          7,
+          256,
+          12.317572593688965,
+          12.317572444677353
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          128,
+          -17.853565216064453,
+          -17.853565573692322
+        ],
+        [
+          15,
+          256,
+          -3.638551712036133,
+          -3.638552337884903
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/negative-page.bf16",
+      "bf16_sha256": "76da0b9af2a6348b0e03a00e1c059ac6969fb9d80af3ed28bdb9cee61c005635",
+      "block_size": 7,
+      "context": 65,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "negative-page",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 7.907256416861408e-7,
+      "position": 64,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.4099877981386554e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          32,
+          -0.0005771087598986924,
+          -0.0005771087999164592
+        ],
+        [
+          0,
+          64,
+          -0.00003433946403674781,
+          -0.00003433944584685378
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          32,
+          -24.937353134155273,
+          -24.93735295534134
+        ],
+        [
+          7,
+          64,
+          -0.437802791595459,
+          -0.437804251909256
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          32,
+          -6.458396911621094,
+          -6.458397269248962
+        ],
+        [
+          15,
+          64,
+          0.0910804271697998,
+          0.09108053147792816
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/all-holes.bf16",
+      "bf16_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "block_size": 7,
+      "context": 65,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "all-holes",
+      "max_cpu_fp32_abs_error": 0.0,
+      "max_fp64_abs_error": 0.0,
+      "position": 64,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 0.0,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/restored-prefix-speculative-suffix.bf16",
+      "bf16_sha256": "cd9fb63ff8bb3a27e3f70ea1752227a37851a26b6465d1c98f80071c4d12f06e",
+      "block_size": 7,
+      "context": 65,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "restored-prefix-speculative-suffix",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 6.734922253781583e-7,
+      "position": 30,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.742326259631087e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          15,
+          0.00009041535668075085,
+          0.00009041535759024555
+        ],
+        [
+          0,
+          30,
+          0.000351809139829129,
+          0.00035180912709620316
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          15,
+          -11.096343994140625,
+          -11.096343412995338
+        ],
+        [
+          7,
+          30,
+          22.928003311157227,
+          22.92800283432007
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          15,
+          -15.532943725585938,
+          -15.532944321632385
+        ],
+        [
+          15,
+          30,
+          4.952200889587402,
+          4.9522011280059814
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/rollback-same-visible-prefix.bf16",
+      "bf16_sha256": "cd9fb63ff8bb3a27e3f70ea1752227a37851a26b6465d1c98f80071c4d12f06e",
+      "block_size": 7,
+      "context": 31,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "rollback-same-visible-prefix",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 6.734922253781583e-7,
+      "position": 30,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.742326259631087e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          15,
+          0.00009041535668075085,
+          0.00009041535759024555
+        ],
+        [
+          0,
+          30,
+          0.000351809139829129,
+          0.00035180912709620316
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          15,
+          -11.096343994140625,
+          -11.096343412995338
+        ],
+        [
+          7,
+          30,
+          22.928003311157227,
+          22.92800283432007
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          15,
+          -15.532943725585938,
+          -15.532944321632385
+        ],
+        [
+          15,
+          30,
+          4.952200889587402,
+          4.9522011280059814
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/equal-logits.bf16",
+      "bf16_sha256": "b2f4a982350f427634e6cf8f375db4d8fdef47ccef3bb53707fedc3bbcebc8d9",
+      "block_size": 7,
+      "context": 33,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "equal-logits",
+      "max_cpu_fp32_abs_error": 0.0,
+      "max_fp64_abs_error": 1.0837208130887177e-8,
+      "position": 32,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 4.100548759010366e-8,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          0,
+          16,
+          0.0,
+          0.0
+        ],
+        [
+          0,
+          32,
+          0.0,
+          0.0
+        ],
+        [
+          7,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          7,
+          16,
+          0.0,
+          0.0
+        ],
+        [
+          7,
+          32,
+          0.0,
+          0.0
+        ],
+        [
+          15,
+          0,
+          0.0,
+          0.0
+        ],
+        [
+          15,
+          16,
+          0.0,
+          0.0
+        ],
+        [
+          15,
+          32,
+          0.0,
+          0.0
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/future-page-metadata-poison.bf16",
+      "bf16_sha256": "2ba8e64e94d1defa8b0461e2ac792ec9733eee10e4a218f8781ce628b49975c5",
+      "block_size": 32,
+      "context": 256,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "future-page-metadata-poison",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 6.734922253781583e-7,
+      "position": 31,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.6197680190454125e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          16,
+          0.0004436486051417887,
+          0.0004436486069607781
+        ],
+        [
+          0,
+          31,
+          -0.0001939626963576302,
+          -0.0001939627054525772
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          16,
+          11.585068702697754,
+          11.585068345069885
+        ],
+        [
+          7,
+          31,
+          5.777775764465332,
+          5.777774438261986
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          16,
+          9.469965934753418,
+          9.469964981079102
+        ],
+        [
+          15,
+          31,
+          -2.3086142539978027,
+          -2.3086140751838684
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-r4k1p512t128-key-oracle/native/newest-owner-page-noncontiguous.bf16",
+      "bf16_sha256": "393ec5ee224135524ab7fe29456f41ac86c8a2b59edaf44c89ed0c79efe63fce",
+      "block_size": 32,
+      "context": 256,
+      "exact_fp32_gpu_oracle": true,
+      "exact_once_rounded_bf16": true,
+      "fp64_max_abs_bound": 0.0005,
+      "fp64_relative_l2_bound": 0.0001,
+      "independent_cpu_reference": "scalar FP64",
+      "label": "newest-owner-page-noncontiguous",
+      "max_cpu_fp32_abs_error": 1.1920928955078125e-7,
+      "max_fp64_abs_error": 5.872132050055434e-7,
+      "position": 255,
+      "read_inputs_and_guard_bytes_preserved": true,
+      "relative_l2_error": 2.8971934652030506e-7,
+      "repeats": 3,
+      "sampled_dot_source": "independent serial GPU oracle, not instrumented candidate",
+      "sampled_fp64_dots": [
+        [
+          0,
+          0,
+          -0.0008197041461244226,
+          -0.0008197040951927193
+        ],
+        [
+          0,
+          128,
+          -0.00008750037522986531,
+          -0.00008750035431148717
+        ],
+        [
+          0,
+          255,
+          -3.818422555923462e-7,
+          -3.818422555923462e-7
+        ],
+        [
+          7,
+          0,
+          -6.620889663696289,
+          -6.620890147984028
+        ],
+        [
+          7,
+          128,
+          -12.808124542236328,
+          -12.808124780654907
+        ],
+        [
+          7,
+          255,
+          0.6050567626953125,
+          0.6050567626953125
+        ],
+        [
+          15,
+          0,
+          -8.623964309692383,
+          -8.623964220285416
+        ],
+        [
+          15,
+          128,
+          -17.853565216064453,
+          -17.853565573692322
+        ],
+        [
+          15,
+          255,
+          -2.15948486328125,
+          -2.15948486328125
+        ]
+      ],
+      "sampled_gpu_dots_match_cpu_fp32": true,
+      "sampled_gpu_dots_pass_fp64_bound": true,
+      "serial_fp32_exact": true,
+      "serial_fp32_max_abs_difference": 0.0
+    }
+  ],
+  "encoded_metadata_refusals": 4,
+  "fp64_max_abs_bound": 0.0005,
+  "fp64_relative_l2_bound": 0.0001,
+  "host_rejected_dispatches": 18,
+  "identity": {
+    "build_receipt_sha256": "b97bd5a7f8bca3fc6b4bddc561add471d0f43d3ef79ac1194f5a86e3f8cd4c43",
+    "candidate": "metal-global-d512-short-r4t128",
+    "core_sha256": "faf3c8e738a6d824bc547aaf3a0d25cab155be9a04369a77e3688faa28d2c51c",
+    "device_name": "Apple M4 Max",
+    "gpu_family": "Apple9",
+    "grid": [
+      4,
+      1,
+      1
+    ],
+    "kernel": "research_global_d512_short_r4t128",
+    "kernels": [
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 2048,
+        "name": "research_global_d512_short_r4t128",
+        "source_threadgroup_bytes": 2048,
+        "threads": 128
+      }
+    ],
+    "keys": 1,
+    "metallib_sha256": "c989ed60bf03f46297c3f2a3ef5db53952096f76256d469800713c867b7da197",
+    "oracle_library": true,
+    "panel": 512,
+    "rows": 4,
+    "scratch_bytes": 0,
+    "simd_matrix": false,
+    "source_sha256": "0ae22b084192bb38ee512fe2d2394c0e64c8a695d726cc72a6f0e67a2afddf32",
+    "test_executable_sha256": "f6a7aa9a91b5eda7b04bd6c4ba54da26a4a1aeaa8ec7149eaa2adc25d3a993fa",
+    "threads": 128
+  },
+  "numerical_contract": "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16",
+  "schema": "rvllm.global-decode.oracle.v1",
+  "scope": "synthetic attention operator; not model or full-route qualification",
+  "serial_fp32_role": "required-exact",
+  "status": "passed",
+  "timing_eligible": false
+}

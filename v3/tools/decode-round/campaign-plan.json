@@ -1,0 +1,251 @@
+{
+  "schema": "rvllm.decode-round.campaign-plan.v1",
+  "status": "source_plan_not_a_submittable_experiment_job",
+  "base_commit": "a52bdf46627219561efa6610e88ffd5c37a821d9",
+  "campaign": "g4-a52-next",
+  "generator": "rvllm-global-decode-jobs",
+  "native_job_schema": "rvllm.experiment_job.v1",
+  "binding_required": [
+    "absolute campaign directory",
+    "absolute queue directory",
+    "new crate test executable and SHA-256",
+    "new job generator, retainer, queue executables and SHA-256",
+    "local Xcode compiler/linker paths and SHA-256",
+    "generated source, AIR, metallib and build receipts"
+  ],
+  "default_selection": "off",
+  "automatic_advancement": false,
+  "promotion": false,
+  "queue_contract": "specs/apple-experiment-queue.md",
+  "conditions_file": "tools/decode-round/conditions.nominal-ac.json",
+  "condition_policy": "AC is an analysis stratum; low-power, performance-mode, thermal, and competing-process observations never delay or suppress exploratory execution.",
+  "sampling": {
+    "warmups_per_arm": 5,
+    "blocks": 10,
+    "orders": [
+      "ABBA",
+      "BAAB",
+      "ABBA",
+      "BAAB",
+      "ABBA",
+      "BAAB",
+      "ABBA",
+      "BAAB",
+      "ABBA",
+      "BAAB"
+    ],
+    "iterations_per_sample": 100,
+    "samples_per_cell": 40,
+    "baseline_drift_limit": 0.05,
+    "discard_samples": false,
+    "automatic_retry": false,
+    "bootstrap_unit": "whole balanced block",
+    "bootstrap_resamples": 10000,
+    "bootstrap_interval_is_promotion_evidence": false
+  },
+  "candidates": [
+    {
+      "selector": "metal-ffn-bf16-r4-sg2",
+      "kernel": "research_ffn_bf16_r4_sg2",
+      "ledger_slot": 56,
+      "compile_flavors": [
+        "core"
+      ],
+      "oracle": "research_decode_device_tests::decode_round_oracle",
+      "timing": "research_decode_device_tests::decode_round_abba",
+      "cells": [
+        {
+          "length_sentinel": 0,
+          "M": 1,
+          "K": 3840,
+          "I": 15360
+        }
+      ],
+      "baseline": "existing native BF16 Gate||Up GEMM plus GELU",
+      "encoders_per_iteration": {
+        "A": 2,
+        "B": 1
+      },
+      "grid": [
+        1920,
+        1,
+        1
+      ],
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "shared_bytes": 0
+    },
+    {
+      "selector": "metal-qmv-w4-g32-r8-sg2",
+      "kernel": "research_qmv_w4_g32_r8_sg2",
+      "ledger_slot": 57,
+      "compile_flavors": [
+        "core"
+      ],
+      "oracle": "research_decode_device_tests::decode_round_oracle",
+      "timing": "research_decode_device_tests::decode_round_abba",
+      "cells": [
+        {
+          "length_sentinel": 0,
+          "M": 1,
+          "N": 3840,
+          "K": 15360
+        }
+      ],
+      "role": "DenseDownProjection",
+      "storage": "existing signed W4 row-major group-32; native FP16 scales; BF16 A/output",
+      "baseline": "existing group-32 BF16 n4",
+      "encoders_per_iteration": {
+        "A": 1,
+        "B": 1
+      },
+      "grid": [
+        240,
+        1,
+        1
+      ],
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "shared_bytes": 0
+    },
+    {
+      "selector": "metal-qmv-w8-g32-r8-sg2",
+      "kernel": "research_qmv_w8_g32_r8_sg2",
+      "ledger_slot": 58,
+      "compile_flavors": [
+        "core"
+      ],
+      "oracle": "research_decode_device_tests::decode_round_oracle",
+      "timing": "research_decode_device_tests::decode_round_abba",
+      "cells": [
+        {
+          "length_sentinel": 0,
+          "M": 1,
+          "N": 3840,
+          "K": 4096
+        },
+        {
+          "length_sentinel": 0,
+          "M": 1,
+          "N": 3840,
+          "K": 8192
+        }
+      ],
+      "role": "OutputProjection",
+      "storage": "existing signed W8 row-major group-32; native FP16 scales; BF16 A/output",
+      "baseline": "existing group-32 BF16 n4",
+      "encoders_per_iteration": {
+        "A": 1,
+        "B": 1
+      },
+      "grid": [
+        240,
+        1,
+        1
+      ],
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "shared_bytes": 0
+    },
+    {
+      "selector": "metal-global-d512-short-r4t128",
+      "kernel": "research_global_d512_short_r4t128",
+      "ledger_slot": 59,
+      "compile_flavors": [
+        "core",
+        "oracle"
+      ],
+      "oracle": "attention_global_decode_device_tests::global_decode_device_oracle",
+      "timing": "attention_global_decode_device_tests::global_decode_abba",
+      "cells": [
+        {
+          "L": 256,
+          "D": 512,
+          "heads": 16,
+          "kv_heads": 1,
+          "block_size": 32,
+          "stage": "screen"
+        },
+        {
+          "L": 512,
+          "D": 512,
+          "heads": 16,
+          "kv_heads": 1,
+          "block_size": 32,
+          "stage": "manual advancement after L256 review"
+        }
+      ],
+      "baseline": "existing paged native global decode baseline used by global_decode_abba",
+      "encoders_per_iteration": {
+        "A": 1,
+        "B": 1
+      },
+      "grid": [
+        4,
+        1,
+        1
+      ],
+      "threads": [
+        128,
+        1,
+        1
+      ],
+      "shared_bytes": 2048,
+      "global_scratch_bytes": 0,
+      "max_logical_capacity_tokens": 512
+    }
+  ],
+  "stages": [
+    {
+      "name": "prepare",
+      "jobs": 5,
+      "kind": "preparation",
+      "command": "prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON CANDIDATE..."
+    },
+    {
+      "name": "oracle",
+      "jobs": 4,
+      "kind": "correctness",
+      "requires": "all corresponding compile jobs succeeded with unchanged pins"
+    },
+    {
+      "name": "operator timing",
+      "jobs": 4,
+      "kind": "timing",
+      "length_sentinel": 0,
+      "requires": "matching native oracle, output and exact core/executable pins"
+    },
+    {
+      "name": "short attention screen",
+      "jobs": 1,
+      "kind": "timing",
+      "length": 256,
+      "requires": "matching native oracle with both L256 and L512 cases"
+    },
+    {
+      "name": "short attention manual advancement",
+      "jobs": 1,
+      "kind": "timing",
+      "length": 512,
+      "requires": "human review of all L256 samples, order strata, drift, numerical and queue gates"
+    }
+  ],
+  "qualification_remaining": [
+    "Rust formatting/type checking/tests",
+    "Metal 3.1 strict-math compilation and public artifact capture",
+    "native oracle and buffer guards",
+    "real-checkpoint layer/projection and full-route model quality",
+    "live owner cache-write/shared-owner integration evidence",
+    "variance-robust device timing",
+    "external runtime aggregate encoder-count consumer audit"
+  ]
+}

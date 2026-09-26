@@ -71,7 +71,11 @@ fn candidates() -> Vec<MetalResearchCandidate> {
     rvllm_apple_metal::research_catalog::ALL_CANDIDATES
         .iter()
         .copied()
-        .filter(|c| c.global_decode_tile().is_some() || c.split_global_decode_tile().is_some())
+        .filter(|c| {
+            c.global_decode_tile().is_some()
+                || c.split_global_decode_tile().is_some()
+                || c.decode_round_operator()
+        })
         .collect()
 }
 fn validate_selected(selected: &[String]) -> Result {
@@ -86,10 +90,30 @@ fn validate_selected(selected: &[String]) -> Result {
     Ok(())
 }
 fn validate_timing_request(length: u32, selected: &[String]) -> Result {
+    if length == 0 {
+        if selected.is_empty()
+            || selected.iter().any(|name| {
+                name.parse::<MetalResearchCandidate>()
+                    .map_or(true, |c| !c.decode_round_operator())
+            })
+        {
+            return Err("projection cells require explicit operator selectors and LENGTH=0".into());
+        }
+        return validate_selected(selected);
+    }
     if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) {
         return Err("timing length must be 256, 512, 1024, 2048, or 4096".into());
     }
-    validate_selected(selected)
+    validate_selected(selected)?;
+    if selected.iter().any(|name| {
+        name.parse::<MetalResearchCandidate>().is_ok_and(|c| {
+            c.decode_round_operator()
+                || (c == MetalResearchCandidate::GlobalD512ShortR4T128 && length > 512)
+        })
+    }) {
+        return Err("requested length is outside the selected candidate contract".into());
+    }
+    Ok(())
 }
 fn tool(name: &str) -> Result<PathBuf> {
     let output = Command::new("/usr/bin/xcrun")
@@ -153,6 +177,7 @@ fn compile(source: &Path, directory: &Path) -> Result {
         &directory.join("build.json"),
         &json!({"schema":"rvllm.global-decode.build.v1",
         "status":"compiled","source_sha256":source_hash,"metallib_sha256":hash(&library)?,
+        "air_sha256":hash(&air)?,"air_path":air,
         "flags":["-std=metal3.1","-fno-fast-math"],"compile_argv":compile_args,
         "link_argv":link_args,"tool_pins":compiler_pins,"native_execution":false}),
     )
@@ -179,6 +204,11 @@ fn id(config: &Value, candidate: MetalResearchCandidate, suffix: &str) -> Result
         Ok(format!(
             "{campaign}-r{}p{}t{}-{suffix}",
             tile.rows, tile.panel, tile.threads
+        ))
+    } else if candidate.decode_round_operator() {
+        Ok(format!(
+            "{campaign}-{}-{suffix}",
+            candidate.name().trim_start_matches("metal-")
         ))
     } else {
         let tile = candidate
@@ -269,7 +299,15 @@ fn advancement_job(
 fn source_path(root: &Path, c: MetalResearchCandidate, flavor: &str) -> PathBuf {
     root.join(format!("{}-{flavor}.metal", c.name()))
 }
-fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &Path) -> Result {
+fn prepare(
+    campaign: &str,
+    root: &Path,
+    queue: &Path,
+    test: &Path,
+    conditions: &Path,
+    selected: &[String],
+) -> Result {
+    validate_selected(selected)?;
     if campaign.is_empty()
         || campaign.len() > 32
         || !campaign
@@ -308,7 +346,20 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
     let exploratory = policy["low_power_mode"].is_null()
         || policy["pmset_power_mode"].is_null()
         || policy["thermal_state"].is_null();
+    // Legacy implicit campaigns stay unchanged. New arms must be named.
+    let family = candidates()
+        .into_iter()
+        .filter(|c| {
+            if selected.is_empty() {
+                !c.explicit_storage_abi()
+            } else {
+                selected.iter().any(|name| name == c.name())
+            }
+        })
+        .collect::<Vec<_>>();
+    let names = family.iter().map(|c| c.name()).collect::<Vec<_>>();
     let config = json!({"schema":"rvllm.global-decode.campaign.v1","campaign":campaign,
+        "candidate_names":names,
         "queue":queue,"test_executable":pin(test)?,"job_generator":pin(&executable)?,
         "queue_runner":pin(&queue_runner)?,
         "abba_retainer":pin(&retainer)?,"exploratory":exploratory,
@@ -321,7 +372,7 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
     let mut all = Vec::new();
     let metal = tool("metal")?;
     let linker = tool("metallib")?;
-    for candidate in candidates() {
+    for candidate in family {
         let core = rvllm_apple_metal::kernels::kernel_source_with_options(
             MetalFloatType::Bf16,
             MetalKernelOptions {
@@ -329,7 +380,12 @@ fn prepare(campaign: &str, root: &Path, queue: &Path, test: &Path, conditions: &
                 ..MetalKernelOptions::default()
             },
         );
-        for flavor in ["core", "oracle"] {
+        let flavors: &[&str] = if candidate.decode_round_operator() {
+            &["core"]
+        } else {
+            &["core", "oracle"]
+        };
+        for &flavor in flavors {
             let path = source_path(root, candidate, flavor);
             let mut bytes = core.as_bytes().to_vec();
             if flavor == "oracle" {
@@ -400,19 +456,47 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
     };
     validate_selected(selected)?;
     if let Some(length) = timing_length {
+        if selected.is_empty()
+            && config["candidate_names"].as_array().is_some_and(|names| {
+                names.iter().any(|name| {
+                    name.as_str()
+                        .and_then(|s| s.parse::<MetalResearchCandidate>().ok())
+                        .is_some_and(MetalResearchCandidate::explicit_storage_abi)
+                })
+            })
+        {
+            return Err("new-round timing requires explicit candidate selection".into());
+        }
         validate_timing_request(length, selected)?;
+    }
+    if let Some(family) = config["candidate_names"].as_array() {
+        if selected
+            .iter()
+            .any(|name| !family.iter().any(|item| item == name.as_str()))
+        {
+            return Err("candidate was not prepared in this immutable campaign".into());
+        }
     }
     let mut all = Vec::new();
     // Never prune the family from partial results. A failed compile/oracle stops
     // generation; revised families require a new explicit campaign identity.
     for candidate in candidates() {
+        if config["candidate_names"]
+            .as_array()
+            .is_some_and(|names| !names.iter().any(|name| name == candidate.name()))
+        {
+            continue;
+        }
         if !selected.is_empty() && !selected.iter().any(|name| name == candidate.name()) {
             continue;
         }
         // The split oracle validates the production partial+merge entry points
         // directly and therefore needs the exact core source.  Only the
         // single-pass oracle uses the appended diagnostic entry point.
-        let flavor = if timing || candidate.split_global_decode_tile().is_some() {
+        let flavor = if timing
+            || candidate.split_global_decode_tile().is_some()
+            || candidate.decode_round_operator()
+        {
             "core"
         } else {
             "oracle"
@@ -464,7 +548,9 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 .global_decode_tile()
                 .is_some_and(|tile| tile.simd_matrix)
                 || split_matrix;
-            let expected_oracle_schema = if split_matrix {
+            let expected_oracle_schema = if candidate.decode_round_operator() {
+                "rvllm.decode-round.oracle.v1"
+            } else if split_matrix {
                 "rvllm.global-decode.split-matrix-oracle.v1"
             } else if candidate.split_global_decode_tile().is_some() {
                 "rvllm.global-decode.split-oracle.v1"
@@ -479,7 +565,7 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 || oracle["identity"]["core_sha256"] != hash(&source)?
                 || oracle["identity"]["test_executable_sha256"]
                     != config["test_executable"]["sha256"]
-                || (matrix
+                || ((matrix || candidate == MetalResearchCandidate::GlobalD512ShortR4T128)
                     && (oracle["numerical_contract"]
                         != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
                         || oracle["fp64_max_abs_bound"] != 5.0e-4
@@ -500,15 +586,40 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 inputs.push(pin(&path)?);
             }
         }
-        let lengths = vec![timing_length];
-        for length in lengths {
-            let suffix = length.map_or("oracle".into(), |n| format!("abba-L{n}"));
+        let cells = if timing && candidate.decode_round_operator() {
+            let keys: &[u32] = match candidate {
+                MetalResearchCandidate::FfnBf16R4Sg2 => &[3840],
+                MetalResearchCandidate::QmvW4G32R8Sg2 => &[15360],
+                MetalResearchCandidate::QmvW8G32R8Sg2 => &[4096, 8192],
+                _ => unreachable!(),
+            };
+            keys.iter()
+                .map(|&k| (timing_length, Some(k)))
+                .collect::<Vec<_>>()
+        } else {
+            vec![(timing_length, None)]
+        };
+        for (length, operator_k) in cells {
+            let suffix = if let Some(k) = operator_k {
+                format!("abba-L0-K{k}")
+            } else {
+                length.map_or("oracle".into(), |n| format!("abba-L{n}"))
+            };
+            if let Some(k) = operator_k {
+                env[format!("{PREFIX}OPERATOR_K")] = json!(k.to_string());
+            }
             let job_id = id(&config, candidate, &suffix)?;
             // The existing queue expands {output} in argv ONLY, never in env.
             // Its exclusive result directory is results/<immutable job ID>.
             env[format!("{PREFIX}REPORT_DIR")] =
                 json!(queue.join("results").join(&job_id).join("native"));
-            let test_name = if timing && candidate.split_global_decode_tile().is_some() {
+            let test_name = if candidate.decode_round_operator() {
+                if timing {
+                    "decode_round_abba"
+                } else {
+                    "decode_round_oracle"
+                }
+            } else if timing && candidate.split_global_decode_tile().is_some() {
                 "global_decode_split_abba_v2"
             } else if timing {
                 "global_decode_abba"
@@ -530,7 +641,14 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
             let mut args = vec![
                 "--ignored".into(),
                 "--exact".into(),
-                format!("attention_global_decode_device_tests::{test_name}"),
+                format!(
+                    "{}::{test_name}",
+                    if candidate.decode_round_operator() {
+                        "research_decode_device_tests"
+                    } else {
+                        "attention_global_decode_device_tests"
+                    }
+                ),
                 "--test-threads=1".into(),
                 "--nocapture".into(),
             ];
@@ -572,12 +690,22 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         let expected = candidates()
             .into_iter()
             .filter(|candidate| {
-                selected.is_empty() || selected.iter().any(|name| name == candidate.name())
+                (config["candidate_names"].as_array().map_or(true, |names| {
+                    names.iter().any(|name| name == candidate.name())
+                })) && (selected.is_empty() || selected.iter().any(|name| name == candidate.name()))
             })
             .map(|candidate| candidate.name().to_owned())
             .collect::<Vec<_>>();
-        let advance = advancement_job(&config, root, length, &all, &expected)?;
-        all.push(advance);
+        // The additive round has no automatic advancement or promotion path.
+        // L512 is a separate explicit request after reviewing the L256 screen.
+        let next_round = expected.iter().any(|name| {
+            name.parse::<MetalResearchCandidate>()
+                .is_ok_and(MetalResearchCandidate::explicit_storage_abi)
+        });
+        if !next_round {
+            let advance = advancement_job(&config, root, length, &all, &expected)?;
+            all.push(advance);
+        }
     }
     json_new_or_identical(&root.join(output), &json!(all))
 }
@@ -870,6 +998,12 @@ fn submit_or_verify(queue_runner: &Path, queue: &Path, manifest: &Path) -> Resul
 }
 
 fn advance(root: &Path, length: u32, output: &Path, expected: &[String]) -> Result {
+    if expected.iter().any(|name| {
+        name.parse::<MetalResearchCandidate>()
+            .is_ok_and(MetalResearchCandidate::explicit_storage_abi)
+    }) {
+        return Err("the next decode round has no automatic advancement path".into());
+    }
     if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) || expected.is_empty() {
         return Err("invalid or empty advancement stage".into());
     }
@@ -1209,8 +1343,8 @@ fn main() -> Result {
             println!("{}",found[0]); Ok(())
         }
         [action,source,directory] if action=="compile" => compile(&absolute(source)?,&absolute(directory)?),
-        [action,campaign,root,queue,test,conditions] if action=="prepare" =>
-            prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?),
+        [action,campaign,root,queue,test,conditions,selected @ ..] if action=="prepare" =>
+            prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected),
         [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false,None,&[]),
         [action,root,selected @ ..] if action=="oracle-jobs" && !selected.is_empty() =>
             generate(&absolute(root)?,false,None,selected),
@@ -1221,6 +1355,25 @@ fn main() -> Result {
         }
         [action,root,length,output,expected @ ..] if action=="advance" && !expected.is_empty() =>
             advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
+    }
+}
+
+#[cfg(test)]
+mod next_round_queue_tests {
+    use super::*;
+    #[test]
+    fn projection_cells_and_short_lengths_are_explicit_and_bounded() {
+        let ffn = MetalResearchCandidate::FfnBf16R4Sg2.name().to_owned();
+        let short = MetalResearchCandidate::GlobalD512ShortR4T128
+            .name()
+            .to_owned();
+        assert!(validate_timing_request(0, &[ffn.clone()]).is_ok());
+        assert!(validate_timing_request(0, &[]).is_err());
+        assert!(validate_timing_request(256, &[ffn]).is_err());
+        assert!(validate_timing_request(256, &[short.clone()]).is_ok());
+        assert!(validate_timing_request(512, &[short.clone()]).is_ok());
+        assert!(validate_timing_request(1024, &[short.clone()]).is_err());
+        assert!(validate_timing_request(0, &[short]).is_err());
     }
 }

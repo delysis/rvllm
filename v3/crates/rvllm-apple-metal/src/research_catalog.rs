@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 40] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 44] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -57,6 +57,10 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 40] = [
     MetalResearchCandidate::GlobalD512AtlasMmaR8K32P64T128,
     MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T64,
     MetalResearchCandidate::GlobalD512AtlasMmaR16K64P64T128,
+    MetalResearchCandidate::FfnBf16R4Sg2,
+    MetalResearchCandidate::QmvW4G32R8Sg2,
+    MetalResearchCandidate::QmvW8G32R8Sg2,
+    MetalResearchCandidate::GlobalD512ShortR4T128,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -223,6 +227,40 @@ impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
         match self {
+            Self::FfnBf16R4Sg2 => CandidateSpec {
+                name: "metal-ffn-bf16-r4-sg2", kernels: &[ResearchKernel::FfnBf16R4Sg2],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/ffn_bf16_r4_sg2.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "bf16-projection-boundary-gelu-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/ffn_bf16_r4_sg2.metal")),
+            },
+            Self::QmvW4G32R8Sg2 => CandidateSpec {
+                name: "metal-qmv-w4-g32-r8-sg2", kernels: &[ResearchKernel::QmvW4G32R8Sg2],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/qmv_w4_g32_r8_sg2.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/qmv_g32_r8_sg2_common.metal"),
+                    include_str!("research_shaders/qmv_w4_g32_r8_sg2.metal")),
+            },
+            Self::QmvW8G32R8Sg2 => CandidateSpec {
+                name: "metal-qmv-w8-g32-r8-sg2", kernels: &[ResearchKernel::QmvW8G32R8Sg2],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/qmv_w8_g32_r8_sg2.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/qmv_g32_r8_sg2_common.metal"),
+                    include_str!("research_shaders/qmv_w8_g32_r8_sg2.metal")),
+            },
+            Self::GlobalD512ShortR4T128 => CandidateSpec {
+                name: "metal-global-d512-short-r4t128", kernels: &[ResearchKernel::GlobalD512ShortR4T128],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/global_decode_short_r4t128.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "bf16-paged-fp32-online-unsplit-rne",
+                source: concat!(include_str!("research_shaders/global_decode_common.metal"),
+                    include_str!("research_shaders/global_decode_short_r4t128.metal")),
+            },
             Self::GlobalD512R8P64T64 => global_decode_spec!("r8p64t64", GlobalD512R8P64T64),
             Self::GlobalD512R8P64T128 => global_decode_spec!("r8p64t128", GlobalD512R8P64T128),
             Self::GlobalD512R8P128T64 => global_decode_spec!("r8p128t64", GlobalD512R8P128T64),
@@ -472,7 +510,7 @@ pub fn catalog_json() -> serde_json::Value {
         })
         .collect();
     serde_json::json!({"schema": "rvllm.metal.research-catalog.v1",
-        "dispatch_schema": "rvllm.metal.research-dispatch.v3",
+        "dispatch_schema": crate::research_evidence::RESEARCH_DISPATCH_SCHEMA,
         "default": "off", "device_qualified": false, "candidates": candidates})
 }
 
@@ -524,11 +562,15 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 40);
+        assert_eq!(all.len(), 44);
+        let next_round = all.split_off(40);
+        assert_eq!(next_round.len(), 4);
         let additions = all.split_off(18);
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
         assert_eq!(reviewed_global["candidates"], serde_json::json!(additions));
+        // Archived prefix retains its historical schema; new slots are v4.
+        legacy["dispatch_schema"] = serde_json::json!("rvllm.metal.research-dispatch.v3");
         assert_eq!(reviewed, legacy);
         // The additive family must have all source-defined specializations.
         assert_eq!(

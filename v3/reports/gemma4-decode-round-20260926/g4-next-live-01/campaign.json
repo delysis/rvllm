@@ -1,0 +1,54 @@
+{
+  "abba_retainer": {
+    "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/rvllm-retain-abba",
+    "sha256": "c7a73aa9b484ec64d39358118e10ef13f3a8912787b6b2e565768ce09a862d32"
+  },
+  "advancement_lengths": [
+    512,
+    1024,
+    2048
+  ],
+  "campaign": "g4-next-live-01",
+  "candidate_names": [
+    "metal-ffn-bf16-r4-sg2",
+    "metal-qmv-w4-g32-r8-sg2",
+    "metal-qmv-w8-g32-r8-sg2",
+    "metal-global-d512-short-r4t128"
+  ],
+  "conditions": {
+    "disk_path": "/",
+    "low_power_mode": null,
+    "minimum_free_bytes": 8589934592,
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "conditions_input": {
+    "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/tools/decode-round/conditions.nominal-ac.json",
+    "sha256": "6f6e4e08deac3ad15708e87b0be0f223c1c1939f2ea7b3ab0af7fbea2ed921bc"
+  },
+  "deferred_confirmation_lengths": [
+    4096
+  ],
+  "exploratory": true,
+  "job_generator": {
+    "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/rvllm-global-decode-jobs",
+    "sha256": "73e6ff62400f9b9c4064451d0c2be9354b82b5e3bbf73b19c949468ca57327bd"
+  },
+  "local_prefill": false,
+  "promotion": false,
+  "queue": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue",
+  "queue_runner": {
+    "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/rvllm_experiment_queue",
+    "sha256": "3a09b88ba17c025db78f3d0ca76138191f62a891db2d5cbf65a6622a7961948f"
+  },
+  "schema": "rvllm.global-decode.campaign.v1",
+  "screen_length": 256,
+  "split_kv": false,
+  "status": "proposed_unqualified",
+  "test_executable": {
+    "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/deps/rvllm_apple_metal-938ddf1012a82a45",
+    "sha256": "f6a7aa9a91b5eda7b04bd6c4ba54da26a4a1aeaa8ec7149eaa2adc25d3a993fa"
+  }
+}

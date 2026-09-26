@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
-pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 56;
+pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v4";
+pub const RESEARCH_KERNEL_COUNT: usize = 60;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -65,6 +65,10 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_global_d512_split_mma_r8k32s256t128_merge",
     "research_global_d512_split_coopkey_r8k8p64t128s32_partial",
     "research_global_d512_split_coopkey_r8k8p64t128s32_merge",
+    "research_ffn_bf16_r4_sg2",
+    "research_qmv_w4_g32_r8_sg2",
+    "research_qmv_w8_g32_r8_sg2",
+    "research_global_d512_short_r4t128",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,6 +130,10 @@ pub enum ResearchKernel {
     GlobalD512SplitMmaR8K32S256T128Merge = 53,
     GlobalD512SplitCoopKeyR8K8P64T128S32Partial = 54,
     GlobalD512SplitCoopKeyR8K8P64T128S32Merge = 55,
+    FfnBf16R4Sg2 = 56,
+    QmvW4G32R8Sg2 = 57,
+    QmvW8G32R8Sg2 = 58,
+    GlobalD512ShortR4T128 = 59,
 }
 
 impl ResearchKernel {
@@ -135,6 +143,11 @@ impl ResearchKernel {
     /// Source budgets, checked in addition to queried PSO/device limits.
     pub const fn limits(self) -> (usize, usize) {
         match self {
+            Self::FfnBf16R4Sg2 => (64, 0),
+            Self::QmvW4G32R8Sg2 => (64, 0),
+            Self::QmvW8G32R8Sg2 => (64, 0),
+            Self::GlobalD512ShortR4T128 => (128, 2048),
+
             Self::GlobalD512R8P64T64 => (64, 10016),
             Self::GlobalD512R8P64T128 => (128, 10016),
             Self::GlobalD512R8P128T64 => (64, 11040),
@@ -191,6 +204,11 @@ impl ResearchKernel {
     pub const fn owner(self) -> crate::research::MetalResearchCandidate {
         use crate::research::MetalResearchCandidate;
         match self {
+            Self::FfnBf16R4Sg2 => MetalResearchCandidate::FfnBf16R4Sg2,
+            Self::QmvW4G32R8Sg2 => MetalResearchCandidate::QmvW4G32R8Sg2,
+            Self::QmvW8G32R8Sg2 => MetalResearchCandidate::QmvW8G32R8Sg2,
+            Self::GlobalD512ShortR4T128 => MetalResearchCandidate::GlobalD512ShortR4T128,
+
             Self::GlobalD512R8P64T64 => MetalResearchCandidate::GlobalD512R8P64T64,
             Self::GlobalD512R8P64T128 => MetalResearchCandidate::GlobalD512R8P64T128,
             Self::GlobalD512R8P128T64 => MetalResearchCandidate::GlobalD512R8P128T64,
@@ -331,6 +349,25 @@ impl Default for ResearchDispatchSnapshot {
 }
 
 impl ResearchDispatchSnapshot {
+    /// Verify the entire append-only ledger, not just a positive candidate count.
+    pub fn verify_exact(self, kernel: ResearchKernel, expected: u64) -> Result<(), &'static str> {
+        if self.overflowed {
+            return Err("research dispatch counter overflow");
+        }
+        for (index, actual) in self.counts.into_iter().enumerate() {
+            if actual
+                != if index == kernel as usize {
+                    expected
+                } else {
+                    0
+                }
+            {
+                return Err("research dispatch ledger contains missing or unexpected work");
+            }
+        }
+        Ok(())
+    }
+
     pub fn checked_since(self, earlier: Self) -> Result<Self, &'static str> {
         if self.overflowed || earlier.overflowed {
             return Err("research dispatch counter overflow");

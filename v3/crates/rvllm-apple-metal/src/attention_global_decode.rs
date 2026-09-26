@@ -14,6 +14,18 @@ pub const SPLIT_SCRATCH_BYTES: usize =
     (SPLIT_MAX_TOKENS as usize / 256) * HEADS as usize * SPLIT_PARTIAL_FLOATS as usize * 4;
 /// Wider reservation required only by the explicit split-32 research policy.
 pub const SPLIT32_SCRATCH_BYTES: usize = 32 * HEADS as usize * SPLIT_PARTIAL_FLOATS as usize * 4;
+/// No global partials or merge. Four heads/TG, one head/SIMDgroup.
+/// Capacity is conservatively bounded on the HOST; never a shader-only live
+/// length rejection which could be mistaken for a successful normal decode.
+pub const SHORT_R4T128: DecodeTile = DecodeTile {
+    rows: 4,
+    keys: 1,
+    panel: 512,
+    threads: 128,
+    per_tile_softmax: false,
+    simd_matrix: false,
+};
+
 pub const LIVE_LENGTHS: [u32; 5] = [256, 512, 1024, 2048, 4096];
 
 pub const fn model_scratch_bytes(candidate: crate::MetalResearchCandidate) -> usize {
@@ -193,7 +205,18 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
 ];
 
 impl DecodeTile {
+    pub const fn short_unsplit(self) -> bool {
+        self.rows == 4
+            && self.keys == 1
+            && self.panel == 512
+            && self.threads == 128
+            && !self.per_tile_softmax
+            && !self.simd_matrix
+    }
     pub const fn supported(self) -> bool {
+        if self.short_unsplit() {
+            return true;
+        }
         ((!self.simd_matrix
             && self.rows == 1
             && self.keys == 8
@@ -227,6 +250,9 @@ impl DecodeTile {
     /// Q is staged once; one K or V panel reuses the same storage. Scores,
     /// corrections and weights are FP32. Eight signed page IDs are separate.
     pub const fn threadgroup_bytes(self) -> usize {
+        if self.short_unsplit() {
+            return 2 * 512 * 2;
+        }
         if self.simd_matrix {
             (4 * (self.rows * self.panel + self.keys * self.panel)
                 + 8 * self.rows * self.keys
@@ -567,6 +593,9 @@ impl DecodePlan {
         {
             return None;
         }
+        if tile.short_unsplit() && shape.max_blocks.checked_mul(shape.block_size)? > 512 {
+            return None;
+        }
         let cache_bytes = (shape.num_blocks as usize)
             .checked_mul(shape.block_size as usize)?
             .checked_mul(DIM as usize)?
@@ -713,3 +742,7 @@ pub mod reference;
 #[cfg(test)]
 #[path = "attention_global_decode_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "attention_short_decode_tests.rs"]
+mod short_tests;

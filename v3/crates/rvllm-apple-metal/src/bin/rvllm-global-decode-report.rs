@@ -34,20 +34,59 @@ fn median(mut values: Vec<f64>) -> Result<f64> {
     })
 }
 
+/// Deterministic whole-block bootstrap, no within-block resampling or trimming.
+/// Diagnostic interval only: ten blocks do not establish full-route performance.
+fn bootstrap_median_95(values: &[f64]) -> Result<[f64; 2]> {
+    mean(values)?;
+    let mut state = 0x8fb6_04e1_5a52_bdf4_u64;
+    let mut medians = Vec::with_capacity(10_000);
+    for _ in 0..10_000 {
+        let mut draw = Vec::with_capacity(values.len());
+        for _ in values {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            draw.push(values[(state % values.len() as u64) as usize]);
+        }
+        medians.push(median(draw)?);
+    }
+    medians.sort_by(f64::total_cmp);
+    Ok([medians[249], medians[9749]])
+}
+
 fn cell(directory: &Path) -> Result<Value> {
     let receipt = read(&directory.join("native/abba.json"))?;
+    let balanced = receipt["balanced_abba_baab"] == true;
+    let count = if balanced { 10 } else { 5 };
+    if receipt["blocks"].as_u64() != Some(count as u64) {
+        return Err("block count does not match collection contract".into());
+    }
     if receipt["schema"] != "rvllm.global-decode.abba.v1"
         || receipt["status"] != "collected"
-        || receipt["samples"].as_array().map(Vec::len) != Some(20)
+        || receipt["samples"].as_array().map(Vec::len) != Some(count * 4)
     {
         return Err(format!("invalid ABBA receipt: {}", directory.display()).into());
     }
     let mut arms = BTreeMap::<&str, Vec<f64>>::from([("A", Vec::new()), ("B", Vec::new())]);
     let mut blocks = BTreeMap::<u64, BTreeMap<&str, Vec<f64>>>::new();
-    for sample in receipt["samples"]
+    for (index, sample) in receipt["samples"]
         .as_array()
         .ok_or("ABBA samples missing")?
+        .iter()
+        .enumerate()
     {
+        let order = if balanced && index / 4 % 2 == 1 {
+            ["B", "A", "A", "B"]
+        } else {
+            ["A", "B", "B", "A"]
+        };
+        if sample["block"].as_u64() != Some((index / 4) as u64)
+            || sample["position"].as_u64() != Some((index % 4) as u64)
+            || sample["arm"] != order[index % 4]
+            || sample["dispatches"] != 100
+        {
+            return Err("missing, duplicated, reordered or unbalanced samples".into());
+        }
         let arm = sample["arm"].as_str().ok_or("sample arm missing")?;
         let block = sample["block"].as_u64().ok_or("sample block missing")?;
         let seconds = sample["gpu_seconds"]
@@ -61,7 +100,7 @@ fn cell(directory: &Path) -> Result<Value> {
             .or_default()
             .push(seconds);
     }
-    if arms["A"].len() != 10 || arms["B"].len() != 10 || blocks.len() != 5 {
+    if arms["A"].len() != count * 2 || arms["B"].len() != count * 2 || blocks.len() != count {
         return Err("ABBA receipt must contain ten samples per arm in five blocks".into());
     }
     let baseline = mean(&arms["A"])?;
@@ -73,9 +112,35 @@ fn cell(directory: &Path) -> Result<Value> {
         }
         paired.push(mean(&block["A"])? / mean(&block["B"])?);
     }
+    let interval = bootstrap_median_95(&paired)?;
+    let abba = paired
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &x)| (!balanced || i % 2 == 0).then_some(x))
+        .collect::<Vec<_>>();
+    let baab = paired
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &x)| (balanced && i % 2 == 1).then_some(x))
+        .collect::<Vec<_>>();
+    let abba_median = median(abba)?;
+    let baab_median = if balanced { Some(median(baab)?) } else { None };
+    let order_agrees = balanced && abba_median > 1.0 && baab_median.is_some_and(|x| x > 1.0);
+    let computed_drift = arms["A"].iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        / arms["A"].iter().copied().fold(f64::INFINITY, f64::min)
+        - 1.0;
+    if (receipt["control_drift_fraction"]
+        .as_f64()
+        .ok_or("missing drift")?
+        - computed_drift)
+        .abs()
+        > 1e-12
+    {
+        return Err("drift value disagrees with retained samples".into());
+    }
     let queue = read(&directory.join("report.json"))?;
-    let drift_passed = receipt["control_drift_passed"] == true;
-    let queue_succeeded = queue["status"] == "succeeded";
+    let drift_passed = receipt["control_drift_passed"] == true && computed_drift <= 0.05;
+    let queue_succeeded = queue["status"] == "succeeded" && queue["files_unchanged"] == true;
     let classification = if !drift_passed {
         "inconclusive_control_drift"
     } else if !queue_succeeded {
@@ -92,22 +157,44 @@ fn cell(directory: &Path) -> Result<Value> {
         "sampled_conditions_eligible":queue["sampled_conditions_eligible"],
         "control_drift_fraction":receipt["control_drift_fraction"],
         "control_drift_passed":drift_passed,
-        "baseline_mean_ms_per_dispatch":baseline * 10.0,
-        "candidate_mean_ms_per_dispatch":candidate * 10.0,
+        "operator_k":receipt["operator_k"],
+        "baseline_mean_ms_per_iteration":baseline * 10.0,
+        "candidate_mean_ms_per_iteration":candidate * 10.0,
+        "timing_unit":"one complete operator invocation; fused baseline may use two encoders",
         "ratio_of_means":baseline / candidate,
         "median_paired_block_ratio":median(paired.clone())?,
         "paired_block_ratios":paired,
-        "samples_retained":20,
+        "samples_retained":count*4,"balanced_abba_baab":balanced,
+        "bootstrap_resamples":10000,"paired_median_bootstrap_95":interval,
+        "abba_median_ratio":abba_median,"baab_median_ratio":baab_median,
+        "order_strata_agree":order_agrees,
+        "screening_evidence_only":balanced && order_agrees && interval[0]>1.0
+            && drift_passed && queue_succeeded && queue["sampled_conditions_eligible"]==true,
         "promotion":false
     }))
 }
 
+fn matches_campaign(name: &str, campaign: Option<&str>) -> bool {
+    campaign.is_none_or(|campaign| {
+        name.strip_prefix(campaign)
+            .is_some_and(|suffix| suffix.starts_with('-'))
+    })
+}
+
 fn run() -> Result<()> {
+    let mut args = std::env::args_os().skip(1);
     let queue = PathBuf::from(
-        std::env::args_os()
-            .nth(1)
-            .ok_or("usage: rvllm-global-decode-report ABSOLUTE_QUEUE")?,
+        args.next()
+            .ok_or("usage: rvllm-global-decode-report ABSOLUTE_QUEUE [CAMPAIGN]")?,
     );
+    let campaign = args.next();
+    if args.next().is_some() {
+        return Err("usage: rvllm-global-decode-report ABSOLUTE_QUEUE [CAMPAIGN]".into());
+    }
+    let campaign = campaign
+        .as_deref()
+        .map(|value| value.to_str().ok_or("campaign must be UTF-8"))
+        .transpose()?;
     if !queue.is_absolute() {
         return Err("queue path must be absolute".into());
     }
@@ -117,7 +204,7 @@ fn run() -> Result<()> {
         if directory
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.contains("-abba-L"))
+            .is_some_and(|name| name.contains("-abba-L") && matches_campaign(name, campaign))
             && directory.join("native/abba.json").is_file()
         {
             cells.push(cell(&directory)?);
@@ -152,7 +239,7 @@ fn main() -> std::process::ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{mean, median};
+    use super::{matches_campaign, mean, median};
 
     #[test]
     fn summaries_retain_all_positive_samples() {
@@ -166,5 +253,27 @@ mod tests {
         assert!(mean(&[]).is_err());
         assert!(mean(&[1.0, 0.0]).is_err());
         assert!(mean(&[1.0, f64::NAN]).is_err());
+    }
+
+    #[test]
+    fn campaign_filter_has_an_id_boundary() {
+        assert!(matches_campaign("round-01-arm-abba-L0", Some("round-01")));
+        assert!(!matches_campaign("round-010-arm-abba-L0", Some("round-01")));
+        assert!(matches_campaign("anything-abba-L0", None));
+    }
+}
+
+#[cfg(test)]
+mod round_statistics_tests {
+    use super::*;
+    #[test]
+    fn bootstrap_is_deterministic_and_does_not_hide_regression() {
+        let values = [1.0; 10];
+        assert_eq!(bootstrap_median_95(&values).unwrap(), [1.0, 1.0]);
+        let varied = [0.8, 1.1, 0.9, 1.2, 0.85, 1.0, 1.05, 0.95, 1.01, 0.99];
+        let a = bootstrap_median_95(&varied).unwrap();
+        assert_eq!(a, bootstrap_median_95(&varied).unwrap());
+        assert!(a[0] < 1.0);
+        assert!(bootstrap_median_95(&[f64::NAN]).is_err());
     }
 }

@@ -70,6 +70,11 @@ pub mod options;
 pub mod prefill_attention_candidate;
 pub mod research;
 pub mod research_catalog;
+pub mod research_decode;
+#[cfg(all(test, target_os = "macos"))]
+mod research_decode_device_tests;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub mod research_decode_metal;
 pub mod research_evidence;
 pub mod research_next;
 pub mod research_projection;

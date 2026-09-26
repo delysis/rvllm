@@ -31,11 +31,33 @@ fn validate_retained_receipt(path: &Path) -> Result<()> {
     let receipt: Value = serde_json::from_reader(File::open(path)?)?;
     let candidate = std::env::var(CANDIDATE)?;
     let length: u64 = std::env::var(LENGTH)?.parse()?;
+    let balanced = receipt["balanced_abba_baab"] == true;
+    let blocks = if balanced { 10 } else { 5 };
+    if receipt["blocks"].as_u64() != Some(blocks)
+        || receipt["samples"].as_array().is_some_and(|samples| {
+            samples.iter().enumerate().any(|(i, s)| {
+                let order = if balanced && i / 4 % 2 == 1 {
+                    ["B", "A", "A", "B"]
+                } else {
+                    ["A", "B", "B", "A"]
+                };
+                s["block"].as_u64() != Some((i / 4) as u64)
+                    || s["position"].as_u64() != Some((i % 4) as u64)
+                    || s["arm"] != order[i % 4]
+                    || s["dispatches"] != 100
+                    || !s["gpu_seconds"]
+                        .as_f64()
+                        .is_some_and(|x| x.is_finite() && x > 0.0)
+            })
+        })
+    {
+        return Err("incomplete or misordered counterbalanced collection".into());
+    }
     if receipt["schema"] != "rvllm.global-decode.abba.v1"
         || receipt["status"] != "collected"
         || receipt["candidate"] != candidate
         || receipt["length"].as_u64() != Some(length)
-        || receipt["samples"].as_array().map(Vec::len) != Some(20)
+        || receipt["samples"].as_array().map(Vec::len) != Some(blocks as usize * 4)
         || receipt["control_drift_passed"] != false
         || receipt["timing_eligible"] != false
         || receipt["source_compiles_during_samples"] != 0

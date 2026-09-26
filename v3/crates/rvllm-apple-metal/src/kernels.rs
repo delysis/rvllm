@@ -2956,6 +2956,10 @@ pub fn kernel_source_with_options(
     }
     let mut source = base.into_owned();
     source.push('\n');
+    if options.research.explicit_storage_abi() {
+        source.push_str(candidate);
+        return Cow::Owned(source);
+    }
     match float_type {
         MetalFloatType::F16 => source.push_str(candidate),
         MetalFloatType::Bf16 => source.push_str(

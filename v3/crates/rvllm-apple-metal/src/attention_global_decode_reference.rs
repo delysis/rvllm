@@ -70,6 +70,17 @@ impl Fixture {
         }
     }
 
+    /// Bound logical visibility without changing physical allocation/page ownership.
+    pub fn for_tile(length: u32, block_size: u32, tile: super::DecodeTile) -> Self {
+        let mut f = Self::new(length, block_size);
+        if tile.short_unsplit() {
+            assert!(length <= 512);
+            f.shape.max_blocks = length.div_ceil(block_size);
+            f.table.truncate(f.shape.max_blocks as usize);
+        }
+        f
+    }
+
     pub fn validated_end(&self, plan: DecodePlan) -> Result<u32, &'static str> {
         if self.shape != plan.shape
             || self.q.len() != (HEADS * DIM) as usize
@@ -84,7 +95,7 @@ impl Fixture {
 }
 
 pub fn dot_f32(q: &[u16], k: &[u16], panel: u32) -> f32 {
-    assert!(q.len() == DIM as usize && k.len() == DIM as usize && matches!(panel, 64 | 128));
+    assert!(q.len() == DIM as usize && k.len() == DIM as usize && matches!(panel, 64 | 128 | 512));
     let mut score = 0.0_f32;
     // The staging panel is not a numerical-association parameter.
     for first in (0..DIM as usize).step_by(64) {

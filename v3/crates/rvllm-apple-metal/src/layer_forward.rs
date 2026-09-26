@@ -95,6 +95,73 @@ pub fn supports_research_rounded_gate(
         )
 }
 
+/// Construct the exact same request for execution and diagnostic accounting.
+#[allow(clippy::too_many_arguments)]
+pub fn research_bf16_gate_request(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    capture_gate_up: bool,
+    arena_bytes: usize,
+) -> crate::research_decode::GateUpRequest {
+    crate::research_decode::GateUpRequest {
+        selected: pipelines.kernel_options().research,
+        dtype: pipelines.float_type(),
+        decode: matches!(phase, MetalPhase::Decode),
+        quantized_accumulation: pipelines.kernel_options().quantized_bf16_accumulation,
+        model: crate::research::Gemma12bResearchShape {
+            tokens: dims.num_tokens,
+            hidden: dims.hidden,
+            intermediate: dims.intermediate,
+            layers: dims.num_layers,
+            heads: dims.num_heads,
+            kv_heads: dims.num_kv_heads,
+            head_dim: dims.head_dim,
+            attention_window: dims.attention_window,
+            moe_experts: dims.moe_num_experts,
+            moe_top_k: dims.moe_top_k,
+            moe_intermediate: dims.moe_intermediate,
+            ple: dims.ple_dim,
+        },
+        capture_gate_up,
+        has_low_bit_gate_or_up: weights.low_bit_gate_proj.is_some()
+            || weights.low_bit_up_proj.is_some(),
+        offsets: [
+            scratch.normed_hidden,
+            weights.gate_up_offset,
+            scratch.activated,
+        ],
+        arena_bytes,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn supports_research_bf16_gate(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    capture_gate_up: bool,
+    arena_bytes: usize,
+) -> bool {
+    crate::research_decode_metal::gate_up_plan(
+        pipelines,
+        research_bf16_gate_request(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            capture_gate_up,
+            arena_bytes,
+        ),
+    )
+    .is_some()
+}
+
 // Measured on M4 Max with Gemma 4 E2B: cooperative projection remains faster
 // through M=18, is effectively tied at M=19, and regresses sharply at M=20.
 const COOPERATIVE_GEMV_MAX_M: u32 = 19;
@@ -1105,6 +1172,7 @@ pub unsafe fn metal_encode_forward_layer(
                     num_tokens,
                     qkv_n,
                     column,
+                    phase,
                 )?;
             }
             encode_split_qkv(
@@ -1130,6 +1198,7 @@ pub unsafe fn metal_encode_forward_layer(
                 num_tokens,
                 q_dim,
                 0,
+                phase,
             )?;
         }
         if let Some(q_norm_offset) = weights.q_norm_offset {
@@ -2098,6 +2167,7 @@ pub unsafe fn metal_encode_forward_layer(
                 num_tokens,
                 hidden,
                 0,
+                phase,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2196,6 +2266,7 @@ pub unsafe fn metal_encode_forward_layer(
                 num_tokens,
                 hidden,
                 0,
+                phase,
             )?;
         } else {
             encode_gemm_with_output(
@@ -2283,7 +2354,22 @@ pub unsafe fn metal_encode_forward_layer(
         && weights.per_layer_projection_offset.is_some()
         && weights.post_per_layer_input_norm_offset.is_some();
     let mut layer_scale_fused = false;
-    let rounded_gate = low_bit_gate_up.is_none()
+    let bf16_gate = crate::research_decode_metal::try_encode_gate_up(
+        pipelines,
+        cmd_buf,
+        &buf,
+        research_bf16_gate_request(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            trace.is_some(),
+            buf.length(),
+        ),
+    )?;
+    let rounded_gate = !bf16_gate
+        && low_bit_gate_up.is_none()
         && supports_research_rounded_gate(
             pipelines,
             dims,
@@ -2313,6 +2399,7 @@ pub unsafe fn metal_encode_forward_layer(
             num_tokens,
             two_inter,
             0,
+            phase,
         )?;
         encode_low_bit_projection_strided(
             &cmd_buf,
@@ -2324,8 +2411,9 @@ pub unsafe fn metal_encode_forward_layer(
             num_tokens,
             two_inter,
             dims.intermediate,
+            phase,
         )?;
-    } else if !rounded_gate {
+    } else if !rounded_gate && !bf16_gate {
         encode_gemm_with_output(
             &cmd_buf,
             pipelines,
@@ -2354,7 +2442,7 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    if !rounded_gate {
+    if !rounded_gate && !bf16_gate {
         encode_gelu_mul(
             &cmd_buf,
             pipelines,
@@ -2411,6 +2499,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.activated,
                 scratch.mlp_out,
                 num_tokens,
+                phase,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2566,6 +2655,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.activated,
                 raw_output,
                 num_tokens,
+                phase,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2635,6 +2725,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.activated,
                 scratch.mlp_out,
                 num_tokens,
+                phase,
             )?;
         } else {
             encode_gemm_with_output(
@@ -3035,7 +3126,7 @@ fn validate_down_projection_sources(
     }
 }
 
-unsafe fn encode_gelu_mul(
+pub(crate) unsafe fn encode_gelu_mul(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
     buf: &ProtocolObject<dyn MTLBuffer>,
@@ -6081,6 +6172,20 @@ mod tests {
     }
 }
 
+fn low_bit_research_encoding_error() -> rvllm_core::RvllmError {
+    rvllm_core::RvllmError::apple(
+        rvllm_core::AppleError::InvalidWeightBlob {
+            reason: "native BF16 low-bit research encode failed",
+        },
+        rvllm_core::AppleCtx {
+            backend: "metal",
+            op: "low_bit_research",
+            device: "apple-silicon",
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 unsafe fn encode_low_bit_down_projection(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
@@ -6089,7 +6194,56 @@ unsafe fn encode_low_bit_down_projection(
     activation_offset: usize,
     output_offset: usize,
     num_tokens: u32,
+    phase: MetalPhase,
 ) -> Result<()> {
+    let selected = pipelines.kernel_options().research;
+    let targeted = matches!(
+        (selected, projection.role()),
+        (
+            crate::MetalResearchCandidate::QmvW4G32R8Sg2,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R8Sg2,
+            AppleLowBitTensorRole::OutputProjection
+        )
+    );
+    // This selector owns decode only. Prefill and other phases retain the
+    // incumbent route even when the research candidate is selected.
+    if targeted
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(phase, MetalPhase::Decode)
+    {
+        // Never reinterpret BF16 activations as the legacy F16 low-bit ABI on
+        // refusal. The existing n4 BF16 schedule is the role-specific control.
+        let encoded = projection
+            .try_encode_strided_bf16_r8_sg2(
+                cmd_buf,
+                pipelines,
+                buf,
+                activation_offset,
+                output_offset,
+                num_tokens as usize,
+                projection.shape()[0] as usize,
+                0,
+            )
+            .map_err(|_| low_bit_research_encoding_error())?;
+        if !encoded {
+            projection
+                .encode_strided_bf16_n4(
+                    cmd_buf,
+                    pipelines,
+                    buf,
+                    activation_offset,
+                    output_offset,
+                    num_tokens as usize,
+                    projection.shape()[0] as usize,
+                    0,
+                )
+                .map_err(|_| low_bit_research_encoding_error())?;
+        }
+        return Ok(());
+    }
+
     projection
         .encode(
             cmd_buf,
@@ -6124,7 +6278,56 @@ unsafe fn encode_low_bit_projection_strided(
     num_tokens: u32,
     output_row_stride: u32,
     output_column: u32,
+    phase: MetalPhase,
 ) -> Result<()> {
+    let selected = pipelines.kernel_options().research;
+    let targeted = matches!(
+        (selected, projection.role()),
+        (
+            crate::MetalResearchCandidate::QmvW4G32R8Sg2,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R8Sg2,
+            AppleLowBitTensorRole::OutputProjection
+        )
+    );
+    // This selector owns decode only. Prefill and other phases retain the
+    // incumbent route even when the research candidate is selected.
+    if targeted
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(phase, MetalPhase::Decode)
+    {
+        // Never reinterpret BF16 activations as the legacy F16 low-bit ABI on
+        // refusal. The existing n4 BF16 schedule is the role-specific control.
+        let encoded = projection
+            .try_encode_strided_bf16_r8_sg2(
+                cmd_buf,
+                pipelines,
+                buf,
+                activation_offset,
+                output_offset,
+                num_tokens as usize,
+                output_row_stride as usize,
+                output_column as usize,
+            )
+            .map_err(|_| low_bit_research_encoding_error())?;
+        if !encoded {
+            projection
+                .encode_strided_bf16_n4(
+                    cmd_buf,
+                    pipelines,
+                    buf,
+                    activation_offset,
+                    output_offset,
+                    num_tokens as usize,
+                    output_row_stride as usize,
+                    output_column as usize,
+                )
+                .map_err(|_| low_bit_research_encoding_error())?;
+        }
+        return Ok(());
+    }
+
     projection
         .encode_strided(
             cmd_buf,
@@ -6151,7 +6354,7 @@ unsafe fn encode_low_bit_projection_strided(
 }
 
 /// Encode a GEMM operation into the command buffer.
-unsafe fn encode_gemm(
+pub(crate) unsafe fn encode_gemm(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
     buf: &ProtocolObject<dyn MTLBuffer>,
