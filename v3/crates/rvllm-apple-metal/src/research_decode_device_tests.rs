@@ -310,8 +310,13 @@ fn guarded_bad_launch(data: &Data, setup: &Setup, k: usize, case: usize) -> Test
     let command = setup.context.queue().commandBuffer().ok_or("no command")?;
     let encoder = command.computeCommandEncoder().ok_or("no encoder")?;
     let kernel = setup.candidate.kernels()[0];
-    encoder.setComputePipelineState(setup.pipelines.get(kernel.name())?);
     let ffn = data.projection.is_none();
+    let grid = if ffn {
+        1920
+    } else {
+        3840 / kernel.qmv_output_rows().ok_or("QMV output tile missing")?
+    };
+    encoder.setComputePipelineState(setup.pipelines.get(kernel.name())?);
     let m = if case == 1 { 2 } else { 1 };
     let wrong_k = if case == 2 { k as u32 - 1 } else { k as u32 };
     let params = if ffn {
@@ -347,7 +352,7 @@ fn guarded_bad_launch(data: &Data, setup: &Setup, k: usize, case: usize) -> Test
     }
     encoder.dispatchThreadgroups_threadsPerThreadgroup(
         MTLSize {
-            width: if ffn { 1920 } else { 240 },
+            width: grid,
             height: 1,
             depth: 1,
         },

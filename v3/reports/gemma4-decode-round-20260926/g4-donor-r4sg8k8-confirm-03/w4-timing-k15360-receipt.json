@@ -1,0 +1,856 @@
+{
+  "balanced_abba_baab": true,
+  "baseline": "rvLLM group-32 BF16 n4 (synthetic)",
+  "blocks": 10,
+  "candidate": "metal-qmv-w4-g32-r4-sg8-k8",
+  "checkpoint_qualified": false,
+  "control_drift_fraction": 0.17944457319666696,
+  "control_drift_limit": 0.05,
+  "control_drift_passed": false,
+  "dispatches_per_sample": 100,
+  "identity": {
+    "build_receipt_sha256": "cfa2c95979a698d7e3d62737d6a22917ffc2c01856127992d73d2bd393c7fd0f",
+    "candidate": "metal-qmv-w4-g32-r4-sg8-k8",
+    "core_sha256": "f74e67aa911b101575a770b7803e59b0fda95b07c1b127c135113e905b61b918",
+    "device_name": "Apple M4 Max",
+    "gpu_family": "Apple9",
+    "grid": [
+      120,
+      1,
+      1
+    ],
+    "kernel": "research_qmv_w4_g32_r4_sg8_k8",
+    "kernels": [
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_qmv_w4_g32_r4_sg8_k8",
+        "source_threadgroup_bytes": 0,
+        "threads": 256
+      }
+    ],
+    "keys": 1,
+    "metallib_sha256": "5bbda735656a5502a3c7f7394f0692f8f74ce53ffa1aad089a1a674fd14747af",
+    "oracle_library": false,
+    "panel": 32,
+    "rows": 32,
+    "scratch_bytes": 0,
+    "simd_matrix": false,
+    "source_sha256": "f74e67aa911b101575a770b7803e59b0fda95b07c1b127c135113e905b61b918",
+    "test_executable_sha256": "1417b0991cf94b2e962b15495fc468ce3ffde75ec8fe6f2f507ab8e5f649be6b",
+    "threads": 256
+  },
+  "length": 0,
+  "normalization": "operator iteration; actual_compute_encoders recorded separately",
+  "operator_k": 15360,
+  "oracle_receipt_sha256": "9fc9b024fac4c2d0cbbe4d379085e49330c7c02c2cee029cd3c452fc9ca9df23",
+  "promotion": false,
+  "samples": [
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 0,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.027769875014200807,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.028777542
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 0,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009492249984759837,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.010205959
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 0,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009237958292942494,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.010397041
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 0,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.024193124962039292,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.024544375
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 1,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009449250006582588,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.010753084
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 1,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.024151124991476536,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.025568375
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 1,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02444187499349937,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.025753125
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 1,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009471125027630478,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.0102745
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 2,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.023544874973595142,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.024239542
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 2,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009672250016592443,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.01092775
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 2,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009275374992284924,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.009627208
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 2,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.023670666676480323,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.024666
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 3,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009996791661251336,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.011082375
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 3,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02456575003452599,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.02496125
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 3,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02421304164454341,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.025341792
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 3,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009382958349306136,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.0102055
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 4,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02378024999052286,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.024634583
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 4,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009392625011969358,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.010359
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 4,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.00944937497843057,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.010240417
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 4,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02411975001450628,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.025085167
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 5,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009442541690077633,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.009933709
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 5,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.024268624954856932,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.024979
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 5,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.023814833315555006,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.024625792
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 5,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009496124985162169,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.009828041
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 6,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02467341668670997,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.025584459
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 6,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009493583347648382,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.010435167
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 6,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009492291661445051,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.010377
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 6,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.024112291692290455,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.024835292
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 7,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009327374980784953,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.01025725
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 7,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.024003374972380698,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.024955375
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 7,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.023722708341665566,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.0244985
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 7,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009387625032104552,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.010375333
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 8,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02445262501714751,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.025064459
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 8,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009489833319094032,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.010424
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 8,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009255583339836448,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.010145541
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 8,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.023657749989069998,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.023970958
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 9,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009479125030338764,
+      "operator_iterations": 100,
+      "position": 0,
+      "synchronized_wall_seconds": 0.010462
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 9,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.024592000001575798,
+      "operator_iterations": 100,
+      "position": 1,
+      "synchronized_wall_seconds": 0.025500667
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "A",
+      "block": 9,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.02380037499824539,
+      "operator_iterations": 100,
+      "position": 2,
+      "synchronized_wall_seconds": 0.024755791
+    },
+    {
+      "actual_compute_encoders": 100,
+      "arm": "B",
+      "block": 9,
+      "controls_after": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "controls_before": [
+        "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t100%; finishing charge; 0:04 remaining present: true\n",
+        "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "Battery Power:\n Sleep On Power Button 1\n powermode            1\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         1\n womp                 0\n networkoversleep     0\n sleep                1\n lessbright           1\n tcpkeepalive         1\n disksleep            10\nAC Power:\n Sleep On Power Button 1\n powermode            2\n standby              1\n ttyskeepawake        1\n hibernatemode        3\n powernap             1\n hibernatefile        /var/vm/sleepimage\n displaysleep         10\n womp                 1\n networkoversleep     0\n sleep                0\n tcpkeepalive         1\n disksleep            10\n"
+      ],
+      "dispatches": 100,
+      "gpu_seconds": 0.009217624960001558,
+      "operator_iterations": 100,
+      "position": 3,
+      "synchronized_wall_seconds": 0.010163959
+    }
+  ],
+  "schema": "rvllm.global-decode.abba.v1",
+  "source_compiles_during_samples": 0,
+  "status": "collected",
+  "timing_eligible": false,
+  "warmups_per_arm": 5
+}

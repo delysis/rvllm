@@ -71,6 +71,34 @@ pub(crate) struct Setup {
     pub(crate) identity: Value,
 }
 
+fn operator_launch_identity(candidate: MetalResearchCandidate) -> TestResult<(u32, u32, u32)> {
+    if candidate == MetalResearchCandidate::FfnBf16R4Sg2 {
+        return Ok((8, 64, 1920));
+    }
+    if !candidate.decode_round_operator() {
+        return Err("decode operator candidate required".into());
+    }
+    let kernel = candidate.kernels()[0];
+    let rows = u32::try_from(kernel.qmv_output_rows().ok_or("QMV output tile missing")?)?;
+    if 3840 % rows != 0 {
+        return Err("QMV output tile does not divide Gemma hidden width".into());
+    }
+    Ok((rows, u32::try_from(kernel.limits().0)?, 3840 / rows))
+}
+
+#[test]
+fn operator_receipt_launch_geometry_matches_dispatch_contract() {
+    for (candidate, expected) in [
+        (MetalResearchCandidate::FfnBf16R4Sg2, (8, 64, 1920)),
+        (MetalResearchCandidate::QmvW4G32R8Sg2, (16, 64, 240)),
+        (MetalResearchCandidate::QmvW8G32R8Sg2, (16, 64, 240)),
+        (MetalResearchCandidate::QmvW4G32R4Sg8K8, (32, 256, 120)),
+        (MetalResearchCandidate::QmvW8G32R4Sg8K8, (32, 256, 120)),
+    ] {
+        assert_eq!(operator_launch_identity(candidate).unwrap(), expected);
+    }
+}
+
 impl Setup {
     pub(crate) fn new(oracle: bool) -> TestResult<Self> {
         let candidate: MetalResearchCandidate =
@@ -142,16 +170,8 @@ impl Setup {
                 0,
             )
         } else if candidate.decode_round_operator() {
-            let ffn = candidate == MetalResearchCandidate::FfnBf16R4Sg2;
-            (
-                if ffn { 8 } else { 16 },
-                1,
-                32,
-                64,
-                false,
-                json!([if ffn { 1920 } else { 240 }, 1, 1]),
-                0,
-            )
+            let (rows, threads, grid) = operator_launch_identity(candidate)?;
+            (rows, 1, 32, threads, false, json!([grid, 1, 1]), 0)
         } else {
             let tile = split.unwrap();
             (

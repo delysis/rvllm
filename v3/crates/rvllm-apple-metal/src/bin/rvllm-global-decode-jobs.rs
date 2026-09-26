@@ -146,6 +146,31 @@ fn validate_timing_request(length: u32, selected: &[String]) -> Result {
     }
     Ok(())
 }
+
+fn operator_oracle_identity_matches(candidate: MetalResearchCandidate, identity: &Value) -> bool {
+    if !candidate.decode_round_operator() {
+        return false;
+    }
+    let kernel = candidate.kernels()[0];
+    let (rows, threads, grid) = if candidate == MetalResearchCandidate::FfnBf16R4Sg2 {
+        (8, 64, 1920)
+    } else {
+        let Some(rows) = kernel.qmv_output_rows() else {
+            return false;
+        };
+        if rows == 0 || 3840 % rows != 0 {
+            return false;
+        }
+        (rows, kernel.limits().0, 3840 / rows)
+    };
+    identity["rows"] == rows
+        && identity["keys"] == 1
+        && identity["panel"] == 32
+        && identity["threads"] == threads
+        && identity["grid"] == json!([grid, 1, 1])
+        && identity["kernel"] == kernel.name()
+        && identity["kernels"][0]["threads"] == threads
+}
 fn tool(name: &str) -> Result<PathBuf> {
     let output = Command::new("/usr/bin/xcrun")
         .args(["--sdk", "macosx", "--find", name])
@@ -294,6 +319,50 @@ fn advancement_id(config: &Value, length: u32) -> Result<String> {
     ))
 }
 
+fn operator_advancement_id(config: &Value, stage: &str) -> Result<String> {
+    if !matches!(stage, "compile" | "oracle") {
+        return Err("unknown operator advancement stage".into());
+    }
+    Ok(format!(
+        "{}-operator-advance-{stage}",
+        config["campaign"].as_str().ok_or("campaign missing")?
+    ))
+}
+
+fn operator_advancement_job(
+    config: &Value,
+    root: &Path,
+    stage: &str,
+    after: Vec<String>,
+    names: &[String],
+) -> Result<String> {
+    let job_id = operator_advancement_id(config, stage)?;
+    let generator = absolute(
+        config["job_generator"]["path"]
+            .as_str()
+            .ok_or("job generator missing")?,
+    )?;
+    let mut args = vec![
+        "operator-advance".into(),
+        root.to_string_lossy().into_owned(),
+        stage.into(),
+        "{output}".into(),
+    ];
+    args.extend_from_slice(names);
+    job(
+        config,
+        root,
+        &job_id,
+        "preparation",
+        &generator,
+        args,
+        json!({}),
+        vec![pin(&root.join("campaign.json"))?],
+        after,
+    )?;
+    Ok(job_id)
+}
+
 fn advancement_job(
     config: &Value,
     root: &Path,
@@ -392,6 +461,7 @@ fn prepare(
             }
         })
         .collect::<Vec<_>>();
+    let operator_family = !family.is_empty() && family.iter().all(|c| c.decode_round_operator());
     let names = family.iter().map(|c| c.name()).collect::<Vec<_>>();
     let config = json!({"schema":"rvllm.global-decode.campaign.v1","campaign":campaign,
         "candidate_names":names,
@@ -407,7 +477,7 @@ fn prepare(
     let mut all = Vec::new();
     let metal = tool("metal")?;
     let linker = tool("metallib")?;
-    for candidate in family {
+    for &candidate in &family {
         let core = rvllm_apple_metal::kernels::kernel_source_with_options(
             MetalFloatType::Bf16,
             MetalKernelOptions {
@@ -454,6 +524,20 @@ fn prepare(
             )?;
             all.push(job_id);
         }
+    }
+    if operator_family {
+        let operator_names = names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        let oracle_ids = family
+            .iter()
+            .map(|&candidate| id(&config, candidate, "oracle"))
+            .collect::<Result<Vec<_>>>()?;
+        operator_advancement_job(&config, root, "oracle", oracle_ids, &operator_names)?;
+        let compile_advance =
+            operator_advancement_job(&config, root, "compile", all.clone(), &operator_names)?;
+        all.push(compile_advance);
     }
     json_new(&root.join("compile-jobs.json"), &json!(all))
 }
@@ -600,6 +684,8 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 || oracle["identity"]["core_sha256"] != hash(&source)?
                 || oracle["identity"]["test_executable_sha256"]
                     != config["test_executable"]["sha256"]
+                || (candidate.decode_round_operator()
+                    && !operator_oracle_identity_matches(candidate, &oracle["identity"]))
                 || ((matrix || candidate == MetalResearchCandidate::GlobalD512ShortR4T128)
                     && (oracle["numerical_contract"]
                         != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
@@ -1129,6 +1215,82 @@ fn advance(root: &Path, length: u32, output: &Path, expected: &[String]) -> Resu
     Ok(())
 }
 
+/// Queue-owned stage transition for exact-shape storage operators. Compile
+/// success permits an oracle job; only oracle success permits timing jobs.
+/// This does not select a winner or promote a production route.
+fn operator_advance(root: &Path, stage: &str, output: &Path, expected: &[String]) -> Result {
+    let config_path = root.join("campaign.json");
+    let config = read(&config_path)?;
+    if expected.is_empty()
+        || config["candidate_names"] != json!(expected)
+        || expected.iter().any(|name| {
+            name.parse::<MetalResearchCandidate>()
+                .map_or(true, |candidate| !candidate.decode_round_operator())
+        })
+    {
+        return Err("operator advancement requires the entire exact candidate family".into());
+    }
+    if pin(&std::env::current_exe()?)? != config["job_generator"] {
+        return Err("job generator identity drift".into());
+    }
+    let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
+    let job_id = operator_advancement_id(&config, stage)?;
+    if output != queue.join("results").join(&job_id) || !output.is_dir() {
+        return Err("operator advancement output is not its queue result directory".into());
+    }
+    let queue_runner = absolute(
+        config["queue_runner"]["path"]
+            .as_str()
+            .ok_or("queue runner missing")?,
+    )?;
+    if pin(&queue_runner)? != config["queue_runner"] {
+        return Err("queue runner identity drift".into());
+    }
+    let list = match stage {
+        "compile" => {
+            generate(root, false, None, expected)?;
+            root.join("oracle-jobs.json")
+        }
+        "oracle" => {
+            generate(root, true, Some(0), expected)?;
+            root.join("timing-jobs-L0.json")
+        }
+        _ => return Err("unknown operator advancement stage".into()),
+    };
+    let jobs = read(&list)?;
+    let ids = jobs
+        .as_array()
+        .ok_or("generated operator job list missing")?;
+    if ids.is_empty() {
+        return Err("generated operator job list is empty".into());
+    }
+    for id in ids {
+        let id = id.as_str().ok_or("generated operator job ID missing")?;
+        submit_or_verify(
+            &queue_runner,
+            &queue,
+            &root.join("jobs").join(format!("{id}.json")),
+        )?;
+    }
+    if stage == "compile" {
+        submit_or_verify(
+            &queue_runner,
+            &queue,
+            &root.join("jobs").join(format!(
+                "{}.json",
+                operator_advancement_id(&config, "oracle")?
+            )),
+        )?;
+    }
+    json_new_or_identical(
+        &output.join("operator-advancement.json"),
+        &json!({"schema":"rvllm.decode-round.operator-advancement.v1",
+            "campaign":config["campaign"],"campaign_sha256":hash(&config_path)?,
+            "stage":stage,"candidate_names":expected,"submitted_jobs":jobs,
+            "submitted_list_sha256":hash(&list)?,"promotion":false}),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1297,6 +1459,41 @@ mod tests {
     }
 
     #[test]
+    fn operator_continuation_refuses_wrong_family_stage_and_output_owner() {
+        let directory = temp_directory("operator-advance");
+        let root = directory.join("campaign");
+        let queue = directory.join("queue");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&queue).unwrap();
+        let names = vec![MetalResearchCandidate::QmvW8G32R4Sg8K8.name().to_owned()];
+        json_new(
+            &root.join("campaign.json"),
+            &json!({"campaign":"operator-probe","candidate_names":names,
+                "queue":queue,"job_generator":pin(&std::env::current_exe().unwrap()).unwrap()}),
+        )
+        .unwrap();
+        assert!(
+            operator_advancement_id(&read(&root.join("campaign.json")).unwrap(), "other").is_err()
+        );
+        assert!(operator_advance(&root, "compile", &directory, &["off".into()]).is_err());
+        assert!(operator_advance(&root, "compile", &directory, &names).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn operator_timing_rejects_stale_launch_geometry_in_native_oracle() {
+        let candidate = MetalResearchCandidate::QmvW8G32R4Sg8K8;
+        let mut identity = json!({"rows":32,"keys":1,"panel":32,"threads":256,
+            "grid":[120,1,1],"kernel":candidate.kernels()[0].name(),
+            "kernels":[{"threads":256}]});
+        assert!(operator_oracle_identity_matches(candidate, &identity));
+        identity["rows"] = json!(16);
+        identity["threads"] = json!(64);
+        identity["grid"] = json!([240, 1, 1]);
+        assert!(!operator_oracle_identity_matches(candidate, &identity));
+    }
+
+    #[test]
     fn stage_scoring_requires_sealed_identity_and_exact_work() {
         let directory = temp_directory("stage");
         let root = directory.join("campaign");
@@ -1419,7 +1616,9 @@ fn main() -> Result {
         }
         [action,root,length,output,expected @ ..] if action=="advance" && !expected.is_empty() =>
             advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
+        [action,root,stage,output,expected @ ..] if action=="operator-advance" && !expected.is_empty() =>
+            operator_advance(&absolute(root)?,stage,&absolute(output)?,expected),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE... | operator-advance ROOT compile|oracle QUEUE_OUTPUT EXPECTED_CANDIDATE...".into()),
     }
 }
 
