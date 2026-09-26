@@ -153,17 +153,20 @@ fn operator_oracle_identity_matches(candidate: MetalResearchCandidate, identity:
         return false;
     }
     let kernel = candidate.kernels()[0];
-    let (rows, threads, grid) = if candidate == MetalResearchCandidate::FfnBf16R4Sg2 {
-        (8, 64, 1920)
-    } else {
-        let Some(rows) = kernel.qmv_output_rows() else {
-            return false;
-        };
-        if rows == 0 || 3840 % rows != 0 {
-            return false;
-        }
-        (rows, kernel.limits().0, 3840 / rows)
+    let Some(launch) = rvllm_apple_metal::research_decode::operator_launch(candidate) else {
+        return false;
     };
+    let rows = launch.rows_per_group;
+    let output_rows = if candidate.qmv_w4() || candidate.qmv_w8() {
+        3840
+    } else {
+        15360
+    };
+    if launch.kernel != kernel || rows == 0 || output_rows % rows != 0 {
+        return false;
+    }
+    let threads = launch.threads;
+    let grid = output_rows / rows;
     identity["rows"] == rows
         && identity["keys"] == 1
         && identity["panel"] == 32
@@ -171,6 +174,27 @@ fn operator_oracle_identity_matches(candidate: MetalResearchCandidate, identity:
         && identity["grid"] == json!([grid, 1, 1])
         && identity["kernel"] == kernel.name()
         && identity["kernels"][0]["threads"] == threads
+}
+
+fn split_streaming_fp64_evidence(oracle: &Value) -> bool {
+    oracle["streaming_fp32_max_abs_bound"] == 5.0e-5
+        && oracle["streaming_fp64_max_abs_bound"] == 5.0e-4
+        && oracle["streaming_fp64_relative_l2_bound"] == 1.0e-4
+        && oracle["cases"].as_array().is_some_and(|cases| {
+            !cases.is_empty()
+                && cases.iter().all(|case| {
+                    case["independent_cpu_reference"] == "scalar FP64"
+                        && case["once_rounded_bf16"] == true
+                        && case["repeatable"] == true
+                        && case["guard_bytes_preserved"] == true
+                        && case["max_fp64_abs_error"]
+                            .as_f64()
+                            .is_some_and(|error| error.is_finite() && error <= 5.0e-4)
+                        && case["relative_l2_error"]
+                            .as_f64()
+                            .is_some_and(|error| error.is_finite() && error <= 1.0e-4)
+                })
+        })
 }
 fn tool(name: &str) -> Result<PathBuf> {
     let output = Command::new("/usr/bin/xcrun")
@@ -810,6 +834,10 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                         != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
                         || oracle["fp64_max_abs_bound"] != 5.0e-4
                         || oracle["fp64_relative_l2_bound"] != 1.0e-4))
+                || (candidate
+                    .split_global_decode_tile()
+                    .is_some_and(|tile| tile.streaming())
+                    && !split_streaming_fp64_evidence(&oracle))
             {
                 return Err(
                     "passed native oracle with exact source/executable identity required".into(),
@@ -1610,6 +1638,48 @@ mod tests {
         identity["threads"] = json!(64);
         identity["grid"] = json!([240, 1, 1]);
         assert!(!operator_oracle_identity_matches(candidate, &identity));
+    }
+
+    #[test]
+    fn round_two_operator_oracles_admit_only_their_exact_launch_geometry() {
+        use MetalResearchCandidate as C;
+        let cases = [
+            (C::FfnBf16R2Sg2, 4, 64, 3840),
+            (C::FfnBf16R4Sg4, 16, 128, 960),
+            (C::QmvW4G32R4Sg4, 16, 128, 240),
+            (C::QmvW8G32R4Sg4K8192, 16, 128, 240),
+            (C::QmvW8G32R2Sg4K4096, 8, 128, 480),
+        ];
+        for (candidate, rows, threads, grid) in cases {
+            let kernel = candidate.kernels()[0];
+            let mut identity = json!({"rows":rows,"keys":1,"panel":32,"threads":threads,
+                "grid":[grid,1,1],"kernel":kernel.name(),
+                "kernels":[{"threads":threads}]});
+            assert!(operator_oracle_identity_matches(candidate, &identity));
+            identity["grid"] = json!([grid + 1, 1, 1]);
+            assert!(!operator_oracle_identity_matches(candidate, &identity));
+        }
+    }
+
+    #[test]
+    fn split_streaming_oracle_requires_complete_fp64_evidence() {
+        let mut oracle = json!({
+            "streaming_fp32_max_abs_bound":5.0e-5,
+            "streaming_fp64_max_abs_bound":5.0e-4,
+            "streaming_fp64_relative_l2_bound":1.0e-4,
+            "cases":[{"independent_cpu_reference":"scalar FP64",
+                "once_rounded_bf16":true,"repeatable":true,
+                "guard_bytes_preserved":true,
+                "max_fp64_abs_error":2.0e-6,"relative_l2_error":1.0e-6}]
+        });
+        assert!(split_streaming_fp64_evidence(&oracle));
+        oracle["cases"][0]["max_fp64_abs_error"] = json!(5.1e-4);
+        assert!(!split_streaming_fp64_evidence(&oracle));
+        oracle["cases"][0]["max_fp64_abs_error"] = json!(2.0e-6);
+        oracle["cases"][0]["independent_cpu_reference"] = json!("unknown");
+        assert!(!split_streaming_fp64_evidence(&oracle));
+        oracle["cases"] = json!([]);
+        assert!(!split_streaming_fp64_evidence(&oracle));
     }
 
     #[test]
