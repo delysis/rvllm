@@ -63,6 +63,11 @@ mod attention_global_decode_device_tests;
 pub mod attention_global_decode_metal;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod context;
+pub mod donor12b;
+#[cfg(all(test, target_os = "macos"))]
+mod donor12b_device_tests;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub mod donor12b_metal;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod gemma4_model;
 pub mod kernels;

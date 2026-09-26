@@ -1,0 +1,20 @@
+{
+  "schema":"rvllm.experiment_job.v1", "id":"g4-donor12b-pr4-13-off-bounded-contexts", "purpose":"exploratory_timing",
+  "after":["g4-donor12b-pr4-12-sg4-bounded-contexts"],
+  "command":{
+    "executable":{"path":"/bin/sh","sha256":"20c3a003f0bfd51c799e345be7598aa79cecce936ad7f2543e44551ccc70dcad"},
+    "args":["/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/tools/run-donor12b-bounded-contexts.sh","/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/donor12b-pr4-rvllm-metal-infer-apple-20260926","off","/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-build/core.metallib","/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/off-bf16-contexts-bounded.json"],
+    "cwd":"/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3", "env":{}
+  },
+  "validator":null,
+  "inputs":[
+    {"path":"/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/tools/run-donor12b-bounded-contexts.sh","sha256":"a2d34e2e613174b163ec0ce7981ca809e6d4decdabe67f2f0d8713df4c948466"},
+    {"path":"/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/donor12b-pr4-rvllm-metal-infer-apple-20260926","sha256":"25a1a8f69626430877274d4ce59a4e65863aa0156b07f3c01dc739ab3feb7761"},
+    {"path":"/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/gemma4-rvllm-good-enough-matrix-20260924/prompts.jsonl","sha256":"03f0c0cd1d80e57ea385be385379635e85d6b3250b299cdcfb2d0ca48ac28aa2"},
+    {"path":"/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-build/core.metallib","sha256":"21d81a66d31075e9307b64b7cb8eb0eea1f1dee74c0865ff3d0fa8125579dd06"},
+    {"path":"/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json","sha256":"478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"}
+  ],
+  "kernel_game_submission":null,
+  "conditions":{"power_source":"ac","low_power_mode":null,"pmset_power_mode":null,"thermal_state":null,"minimum_free_bytes":17179869184,"disk_path":"/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3","quiet_process_names":[],"observe_process_names":["cargo","rustc","metal","metallib","llama-server","ollama","rvllm_disaggregated_infer"],"idle_llama_servers":[]},
+  "stable_seconds":0,"max_wait_seconds":86400,"max_run_seconds":3600
+}

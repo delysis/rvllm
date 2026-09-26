@@ -1519,6 +1519,23 @@ fn check_case_timeout(
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+fn open_model_metal_backend(
+    model_dir: &std::path::Path,
+) -> Result<rvllm_runtime::apple_metal_backend::ModelMetalBackend, String> {
+    use rvllm_runtime::apple_metal_backend::ModelMetalBackend;
+
+    if model_dir
+        .join(rvllm_apple::APPLE_MODEL_PACKAGE_MANIFEST)
+        .exists()
+    {
+        ModelMetalBackend::from_model_package_path(model_dir.to_path_buf())
+            .map_err(|error| format!("open authenticated Apple model package: {error}"))
+    } else {
+        Ok(ModelMetalBackend::new(model_dir.to_path_buf()))
+    }
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 fn run_direct_session(
     args: &CliArgs,
     tokenizer: &tokenizers::Tokenizer,
@@ -1528,7 +1545,6 @@ fn run_direct_session(
 ) -> Result<serde_json::Value, String> {
     use rvllm_apple::{AppleBackend, HandoffCapsule, HandoffKind};
     use rvllm_core::{ReqId, TokenId};
-    use rvllm_runtime::apple_metal_backend::ModelMetalBackend;
 
     let max_supported_total_tokens = max_session_supported_total_tokens(&cases);
     let max_new_tokens = max_session_new_tokens(&cases);
@@ -1553,7 +1569,7 @@ fn run_direct_session(
     );
     let _max_batch_sequences_env =
         EnvGuard::set_value_if(MAX_BATCH_SEQUENCES_ENV, Some("1".to_owned()));
-    let mut backend = ModelMetalBackend::new(args.model_dir.clone());
+    let mut backend = open_model_metal_backend(&args.model_dir)?;
     let plan = build_metal_runtime_plan(args.model_dir.clone(), arch, max_new_tokens)?;
 
     let total_start = std::time::Instant::now();
@@ -2165,6 +2181,13 @@ fn run_session_once(args: &CliArgs) -> Result<serde_json::Value, String> {
             run_direct_session(args, &tokenizer, cases, &arch, effective_large_opt_in)
         }
         SessionBackend::Engine => {
+            if args
+                .model_dir
+                .join(rvllm_apple::APPLE_MODEL_PACKAGE_MANIFEST)
+                .exists()
+            {
+                return Err("model packages require --session-backend direct".to_owned());
+            }
             run_engine_session(args, &tokenizer, cases, &arch, effective_large_opt_in)
         }
     }
@@ -2439,7 +2462,6 @@ fn select_top_logits(logits: &[f32], limit: usize) -> Vec<TopLogit> {
 fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     use rvllm_apple::{AppleBackend, HandoffCapsule, HandoffKind};
     use rvllm_core::{ReqId, TokenId};
-    use rvllm_runtime::apple_metal_backend::ModelMetalBackend;
 
     if !args.model_dir.is_dir() {
         return Err(format!(
@@ -2477,7 +2499,7 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     let _max_batch_sequences_env =
         EnvGuard::set_value_if(MAX_BATCH_SEQUENCES_ENV, Some("1".to_owned()));
 
-    let mut backend = ModelMetalBackend::new(args.model_dir.clone());
+    let mut backend = open_model_metal_backend(&args.model_dir)?;
     let rollout_tokens = u32::try_from(args.max_new_tokens)
         .map_err(|_| format!("--max-new-tokens must be at most {}", u32::MAX))?;
     let plan = rvllm_apple::AppleRuntimePlan {

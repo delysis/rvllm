@@ -933,6 +933,9 @@ pub unsafe fn metal_encode_forward_layer(
         &mut crate::stage_instrumentation::MetalStageProfiler,
     >,
 ) -> Result<()> {
+    if crate::donor12b::simdgroups(pipelines.kernel_options().research).is_some() {
+        pipelines.reset_donor_layer_encoder_correction();
+    }
     let allow_prefill_mma = trace.is_none() && supports_gemma4_prefill_mma(pipelines, dims, phase);
     let buf = arena.buffer_retained();
     let num_tokens = dims.num_tokens;
@@ -1060,9 +1063,12 @@ pub unsafe fn metal_encode_forward_layer(
             && weights.k_norm_offset.is_some()
             && supports_qkv_rope_cache_fusion(dims),
     );
+    // Despite its historical name, this is also the donor's decode FP32
+    // projection lane. Four-byte scratch is already reserved for dense 12B.
     let use_qkv_prefill_projection = use_fused_qkv_rope_cache
-        && matches!(phase, MetalPhase::Prefill { .. })
-        && supports_qkv_prefill_projection(pipelines, dims);
+        && ((matches!(phase, MetalPhase::Prefill { .. })
+            && supports_qkv_prefill_projection(pipelines, dims))
+            || crate::donor12b_metal::projected_qkv_allowed(pipelines, dims, phase));
     validate_qkv_scratch_planar(
         scratch,
         num_tokens as usize,
@@ -1156,24 +1162,39 @@ pub unsafe fn metal_encode_forward_layer(
     // 2-4. QKV projection and optional Gemma-style Q/K/V norms before RoPE.
     if let Some((q_projection, k_projection, v_projection)) = low_bit_qkv {
         if !debug_skip.skip_kv_projection {
-            for ((enabled, column), projection) in
-                low_bit_qkv_dispatch_columns(debug_skip.skip_kv_projection, q_dim, kv_dim)
-                    .into_iter()
-                    .zip([q_projection, k_projection, v_projection])
-            {
-                debug_assert!(enabled);
-                encode_low_bit_projection_strided(
-                    &cmd_buf,
-                    pipelines,
-                    buf,
-                    projection,
-                    scratch.normed_hidden,
-                    scratch.qkv_out,
-                    num_tokens,
-                    qkv_n,
-                    column,
-                    phase,
-                )?;
+            let donor_qkv = crate::donor12b_metal::try_encode_qkv(
+                pipelines,
+                cmd_buf,
+                buf,
+                dims,
+                phase,
+                [q_projection, k_projection, v_projection],
+                scratch.normed_hidden,
+                scratch.qkv_out,
+                trace.is_some(),
+                false,
+            )?;
+            if !donor_qkv {
+                for ((enabled, column), projection) in
+                    low_bit_qkv_dispatch_columns(debug_skip.skip_kv_projection, q_dim, kv_dim)
+                        .into_iter()
+                        .zip([q_projection, k_projection, v_projection])
+                {
+                    debug_assert!(enabled);
+                    encode_low_bit_projection_strided(
+                        &cmd_buf,
+                        pipelines,
+                        buf,
+                        projection,
+                        scratch.normed_hidden,
+                        scratch.qkv_out,
+                        num_tokens,
+                        qkv_n,
+                        column,
+                        phase,
+                        dims,
+                    )?;
+                }
             }
             encode_split_qkv(
                 &cmd_buf,
@@ -1199,6 +1220,7 @@ pub unsafe fn metal_encode_forward_layer(
                 q_dim,
                 0,
                 phase,
+                dims,
             )?;
         }
         if let Some(q_norm_offset) = weights.q_norm_offset {
@@ -1339,6 +1361,12 @@ pub unsafe fn metal_encode_forward_layer(
                         true,
                         allow_prefill_mma,
                     )?;
+                    if crate::donor12b::simdgroups(pipelines.kernel_options().research).is_some()
+                        && !(matches!(phase, MetalPhase::Prefill { .. })
+                            && supports_qkv_prefill_projection(pipelines, dims))
+                    {
+                        pipelines.add_donor_layer_encoder_correction(1);
+                    }
                 }
                 encode_qkv_headwise_rmsnorm_rope_cache(
                     &cmd_buf,
@@ -1781,9 +1809,27 @@ pub unsafe fn metal_encode_forward_layer(
     // 7. Attention
     match phase {
         MetalPhase::Decode => {
+            let donor_attention = crate::donor12b_metal::try_encode_attention(
+                pipelines,
+                cmd_buf,
+                buf,
+                dims,
+                phase,
+                [
+                    scratch.q_offset,
+                    attention_kv_cache_k_offset,
+                    attention_kv_cache_v_offset,
+                    scratch.attn_out,
+                    meta.block_tables_offset,
+                    meta.context_lens_offset,
+                    meta.positions_offset,
+                ],
+            )?;
             // Explicit opt-in only; unsupported requests retain the unchanged
             // incumbent route. The adapter records only actual candidate encodes.
-            let split_encoded = if let Some(partials) = scratch.global_decode_partials {
+            let split_encoded = if donor_attention {
+                None
+            } else if let Some(partials) = scratch.global_decode_partials {
                 crate::attention_global_decode_metal::try_encode_split_global_decode(
                     pipelines,
                     cmd_buf,
@@ -1807,7 +1853,8 @@ pub unsafe fn metal_encode_forward_layer(
             } else {
                 None
             };
-            if split_encoded.is_none()
+            if !donor_attention
+                && split_encoded.is_none()
                 && crate::attention_global_decode_metal::try_encode_global_decode(
                     pipelines,
                     cmd_buf,
@@ -2168,6 +2215,7 @@ pub unsafe fn metal_encode_forward_layer(
                 hidden,
                 0,
                 phase,
+                dims,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2267,6 +2315,7 @@ pub unsafe fn metal_encode_forward_layer(
                 hidden,
                 0,
                 phase,
+                dims,
             )?;
         } else {
             encode_gemm_with_output(
@@ -2354,21 +2403,33 @@ pub unsafe fn metal_encode_forward_layer(
         && weights.per_layer_projection_offset.is_some()
         && weights.post_per_layer_input_norm_offset.is_some();
     let mut layer_scale_fused = false;
-    let bf16_gate = crate::research_decode_metal::try_encode_gate_up(
+    let donor_gate = crate::donor12b_metal::try_encode_gate(
         pipelines,
         cmd_buf,
-        &buf,
-        research_bf16_gate_request(
-            pipelines,
-            dims,
-            phase,
-            weights,
-            scratch,
-            trace.is_some(),
-            buf.length(),
-        ),
+        buf,
+        dims,
+        phase,
+        weights,
+        scratch,
+        trace.is_some(),
     )?;
-    let rounded_gate = !bf16_gate
+    let bf16_gate = !donor_gate
+        && crate::research_decode_metal::try_encode_gate_up(
+            pipelines,
+            cmd_buf,
+            &buf,
+            research_bf16_gate_request(
+                pipelines,
+                dims,
+                phase,
+                weights,
+                scratch,
+                trace.is_some(),
+                buf.length(),
+            ),
+        )?;
+    let rounded_gate = !donor_gate
+        && !bf16_gate
         && low_bit_gate_up.is_none()
         && supports_research_rounded_gate(
             pipelines,
@@ -2388,47 +2449,51 @@ pub unsafe fn metal_encode_forward_layer(
             scratch,
             trace.is_some(),
         )?;
-    if let Some((gate_projection, up_projection)) = low_bit_gate_up {
-        encode_low_bit_projection_strided(
-            &cmd_buf,
-            pipelines,
-            buf,
-            gate_projection,
-            scratch.normed_hidden,
-            scratch.gate_up_out,
-            num_tokens,
-            two_inter,
-            0,
-            phase,
-        )?;
-        encode_low_bit_projection_strided(
-            &cmd_buf,
-            pipelines,
-            buf,
-            up_projection,
-            scratch.normed_hidden,
-            scratch.gate_up_out,
-            num_tokens,
-            two_inter,
-            dims.intermediate,
-            phase,
-        )?;
-    } else if !rounded_gate && !bf16_gate {
-        encode_gemm_with_output(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.normed_hidden,
-            weights.gate_up_offset,
-            scratch.gate_up_out,
-            num_tokens,
-            two_inter,
-            hidden,
-            1.0,
-            0.0,
-            false,
-            allow_prefill_mma,
-        )?;
+    if !donor_gate {
+        if let Some((gate_projection, up_projection)) = low_bit_gate_up {
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                gate_projection,
+                scratch.normed_hidden,
+                scratch.gate_up_out,
+                num_tokens,
+                two_inter,
+                0,
+                phase,
+                dims,
+            )?;
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                up_projection,
+                scratch.normed_hidden,
+                scratch.gate_up_out,
+                num_tokens,
+                two_inter,
+                dims.intermediate,
+                phase,
+                dims,
+            )?;
+        } else if !rounded_gate && !bf16_gate {
+            encode_gemm_with_output(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.normed_hidden,
+                weights.gate_up_offset,
+                scratch.gate_up_out,
+                num_tokens,
+                two_inter,
+                hidden,
+                1.0,
+                0.0,
+                false,
+                allow_prefill_mma,
+            )?;
+        }
     }
     if let Some(trace) = trace {
         encode_trace_copy(
@@ -2442,7 +2507,7 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    if !rounded_gate && !bf16_gate {
+    if !donor_gate && !rounded_gate && !bf16_gate {
         encode_gelu_mul(
             &cmd_buf,
             pipelines,
@@ -2500,6 +2565,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.mlp_out,
                 num_tokens,
                 phase,
+                dims,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2656,6 +2722,7 @@ pub unsafe fn metal_encode_forward_layer(
                 raw_output,
                 num_tokens,
                 phase,
+                dims,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2726,6 +2793,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.mlp_out,
                 num_tokens,
                 phase,
+                dims,
             )?;
         } else {
             encode_gemm_with_output(
@@ -6195,7 +6263,39 @@ unsafe fn encode_low_bit_down_projection(
     output_offset: usize,
     num_tokens: u32,
     phase: MetalPhase,
+    dims: &MetalLayerDims,
 ) -> Result<()> {
+    if crate::donor12b::simdgroups(pipelines.kernel_options().research).is_some()
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+    {
+        let encoded = crate::donor12b_metal::try_encode_low_bit_projection(
+            pipelines,
+            cmd_buf,
+            buf,
+            dims,
+            phase,
+            projection,
+            activation_offset,
+            output_offset,
+            projection.shape()[0],
+            0,
+        )?;
+        if !encoded {
+            projection
+                .encode_strided_bf16_n4(
+                    cmd_buf,
+                    pipelines,
+                    buf,
+                    activation_offset,
+                    output_offset,
+                    num_tokens as usize,
+                    projection.shape()[0] as usize,
+                    0,
+                )
+                .map_err(|_| low_bit_research_encoding_error())?;
+        }
+        return Ok(());
+    }
     let selected = pipelines.kernel_options().research;
     let targeted = matches!(
         (selected, projection.role()),
@@ -6285,7 +6385,39 @@ unsafe fn encode_low_bit_projection_strided(
     output_row_stride: u32,
     output_column: u32,
     phase: MetalPhase,
+    dims: &MetalLayerDims,
 ) -> Result<()> {
+    if crate::donor12b::simdgroups(pipelines.kernel_options().research).is_some()
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+    {
+        let encoded = crate::donor12b_metal::try_encode_low_bit_projection(
+            pipelines,
+            cmd_buf,
+            buf,
+            dims,
+            phase,
+            projection,
+            activation_offset,
+            output_offset,
+            output_row_stride,
+            output_column,
+        )?;
+        if !encoded {
+            projection
+                .encode_strided_bf16_n4(
+                    cmd_buf,
+                    pipelines,
+                    buf,
+                    activation_offset,
+                    output_offset,
+                    num_tokens as usize,
+                    output_row_stride as usize,
+                    output_column as usize,
+                )
+                .map_err(|_| low_bit_research_encoding_error())?;
+        }
+        return Ok(());
+    }
     let selected = pipelines.kernel_options().research;
     let targeted = matches!(
         (selected, projection.role()),
@@ -6401,6 +6533,18 @@ unsafe fn encode_gemm_with_output(
     output_f32: bool,
     allow_prefill_mma: bool,
 ) -> Result<()> {
+    if crate::donor12b_metal::try_encode_native_projection(
+        pipelines,
+        cmd_buf,
+        buf,
+        [a_offset, b_offset, c_offset],
+        [m, n, k],
+        alpha,
+        beta,
+        output_f32,
+    )? {
+        return Ok(());
+    }
     let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
         rvllm_core::RvllmError::apple(
             rvllm_core::AppleError::MetalUnavailable,

@@ -1,0 +1,672 @@
+{
+  "cases": [
+    {
+      "all_outputs_checked_finite": true,
+      "case": "w4-down-m1",
+      "expected_gpu_no_write": false,
+      "grid": [
+        240,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_w4",
+      "max_sampled_absolute_error": 0.00048828125,
+      "output_fp32": false,
+      "output_stride": 3848,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 6,
+      "shape": [
+        1,
+        3840
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "w8-o-global-m1",
+      "expected_gpu_no_write": false,
+      "grid": [
+        240,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_w8",
+      "max_sampled_absolute_error": 0.00390625,
+      "output_fp32": false,
+      "output_stride": 3848,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 6,
+      "shape": [
+        1,
+        3840
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "w4-gate-m9",
+      "expected_gpu_no_write": false,
+      "grid": [
+        1920,
+        2,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_batch_w4",
+      "max_sampled_absolute_error": 0.000457763671875,
+      "output_fp32": false,
+      "output_stride": 15368,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 54,
+      "shape": [
+        9,
+        15360
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "w8-o-local-m9",
+      "expected_gpu_no_write": false,
+      "grid": [
+        480,
+        2,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_batch_w8",
+      "max_sampled_absolute_error": 0.0152587890625,
+      "output_fp32": false,
+      "output_stride": 3848,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 54,
+      "shape": [
+        9,
+        3840
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "fused-gate-w4",
+      "expected_gpu_no_write": false,
+      "grid": [
+        960,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_gate_w4",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": false,
+      "output_stride": 15360,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 7,
+      "shape": [
+        1,
+        15360
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "fused-gate-w8",
+      "expected_gpu_no_write": false,
+      "grid": [
+        960,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_gate_w8",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": false,
+      "output_stride": 15360,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 7,
+      "shape": [
+        1,
+        15360
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "fused-gate-native",
+      "expected_gpu_no_write": false,
+      "grid": [
+        960,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_native_gate",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": false,
+      "output_stride": 15360,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 7,
+      "shape": [
+        1,
+        15360
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "qkv-w4-local",
+      "expected_gpu_no_write": false,
+      "grid": [
+        512,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_qkv_w4",
+      "max_sampled_absolute_error": 0.000213623046875,
+      "output_fp32": false,
+      "output_stride": 8192,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 15,
+      "shape": [
+        1,
+        8192
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "qkv-w4-global",
+      "expected_gpu_no_write": false,
+      "grid": [
+        544,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_qkv_w4",
+      "max_sampled_absolute_error": 0.00030517578125,
+      "output_fp32": false,
+      "output_stride": 9216,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 15,
+      "shape": [
+        1,
+        9216
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "qkv-w8-local",
+      "expected_gpu_no_write": false,
+      "grid": [
+        512,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_qkv_w8",
+      "max_sampled_absolute_error": 0.01519775390625,
+      "output_fp32": false,
+      "output_stride": 8192,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 15,
+      "shape": [
+        1,
+        8192
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "qkv-w8-global",
+      "expected_gpu_no_write": false,
+      "grid": [
+        544,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_qkv_w8",
+      "max_sampled_absolute_error": 0.01519775390625,
+      "output_fp32": false,
+      "output_stride": 9216,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 15,
+      "shape": [
+        1,
+        9216
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "native-qkv-m9-f32",
+      "expected_gpu_no_write": false,
+      "grid": [
+        1152,
+        2,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_native_projection",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": true,
+      "output_stride": 9224,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 54,
+      "shape": [
+        9,
+        9216
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "native-o-m1-f32",
+      "expected_gpu_no_write": false,
+      "grid": [
+        240,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_native_projection",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": true,
+      "output_stride": 3848,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 6,
+      "shape": [
+        1,
+        3840
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "attention-local-mode0",
+      "expected_gpu_no_write": false,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_local_attention",
+      "max_sampled_absolute_error": 3.7430299028860022e-6,
+      "output_fp32": false,
+      "output_stride": 4096,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 4096,
+      "shape": [
+        1,
+        4096
+      ],
+      "status": "passed",
+      "threads": [
+        256,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "attention-local-mode1",
+      "expected_gpu_no_write": false,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_local_attention",
+      "max_sampled_absolute_error": 0.00024061387204046825,
+      "output_fp32": false,
+      "output_stride": 4096,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 4096,
+      "shape": [
+        1,
+        4096
+      ],
+      "status": "passed",
+      "threads": [
+        256,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "attention-local-mode2",
+      "expected_gpu_no_write": false,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_local_attention",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": false,
+      "output_stride": 4096,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 4096,
+      "shape": [
+        1,
+        4096
+      ],
+      "status": "passed",
+      "threads": [
+        256,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": false,
+      "case": "attention-local-mode3",
+      "expected_gpu_no_write": true,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_local_attention",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": false,
+      "output_stride": 4096,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 0,
+      "shape": [
+        1,
+        4096
+      ],
+      "status": "passed",
+      "threads": [
+        256,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "attention-global-mode0",
+      "expected_gpu_no_write": false,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_global_attention",
+      "max_sampled_absolute_error": 7.591174275240007e-6,
+      "output_fp32": false,
+      "output_stride": 8192,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 8192,
+      "shape": [
+        1,
+        8192
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "attention-global-mode1",
+      "expected_gpu_no_write": false,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_global_attention",
+      "max_sampled_absolute_error": 0.00023393046350274338,
+      "output_fp32": false,
+      "output_stride": 8192,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 8192,
+      "shape": [
+        1,
+        8192
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": true,
+      "case": "attention-global-mode2",
+      "expected_gpu_no_write": false,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_global_attention",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": false,
+      "output_stride": 8192,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 8192,
+      "shape": [
+        1,
+        8192
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    },
+    {
+      "all_outputs_checked_finite": false,
+      "case": "attention-global-mode3",
+      "expected_gpu_no_write": true,
+      "grid": [
+        16,
+        1,
+        1
+      ],
+      "kernel": "research_donor12b_sg4_global_attention",
+      "max_sampled_absolute_error": 0.0,
+      "output_fp32": false,
+      "output_stride": 8192,
+      "repeat_count": 3,
+      "sampled_fp64_outputs": 0,
+      "shape": [
+        1,
+        8192
+      ],
+      "status": "passed",
+      "threads": [
+        128,
+        1,
+        1
+      ]
+    }
+  ],
+  "identity": {
+    "build_receipt_sha256": "8c4f3ce0083a7a5b628b924a1d0e8ff734d59ea7d44b0f339239c80d91cef8e5",
+    "candidate": "metal-donor12b-sg4",
+    "core_sha256": "c9ee195a84710489e662f7fedd9996154359493b92290ac51faca471b46ec219",
+    "device_name": "Apple M4 Max",
+    "gpu_family": "Apple9",
+    "grid": null,
+    "kernel": "research_donor12b_sg4_w4",
+    "kernels": [
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_batch_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_batch_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_gate_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_gate_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_qkv_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_qkv_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_native_gate",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_native_projection",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 8256,
+        "name": "research_donor12b_sg4_local_attention",
+        "source_threadgroup_bytes": 8256,
+        "threads": 256
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 8224,
+        "name": "research_donor12b_sg4_global_attention",
+        "source_threadgroup_bytes": 8224,
+        "threads": 128
+      }
+    ],
+    "keys": 0,
+    "metallib_sha256": "94372f6c3af50e537d30758fc0d6742363174718dc3cd541a7f2aa61ee7298b0",
+    "oracle_library": true,
+    "panel": 8,
+    "rows": 4,
+    "scratch_bytes": 0,
+    "simd_matrix": false,
+    "source_sha256": "c9ee195a84710489e662f7fedd9996154359493b92290ac51faca471b46ec219",
+    "test_executable_sha256": "f33ed1371cffef919f9b41cc989dfd79701f2012e61dcf5de708374ea10c39c4",
+    "threads": 128
+  },
+  "model_oracle": false,
+  "performance_claim": false,
+  "production_promotion": false,
+  "scope": "dense-synthetic-operator-only",
+  "status": "passed"
+}
