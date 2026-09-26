@@ -883,6 +883,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
     // execution so its history still spans the complete admission interval.
     let mut monitor = None;
     let mut idle = Instant::now();
+    let mut idle_jobs_modified = None;
     let mut waiting = BTreeMap::<String, Instant>::new();
     loop {
         if stopped(queue, &stop) {
@@ -891,6 +892,14 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 &json!({"status":"stopped","pid":std::process::id()}),
             )?;
             return Ok(());
+        }
+        let jobs_modified = fs::metadata(queue.join("jobs"))?.modified()?;
+        if idle_jobs_modified == Some(jobs_modified) {
+            if idle_seconds.is_some_and(|seconds| idle.elapsed() >= Duration::from_secs(seconds)) {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_secs(1));
+            continue;
         }
         let mut selected = None;
         let mut pending = Vec::new();
@@ -1022,6 +1031,13 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
             )?;
             if pending.is_empty() {
                 monitor = None;
+                // Submission publishes a manifest by renaming it into jobs/;
+                // that directory mtime is the cheap generation signal. Avoid
+                // reparsing every historical manifest/result once per second
+                // while still noticing newly published work promptly.
+                idle_jobs_modified = Some(jobs_modified);
+            } else {
+                idle_jobs_modified = None;
             }
             if !pending.is_empty() {
                 idle = Instant::now();
