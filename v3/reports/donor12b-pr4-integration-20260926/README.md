@@ -316,6 +316,17 @@ exited successfully. Thus the numerical difference is repeatable in two
 independent processes per arm; the second timing pair remains diagnostic,
 not a qualified promotion ratio. Its raw manifests, outputs, condition
 samples, and queue reports are in `queue-results/g4-donor12b-pr4-{29,30}-*/`.
+Two further queued single-prompt probes (31–32) re-used the exact same 256
+prompt-token IDs and reproduced the complete 64-token outputs while reading
+the final top ten logits. Both queue condition strata were eligible. SG8
+ranked token `236761` first at `17.375`, ahead of `236770` at `16.625`;
+selector-off ranked `236770` first at `17.5`, ahead of `236761` at `17.375`.
+The diagnostic re-finalizes the last residual into the logits buffer, adding
+one native projection dispatch on SG8; these are FP16-buffer diagnostic
+logits, not an independent FP64 oracle or a direct tap of the sampled value.
+They show a material change in ranking and margin at the exact divergent
+step, not merely an unobserved sampler tie. Receipts are in
+`queue-results/g4-donor12b-pr4-{31,32}-*/`.
 Until the discrepancy is understood or bounded by a
 checkpoint-quality criterion, SG8 remains the BF16 performance leader but
 not the production default. W4/W8 package quality is evaluated separately
@@ -337,6 +348,33 @@ lead. It demonstrates how much the earlier two-token extrapolation can
 overstate a cross-framework result in a changing host state. The exact
 original MLX/rvLLM comparison and limitations are
 in `../gemma4-rvllm-good-enough-matrix-20260924/README.md`.
+
+## Opt-in Metal prefill-stage diagnostic: unsupported counters on this host
+
+An instrumentation-feature-only change retains the completed prefill stage
+receipt separately from the last decode receipt. It is absent from production
+builds and does not insert a hot-path branch there. The feature build passed
+its 11 CLI tests (six existing device tests ignored), and the five targeted
+stage-instrumentation tests passed. This is source/host coverage, not a
+measurement.
+
+Queue job 33 is intentionally retained as a quarantined pre-execution error:
+the single-prompt CLI rejected `--report`, which is session-only. Corrected
+job 34 used executable SHA-256
+`1784f4f5da50e2aa1d68ac4456f9a688a72f8b169ce0d51308780464bc5ce79b`;
+it completed the real BF16 256-token route but all 337 prefill and 338 decode
+GPU timestamp spans were `zero_timestamp`, so the receipt correctly reports
+`unsupported` and no stage totals. A diagnostic build temporarily preferred
+dispatch-boundary sampling (SHA-256
+`e1534a2eba4f00d39271e798bd0e2886cb8469230116daa7b3f11e4b09f5aa22`),
+but job 35 still selected stage-boundary sampling and returned all-zero
+timestamps. Both successful jobs had eligible observed queue conditions.
+The ineffective sampling-preference edit was reverted; no per-stage time is
+asserted. The CLI/queue totals still show roughly 21.6–23.7 seconds of
+prefill, but cannot apportion it among projections, FFN, attention, and
+runtime from these counter receipts. A trace or separately bounded stage
+isolation experiment is required. Raw jobs, stderr/stdout, conditions, and
+the failed quarantine receipt are preserved beside this report.
 
 Remaining gates: real-weight W4/W8 sidecar correctness, per-layer
 and KV comparison, dedicated long-context attention correctness/timing,

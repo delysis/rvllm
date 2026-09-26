@@ -81,6 +81,8 @@ struct InferReport {
     last_step_gpu_execution_ns: Option<u64>,
     #[cfg(feature = "metal-stage-instrumentation")]
     metal_stage_timing: Option<serde_json::Value>,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    metal_prefill_stage_timing: Option<serde_json::Value>,
     research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
@@ -714,6 +716,17 @@ fn report_value(
             "metal_stage_timing".to_owned(),
             report
                 .metal_stage_timing
+                .clone()
+                .unwrap_or(serde_json::Value::Null),
+        );
+    #[cfg(feature = "metal-stage-instrumentation")]
+    value
+        .as_object_mut()
+        .expect("infer report must be a JSON object")
+        .insert(
+            "metal_prefill_stage_timing".to_owned(),
+            report
+                .metal_prefill_stage_timing
                 .clone()
                 .unwrap_or(serde_json::Value::Null),
         );
@@ -2646,6 +2659,8 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         last_step_gpu_execution_ns: stats.last_step_gpu_execution_ns,
         #[cfg(feature = "metal-stage-instrumentation")]
         metal_stage_timing: backend.last_stage_timing_receipt(),
+        #[cfg(feature = "metal-stage-instrumentation")]
+        metal_prefill_stage_timing: backend.last_prefill_stage_timing_receipt(),
         research_dispatch,
         command_buffers: stats.command_buffers,
         encoders: stats.encoders,
@@ -3169,6 +3184,11 @@ mod tests {
                 "schema": "rvllm.metal_stage_timing.v1",
                 "sampling_point": "compute_stage_boundary"
             })),
+            #[cfg(feature = "metal-stage-instrumentation")]
+            metal_prefill_stage_timing: Some(serde_json::json!({
+                "schema": "rvllm.metal_stage_timing.v1",
+                "phase": "prefill"
+            })),
             research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
@@ -3215,6 +3235,8 @@ mod tests {
             value["metal_stage_timing"]["schema"],
             "rvllm.metal_stage_timing.v1"
         );
+        #[cfg(feature = "metal-stage-instrumentation")]
+        assert_eq!(value["metal_prefill_stage_timing"]["phase"], "prefill");
         assert_eq!(value["research_dispatch"]["schema"], "test");
         assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
         assert_eq!(
@@ -3245,6 +3267,8 @@ mod tests {
             last_step_gpu_execution_ns: Some(1_000_000),
             #[cfg(feature = "metal-stage-instrumentation")]
             metal_stage_timing: None,
+            #[cfg(feature = "metal-stage-instrumentation")]
+            metal_prefill_stage_timing: None,
             research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,

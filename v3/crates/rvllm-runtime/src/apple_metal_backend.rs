@@ -460,6 +460,8 @@ struct MetalProbePerfCounters {
     last_step_gpu_execution_ns: Cell<Option<u64>>,
     #[cfg(feature = "metal-stage-instrumentation")]
     last_stage_timing_receipt: RefCell<Option<serde_json::Value>>,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    last_prefill_stage_timing_receipt: RefCell<Option<serde_json::Value>>,
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -490,6 +492,8 @@ impl MetalProbePerfCounters {
         self.last_step_gpu_execution_ns.set(None);
         #[cfg(feature = "metal-stage-instrumentation")]
         self.last_stage_timing_receipt.borrow_mut().take();
+        #[cfg(feature = "metal-stage-instrumentation")]
+        self.last_prefill_stage_timing_receipt.borrow_mut().take();
     }
 
     fn snapshot(&self) -> MetalProbePerfStats {
@@ -1468,6 +1472,9 @@ impl ModelGpuSubmission {
                     model_ctx("resolve_stage_timing"),
                 )
             })?;
+            if !self.is_decode {
+                *perf.last_prefill_stage_timing_receipt.borrow_mut() = Some(receipt.clone());
+            }
             *perf.last_stage_timing_receipt.borrow_mut() = Some(receipt);
         }
 
@@ -1965,6 +1972,11 @@ impl ModelMetalBackend {
     #[cfg(feature = "metal-stage-instrumentation")]
     pub fn last_stage_timing_receipt(&self) -> Option<serde_json::Value> {
         self.perf.last_stage_timing_receipt.borrow().clone()
+    }
+
+    #[cfg(feature = "metal-stage-instrumentation")]
+    pub fn last_prefill_stage_timing_receipt(&self) -> Option<serde_json::Value> {
+        self.perf.last_prefill_stage_timing_receipt.borrow().clone()
     }
 
     /// Encoded research dispatches, not proof of GPU completion or accuracy.
