@@ -20,9 +20,10 @@ mod macos {
         AppleLowBitTensorRole, AppleLowBitWeightFormat, PackedAppleLowBitWeights,
     };
     use rvllm_apple_metal::{
-        kernels::kernel_source_for_float_type, weight_loader::scan_safetensor_tensors,
-        MetalBufferArena, MetalContext, MetalFloatType, MetalLowBitProjectionOffsets,
-        PipelineCache,
+        kernels::kernel_source_with_options, research_decode::qmv_decode_contract,
+        research_evidence::ResearchKernel, weight_loader::scan_safetensor_tensors,
+        MetalBufferArena, MetalContext, MetalFloatType, MetalKernelOptions,
+        MetalLowBitProjectionOffsets, MetalResearchCandidate, PipelineCache,
     };
     use serde_json::{json, Value};
     use sha2::{Digest, Sha256};
@@ -44,6 +45,7 @@ mod macos {
         Vector,
         Adaptive,
         N4VsN8,
+        ResearchR4Sg8K8,
     }
 
     impl CandidateSchedule {
@@ -55,8 +57,9 @@ mod macos {
                 "vector" => Ok(Self::Vector),
                 "adaptive" => Ok(Self::Adaptive),
                 "n4-vs-n8" => Ok(Self::N4VsN8),
+                "research-r4-sg8-k8" => Ok(Self::ResearchR4Sg8K8),
                 _ => Err(
-                    "--candidate must be scalar, n4, n8, vector, adaptive, or n4-vs-n8".to_owned(),
+                    "--candidate must be scalar, n4, n8, vector, adaptive, n4-vs-n8, or research-r4-sg8-k8".to_owned(),
                 ),
             }
         }
@@ -69,6 +72,7 @@ mod macos {
                 Self::Vector => "vector",
                 Self::Adaptive => "adaptive",
                 Self::N4VsN8 => "n4-vs-n8",
+                Self::ResearchR4Sg8K8 => "research-r4-sg8-k8",
             }
         }
     }
@@ -109,7 +113,36 @@ mod macos {
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
          [--m 1,4] [--format w4a16|w8a16|both] [--samples 5] \
-         [--candidate scalar|n4|n8|vector|adaptive|n4-vs-n8] [--order abba|baab]"
+         [--candidate scalar|n4|n8|vector|adaptive|n4-vs-n8|research-r4-sg8-k8] [--order abba|baab]"
+    }
+
+    fn research_candidate(format: AppleLowBitWeightFormat) -> MetalResearchCandidate {
+        match format {
+            AppleLowBitWeightFormat::W4A16 => MetalResearchCandidate::QmvW4G32R4Sg8K8,
+            AppleLowBitWeightFormat::W8A16 => MetalResearchCandidate::QmvW8G32R4Sg8K8,
+        }
+    }
+
+    fn research_kernel(format: AppleLowBitWeightFormat) -> ResearchKernel {
+        match format {
+            AppleLowBitWeightFormat::W4A16 => ResearchKernel::QmvW4G32R4Sg8K8,
+            AppleLowBitWeightFormat::W8A16 => ResearchKernel::QmvW8G32R4Sg8K8,
+        }
+    }
+
+    fn research_cell_allowed(
+        formats: &[AppleLowBitWeightFormat],
+        ms: &[usize],
+        role: AppleLowBitTensorRole,
+        n: usize,
+        k: usize,
+    ) -> bool {
+        let [format] = formats else { return false };
+        let [m] = ms else { return false };
+        let (Ok(n), Ok(k)) = (u32::try_from(n), u32::try_from(k)) else {
+            return false;
+        };
+        qmv_decode_contract(research_candidate(*format), *format, role, *m, n, k)
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -535,6 +568,22 @@ mod macos {
         n: usize,
     ) -> Result<(), String> {
         let schedule = resolve_schedule(schedule, projection, m);
+        if schedule == CandidateSchedule::ResearchR4Sg8K8 {
+            return match projection.try_encode_strided_bf16_decode_candidate(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ) {
+                Ok(true) => Ok(()),
+                Ok(false) => Err("research QMV refused the authenticated decode cell".to_owned()),
+                Err(error) => Err(error.to_string()),
+            };
+        }
         let result = match schedule {
             CandidateSchedule::Scalar => projection.encode_strided_bf16(
                 command,
@@ -580,6 +629,7 @@ mod macos {
             CandidateSchedule::N4VsN8 => {
                 return Err("direct comparison is not a kernel schedule".to_owned())
             }
+            CandidateSchedule::ResearchR4Sg8K8 => unreachable!("research handled above"),
         };
         result.map_err(|error| error.to_string())
     }
@@ -881,6 +931,7 @@ mod macos {
         // A rejected alias must neither encode work nor touch the poisoned
         // destination. This exercises the same schedule selector used below.
         let rejected_before = pipelines.low_bit_dispatch_snapshot();
+        let rejected_research_before = pipelines.research_dispatch_snapshot();
         let rejected = ctx
             .queue_retained()
             .commandBuffer()
@@ -907,6 +958,14 @@ mod macos {
         rejected_delta
             .verify_exact(format, [0; AppleLowBitTensorRole::COUNT])
             .map_err(str::to_owned)?;
+        if schedule == CandidateSchedule::ResearchR4Sg8K8 {
+            pipelines
+                .research_dispatch_snapshot()
+                .checked_since(rejected_research_before)
+                .map_err(str::to_owned)?
+                .verify_exact(research_kernel(format), 0)
+                .map_err(str::to_owned)?;
+        }
         if unsafe { read_bf16(&arena, &low_out, output_count) }
             .iter()
             .any(|value| value.to_bits() != SENTINEL)
@@ -915,6 +974,7 @@ mod macos {
         }
 
         let before = pipelines.low_bit_dispatch_snapshot();
+        let research_before = pipelines.research_dispatch_snapshot();
         submit(ctx, |command| {
             encode_candidate(
                 schedule,
@@ -970,6 +1030,14 @@ mod macos {
             .map_err(str::to_owned)?
             .verify_exact(format, exact)
             .map_err(str::to_owned)?;
+        if schedule == CandidateSchedule::ResearchR4Sg8K8 {
+            pipelines
+                .research_dispatch_snapshot()
+                .checked_since(research_before)
+                .map_err(str::to_owned)?
+                .verify_exact(research_kernel(format), 2)
+                .map_err(str::to_owned)?;
+        }
 
         // Warm both paths before the interleaved A-B-B-A blocks.
         submit(ctx, |command| {
@@ -988,6 +1056,7 @@ mod macos {
         let native_actual = unsafe { read_bf16(&arena, &native_out, output_count) };
         let native_accuracy = accuracy(&native_actual, &native_expected)?;
         let timing_dispatch_before = pipelines.low_bit_dispatch_snapshot();
+        let timing_research_before = pipelines.research_dispatch_snapshot();
         submit(ctx, |command| {
             encode_candidate(
                 schedule,
@@ -1058,6 +1127,14 @@ mod macos {
         timing_dispatch
             .verify_exact(format, timing_exact)
             .map_err(str::to_owned)?;
+        if schedule == CandidateSchedule::ResearchR4Sg8K8 {
+            pipelines
+                .research_dispatch_snapshot()
+                .checked_since(timing_research_before)
+                .map_err(str::to_owned)?
+                .verify_exact(research_kernel(format), timing_exact[role.index()])
+                .map_err(str::to_owned)?;
+        }
         let guard_values = unsafe { read_bf16(&arena, &guard, 32) };
         if guard_values.iter().any(|value| value.to_bits() != SENTINEL) {
             return Err("output guard changed during timing".to_owned());
@@ -1090,6 +1167,7 @@ mod macos {
                     CandidateSchedule::Vector => projection.experimental_bf16_vector_kernel_name(),
                     CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
                     CandidateSchedule::N4VsN8 => unreachable!("direct mode has a separate referee"),
+                    CandidateSchedule::ResearchR4Sg8K8 => research_kernel(format).name(),
                 },
                 "activation_dtype": "BF16", "output_dtype": "BF16", "scale_dtype": "F16", "accumulation_dtype": "F32",
                 "native_ms": native_ms, "candidate_ms": low_ms,
@@ -1108,21 +1186,36 @@ mod macos {
             return Err("tensor must be rank two".to_owned());
         }
         let role = role(&args.tensor)?;
+        let [n, k] = [info.shape[0], info.shape[1]];
+        let research_format = if args.candidate == CandidateSchedule::ResearchR4Sg8K8 {
+            if !research_cell_allowed(&args.formats, &args.ms, role, n, k) {
+                return Err(
+                    "research-r4-sg8-k8 requires exactly one format and M1: W4 Down K15360 or W8 Output K4096/K8192, N3840"
+                        .to_owned(),
+                );
+            }
+            Some(args.formats[0])
+        } else {
+            None
+        };
         let raw = read_exact_range(&info.file, info.file_offset, info.nbytes)?;
         let tensor_sha256 = sha256(&raw);
         if info.dtype != rvllm_core::DType::Bf16 {
             return Err("native-BF16 referee requires a BF16 checkpoint tensor".to_owned());
         }
         let (source_f32, native_bf16) = decode_weights(info.dtype, &raw)?;
-        let [n, k] = [info.shape[0], info.shape[1]];
         if source_f32.len() != n.checked_mul(k).ok_or("tensor shape overflow")? {
             return Err("tensor payload disagrees with shape".to_owned());
         }
         let mut ctx = MetalContext::new().map_err(|e| e.to_string())?;
-        let generated_msl = kernel_source_for_float_type(MetalFloatType::Bf16);
+        let kernel_options = MetalKernelOptions {
+            research: research_format.map_or(MetalResearchCandidate::Off, research_candidate),
+            ..MetalKernelOptions::default()
+        };
+        let generated_msl = kernel_source_with_options(MetalFloatType::Bf16, kernel_options);
         ctx.compile_library(&generated_msl)
             .map_err(|e| e.to_string())?;
-        let mut pipelines = PipelineCache::new();
+        let mut pipelines = PipelineCache::with_kernel_options(kernel_options);
         let candidate_kernels: &[&str] = match args.candidate {
             CandidateSchedule::Scalar => [
                 "experimental_projection_w4abf16_bf16",
@@ -1160,8 +1253,13 @@ mod macos {
                 "experimental_projection_w8abf16_bf16_n8",
             ]
             .as_slice(),
+            CandidateSchedule::ResearchR4Sg8K8 => &[],
         };
-        if args.candidate != CandidateSchedule::N4VsN8 {
+        if research_format.is_some() {
+            pipelines
+                .compile_all_for_type(&ctx, MetalFloatType::Bf16)
+                .map_err(|e| e.to_string())?;
+        } else if args.candidate != CandidateSchedule::N4VsN8 {
             pipelines
                 .compile(&ctx, "gemm_f16_vec8")
                 .map_err(|e| e.to_string())?;
@@ -1216,7 +1314,12 @@ mod macos {
             "generated_msl_sha256": sha256(generated_msl.as_bytes()), "executable_sha256": hash_file(&executable)?,
             "direct_order": Some(args.order.name()),
             "conditions_policy": "observed externally; never a wait gate",
-            "compile_counts": {"metal_libraries": 1, "pipeline_states": match args.candidate { CandidateSchedule::N4VsN8 => 4, CandidateSchedule::Adaptive => 7, _ => 3 }}, "cases": cases
+            "compile_counts": {"metal_libraries": 1, "pipeline_states": match args.candidate {
+                CandidateSchedule::N4VsN8 => 4,
+                CandidateSchedule::Adaptive => 7,
+                CandidateSchedule::ResearchR4Sg8K8 => rvllm_apple_metal::kernels::KERNEL_COUNT + 1,
+                _ => 3,
+            }}, "cases": cases
         });
         println!(
             "{}",
@@ -1276,7 +1379,30 @@ mod macos {
                 CandidateSchedule::parse("adaptive").unwrap(),
                 CandidateSchedule::Adaptive
             );
+            assert_eq!(
+                CandidateSchedule::parse("research-r4-sg8-k8").unwrap(),
+                CandidateSchedule::ResearchR4Sg8K8
+            );
             assert!(CandidateSchedule::parse("n16").is_err());
+        }
+
+        #[test]
+        fn donor_research_schedule_admits_only_its_decode_cells() {
+            use AppleLowBitTensorRole::{DenseDownProjection as Down, OutputProjection as Output};
+            use AppleLowBitWeightFormat::{W4A16 as W4, W8A16 as W8};
+            assert!(research_cell_allowed(&[W4], &[1], Down, 3840, 15360));
+            assert!(research_cell_allowed(&[W8], &[1], Output, 3840, 4096));
+            assert!(research_cell_allowed(&[W8], &[1], Output, 3840, 8192));
+            for (formats, ms, role, n, k) in [
+                (vec![W4, W8], vec![1], Down, 3840, 15360),
+                (vec![W4], vec![1, 4], Down, 3840, 15360),
+                (vec![W4], vec![4], Down, 3840, 15360),
+                (vec![W4], vec![1], Output, 3840, 15360),
+                (vec![W8], vec![1], Output, 3840, 15360),
+                (vec![W8], vec![1], Output, 4096, 4096),
+            ] {
+                assert!(!research_cell_allowed(&formats, &ms, role, n, k));
+            }
         }
 
         #[test]
