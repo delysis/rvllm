@@ -85,7 +85,9 @@ The new split timing test is `attention_global_decode_device_tests::global_decod
 
 Every screen requires five warmups per arm, ten alternating ABBA/BAAB blocks, all 40 samples in exact block/position order, 100 complete operations per sample, positive finite GPU and synchronized wall time, actual encode accounting, zero source compilations during sampling, exact source/build/metallib/test identities, native oracle/output pins and raw sample files equal to the aggregate. FFN controls account for 200 encoders versus 100 candidate encoders. GPU timestamps, not parent queue wall time, are the metric.
 
-The offline `rvllm.decode-round.screen.v2` rule permits advancement only if control max/min drift is at most 5%, **both** order-stratum median speedups exceed one, and the deterministic whole-block bootstrap 95% lower endpoint exceeds one. The bootstrap is a screen diagnostic, not proof of independence or full-route benefit. Drift failure remains a valid retained collection with `promising=false`; incomplete/mutated work is an error. No sample pruning, retry-on-loss, or automatic promotion exists.
+The historical offline `rvllm.decode-round.screen.v2` rule permits advancement only if control max/min drift is at most 5%, **both** order-stratum median speedups exceed one, and the deterministic whole-block bootstrap 95% lower endpoint exceeds one. The bootstrap is a screen diagnostic, not proof of independence or full-route benefit. Drift failure remains a valid retained collection with `promising=false`; incomplete/mutated work is an error. No sample pruning, retry-on-loss, or automatic promotion exists.
+
+The subsequent `rvllm.decode-round.screen.v3` retains that strict `promising_screen_only` result and every v2 evidence check, but adds an explicitly nonqualifying `exploratory_advance_only` path for changing host conditions. If drift fails, continuation needs both order-stratum medians and the whole-block bootstrap lower endpoint above 1.10, all ten within-block ratios above 1.0, and the larger order median no more than 1.10 times the smaller. Drift and sampled conditions remain in the sealed proof. This spends another context measurement; it does **not** make the prior timing eligible, establish independence, or authorize promotion. New v3 campaigns have distinct frozen generator identities. Historical v2 receipts are never relabelled or mutated. An eventual performance claim still requires independent, controlled confirmation plus the route and quality gates.
 
 Later attention manifests require recursive revalidation of the exact earlier chain: L256 → L512 → L1024 → L2048. Immutable proof receipts and all underlying pins become next-stage inputs. Changing a summary cannot bypass the gate. Operators use LENGTH=0 with explicit K; they never pretend to have a KV length.
 
@@ -285,7 +287,7 @@ Primary documentation inspected for the plan:
 
 | Artifact | Expected identity / scope |
 |---|---|
-| `campaign.json` | `rvllm.global-decode.campaign.v1`, exact base declaration, frozen executable pins, explicit names, `screen_protocol=rvllm.decode-round.screen.v2`, no promotion. |
+| `campaign.json` | `rvllm.global-decode.campaign.v1`, exact base declaration, frozen executable pins, explicit names, `screen_protocol=rvllm.decode-round.screen.v3` for new exploratory-continuation campaigns, no promotion. Historical v2 campaigns remain immutable. |
 | `round2-plan.json` | Exact selected geometry, K/capacity, kernel family/resource declarations, 10 blocks/40 samples, no retry/autosubmit. |
 | Queue job/result | Existing `rvllm.experiment_job.v1` / `rvllm.experiment_result.v1`; generated/submitted manifests match, inputs unchanged, exit 0, not overdue. |
 | `build/build.json` | `rvllm.global-decode.build.v1`; flags exactly `-std=metal3.1`, `-fno-fast-math`; source, AIR, metallib and tool identities. |
@@ -294,7 +296,7 @@ Primary documentation inspected for the plan:
 | Split oracle | `rvllm.global-decode.split-oracle.v1`; new streaming bounds and refusal evidence, three repeats, exact per-case BF16 output hashes. |
 | Operator/unsplit timing | `rvllm.global-decode.abba.v1`; exact candidate/source/library/test/oracle identity and all 40 samples. |
 | New split timing | `rvllm.global-decode.abba.v3`; metric `complete-interleaved-partial-merge-command-buffer`; 100 operations and 200 candidate encoders/sample. |
-| Advancement proof | `rvllm.decode-round.screen.v2`; current statistics plus exact raw dependencies; summary alone never authorizes progression. |
+| Advancement proof | `rvllm.decode-round.screen.v3` for new campaigns; strict and exploratory statuses both explicit, with current statistics plus exact raw dependencies. Summary alone never authorizes progression. |
 | Artifact capture | `rvllm.metal_artifact_evidence.v1`; `artifact_origin=exact-queue-compiled-artifact` when using the new sealed-build option. |
 
 Primary review paths under `crates/rvllm-apple-metal/src/`: `research.rs`, `research_catalog.rs`, `research_evidence.rs` for append-only registration; `research_decode*.rs`, `low_bit_metal.rs`, `layer_forward.rs` for operator admission/routing; `attention_global_decode*.rs` and new shaders for capacity/visibility/split timing; `decode_round_campaign.rs` and `bin/rvllm-global-decode-jobs.rs` for fail-closed progression; retainer/report binaries for drift preservation; artifact-evidence binary for source-grounded resource capture.

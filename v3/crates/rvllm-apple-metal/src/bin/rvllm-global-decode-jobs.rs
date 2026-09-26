@@ -2237,9 +2237,9 @@ fn admit_round_two(
     // Depth is bounded by the four predeclared lengths, so no unbounded recursion.
     let mut inputs = admit_round_two(root, candidate, previous)?;
     let proof = round_two_cell(root, candidate, previous, None)?;
-    if proof["statistics"]["promising_screen_only"] != true {
+    if proof["statistics"]["exploratory_advance_only"] != true {
         return Err(
-            "preceding screen failed drift/order/whole-block diagnostic; preserve it, do not retry"
+            "preceding screen failed paired exploratory diagnostic; preserve it, do not retry"
                 .into(),
         );
     }

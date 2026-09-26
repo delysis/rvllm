@@ -5,7 +5,7 @@
 use crate::MetalResearchCandidate;
 use serde_json::{json, Value};
 
-pub const PROTOCOL: &str = "rvllm.decode-round.screen.v2";
+pub const PROTOCOL: &str = "rvllm.decode-round.screen.v3";
 pub const DRIFT_LIMIT: f64 = 0.05;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -26,6 +26,20 @@ impl CollectionStats {
             && self.bootstrap_median_95[0] > 1.0
     }
 
+    /// Spend another exploratory context, never qualify timing or promotion.
+    /// Pairing can survive changing host conditions; the drift failure remains
+    /// visible and must be resolved by independent confirmation later.
+    pub fn exploratory_advance(&self) -> bool {
+        self.promising()
+            || (self.abba_median > 1.10
+                && self.baab_median > 1.10
+                && self.bootstrap_median_95[0] > 1.10
+                && self.paired_ratios.len() == 10
+                && self.paired_ratios.iter().all(|ratio| *ratio > 1.0)
+                && self.abba_median.max(self.baab_median) / self.abba_median.min(self.baab_median)
+                    <= 1.10)
+    }
+
     pub fn receipt(&self) -> Value {
         json!({"paired_block_ratios":self.paired_ratios,
             "abba_median_speedup":self.abba_median,
@@ -33,7 +47,8 @@ impl CollectionStats {
             "whole_block_bootstrap_median_95":self.bootstrap_median_95,
             "control_drift_fraction":self.control_drift,"control_drift_limit":DRIFT_LIMIT,
             "control_drift_passed":self.control_drift<=DRIFT_LIMIT,
-            "promising_screen_only":self.promising(),"promotion":false})
+            "promising_screen_only":self.promising(),
+            "exploratory_advance_only":self.exploratory_advance(),"promotion":false})
     }
 }
 
@@ -307,14 +322,38 @@ mod tests {
         r["samples"][0]["gpu_seconds"] = json!(2.12);
         r["control_drift_fraction"] = json!(0.06);
         r["control_drift_passed"] = json!(false);
-        assert!(!validate_collection(&r).unwrap().promising());
+        let result = validate_collection(&r).unwrap();
+        assert!(!result.promising());
+        assert!(result.exploratory_advance());
         let mut r = collection(false);
         for sample in r["samples"].as_array_mut().unwrap() {
             if sample["block"].as_u64().unwrap() % 2 == 1 && sample["arm"] == "B" {
                 sample["gpu_seconds"] = json!(3.0);
             }
         }
-        assert!(!validate_collection(&r).unwrap().promising());
+        let result = validate_collection(&r).unwrap();
+        assert!(!result.promising());
+        assert!(!result.exploratory_advance());
+    }
+    #[test]
+    fn variance_tolerant_continuation_requires_all_blocks_and_order_agreement() {
+        let mut ratios = CollectionStats {
+            paired_ratios: vec![2.0; 10],
+            abba_median: 2.0,
+            baab_median: 1.9,
+            bootstrap_median_95: [1.8, 2.1],
+            control_drift: 1.5,
+        };
+        assert!(!ratios.promising());
+        assert!(ratios.exploratory_advance());
+        ratios.paired_ratios[0] = 0.99;
+        assert!(!ratios.exploratory_advance());
+        ratios.paired_ratios[0] = 2.0;
+        ratios.baab_median = 1.7;
+        assert!(!ratios.exploratory_advance());
+        ratios.baab_median = 1.9;
+        ratios.bootstrap_median_95[0] = 1.09;
+        assert!(!ratios.exploratory_advance());
     }
     #[test]
     fn stage_bounds_and_operator_separation() {
