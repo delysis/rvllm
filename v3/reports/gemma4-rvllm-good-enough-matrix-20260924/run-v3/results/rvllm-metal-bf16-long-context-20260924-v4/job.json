@@ -1,0 +1,79 @@
+{
+  "after": [],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--prompts-jsonl",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-rvllm-good-enough-matrix-20260924/prompts.jsonl",
+      "--session-backend",
+      "direct",
+      "--max-new-tokens",
+      "2",
+      "--max-total-tokens",
+      "4098",
+      "--large-model-opt-in",
+      "--profile-samples",
+      "1",
+      "--report",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-rvllm-good-enough-matrix-20260924/rvllm-metal-bf16-long-context-v3-checkpoint.json",
+      "--profile-report",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-rvllm-good-enough-matrix-20260924/rvllm-metal-bf16-long-context-v3-profile.json",
+      "--json"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "env": {
+      "RVLLM_METAL_METALLIB_BF16": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-load4-tournament-20260924-delivery-5/bf16-metal-mma32-load4.metallib",
+      "RVLLM_METAL_RESEARCH": "metal-mma32-load4"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm_metal_infer",
+      "sha256": "484aebcacf7361efd80c26fc33eb7d48c312e8a273df4442d71668d4fb75e04e"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "rvllm-metal-bf16-long-context-20260924-v4",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-load4-tournament-20260924-delivery-5/bf16-metal-mma32-load4.metallib",
+      "sha256": "4093429ee54c2674f8c3ad05bc168d5aee9df64c50538f82f6e71a774afd132d"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-rvllm-good-enough-matrix-20260924/prompts.jsonl",
+      "sha256": "03f0c0cd1d80e57ea385be385379635e85d6b3250b299cdcfb2d0ca48ac28aa2"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 86400,
+  "purpose": "exploratory_timing",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 1,
+  "validator": null
+}

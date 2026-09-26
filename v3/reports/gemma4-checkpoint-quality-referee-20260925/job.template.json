@@ -1,0 +1,45 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "REQUIRED_UNIQUE_JOB_ID",
+  "purpose": "correctness",
+  "after": [],
+  "command": {
+    "executable": {
+      "path": "REQUIRED_ABSOLUTE_REFEREE_PATH",
+      "sha256": "REQUIRED_REFEREE_SHA256"
+    },
+    "args": [
+      "REQUIRED_ABSOLUTE_INPUT_PATH",
+      "--require",
+      "full_model_accepted"
+    ],
+    "cwd": "REQUIRED_ABSOLUTE_WORKTREE",
+    "env": {}
+  },
+  "validator": null,
+  "inputs": [
+    {
+      "path": "REQUIRED_ABSOLUTE_INPUT_PATH",
+      "sha256": "REQUIRED_INPUT_SHA256"
+    },
+    {
+      "path": "REQUIRED_ABSOLUTE_TOKEN_FIXTURE_PATH",
+      "sha256": "REQUIRED_FIXTURE_SHA256"
+    }
+  ],
+  "kernel_game_submission": null,
+  "conditions": {
+    "power_source": null,
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 1073741824,
+    "disk_path": "REQUIRED_ABSOLUTE_WORKTREE",
+    "quiet_process_names": [],
+    "observe_process_names": ["cargo", "rustc", "llama-server", "ollama"],
+    "idle_llama_servers": []
+  },
+  "stable_seconds": 0,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600
+}

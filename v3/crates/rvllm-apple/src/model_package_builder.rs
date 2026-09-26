@@ -78,8 +78,8 @@ pub struct AppleModelPackageBuildConfig {
     /// Low-bit packages require a dedicated exporter and are intentionally not
     /// inferred from an ordinary Hugging Face safetensors directory.
     pub weight_format: Option<AppleWeightFormat>,
-    /// Explicit tensor-level hybrid exports. The initial production contract
-    /// accepts dense MLP down projections only and preserves native weights.
+    /// Explicit tensor-level hybrid exports. Roles are inferred from exact
+    /// canonical dense-projection suffixes; native weights remain packaged.
     pub low_bit_down_projections: Vec<AppleLowBitExportRequest>,
 }
 
@@ -709,14 +709,31 @@ fn export_low_bit_down_projections(
                 request.tensor_name
             ));
         }
-        if !request.tensor_name.ends_with(".mlp.down_proj.weight")
-            || request.tensor_name.contains(".experts.")
-        {
+        let role = if request.tensor_name.contains(".experts.") {
+            None
+        } else if request.tensor_name.ends_with(".self_attn.q_proj.weight") {
+            Some(AppleLowBitTensorRole::QueryProjection)
+        } else if request.tensor_name.ends_with(".self_attn.k_proj.weight") {
+            Some(AppleLowBitTensorRole::KeyProjection)
+        } else if request.tensor_name.ends_with(".self_attn.v_proj.weight") {
+            Some(AppleLowBitTensorRole::ValueProjection)
+        } else if request.tensor_name.ends_with(".self_attn.o_proj.weight") {
+            Some(AppleLowBitTensorRole::OutputProjection)
+        } else if request.tensor_name.ends_with(".mlp.gate_proj.weight") {
+            Some(AppleLowBitTensorRole::DenseGateProjection)
+        } else if request.tensor_name.ends_with(".mlp.up_proj.weight") {
+            Some(AppleLowBitTensorRole::DenseUpProjection)
+        } else if request.tensor_name.ends_with(".mlp.down_proj.weight") {
+            Some(AppleLowBitTensorRole::DenseDownProjection)
+        } else {
+            None
+        };
+        let Some(role) = role else {
             return Err(format!(
-                "low-bit tensor {:?} is not a supported dense MLP down projection",
+                "low-bit tensor {:?} is not a supported dense projection",
                 request.tensor_name
             ));
-        }
+        };
         let tensor = inspected.tensors.get(&request.tensor_name).ok_or_else(|| {
             format!(
                 "low-bit down-projection tensor {:?} is absent from the source checkpoint",
@@ -828,7 +845,7 @@ fn export_low_bit_down_projections(
 
         exported.push(AppleLowBitTensor {
             tensor_name: request.tensor_name.clone(),
-            role: AppleLowBitTensorRole::DenseDownProjection,
+            role,
             format: request.format,
             abi_version: APPLE_LOW_BIT_WEIGHT_ABI_VERSION,
             group_size: u16::try_from(APPLE_LOW_BIT_GROUP_SIZE)
@@ -1247,7 +1264,7 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_export_rejects_non_down_projection_and_bf16_sources() {
+    fn hybrid_export_rejects_non_projection_and_bf16_sources() {
         let (root, mut config) = fixture("hybrid-rejections");
         config
             .low_bit_down_projections
@@ -1256,7 +1273,7 @@ mod tests {
                 format: AppleLowBitWeightFormat::W8A16,
             });
         let error = build_apple_model_package(&config).expect_err("non-down projection fails");
-        assert!(error.contains("not a supported dense MLP down projection"));
+        assert!(error.contains("not a supported dense projection"));
 
         config.low_bit_down_projections[0].tensor_name =
             "model.layers.0.mlp.down_proj.weight".to_owned();

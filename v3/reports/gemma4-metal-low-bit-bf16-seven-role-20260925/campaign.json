@@ -1,0 +1,204 @@
+{
+  "binary": {
+    "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm-low-bit-real-weight",
+    "sha256": "bf3d5e760caa8d669046c862de752ea25d45ea148c51ea3ea34b5a6dc306b9a4"
+  },
+  "claim": "real-checkpoint projection-operator experiment only; not checkpoint-quality, full-route, ANE, or promotion evidence",
+  "jobs": [
+    {
+      "after": [
+        "gemma4-ane-stacked-baseline-exact-v2-12-a6-stacked-20260924"
+      ],
+      "id": "g4metalbf16lowbit-q-m1m4-screen-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-q-m1m4-screen-20260925.json",
+      "phase": "screen",
+      "role": "query_projection",
+      "samples": 3,
+      "tensor": "model.language_model.layers.0.self_attn.q_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-q-m1m4-screen-20260925"
+      ],
+      "id": "g4metalbf16lowbit-q-m1m4-confirm-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-q-m1m4-confirm-20260925.json",
+      "phase": "confirm",
+      "role": "query_projection",
+      "samples": 9,
+      "tensor": "model.language_model.layers.0.self_attn.q_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-q-m1m4-confirm-20260925"
+      ],
+      "id": "g4metalbf16lowbit-k-m1m4-screen-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-k-m1m4-screen-20260925.json",
+      "phase": "screen",
+      "role": "key_projection",
+      "samples": 3,
+      "tensor": "model.language_model.layers.0.self_attn.k_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-k-m1m4-screen-20260925"
+      ],
+      "id": "g4metalbf16lowbit-k-m1m4-confirm-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-k-m1m4-confirm-20260925.json",
+      "phase": "confirm",
+      "role": "key_projection",
+      "samples": 9,
+      "tensor": "model.language_model.layers.0.self_attn.k_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-k-m1m4-confirm-20260925"
+      ],
+      "id": "g4metalbf16lowbit-v-m1m4-screen-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-v-m1m4-screen-20260925.json",
+      "phase": "screen",
+      "role": "value_projection",
+      "samples": 3,
+      "tensor": "model.language_model.layers.0.self_attn.v_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-v-m1m4-screen-20260925"
+      ],
+      "id": "g4metalbf16lowbit-v-m1m4-confirm-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-v-m1m4-confirm-20260925.json",
+      "phase": "confirm",
+      "role": "value_projection",
+      "samples": 9,
+      "tensor": "model.language_model.layers.0.self_attn.v_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-v-m1m4-confirm-20260925"
+      ],
+      "id": "g4metalbf16lowbit-o-m1m4-screen-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-o-m1m4-screen-20260925.json",
+      "phase": "screen",
+      "role": "output_projection",
+      "samples": 3,
+      "tensor": "model.language_model.layers.0.self_attn.o_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-o-m1m4-screen-20260925"
+      ],
+      "id": "g4metalbf16lowbit-o-m1m4-confirm-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-o-m1m4-confirm-20260925.json",
+      "phase": "confirm",
+      "role": "output_projection",
+      "samples": 9,
+      "tensor": "model.language_model.layers.0.self_attn.o_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-o-m1m4-confirm-20260925"
+      ],
+      "id": "g4metalbf16lowbit-gate-m1m4-screen-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-gate-m1m4-screen-20260925.json",
+      "phase": "screen",
+      "role": "dense_gate_projection",
+      "samples": 3,
+      "tensor": "model.language_model.layers.0.mlp.gate_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-gate-m1m4-screen-20260925"
+      ],
+      "id": "g4metalbf16lowbit-gate-m1m4-confirm-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-gate-m1m4-confirm-20260925.json",
+      "phase": "confirm",
+      "role": "dense_gate_projection",
+      "samples": 9,
+      "tensor": "model.language_model.layers.0.mlp.gate_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-gate-m1m4-confirm-20260925"
+      ],
+      "id": "g4metalbf16lowbit-up-m1m4-screen-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-up-m1m4-screen-20260925.json",
+      "phase": "screen",
+      "role": "dense_up_projection",
+      "samples": 3,
+      "tensor": "model.language_model.layers.0.mlp.up_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-up-m1m4-screen-20260925"
+      ],
+      "id": "g4metalbf16lowbit-up-m1m4-confirm-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-up-m1m4-confirm-20260925.json",
+      "phase": "confirm",
+      "role": "dense_up_projection",
+      "samples": 9,
+      "tensor": "model.language_model.layers.0.mlp.up_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-up-m1m4-confirm-20260925"
+      ],
+      "id": "g4metalbf16lowbit-down-m1m4-screen-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-down-m1m4-screen-20260925.json",
+      "phase": "screen",
+      "role": "dense_down_projection",
+      "samples": 3,
+      "tensor": "model.language_model.layers.0.mlp.down_proj.weight"
+    },
+    {
+      "after": [
+        "g4metalbf16lowbit-down-m1m4-screen-20260925"
+      ],
+      "id": "g4metalbf16lowbit-down-m1m4-confirm-20260925",
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-metal-low-bit-bf16-seven-role-20260925/jobs/g4metalbf16lowbit-down-m1m4-confirm-20260925.json",
+      "phase": "confirm",
+      "role": "dense_down_projection",
+      "samples": 9,
+      "tensor": "model.language_model.layers.0.mlp.down_proj.weight"
+    }
+  ],
+  "matrix": {
+    "confirmation_abba_blocks": 9,
+    "formats": [
+      "W4ABF16",
+      "W8ABF16"
+    ],
+    "m": [
+      1,
+      4
+    ],
+    "roles": [
+      "query_projection",
+      "key_projection",
+      "value_projection",
+      "output_projection",
+      "dense_gate_projection",
+      "dense_up_projection",
+      "dense_down_projection"
+    ],
+    "screen_abba_blocks": 3
+  },
+  "model": {
+    "config": {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
+  },
+  "policy": {
+    "condition_changes": "recorded, never used to discard exploratory observations",
+    "correctness_first": true,
+    "first_dependency": "gemma4-ane-stacked-baseline-exact-v2-12-a6-stacked-20260924",
+    "serial": true,
+    "stable_seconds": 0
+  },
+  "queue": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue",
+  "schema": "rvllm.metal_low_bit_bf16_campaign.v1",
+  "validator": {
+    "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/tools/validate_low_bit_real_weight_receipt.py",
+    "sha256": "9db672626e460958845a03a92f3e7143e86bce50d6e418a5f244541a4eb72c7b"
+  }
+}

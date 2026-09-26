@@ -1,0 +1,43 @@
+{
+  "schema": "rvllm.gemma4.split32-normal-route-baab.v2",
+  "length": 1024,
+  "order": [
+    "candidate",
+    "control",
+    "control",
+    "candidate"
+  ],
+  "exclusion_policy": {
+    "declared_before_run": true,
+    "excluded_case_index": 0,
+    "reason": "fresh-process warmup",
+    "measured_case_indices": [
+      1,
+      2
+    ]
+  },
+  "control_warmup_decode_ms": [
+    1186.4536669999998,
+    1178.784083
+  ],
+  "candidate_warmup_decode_ms": [
+    1131.22925,
+    1093.990333
+  ],
+  "control_measured_decode_ms": [
+    1243.55975,
+    1103.051125,
+    1238.033583,
+    2070.800792
+  ],
+  "candidate_measured_decode_ms": [
+    2369.166541,
+    1165.1067500000001,
+    1065.8455410000001,
+    1158.0677500000002
+  ],
+  "tokens_identical": true,
+  "control_median_ms": 1240.7966665,
+  "candidate_median_ms": 1161.58725,
+  "speedup": 1.0681906731500366
+}

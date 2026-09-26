@@ -1,0 +1,66 @@
+{
+  "accelerator_evaluations": 12,
+  "cache_identity": {
+    "input_bytes": 8523840,
+    "mil_sha256": "cbc3acbf8ac20506c3592997b76aa0f0695d39a598bd93ae15326988a8840317",
+    "output_bytes": 245760,
+    "weight_blob_sha256": "68a3a71d77dba7eeefe425c56cc93695f718ddf3530150395a19c5bae859b160"
+  },
+  "cases": [
+    {
+      "input_guards_unchanged": true,
+      "maximum_absolute_error": 0.0014184601604938507,
+      "repeated_output_bits_identical": true,
+      "tokens": 1
+    },
+    {
+      "input_guards_unchanged": true,
+      "maximum_absolute_error": 0.0014337189495563507,
+      "repeated_output_bits_identical": true,
+      "tokens": 31
+    },
+    {
+      "input_guards_unchanged": true,
+      "maximum_absolute_error": 0.0014184601604938507,
+      "repeated_output_bits_identical": true,
+      "tokens": 32
+    },
+    {
+      "input_guards_unchanged": true,
+      "maximum_absolute_error": 0.0014337189495563507,
+      "repeated_output_bits_identical": true,
+      "tokens": 33
+    },
+    {
+      "input_guards_unchanged": true,
+      "maximum_absolute_error": 0.0014184601604938507,
+      "repeated_output_bits_identical": true,
+      "tokens": 1024
+    },
+    {
+      "input_guards_unchanged": true,
+      "maximum_absolute_error": 0.0014184601604938507,
+      "repeated_output_bits_identical": true,
+      "tokens": 1025
+    }
+  ],
+  "claim": "Corrected layer-0 fused attention/output component oracle only; constant-V construction makes the attention result independent of scores and exposes head/group flattening. No timing, full-route, checkpoint-quality, or promotion claim.",
+  "compiler_call_limit": 1,
+  "compiler_calls": 0,
+  "external_inputs": 1,
+  "external_outputs": 1,
+  "layer": 0,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "schema": "rvllm.ane_fused_attention_output_real_weight_oracle.v1",
+  "status": "passed",
+  "tested_tokens": [
+    1,
+    31,
+    32,
+    33,
+    1024,
+    1025
+  ],
+  "tolerance": "0.002 + 0.01 * abs(independent_fp32_projection_reference)",
+  "violations": 0
+}

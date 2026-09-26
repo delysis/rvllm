@@ -4,6 +4,8 @@ use std::{cmp::max, collections::BTreeMap, path::Path, ptr};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use half::f16;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
+use rvllm_apple::AppleLowBitTensorRole;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use rvllm_core::{AppleCtx, AppleError, Result, RvllmError};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use rvllm_loader::{
@@ -197,6 +199,7 @@ pub struct MetalLayerExecutionSlot {
     pub k: MetalRegion,
     pub v: MetalRegion,
     pub attn_out: MetalRegion,
+    pub global_decode_partials: Option<MetalRegion>,
     pub gate_up_out: MetalRegion,
     pub activated: MetalRegion,
     pub mlp_out: MetalRegion,
@@ -234,8 +237,8 @@ pub struct Gemma4MetalMemoryReport {
     pub physical_kv_pages: u32,
 }
 
-/// An authenticated low-bit tensor that will replace one native dense
-/// `down_proj` allocation in the prepared Metal model.
+/// An authenticated low-bit tensor that is intended to replace one native
+/// projection allocation in the prepared Metal model.
 ///
 /// The descriptor contains the complete storage identity needed by the
 /// planner. Callers must load the two payload regions in the same
@@ -244,6 +247,7 @@ pub struct Gemma4MetalMemoryReport {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct MetalLowBitWeightReplacement {
     pub tensor_name: String,
+    pub role: AppleLowBitTensorRole,
     pub format: rvllm_apple::AppleLowBitWeightFormat,
     /// `[N, K]`, matching the native `[hidden, intermediate]` weight.
     pub shape: [usize; 2],
@@ -268,8 +272,20 @@ pub struct MetalPleState {
 pub struct MetalOneLayerState {
     pub layer_idx: usize,
     /// Exact authenticated checkpoint tensor selected for this layer.
+    pub q_proj_name: String,
+    pub k_proj_name: String,
+    pub v_proj_name: String,
+    pub o_proj_name: String,
+    pub gate_proj_name: String,
+    pub up_proj_name: String,
     pub down_proj_name: String,
-    /// Optional authenticated low-bit sidecar stored in the model arena.
+    /// Optional authenticated low-bit sidecars stored in the model arena.
+    pub low_bit_q_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_k_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_v_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_o_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_gate_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
+    pub low_bit_up_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
     pub low_bit_down_proj: Option<crate::low_bit_metal::MetalLowBitProjectionOffsets>,
     pub dims: MetalProbeLayerDims,
     pub shared_kv_source_layer: Option<usize>,
@@ -300,6 +316,7 @@ pub struct MetalOneLayerState {
     pub k: MetalRegion,
     pub v: MetalRegion,
     pub attn_out: MetalRegion,
+    pub global_decode_partials: Option<MetalRegion>,
     pub gate_up_out: MetalRegion,
     pub activated: MetalRegion,
     pub mlp_out: MetalRegion,
@@ -424,6 +441,7 @@ impl Gemma4MetalState {
             layer.k = execution.k.clone();
             layer.v = execution.v.clone();
             layer.attn_out = execution.attn_out.clone();
+            layer.global_decode_partials = execution.global_decode_partials.clone();
             layer.gate_up_out = execution.gate_up_out.clone();
             layer.activated = execution.activated.clone();
             layer.mlp_out = execution.mlp_out.clone();
@@ -453,6 +471,7 @@ struct SharedLayerScratch {
     k: MetalRegion,
     v: MetalRegion,
     attn_out: MetalRegion,
+    global_decode_partials: Option<MetalRegion>,
     gate_up_out: MetalRegion,
     activated: MetalRegion,
     mlp_out: MetalRegion,
@@ -470,6 +489,7 @@ fn execution_layer_from_state(layer: &MetalOneLayerState) -> MetalLayerExecution
         k: layer.k.clone(),
         v: layer.v.clone(),
         attn_out: layer.attn_out.clone(),
+        global_decode_partials: layer.global_decode_partials.clone(),
         gate_up_out: layer.gate_up_out.clone(),
         activated: layer.activated.clone(),
         mlp_out: layer.mlp_out.clone(),
@@ -842,6 +862,7 @@ struct ProbeModelPlan {
     unfloored_arena_bytes: usize,
     weights_bytes: usize,
     scratch_slot_bytes: usize,
+    global_decode_scratch_bytes: usize,
     metadata_bytes: usize,
     kv_page_bytes: usize,
     physical_kv_pages: u32,
@@ -867,6 +888,29 @@ impl MetalModelLoadPlan {
     ) -> Result<Self> {
         let plan =
             ProbeModelPlan::with_limits(model_dir, Some(limits))?.apply_working_set_budget(ctx)?;
+        let memory_report = plan
+            .memory_budget
+            .clone()
+            .ok_or_else(model_arena_overflow)?;
+        Ok(Self {
+            model_dir: model_dir.to_owned(),
+            plan,
+            memory_report,
+        })
+    }
+
+    /// Research-only model plan. Default callers retain the historical split
+    /// scratch reservation byte-for-byte.
+    pub fn new_with_research_candidate(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        limits: crate::MetalModelLimits,
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<Self> {
+        let scratch = crate::attention_global_decode::model_scratch_bytes(candidate);
+        let plan = ProbeModelPlan::with_limits(model_dir, Some(limits))?
+            .with_global_decode_scratch_bytes(scratch)?
+            .apply_working_set_budget(ctx)?;
         let memory_report = plan
             .memory_budget
             .clone()
@@ -1691,6 +1735,7 @@ impl ProbeModelPlan {
                 + max_batch_tokens * max_moe_top_k * f32_bytes
                 + max_batch_tokens * max_moe_top_k * max_moe_intermediate * half_bytes
                 + max_batch_tokens * arch.hidden_size * half_bytes
+                + crate::attention_global_decode::SPLIT_SCRATCH_BYTES
                 + 64;
         }
 
@@ -1811,6 +1856,7 @@ impl ProbeModelPlan {
             unfloored_arena_bytes,
             weights_bytes,
             scratch_slot_bytes,
+            global_decode_scratch_bytes: crate::attention_global_decode::SPLIT_SCRATCH_BYTES,
             metadata_bytes,
             kv_page_bytes,
             physical_kv_pages,
@@ -1836,6 +1882,7 @@ impl ProbeModelPlan {
         replacements.sort_by(|left, right| left.tensor_name.cmp(&right.tensor_name));
 
         let mut validated = BTreeMap::new();
+        let mut displaced_prefused_names = Vec::new();
         let mut displaced_native_bytes = 0usize;
         let mut low_bit_arena_bytes = 0usize;
         for replacement in replacements {
@@ -1849,14 +1896,22 @@ impl ProbeModelPlan {
                     "duplicate low-bit replacement tensor name",
                 ));
             }
-
             let layer = self
                 .layer_names
                 .iter()
-                .find(|layer| layer.down_proj_name == replacement.tensor_name)
+                .find(|layer| match replacement.role {
+                    AppleLowBitTensorRole::QueryProjection => layer.q_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::KeyProjection => layer.k_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::ValueProjection => !layer.v_uses_k_proj && layer.v_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::OutputProjection => layer.o_proj_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::DenseGateProjection => layer.gate_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::DenseUpProjection => layer.up_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::DenseDownProjection => layer.down_proj_name == replacement.tensor_name,
+                    AppleLowBitTensorRole::LmHead => false,
+                })
                 .ok_or_else(|| {
                     invalid_low_bit_replacement(
-                        "low-bit replacement does not name a prepared dense down projection",
+                        "low-bit replacement role/name does not identify a prepared dense projection",
                     )
                 })?;
             if layer.moe.is_some() {
@@ -1864,10 +1919,28 @@ impl ProbeModelPlan {
                     "low-bit replacement of a mixture-of-experts layer is unsupported",
                 ));
             }
-            let expected_shape = [self.arch.hidden_size, layer.intermediate_size];
+            let expected_shape = match replacement.role {
+                AppleLowBitTensorRole::QueryProjection => [layer.dims.q_dim, self.arch.hidden_size],
+                AppleLowBitTensorRole::KeyProjection | AppleLowBitTensorRole::ValueProjection => {
+                    [layer.dims.kv_dim, self.arch.hidden_size]
+                }
+                AppleLowBitTensorRole::OutputProjection => {
+                    [self.arch.hidden_size, layer.dims.q_dim]
+                }
+                AppleLowBitTensorRole::DenseGateProjection
+                | AppleLowBitTensorRole::DenseUpProjection => {
+                    [layer.intermediate_size, self.arch.hidden_size]
+                }
+                AppleLowBitTensorRole::DenseDownProjection => {
+                    [self.arch.hidden_size, layer.intermediate_size]
+                }
+                AppleLowBitTensorRole::LmHead => {
+                    unreachable!("LM head rejected by role/name lookup")
+                }
+            };
             if replacement.shape != expected_shape {
                 return Err(invalid_low_bit_replacement(
-                    "low-bit replacement shape does not match the prepared dense down projection",
+                    "low-bit replacement shape does not match the prepared dense projection role",
                 ));
             }
 
@@ -1888,13 +1961,40 @@ impl ProbeModelPlan {
                 ));
             }
 
-            let native = self.tensors.get(&replacement.tensor_name).ok_or_else(|| {
-                invalid_low_bit_replacement(
-                    "low-bit replacement native tensor is missing from the checkpoint",
-                )
-            })?;
+            // `weights_bytes` accounts the buffers that the loader actually
+            // materializes, not every source tensor in the checkpoint.  Split
+            // Q/K/V and gate/up tensors are fused while loading and therefore
+            // contribute only through `fused_qkv_bytes` / `fused_gate_up_bytes`.
+            // Counting their source byte lengths here would subtract bytes that
+            // were never present in the arena, underflowing complete low-bit
+            // replacement plans before the fused allocation is removed below.
+            let directly_materialized = self
+                .names
+                .iter()
+                .any(|name| name == &replacement.tensor_name);
+            let fused_source = matches!(
+                replacement.role,
+                AppleLowBitTensorRole::QueryProjection
+                    | AppleLowBitTensorRole::KeyProjection
+                    | AppleLowBitTensorRole::ValueProjection
+                    | AppleLowBitTensorRole::DenseGateProjection
+                    | AppleLowBitTensorRole::DenseUpProjection
+            );
+            let native_bytes = directly_materialized
+                .then(|| {
+                    self.tensors
+                        .get(&replacement.tensor_name)
+                        .map(|native| native.nbytes)
+                })
+                .flatten()
+                .or_else(|| fused_source.then_some(0))
+                .ok_or_else(|| {
+                    invalid_low_bit_replacement(
+                        "low-bit replacement native tensor is missing from the checkpoint",
+                    )
+                })?;
             displaced_native_bytes = displaced_native_bytes
-                .checked_add(native.nbytes)
+                .checked_add(native_bytes)
                 .ok_or_else(model_arena_overflow)?;
 
             // Sidecars are loaded into two 16-byte-aligned arena regions. The
@@ -1912,6 +2012,50 @@ impl ProbeModelPlan {
             validated.insert(replacement.tensor_name.clone(), replacement);
         }
 
+        for layer in &self.layer_names {
+            let has = |name: &str| validated.contains_key(name);
+            let roles = [
+                has(&layer.q_name),
+                has(&layer.k_name),
+                !layer.v_uses_k_proj && has(&layer.v_name),
+                has(&layer.o_proj_name),
+                has(&layer.gate_name),
+                has(&layer.up_name),
+                has(&layer.down_proj_name),
+            ];
+            let selected = roles.iter().filter(|&&value| value).count();
+            if selected != 0 && selected != 1 && selected != roles.len() {
+                return Err(invalid_low_bit_replacement(
+                    "dense low-bit layer replacement must be down-only or a complete Q/K/V/O/gate/up/down set",
+                ));
+            }
+            if selected == 1 && !roles[6] {
+                return Err(invalid_low_bit_replacement(
+                    "a partial dense low-bit layer replacement is unsupported",
+                ));
+            }
+            if selected == roles.len() {
+                let fused_bytes = layer
+                    .dims
+                    .qkv_rows
+                    .checked_mul(self.arch.hidden_size)
+                    .and_then(|value| {
+                        value.checked_add(2 * layer.intermediate_size * self.arch.hidden_size)
+                    })
+                    .and_then(|value| value.checked_mul(std::mem::size_of::<f16>()))
+                    .ok_or_else(model_arena_overflow)?;
+                displaced_native_bytes = displaced_native_bytes
+                    .checked_add(fused_bytes)
+                    .ok_or_else(model_arena_overflow)?;
+                if self.tensors.contains_key(&layer.prefused_qkv_name) {
+                    displaced_prefused_names.push(layer.prefused_qkv_name.clone());
+                }
+                if self.tensors.contains_key(&layer.prefused_gate_up_name) {
+                    displaced_prefused_names.push(layer.prefused_gate_up_name.clone());
+                }
+            }
+        }
+
         self.weights_bytes = self
             .weights_bytes
             .checked_sub(displaced_native_bytes)
@@ -1923,8 +2067,10 @@ impl ProbeModelPlan {
             .and_then(|bytes| bytes.checked_add(low_bit_arena_bytes))
             .ok_or_else(model_arena_overflow)?;
         self.arena_bytes = max(self.unfloored_arena_bytes, PROBE_METAL_ARENA_BYTES);
-        self.names
-            .retain(|name| !validated.contains_key(name.as_str()));
+        self.names.retain(|name| {
+            !validated.contains_key(name.as_str())
+                && !displaced_prefused_names.iter().any(|fused| fused == name)
+        });
         self.low_bit_replacements = validated;
         Ok(self)
     }
@@ -1945,6 +2091,31 @@ impl ProbeModelPlan {
             .arena_bytes
             .checked_add(additional_weight_bytes)
             .ok_or_else(model_arena_overflow)?;
+        Ok(self)
+    }
+
+    fn with_global_decode_scratch_bytes(mut self, bytes: usize) -> Result<Self> {
+        let base = crate::attention_global_decode::SPLIT_SCRATCH_BYTES;
+        if bytes < base || bytes > crate::attention_global_decode::SPLIT32_SCRATCH_BYTES {
+            return Err(model_arena_overflow());
+        }
+        let delta = bytes - base;
+        if delta == 0 {
+            return Ok(self);
+        }
+        self.scratch_slot_bytes = self
+            .scratch_slot_bytes
+            .checked_add(delta)
+            .ok_or_else(model_arena_overflow)?;
+        let arena_delta = delta
+            .checked_mul(crate::memory_budget::IN_FLIGHT_SCRATCH_SLOTS)
+            .ok_or_else(model_arena_overflow)?;
+        self.unfloored_arena_bytes = self
+            .unfloored_arena_bytes
+            .checked_add(arena_delta)
+            .ok_or_else(model_arena_overflow)?;
+        self.arena_bytes = max(self.unfloored_arena_bytes, PROBE_METAL_ARENA_BYTES);
+        self.global_decode_scratch_bytes = bytes;
         Ok(self)
     }
 
@@ -2229,8 +2400,25 @@ impl Gemma4MetalState {
         model_dir: &Path,
         additional_weight_bytes: usize,
     ) -> Result<(usize, Gemma4MetalMemoryReport)> {
+        Self::required_probe_model_arena_bytes_for_device_with_additional_weights_and_research(
+            ctx,
+            model_dir,
+            additional_weight_bytes,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn required_probe_model_arena_bytes_for_device_with_additional_weights_and_research(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        additional_weight_bytes: usize,
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<(usize, Gemma4MetalMemoryReport)> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_additional_weight_bytes(additional_weight_bytes)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         let report = plan.memory_budget.ok_or_else(|| {
             RvllmError::apple(
@@ -2252,8 +2440,25 @@ impl Gemma4MetalState {
         model_dir: &Path,
         replacements: &[MetalLowBitWeightReplacement],
     ) -> Result<(usize, Gemma4MetalMemoryReport)> {
+        Self::required_probe_model_arena_bytes_for_device_with_low_bit_replacements_and_research(
+            ctx,
+            model_dir,
+            replacements,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn required_probe_model_arena_bytes_for_device_with_low_bit_replacements_and_research(
+        ctx: &MetalContext,
+        model_dir: &Path,
+        replacements: &[MetalLowBitWeightReplacement],
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<(usize, Gemma4MetalMemoryReport)> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_low_bit_replacements(replacements)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         let report = plan.memory_budget.ok_or_else(|| {
             RvllmError::apple(
@@ -2307,8 +2512,29 @@ impl Gemma4MetalState {
         float_type: MetalFloatType,
         additional_weight_bytes: usize,
     ) -> Result<Self> {
+        Self::load_probe_model_with_float_type_additional_weights_and_research(
+            ctx,
+            arena,
+            model_dir,
+            float_type,
+            additional_weight_bytes,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn load_probe_model_with_float_type_additional_weights_and_research(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+        additional_weight_bytes: usize,
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<Self> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_additional_weight_bytes(additional_weight_bytes)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         Self::load_probe_model_from_plan(ctx, arena, model_dir, float_type, plan)
     }
@@ -2322,8 +2548,29 @@ impl Gemma4MetalState {
         float_type: MetalFloatType,
         replacements: &[MetalLowBitWeightReplacement],
     ) -> Result<Self> {
+        Self::load_probe_model_with_float_type_low_bit_replacements_and_research(
+            ctx,
+            arena,
+            model_dir,
+            float_type,
+            replacements,
+            crate::MetalResearchCandidate::Off,
+        )
+    }
+
+    pub fn load_probe_model_with_float_type_low_bit_replacements_and_research(
+        ctx: &MetalContext,
+        arena: &mut MetalBufferArena,
+        model_dir: &Path,
+        float_type: MetalFloatType,
+        replacements: &[MetalLowBitWeightReplacement],
+        candidate: crate::MetalResearchCandidate,
+    ) -> Result<Self> {
         let plan = ProbeModelPlan::new(model_dir)?
             .with_low_bit_replacements(replacements)?
+            .with_global_decode_scratch_bytes(crate::attention_global_decode::model_scratch_bytes(
+                candidate,
+            ))?
             .apply_working_set_budget(ctx)?;
         Self::load_probe_model_from_plan(ctx, arena, model_dir, float_type, plan)
     }
@@ -2471,6 +2718,11 @@ impl Gemma4MetalState {
                     max_batch_tokens * max_q_dim * half_bytes,
                     16,
                 )?,
+                global_decode_partials: Some(arena.region(
+                    "metal_shared_global_decode_partials",
+                    plan.global_decode_scratch_bytes,
+                    16,
+                )?),
                 gate_up_out: arena.region(
                     "metal_shared_layer_gate_up_out",
                     max_batch_tokens * 2 * max_intermediate * half_bytes,
@@ -2543,7 +2795,14 @@ impl Gemma4MetalState {
             let kv_dim = dims.kv_dim;
 
             let attn_norm = region_lookup(&mut mapped_refs, &layer_names.attn_norm_name)?;
-            let o_proj = region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?;
+            let low_bit_o = plan
+                .low_bit_replacements
+                .contains_key(&layer_names.o_proj_name);
+            let o_proj = if low_bit_o {
+                attn_norm.clone()
+            } else {
+                region_lookup(&mut mapped_refs, &layer_names.o_proj_name)?
+            };
             let mlp_norm = region_lookup(&mut mapped_refs, &layer_names.mlp_norm_name)?;
             let down_proj = if plan
                 .low_bit_replacements
@@ -2593,7 +2852,10 @@ impl Gemma4MetalState {
                 layer_names.post_per_layer_input_norm_name.as_deref(),
             )?;
 
-            let qkv = if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
+            let low_bit_qkv = plan.low_bit_replacements.contains_key(&layer_names.q_name);
+            let qkv = if low_bit_qkv {
+                attn_norm.clone()
+            } else if plan.tensors.contains_key(&layer_names.prefused_qkv_name) {
                 region_lookup(&mut mapped_refs, &layer_names.prefused_qkv_name)?
             } else {
                 let bytes = concat_f16_tensors(
@@ -2618,7 +2880,12 @@ impl Gemma4MetalState {
                 map_fused_bytes_to_arena(arena, &format!("metal_fused_qkv_{layer_idx}"), &bytes)?
             };
 
-            let gate_up = if plan
+            let low_bit_gate_up = plan
+                .low_bit_replacements
+                .contains_key(&layer_names.gate_name);
+            let gate_up = if low_bit_gate_up {
+                attn_norm.clone()
+            } else if plan
                 .tensors
                 .contains_key(&layer_names.prefused_gate_up_name)
             {
@@ -2701,6 +2968,7 @@ impl Gemma4MetalState {
             let k = scratch.k.clone();
             let v = scratch.v.clone();
             let attn_out = scratch.attn_out.clone();
+            let global_decode_partials = scratch.global_decode_partials.clone();
             let gate_up_out = scratch.gate_up_out.clone();
             let activated = scratch.activated.clone();
             let mlp_out = scratch.mlp_out.clone();
@@ -2837,7 +3105,19 @@ impl Gemma4MetalState {
 
             layers.push(MetalOneLayerState {
                 layer_idx,
+                q_proj_name: layer_names.q_name.clone(),
+                k_proj_name: layer_names.k_name.clone(),
+                v_proj_name: layer_names.v_name.clone(),
+                o_proj_name: layer_names.o_proj_name.clone(),
+                gate_proj_name: layer_names.gate_name.clone(),
+                up_proj_name: layer_names.up_name.clone(),
                 down_proj_name: layer_names.down_proj_name.clone(),
+                low_bit_q_proj: None,
+                low_bit_k_proj: None,
+                low_bit_v_proj: None,
+                low_bit_o_proj: None,
+                low_bit_gate_proj: None,
+                low_bit_up_proj: None,
                 low_bit_down_proj: None,
                 dims,
                 shared_kv_source_layer: shared_kv_source_layers[layer_idx],
@@ -2864,6 +3144,7 @@ impl Gemma4MetalState {
                 k,
                 v,
                 attn_out,
+                global_decode_partials,
                 gate_up_out,
                 activated,
                 mlp_out,
@@ -2945,6 +3226,12 @@ impl Gemma4MetalState {
                             arena,
                             &name("attn_out"),
                             &layer.attn_out,
+                            16,
+                        )?,
+                        global_decode_partials: allocate_optional_region_like(
+                            arena,
+                            &name("global_decode_partials"),
+                            layer.global_decode_partials.as_ref(),
                             16,
                         )?,
                         gate_up_out: allocate_region_like(
@@ -3814,14 +4101,96 @@ mod tests {
         format: rvllm_apple::AppleLowBitWeightFormat,
         shape: [usize; 2],
     ) -> MetalLowBitWeightReplacement {
+        low_bit_role_replacement(
+            tensor_name,
+            AppleLowBitTensorRole::DenseDownProjection,
+            format,
+            shape,
+        )
+    }
+
+    fn low_bit_role_replacement(
+        tensor_name: impl Into<String>,
+        role: AppleLowBitTensorRole,
+        format: rvllm_apple::AppleLowBitWeightFormat,
+        shape: [usize; 2],
+    ) -> MetalLowBitWeightReplacement {
         MetalLowBitWeightReplacement {
             tensor_name: tensor_name.into(),
+            role,
             format,
             shape,
             packed_values_bytes: low_bit_packed_values_bytes(format, shape[0], shape[1])
                 .expect("packed bytes"),
             scales_bytes: low_bit_scales_bytes(shape[0], shape[1]).expect("scale bytes"),
         }
+    }
+
+    #[test]
+    fn complete_dense_low_bit_layer_plan_omits_every_projection_and_rejects_partial_set() {
+        let dir = write_two_layer_sliding_global_plan_fixture();
+        let plan = ProbeModelPlan::new(&dir).expect("build plan");
+        let layer = &plan.layer_names[0];
+        let hidden = plan.arch.hidden_size;
+        let intermediate = layer.intermediate_size;
+        let format = rvllm_apple::AppleLowBitWeightFormat::W4A16;
+        let replacements = vec![
+            low_bit_role_replacement(
+                &layer.q_name,
+                AppleLowBitTensorRole::QueryProjection,
+                format,
+                [layer.dims.q_dim, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.k_name,
+                AppleLowBitTensorRole::KeyProjection,
+                format,
+                [layer.dims.kv_dim, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.v_name,
+                AppleLowBitTensorRole::ValueProjection,
+                format,
+                [layer.dims.kv_dim, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.o_proj_name,
+                AppleLowBitTensorRole::OutputProjection,
+                format,
+                [hidden, layer.dims.q_dim],
+            ),
+            low_bit_role_replacement(
+                &layer.gate_name,
+                AppleLowBitTensorRole::DenseGateProjection,
+                format,
+                [intermediate, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.up_name,
+                AppleLowBitTensorRole::DenseUpProjection,
+                format,
+                [intermediate, hidden],
+            ),
+            low_bit_role_replacement(
+                &layer.down_proj_name,
+                AppleLowBitTensorRole::DenseDownProjection,
+                format,
+                [hidden, intermediate],
+            ),
+        ];
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("partial plan")
+            .with_low_bit_replacements(&replacements[..6])
+            .is_err());
+        let planned = ProbeModelPlan::new(&dir)
+            .expect("complete plan")
+            .with_low_bit_replacements(&replacements)
+            .expect("complete dense replacement");
+        assert_eq!(planned.low_bit_replacements.len(), 7);
+        assert!(replacements
+            .iter()
+            .all(|replacement| !planned.names.contains(&replacement.tensor_name)));
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -3897,6 +4266,12 @@ mod tests {
         assert!(ProbeModelPlan::new(&dir)
             .expect("duplicate plan")
             .with_low_bit_replacements(&[valid.clone(), valid.clone()])
+            .is_err());
+        let mut unwired_role = valid.clone();
+        unwired_role.role = AppleLowBitTensorRole::QueryProjection;
+        assert!(ProbeModelPlan::new(&dir)
+            .expect("unwired role plan")
+            .with_low_bit_replacements(&[unwired_role])
             .is_err());
         assert!(ProbeModelPlan::new(&dir)
             .expect("missing plan")

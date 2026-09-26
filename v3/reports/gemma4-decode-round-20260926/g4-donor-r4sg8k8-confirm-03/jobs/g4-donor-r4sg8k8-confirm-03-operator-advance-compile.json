@@ -1,0 +1,53 @@
+{
+  "after": [
+    "g4-donor-r4sg8k8-confirm-03-qmv-w4-g32-r4-sg8-k8-compile-core",
+    "g4-donor-r4sg8k8-confirm-03-qmv-w8-g32-r4-sg8-k8-compile-core"
+  ],
+  "command": {
+    "args": [
+      "operator-advance",
+      "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-r4sg8k8-confirm-03",
+      "compile",
+      "{output}",
+      "metal-qmv-w4-g32-r4-sg8-k8",
+      "metal-qmv-w8-g32-r4-sg8-k8"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-r4sg8k8-confirm-03",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/72a3185b6e83ece38e6daba2f1cb7068fed4fec6ece9ed1d259f35cbcaf8ddd6-generator",
+      "sha256": "72a3185b6e83ece38e6daba2f1cb7068fed4fec6ece9ed1d259f35cbcaf8ddd6"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3",
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "sam_audio_one.py",
+      "mpc-content"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-donor-r4sg8k8-confirm-03-operator-advance-compile",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-r4sg8k8-confirm-03/campaign.json",
+      "sha256": "352b49917cf7959bafc6858339ccd685ba1225831e9fdc97a99a5118ea0d6df7"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

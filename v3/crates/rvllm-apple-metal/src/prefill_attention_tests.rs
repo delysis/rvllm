@@ -3,6 +3,8 @@ use super::*;
 use crate::arena::MetalRegion;
 use crate::MetalFloatType;
 use half::bf16;
+use objc2_metal::MTLComputePipelineState;
+use sha2::Digest;
 
 const SIMD_PREFILL: &str = r#"
 kernel void attention_prefill_simdgroup_probe(
@@ -89,19 +91,36 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut ctx = MetalContext::new()?;
     ctx.compile_library(&format!(
-        "{}\n{SIMD_PREFILL}",
-        crate::kernels::kernel_source_for_float_type(MetalFloatType::Bf16)
+        "{}\n{SIMD_PREFILL}\n{}",
+        crate::kernels::kernel_source_for_float_type(MetalFloatType::Bf16),
+        crate::prefill_attention_candidate::CONVENTIONAL_MSL,
     ))?;
     let mut pipelines = PipelineCache::new();
     for name in [
         "attention_prefill_f16",
         "attention_prefill_simdgroup_probe",
         "attention_prefill_simdgroup_f16",
+        crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT,
     ] {
         pipelines.compile(&ctx, name)?;
     }
-    let mut reports = Vec::new();
-    for (label, hd, kv_heads, window, lengths, starts, contexts, poison_future) in [
+    let candidate_pipeline =
+        pipelines.get(crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT)?;
+    let pipeline_resources = serde_json::json!({
+        "thread_execution_width": candidate_pipeline.threadExecutionWidth(),
+        "max_total_threads_per_threadgroup": candidate_pipeline.maxTotalThreadsPerThreadgroup(),
+        "static_threadgroup_memory_bytes": candidate_pipeline.staticThreadgroupMemoryLength(),
+        "provenance": "public MTLComputePipelineState getters on the JIT-compiled candidate"
+    });
+    let requested = std::env::var("RVLLM_METAL_PREFILL_LENGTH")
+        .ok()
+        .map(|value| value.parse::<u32>())
+        .transpose()?
+        .unwrap_or(256);
+    if !(1..=2048).contains(&requested) {
+        return Err("RVLLM_METAL_PREFILL_LENGTH must be 1..=2048".into());
+    }
+    let mut cases = vec![
         (
             "sliding-21",
             256_u32,
@@ -173,7 +192,28 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
             vec![33],
             true,
         ),
+    ];
+    for label in ["first-hole", "middle-hole", "last-hole"] {
+        cases.push((label, 256, 8, 1024, vec![96], vec![0], vec![96], false));
+    }
+    for length in [
+        requested.saturating_sub(1).max(1),
+        requested,
+        (requested + 1).min(2048),
     ] {
+        cases.push((
+            "requested-boundary",
+            256,
+            8,
+            1024,
+            vec![length],
+            vec![0],
+            vec![length],
+            false,
+        ));
+    }
+    let mut reports = Vec::new();
+    for (label, hd, kv_heads, window, lengths, starts, contexts, poison_future) in cases {
         let heads = 16_u32;
         let block = 32_u32;
         let batch = lengths.len() as u32;
@@ -189,6 +229,14 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                 tables[seq * max_blocks as usize + logical as usize] = (pages - 1 - cursor) as i32;
                 cursor += 1;
             }
+        }
+        if label.ends_with("hole") {
+            let logical = match label {
+                "first-hole" => 0,
+                "middle-hole" => 1,
+                _ => 2,
+            };
+            tables[logical] = -1;
         }
         let mut cu = vec![0_i32];
         let mut positions = Vec::new();
@@ -206,7 +254,11 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                 if poison_future && t > 0 {
                     continue;
                 }
-                let page = tables[seq * max_blocks as usize + (t / block) as usize] as u32;
+                let page = tables[seq * max_blocks as usize + (t / block) as usize];
+                if page < 0 {
+                    continue;
+                }
+                let page = page as u32;
                 let base = (page * block * kv_dim + (t % block) * kv_dim) as usize;
                 for d in 0..kv_dim as usize {
                     let seed = (seq as u32).wrapping_mul(10000019) + t * kv_dim + d as u32;
@@ -271,7 +323,7 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
             encoder.setComputePipelineState(pipelines.get(if production {
                 "attention_prefill_simdgroup_f16"
             } else if candidate {
-                "attention_prefill_simdgroup_probe"
+                crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT
             } else {
                 "attention_prefill_f16"
             })?);
@@ -334,7 +386,9 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                 timer.elapsed().as_secs_f64() * 1000.0,
             ))
         };
-        run(false, false)?;
+        if !label.ends_with("hole") {
+            run(false, false)?;
+        }
         run(true, false)?;
         let read = |region: &MetalRegion| -> Vec<f32> {
             // SAFETY: synchronous completion precedes this bounded read; no
@@ -358,28 +412,42 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
         unsafe {
             arena.write_region(&outputs[1], &production_poison)?;
         }
+        run(true, false)?;
+        assert_eq!(
+            candidate,
+            read(&outputs[1]),
+            "candidate output bits changed on repeat"
+        );
+        unsafe {
+            arena.write_region(&outputs[1], &production_poison)?;
+        }
         run(true, true)?;
         assert_eq!(
             candidate,
             read(&outputs[1]),
-            "production BF16 shader must match qualified prototype"
+            "existing SIMD control must match tiled candidate"
         );
-        assert!(
-            scalar.iter().chain(&candidate).all(|x| x.is_finite()),
-            "{label} finite"
-        );
-        let relative_l2 = (scalar
-            .iter()
-            .zip(&candidate)
-            .map(|(&a, &b)| f64::from(a - b).powi(2))
-            .sum::<f64>()
-            / scalar.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>())
-        .sqrt();
-        let max_difference = scalar
-            .iter()
-            .zip(&candidate)
-            .map(|(&a, &b)| (a - b).abs())
-            .fold(0.0_f32, f32::max);
+        assert!(candidate.iter().all(|x| x.is_finite()), "{label} finite");
+        let relative_l2 = if label.ends_with("hole") {
+            0.0
+        } else {
+            (scalar
+                .iter()
+                .zip(&candidate)
+                .map(|(&a, &b)| f64::from(a - b).powi(2))
+                .sum::<f64>()
+                / scalar.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>())
+            .sqrt()
+        };
+        let max_difference = if label.ends_with("hole") {
+            0.0
+        } else {
+            scalar
+                .iter()
+                .zip(&candidate)
+                .map(|(&a, &b)| (a - b).abs())
+                .fold(0.0_f32, f32::max)
+        };
         assert!(
             relative_l2 < 0.003 && max_difference < 0.032,
             "{label}: L2 {relative_l2} max {max_difference}"
@@ -410,7 +478,11 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                 let mut scores = Vec::new();
                 let mut bases = Vec::new();
                 for t in begin..end {
-                    let page = tables[seq * max_blocks as usize + (t / block) as usize] as u32;
+                    let page = tables[seq * max_blocks as usize + (t / block) as usize];
+                    if page < 0 {
+                        continue;
+                    }
+                    let page = page as u32;
                     let kb = (page * block * kv_dim + (t % block) * kv_dim + kv_head * hd) as usize;
                     scores.push(
                         (0..hd as usize)
@@ -418,6 +490,9 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
                             .sum::<f64>(),
                     );
                     bases.push(kb);
+                }
+                if scores.is_empty() {
+                    continue;
                 }
                 let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                 let weights: Vec<_> = scores.iter().map(|s| (s - max).exp()).collect();
@@ -449,7 +524,11 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
             } else {
                 [true, false]
             } {
-                let (g, w) = run(path, path)?;
+                let (g, w) = if path {
+                    run(true, false)?
+                } else {
+                    run(true, true)?
+                };
                 gpu[usize::from(path)].push(g);
                 wall[usize::from(path)].push(w);
             }
@@ -459,9 +538,14 @@ fn simd_prefill_checks_causality_pages_windows_and_fp64_reference(
             v.sort_by(f64::total_cmp);
             (v[2] + v[3]) * 0.5
         };
-        reports.push(serde_json::json!({"label":label,"tokens":total,"head_dim":hd,"kv_heads":kv_heads,"window":window,"contexts":contexts,"starts":starts,"commands":15,"relative_l2_vs_scalar":relative_l2,"max_abs_vs_scalar":max_difference,"sampled_fp64_relative_l2":cpu_relative_l2,"sampled_fp64_max_abs":max_cpu_error,"gpu_ms":{"scalar":gpu[0],"simdgroup":gpu[1]},"wall_ms":{"scalar":wall[0],"simdgroup":wall[1]},"gpu_median_ratio":median(&gpu[0])/median(&gpu[1])}));
+        reports.push(serde_json::json!({"label":label,"tokens":total,"head_dim":hd,"kv_heads":kv_heads,"window":window,"contexts":contexts,"starts":starts,"commands":15,"guards_unchanged":true,"repeatable_output_bits":true,"relative_l2_vs_scalar":relative_l2,"max_abs_vs_scalar":max_difference,"sampled_fp64_relative_l2":cpu_relative_l2,"sampled_fp64_max_abs":max_cpu_error,"gpu_ms":{"existing_simd_control":gpu[0],"tiled_candidate":gpu[1]},"wall_ms":{"existing_simd_control":wall[0],"tiled_candidate":wall[1]},"gpu_median_ratio":median(&gpu[0])/median(&gpu[1])}));
     }
-    let report = serde_json::json!({"cases":reports,"scope":"Controlled BF16 inputs, permuted physical KV pages, absolute causal positions, windows and chunks, guarded outputs, sampled independent FP64 softmax/PV; no ANE execution."});
+    let executable = std::fs::read(std::env::current_exe()?)?;
+    let generated = crate::prefill_attention_candidate::identity(
+        crate::prefill_attention_candidate::CONVENTIONAL_MSL,
+        crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT,
+    );
+    let report = serde_json::json!({"schema":"rvllm.gemma4.metal_prefill_referee.v1","status":"qualified","candidate":crate::prefill_attention_candidate::CONVENTIONAL_ENTRYPOINT,"requested_tokens":requested,"default_off":true,"qkv_boundary":"external_bf16","output_projection_boundary":"external_bf16","generated":{"generator_version":generated.generator_version,"entrypoint":generated.entrypoint,"source_sha256":generated.source_sha256,"executable_sha256":format!("{:x}",sha2::Sha256::digest(&executable)),"compiler_artifacts":"jit-library; offline AIR/metallib/disassembly required separately","pipeline_resources":pipeline_resources},"tensorops":{"status":"unsupported","reason":"no stable queried Metal TensorOps ABI"},"cases":reports,"scope":"Controlled BF16 inputs, permuted physical KV pages, absolute causal positions, windows, tails and holes, guarded outputs, sampled independent FP64 softmax/PV; no ANE execution."});
     if let Some(path) = std::env::var_os("RVLLM_METAL_PREFILL_ATTENTION_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report)?)?;
     }

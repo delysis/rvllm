@@ -1,4 +1,118 @@
-# Gemma 4 Metal / ANE checkpoint — active candidate handoff, 2026-09-22
+# Gemma 4 Apple kernel campaign — current handoff, 2026-09-25
+
+This section supersedes every older status or pause statement below. Work is
+active on draft PR #4, branch `astra/gemma4-load4-tiles-20260923`, at or after
+commit `df1ff2c3`. Shipping defaults remain unchanged. Local Codex owns Apple-device
+execution, correctness qualification, timing, evidence retention, and any
+promotion. Chat Pro may propose reviewable source changes but may not claim
+local qualification.
+
+## Current adjudicated frontier
+
+- Global D512 BF16 decode attention: split-matrix is the stable qualified
+  control. The opt-in split-32 route passes the independent native
+  oracle, real Gemma route, newest-K/V, tails, holes, guards, BF16 rounding,
+  exact dispatch, repeated output, and zero-compile checks, but **is not
+  promotable**. Complete normal-route speedups versus split-matrix were
+  1.149x/1.861x at L256, 1.015x/1.019x at L512, 0.737x/1.155x at L1024, and
+  0.794x/0.683x at L2048. Separate three-sample profile medians instead report
+  0.967x, 1.017x, 1.113x, and 1.140x respectively. The disagreement in
+  direction at L256 and L2048 proved material cross-process/order variance;
+  neither favorable subset was selected. A corrective A/B/B/A referee then
+  predeclared case 0 of every fresh process as a retained warmup and measured
+  cases 1 and 2. It found an L256 split-32 speedup of **1.0856x** (363.736 ms
+  versus 335.063 ms), independently repeated at **1.0868x** (362.150 ms versus
+  333.223 ms). Both runs had identical tokens, exact routes, zero inference
+  compilation, eligible recorded conditions, and no violations. Split-32 is
+  therefore a **prospective L256 winner**, not yet a production selection;
+  longer-context advancement remains required. Raw reports and condition
+  journals are checked in at
+  `reports/gemma4-split32-normal-route-20260925/`.
+- Native-BF16 Metal W4/W8 projection baseline: all seven roles (Q/K/V/O,
+  gate/up/down), both formats, and M=1/M=4 pass real-weight correctness,
+  exact dispatch, guards, and repeated-use checks. Only 3/28 cases repeated as
+  stable >=1.05x wins under the 20% drift rule: V/W4/M1 (1.291x, 1.150x),
+  Up/W4/M4 (2.220x, 2.221x), and Down/W4/M1 (1.880x, 1.945x). The campaign is
+  **not promotable**; genuinely tiled native-BF16 W4 and W8 kernels are the
+  next Metal priority. See
+  `reports/gemma4-metal-low-bit-bf16-campaign-20260925/`.
+- Native-BF16 N4 schedule: a four-output-per-SIMD candidate now passes every
+  real-weight correctness case across all seven roles, W4/W8, and M1/M4. Eight
+  of 28 timing cells repeat as stable wins under the same strict policy: V/W4/M4,
+  Gate/W8/M4, Up/W8/M1+M4, and Down/W4+W8/M1+M4. The remaining 20 cells are
+  unstable or not faster, so this is a role-specific research candidate rather
+  than a generic selector. See `reports/gemma4-metal-low-bit-n4-20260925/`.
+- ANE baseline versus stacked FFN: both routes are exact for the ten-token
+  continuation, provisioned 210/210, and compile-free during inference.
+  Corrected counterbalancing found mean stacked-minus-baseline FFN +0.016 ms
+  and total +18.210 ms. Stacked is correctness-qualified but not a speed
+  winner. See `reports/gemma4-ane-stacked-baseline-exact-v2-20260925.md`.
+- Generated-code evidence seals source, AIR, metallib, compiler, device, and
+  public PSO resource data. Apple public tooling does not expose supported
+  register-count, residency, or occupancy claims; do not manufacture them.
+- Checkpoint-specific W4/W8 quality-referee contracts exist, but full-model
+  calibrated logit/perplexity observations for every checkpoint-format pair
+  are still missing.
+
+## Required next implementation round
+
+1. Metal W4/W8: replace the one-output-per-SIMD correctness baseline with at
+   least two materially different tiled native-BF16 schedules per format.
+   Reuse unpacked values and scales across outputs; keep FP32 accumulation and
+   one BF16 storage boundary. Screen every role at M=1, then advance plausible
+   arms to bounded prefill M and full-route tests.
+2. Attention: retain split-matrix as control. Do not promote split-32 or build a
+   selector from its operator-only numbers. Investigate why its full-route
+   route measurements disagree despite isolated-kernel wins, with command
+   submission, scratch, synchronization, partial, and merge time separated.
+   Full-route comparisons execute a predeclared counterbalanced route order
+   inside one queue job; separate control-then-candidate jobs are diagnostic
+   only. The first corrective L256 ABBA run completed at 0.674x using every
+   observation, but exposed
+   a large process-first transient that would reverse the answer if second
+   cases were cherry-picked. The predeclared warmup-controlled referee and its
+   independent confirmation now agree at 1.0856x and 1.0868x respectively.
+   At L512 the A/B/B/A and B/A/A/B orders disagreed at 0.708x and 1.048x.
+   Their combined eight-observation median is only 1.025x, with >2.4x ranges
+   in both arms, so L512 is inconclusive and below margin. A bounded L1024
+   L1024 likewise disagreed at 0.979x and 1.068x; its combined result is only
+   1.038x with >1.8x ranges. Split-32 is therefore rejected as a current
+   selector candidate beyond its repeatable L256 win. Do not run L2048 without
+   a new overhead or synchronization hypothesis.
+3. Prefill: implement a separate tiled online-softmax experiment and an
+   explicitly hardware-gated TensorOps arm. Do not extrapolate the decode
+   policy or call TensorOps ANE evidence.
+4. Device-resident decode: implement the smallest bounded command-buffer token
+   loop that keeps dependency state, append-visible K/V, and sampling state on
+   device. Disabled instrumentation must add no per-layer allocation,
+   synchronization, or logging.
+5. ANE: prioritize graph fusion and launch reduction across INT8, BF16, and
+   storage-only LUT4 experiments. Native 4-bit arithmetic must not be claimed
+   without device evidence. Preserve exact cache identity, evaluation counts,
+   zero-compile inference, exact route, and no-fallback receipts.
+6. Quality: run the checkpoint-bound W4/W8 logit/NLL/perplexity referee after
+   calibrating thresholds against BF16. Operator agreement alone is not model
+   acceptance.
+
+The persistent experiment queue is advancing the warmup-controlled split-32
+campaign. It uses `stable_seconds=0`; changing conditions are recorded rather
+than used as a thermal-stability dwell gate. Short screens must precede longer
+contexts, and failed or unfavorable receipts must remain retained.
+
+## Chat Pro status
+
+The immutable job `rvllm-gemma4-coreai-sprint-20260925-v2` contains the full
+implementation brief and current evidence. It remains unsent. Bridge fixes for
+the Chat continuation interstitial and safe same-ID exhausted recovery pass
+their regression suites and are installed, but Chrome has not reconnected the
+extension/native host after stale-host cleanup. Do not invent a new job ID or
+manually click Send. Once bridge health is responsive, resume this exact ID and
+require explicit acknowledgement plus delivered package evidence before using
+its output.
+
+---
+
+# Historical checkpoint — 2026-09-22
 
 ## Superseding Chat Pro Astra brief
 
@@ -393,3 +507,81 @@ The research agent returned its reports earlier and is not running a hardware
 trial. Further delegation is not required to resume the Rust queue. Continue
 source review and coding independent variants while conditions gate trials;
 keep inputs pinned until their queued checks finish.
+
+## 2026-09-25 native-BF16 low-bit schedule frontier
+
+The default-off Metal N4 and N8 W4/W8 schedules have completed real Gemma
+seven-role screen and independent-confirmation campaigns at M=1 and M=4. Both
+retain BF16 activations/output, FP16 group-32 scales, FP32 accumulation, exact
+dispatch accounting, guards and bitwise repeat checks. Shipping defaults are
+unchanged.
+
+- N4 has eight stable cells out of 28 under the repeated >=1.05x speedup and
+  <=20% candidate/native/speedup drift policy.
+- N8 has four stable cells out of 28. Its wins are K/W8/M4, O/W4/M1,
+  O/W4/M4 and Down/W8/M4.
+- The union is 11/28 because Down/W8/M4 overlaps. N8 therefore adds three
+  stable cells.
+- These are partial operator wins, not a campaign-wide or full-model winner.
+  N4 and N8 were each compared with native BF16, not directly against each
+  other. A production selector requires a counterbalanced N4-versus-N8 referee
+  on plausible cells plus checkpoint-bound logit/perplexity acceptance.
+
+Evidence is in `reports/gemma4-metal-low-bit-n4-20260925/` and
+`reports/gemma4-metal-low-bit-n8-20260925/`. The latter's `summary.json` is the
+compact current adjudication; its `queue-receipts/` directory preserves all
+fourteen unaltered job receipts.
+
+The generated-code evidence gap is now narrowed by
+`reports/gemma4-metal-artifact-evidence-attention-20260925/`. Its strict
+receipt seals the exact MSL, AIR, metallib, toolchain, compiler commands,
+public `metal-objdump` output and live M4 Max pipeline properties. Split-32
+uses 2,912 B plus 384 B static threadgroup memory for partial plus merge;
+split-matrix uses 12,512 B plus 0 B. All four report execution width 32 and a
+1,024-thread pipeline maximum. Apple public APIs still do not expose supported
+register-count, occupancy, residency or machine-lowering evidence, so those
+claims remain explicitly unavailable or unverified.
+
+ANE timing has now ruled out the current stacked and Down4 variants as speed
+winners. The next source-grounded boundary hypothesis is not another FFN
+retile: stacked/interleaved FFN already reach one program and the exact
+two-convolution dependency lower bound for `GELU(gate) * up`. The next credible
+arm is a single-I/O attention-plus-output-projection graph. If the private
+compiler accepts and caches 48 layer-specific variants, it would replace the
+attention and output evaluations with one evaluation per layer and change the
+full route from 162 to an expected 160 resident programs. Do not integrate the
+route before serial compile/cache qualification: the historical multi-input
+attention graph caused an AppleH16ANEInterface panic. The design and safe-Rust
+fail-closed gate are in
+`reports/gemma4-ane-next-boundary-candidate-20260925.md` and
+`rvllm_ane_boundary_referee`.
+
+The default-off layer-0 compile-source slice is now implemented. It preserves
+one external input/output, appends one constant `o_proj` convolution, reuses
+the existing FP16 blob serialization, seals MIL/blob/I/O identity, and exposes
+no inference API. Its ignored device probe allows one compiler attempt and
+zero evaluations with mandatory fresh receipt and driver journal. Host layout
+tests pass; a serial queue run must now establish whether the private compiler
+accepts and caches the graph before any component oracle or runtime route is
+added.
+
+The N4/N8 selector prerequisite is now implemented as a direct real-weight
+referee rather than inferred from two separate native-BF16 comparisons. It
+admits only the 11 cells in the union of independently repeated N4/N8 wins and
+emits paired ABBA plus BAAB jobs per cell. Both schedules must match the CPU
+BF16 oracle, each other bit-for-bit, guards, repeatability, exact dispatch
+counts and exact kernel identities. A safe-Rust validator recomputes medians
+and reciprocal speedups from the retained samples. The 22 zero-dwell manifests
+are in `reports/gemma4-metal-low-bit-n4-vs-n8-direct-20260925/`; they remain
+operator selection evidence only, not full-route or checkpoint acceptance.
+
+That direct campaign has now completed: all 22 jobs succeeded with zero queue
+violations. The strict Rust adjudicator found four stable choices under the
+same 1.05x minimum margin and 20% three-way repeat-drift rule: N4 wins
+K/W8/M4 and O/W4/M1/M4; N8 wins Up/W8/M1. Six cells are inconclusive from
+cross-order drift, and V/W4/M4 is stable but lacks a 5% winner. The machine
+summary retains all raw dispatch-order samples, conditions, identities and
+queue evidence in
+`reports/gemma4-metal-low-bit-n4-vs-n8-direct-20260925/results/summary.json`.
+These remain operator-level selector inputs; no full-route selection or
+promotion follows automatically.

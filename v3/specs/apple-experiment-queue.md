@@ -32,9 +32,11 @@ silently replayed on restart.
 Schema is `rvllm.experiment_job.v1`. Unknown fields are rejected. Every job has:
 
 - `id`: up to 96 ASCII letters, digits, dashes or underscores. IDs are unique.
-- `purpose`: `timing` or `preparation`. Preparation can succeed despite power
-  changes, but its raw eligibility stays false and it makes no performance
-  claim. Timing requires eligible observations throughout the child lifetime.
+- `purpose`: `timing`, `exploratory_timing`, `correctness`, or `preparation`.
+  Preparation and correctness may succeed despite ineligible sampled
+  conditions and make no performance claim. Exploratory timing retains all
+  observations but cannot promote from an ineligible run. Strict timing
+  requires eligible observations throughout the child lifetime.
 - `command`: `executable: {path, sha256}`, absolute `cwd`, `args` array and
   optional `env` map. Arguments expand only the literal `{output}` token to
   the exclusive attempt directory. No shell interpretation occurs. Environment
@@ -56,16 +58,17 @@ Schema is `rvllm.experiment_job.v1`. Unknown fields are rejected. Every job has:
   `is_processing: false`. Unknown, busy or unreachable servers block launch.
   Preparation jobs may use `thermal_state: null` to accept either benign state;
   timing jobs must name exactly one state. Unknown/Serious/Critical is refused.
-- `stable_seconds` (1–600), `max_wait_seconds` (at most one day), and
-  `max_run_seconds` (1–3600).
+- `stable_seconds` (legacy compatibility field, 0–600; ignored by the current
+  queue), `max_wait_seconds` (at most one day), and `max_run_seconds`
+  (1–3600). New manifests must write zero.
 
-Jobs are selected in lexical ID order among satisfied dependencies and stable
-launch conditions. The quiet window restarts after any trial and after an
-observation gap over 2.5 seconds; equal controls on either side of an
-unobserved interval do not establish continuity. Waiting deadlines are retained
-when a window restarts. An unready job does not block an independent ready job;
-use dependencies to enforce ABBA order. Input hashes are checked again before
-launch, followed by a fresh condition check. A failed
+Jobs are selected in lexical ID order among satisfied dependencies and current
+launch conditions. The queue does not wait for thermal, clock, or power
+conditions to remain unchanged: it records their changes and relies on
+counterbalanced sampling, drift gates, and later confirmation. A currently
+unready job does not block an independent ready job; use dependencies to
+enforce ABBA order. Input hashes are checked again before launch, followed by
+a fresh condition check. A failed
 or incomplete attempt stops the queue, including after restart. Review its
 evidence and submit a revised attempt to a new queue; no automatic cache repair
 or statistical retry policy is inferred. Dependency submission order prevents
@@ -99,9 +102,10 @@ including probe duration, and are never reused across passes. Prelaunch and
 active-child checks take fresh observations. JSON reports use buffered reads
 so completed-job metadata does not consume the observation window.
 
-The gate requires fresh known power controls, no reported CPU restriction,
-stable controls for the configured interval, enough available disk space and
-no matching competing process. Name matching uses process executable names;
+The launch check requires fresh known power controls, no reported CPU
+restriction, enough available disk space and no matching competing process.
+It does not require a dwell interval or unchanged conditions. Name matching
+uses process executable names;
 the current trial and its descendants are excluded. Include `cargo`, `rustc`,
 other inference executables and test executables when those can contaminate
 the experiment. The cooperative lock only covers participating workers.

@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-pub(super) fn load_snapshot(path: &Path) -> (AnePrefillSnapshot, TokenId, String) {
+pub(crate) fn load_snapshot(path: &Path) -> (AnePrefillSnapshot, TokenId, String) {
     let bytes = std::fs::read(path).unwrap();
     let hash = format!("{:x}", Sha256::digest(&bytes));
     let report: Value = serde_json::from_slice(&bytes).unwrap();
@@ -83,7 +83,7 @@ pub(super) fn load_snapshot(path: &Path) -> (AnePrefillSnapshot, TokenId, String
     )
 }
 
-pub(super) fn signature(token: &AneDecodedToken) -> Value {
+pub(crate) fn signature(token: &AneDecodedToken) -> Value {
     json!({"token":token.token.raw(), "position":token.position,
         "top_five_bits":token.top_five.iter().map(|&(id, value)| (id, value.to_bits())).collect::<Vec<_>>()})
 }

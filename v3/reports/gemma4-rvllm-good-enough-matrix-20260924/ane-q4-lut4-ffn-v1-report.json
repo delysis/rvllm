@@ -1,0 +1,200 @@
+{
+  "ane_execution_verified": true,
+  "ane_vs_original_cpu_reference": {
+    "elements": 11520,
+    "max_abs_error": 0.7088007926940918,
+    "relative_l2_error": 0.15601922302208715
+  },
+  "ane_vs_selected_cpu_reference": {
+    "elements": 11520,
+    "max_abs_error": 0.0036112070083618164,
+    "relative_l2_error": 0.00315628492300325
+  },
+  "cache_policy": "ReuseOrCompile",
+  "claim": "One real FFN numerical/latency experiment. Source blob size is not compiled/resident size or proof of compressed runtime bandwidth. Quantization errors are observed, not full-model quality acceptance.",
+  "compile_load_ms": 7208.888333,
+  "control_backend_errors_original_dense": null,
+  "control_prepare_ms": null,
+  "cpu_or_gpu_fallback": false,
+  "cpu_quantization_errors_gate_up_gated_down": [
+    {
+      "elements": 46080,
+      "max_abs_error": 0.56182861328125,
+      "relative_l2_error": 0.14190053386480483
+    },
+    {
+      "elements": 46080,
+      "max_abs_error": 1.73046875,
+      "relative_l2_error": 0.14008895517144668
+    },
+    {
+      "elements": 46080,
+      "max_abs_error": 0.609375,
+      "relative_l2_error": 0.1883675685180355
+    },
+    {
+      "elements": 11520,
+      "max_abs_error": 0.7085645198822021,
+      "relative_l2_error": 0.15588644903574622
+    }
+  ],
+  "dense_control_outputs_bit_identical": null,
+  "dense_reconstruction_fp16_sha256": "a72573ef0574b0b5602947060fca8023f3f20fd0d31e8a76bf0fc9e2a2e7c5ad",
+  "diagnostic_journal_enabled": false,
+  "full_model_quality_qualified": false,
+  "input_sources": [
+    {
+      "sha256": "046f0afd7ce27968f30af18b925fae60cb283c644130471180ea8f5585511772",
+      "synthetic_pattern": 0
+    },
+    {
+      "sha256": "f79f239b9a63fe54ef89a2d354a2556f62ab2b63f5fa12f73862a0eceaa5298f",
+      "synthetic_pattern": 1
+    },
+    {
+      "sha256": "c6656e5f8919780dd24bcb4e1e0980ee34a076aa6a6c36a3ea67849bb9d28dc0",
+      "synthetic_pattern": 2
+    }
+  ],
+  "iterations": 64,
+  "layer": 0,
+  "median_ms": 1.5300205,
+  "minimum_ms": 1.423917,
+  "mode": "lut4",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "numerical_inputs_checked": 3,
+  "original_fp16_sha256": "2def7d665d86b519f8c50369914aa30c07f7d73282fa0633b1a47f15a17ffdd3",
+  "original_weight_payload_bytes": 353894400,
+  "p95_ms": 4.041,
+  "per_input_errors": [
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.7088007926940918,
+        "relative_l2_error": 0.1549518754816783
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.003178529441356659,
+        "relative_l2_error": 0.0028894345660284535
+      },
+      "input_max_abs": 0.75
+    },
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.43840837478637695,
+        "relative_l2_error": 0.14532786365525743
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.00340841431170702,
+        "relative_l2_error": 0.0030004011157610984
+      },
+      "input_max_abs": 0.75
+    },
+    {
+      "against_original": {
+        "elements": 3840,
+        "max_abs_error": 0.7056186199188232,
+        "relative_l2_error": 0.1711227301690843
+      },
+      "backend": {
+        "elements": 3840,
+        "max_abs_error": 0.0036112070083618164,
+        "relative_l2_error": 0.003689053991722865
+      },
+      "input_max_abs": 0.75
+    }
+  ],
+  "quantization": "Three scalar per-tensor 16-entry FP16 codebooks; weighted FP16 histogram Lloyd fitting, quantile-midpoint initialization, up to 50 iterations; final assignment to nearest stored FP16 centroid; low nibble first; no format fallback",
+  "quantize_and_reconstruct_ms": 4002.745708,
+  "quantized_source_blob_bytes": 88474240,
+  "rotating_order_samples_ms": null,
+  "samples_ms": [
+    1.423917,
+    1.434958,
+    1.4388750000000001,
+    1.4395829999999998,
+    1.439833,
+    1.4468750000000001,
+    1.448167,
+    1.448583,
+    1.458167,
+    1.460209,
+    1.462459,
+    1.463042,
+    1.464041,
+    1.464917,
+    1.466958,
+    1.4703330000000001,
+    1.475916,
+    1.4762499999999998,
+    1.477083,
+    1.48125,
+    1.48875,
+    1.500708,
+    1.5019580000000001,
+    1.502292,
+    1.5045,
+    1.509125,
+    1.512125,
+    1.5145,
+    1.515791,
+    1.518334,
+    1.5245,
+    1.526541,
+    1.5334999999999999,
+    1.533875,
+    1.534,
+    1.5442500000000001,
+    1.544375,
+    1.5448330000000001,
+    1.556875,
+    1.558458,
+    1.566166,
+    1.582958,
+    1.5963340000000001,
+    1.6300839999999999,
+    1.648292,
+    1.768375,
+    1.779625,
+    1.819709,
+    1.823458,
+    1.951916,
+    2.007,
+    2.118292,
+    2.202917,
+    2.259833,
+    2.345833,
+    2.454958,
+    2.4810000000000003,
+    2.776542,
+    2.873083,
+    3.1110830000000003,
+    4.041,
+    5.401709,
+    6.4283339999999995,
+    8.049125
+  ],
+  "schema": "rvllm.ane_weight_ffn_probe.v2",
+  "warmups": 5,
+  "weight_load_ms": 5155.056667,
+  "weight_reconstruction_errors_gate_up_down": [
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.1591796875,
+      "relative_l2_error": 0.14374607121723612
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.1846923828125,
+      "relative_l2_error": 0.14353803181582964
+    },
+    {
+      "elements": 58982400,
+      "max_abs_error": 0.13409423828125,
+      "relative_l2_error": 0.1532297958189417
+    }
+  ]
+}

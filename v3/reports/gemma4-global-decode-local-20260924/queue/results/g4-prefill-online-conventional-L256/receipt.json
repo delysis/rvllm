@@ -1,0 +1,829 @@
+{
+  "candidate": "research_gemma4_prefill_tiled_online_bf16",
+  "cases": [
+    {
+      "commands": 15,
+      "contexts": [
+        21
+      ],
+      "gpu_median_ratio": 0.9945438153440993,
+      "gpu_ms": {
+        "existing_simd_control": [
+          0.106458377558738,
+          0.07999996887519956,
+          0.07908331463113427,
+          0.08008332224562764,
+          0.07950002327561378,
+          0.07904169615358114
+        ],
+        "tiled_candidate": [
+          0.08187501225620508,
+          0.0804582959972322,
+          0.08025002898648381,
+          0.08008332224562764,
+          0.08012499893084168,
+          0.07970829028636217
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "sliding-21",
+      "max_abs_vs_scalar": 0.001953125,
+      "relative_l2_vs_scalar": 0.000024474279806220785,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.0010087801750368328,
+      "starts": [
+        0
+      ],
+      "tokens": 21,
+      "wall_ms": {
+        "existing_simd_control": [
+          2.949459,
+          1.269708,
+          0.5095419999999999,
+          0.336459,
+          0.5145419999999999,
+          1.423959
+        ],
+        "tiled_candidate": [
+          2.1540830000000004,
+          3.0894999999999997,
+          0.5060830000000001,
+          0.579291,
+          0.511875,
+          0.32949999999999996
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        84
+      ],
+      "gpu_median_ratio": 0.99294249963005,
+      "gpu_ms": {
+        "existing_simd_control": [
+          0.4011249984614551,
+          0.30574999982491136,
+          0.30958332354202867,
+          0.30729162972420454,
+          0.3067500074394047,
+          0.3082500188611448
+        ],
+        "tiled_candidate": [
+          0.30975003028288484,
+          0.30925002647563815,
+          0.3108333330601454,
+          0.31016668071970344,
+          0.3106250078417361,
+          0.3068333608098328
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "sliding-84",
+      "max_abs_vs_scalar": 0.001953125,
+      "relative_l2_vs_scalar": 0.000027074811154311944,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.0008805068406723723,
+      "starts": [
+        0
+      ],
+      "tokens": 84,
+      "wall_ms": {
+        "existing_simd_control": [
+          1.126542,
+          0.6282920000000001,
+          0.6287079999999999,
+          0.611042,
+          0.554625,
+          0.5785
+        ],
+        "tiled_candidate": [
+          0.654292,
+          0.641709,
+          0.6495420000000001,
+          0.647834,
+          0.500125,
+          0.565875
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        652
+      ],
+      "gpu_median_ratio": 0.9102292767807347,
+      "gpu_ms": {
+        "existing_simd_control": [
+          11.98341662529856,
+          10.093791643157601,
+          18.61370832193643,
+          14.441500010434538,
+          12.997750018257648,
+          11.12562499474734
+        ],
+        "tiled_candidate": [
+          13.886916683986783,
+          11.6886249743402,
+          13.057000003755093,
+          20.15545836184174,
+          23.968624998815358,
+          13.55799997691065
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "sliding-652",
+      "max_abs_vs_scalar": 0.00390625,
+      "relative_l2_vs_scalar": 0.00003773320620549648,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.0011506697110650783,
+      "starts": [
+        0
+      ],
+      "tokens": 652,
+      "wall_ms": {
+        "existing_simd_control": [
+          12.251,
+          10.335708,
+          18.855041999999997,
+          18.070625,
+          19.320833999999998,
+          12.703000000000001
+        ],
+        "tiled_candidate": [
+          14.266417,
+          11.93425,
+          14.908958,
+          20.838834000000002,
+          27.754125000000002,
+          14.482040999999999
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        21
+      ],
+      "gpu_median_ratio": 0.9957464584190809,
+      "gpu_ms": {
+        "existing_simd_control": [
+          0.20166666945442557,
+          0.14525000005960464,
+          0.14404166722670197,
+          0.14795834431424737,
+          0.1443750225007534,
+          0.1473749871365726
+        ],
+        "tiled_candidate": [
+          0.14575000386685133,
+          0.14512497000396252,
+          0.14474999625235796,
+          0.1492499723099172,
+          0.14895835192874074,
+          0.14812499284744263
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 512,
+      "kv_heads": 1,
+      "label": "global-21",
+      "max_abs_vs_scalar": 0.001953125,
+      "relative_l2_vs_scalar": 0.00002259741793867503,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.001948465609737604,
+      "sampled_fp64_relative_l2": 0.0011345240724847916,
+      "starts": [
+        0
+      ],
+      "tokens": 21,
+      "wall_ms": {
+        "existing_simd_control": [
+          1.555584,
+          0.304917,
+          0.318041,
+          0.345333,
+          0.331042,
+          0.311917
+        ],
+        "tiled_candidate": [
+          0.3455,
+          0.32795799999999997,
+          0.304542,
+          0.312958,
+          0.317416,
+          0.32587499999999997
+        ]
+      },
+      "window": 0
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        652
+      ],
+      "gpu_median_ratio": 0.803599938379804,
+      "gpu_ms": {
+        "existing_simd_control": [
+          25.038374995347112,
+          33.78491662442684,
+          25.315833336208016,
+          31.58800001256168,
+          24.67308333143592,
+          24.268416687846184
+        ],
+        "tiled_candidate": [
+          25.281374983023852,
+          31.385291658807546,
+          34.884874999988824,
+          31.275500019546598,
+          25.343833316583186,
+          34.350749978329986
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 512,
+      "kv_heads": 1,
+      "label": "global-652",
+      "max_abs_vs_scalar": 0.00390625,
+      "relative_l2_vs_scalar": 0.00004976679892515683,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.001953433956942696,
+      "sampled_fp64_relative_l2": 0.001081590526774702,
+      "starts": [
+        0
+      ],
+      "tokens": 652,
+      "wall_ms": {
+        "existing_simd_control": [
+          25.416083,
+          35.977375,
+          25.57,
+          31.844208,
+          31.658125000000002,
+          30.900833
+        ],
+        "tiled_candidate": [
+          25.609083000000002,
+          31.659416000000004,
+          35.228667,
+          33.552833,
+          30.261125,
+          38.808457999999995
+        ]
+      },
+      "window": 0
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        80,
+        1030
+      ],
+      "gpu_median_ratio": 0.9343607116495366,
+      "gpu_ms": {
+        "existing_simd_control": [
+          5.082125018816441,
+          4.816708329599351,
+          5.860625009518117,
+          5.0593750202097,
+          5.841000005602837,
+          5.583874997682869
+        ],
+        "tiled_candidate": [
+          5.871374974958599,
+          5.309875006787479,
+          5.543916660826653,
+          5.949083366431296,
+          5.4550416534766555,
+          5.923916643951088
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "sliding-two-chunks",
+      "max_abs_vs_scalar": 0.0009765625,
+      "relative_l2_vs_scalar": 0.000019558237479143085,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019420933987591704,
+      "sampled_fp64_relative_l2": 0.0015825226478522994,
+      "starts": [
+        71,
+        1023
+      ],
+      "tokens": 16,
+      "wall_ms": {
+        "existing_simd_control": [
+          8.717792000000001,
+          6.3071660000000005,
+          10.767833,
+          9.388041999999999,
+          12.988417,
+          5.825709
+        ],
+        "tiled_candidate": [
+          11.648166999999999,
+          6.685125,
+          6.369208,
+          15.672084,
+          5.764333,
+          13.918208
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        1050
+      ],
+      "gpu_median_ratio": 0.9846336503242527,
+      "gpu_ms": {
+        "existing_simd_control": [
+          0.1556250499561429,
+          0.1212499919347465,
+          0.12112496187910438,
+          0.12149999383836985,
+          0.12145837536081672,
+          0.12412498472258449
+        ],
+        "tiled_candidate": [
+          0.1266250037588179,
+          0.1218749675899744,
+          0.122375029604882,
+          0.12158334720879793,
+          0.12487499043345451,
+          0.12437498662620783
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "window-excludes-prefix",
+      "max_abs_vs_scalar": 1.9073486328125e-6,
+      "relative_l2_vs_scalar": 7.360899895942507e-8,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.00194979082362845,
+      "sampled_fp64_relative_l2": 0.0013383609668483666,
+      "starts": [
+        1045
+      ],
+      "tokens": 5,
+      "wall_ms": {
+        "existing_simd_control": [
+          0.372167,
+          0.29875,
+          0.281375,
+          0.272292,
+          0.287667,
+          0.281667
+        ],
+        "tiled_candidate": [
+          0.332542,
+          0.289458,
+          0.28025,
+          0.284667,
+          0.307333,
+          0.27929099999999996
+        ]
+      },
+      "window": 32
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        33
+      ],
+      "gpu_median_ratio": 0.14550904075308274,
+      "gpu_ms": {
+        "existing_simd_control": [
+          0.49895833944901824,
+          0.017208338249474764,
+          0.03633333835750818,
+          0.016874982975423336,
+          0.026374997105449438,
+          1.4352916623465717
+        ],
+        "tiled_candidate": [
+          0.01758331200107932,
+          0.46166667016223073,
+          0.01816666917875409,
+          0.4127916763536632,
+          1.509458350483328,
+          0.01675001112744212
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 512,
+      "kv_heads": 1,
+      "label": "causal-poison-future",
+      "max_abs_vs_scalar": 0.0,
+      "relative_l2_vs_scalar": 0.0,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0,
+      "sampled_fp64_relative_l2": 0.0,
+      "starts": [
+        0
+      ],
+      "tokens": 1,
+      "wall_ms": {
+        "existing_simd_control": [
+          0.636084,
+          0.19262500000000002,
+          0.20466700000000002,
+          0.193292,
+          0.180417,
+          1.723458
+        ],
+        "tiled_candidate": [
+          0.193458,
+          0.629375,
+          0.201208,
+          0.587542,
+          1.6840410000000001,
+          0.200958
+        ]
+      },
+      "window": 0
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        96
+      ],
+      "gpu_median_ratio": 0.8432336348169966,
+      "gpu_ms": {
+        "existing_simd_control": [
+          0.2499166876077652,
+          0.36191666731610894,
+          0.6885416805744171,
+          0.7847916567698121,
+          1.9150833250023425,
+          0.343166699167341
+        ],
+        "tiled_candidate": [
+          0.24791667237877846,
+          0.774625048507005,
+          0.4711250076070428,
+          0.39425003342330456,
+          1.871375017799437,
+          1.711375021841377
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "first-hole",
+      "max_abs_vs_scalar": 0.0,
+      "relative_l2_vs_scalar": 0.0,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0009703606662834208,
+      "sampled_fp64_relative_l2": 0.0016040899545600254,
+      "starts": [
+        0
+      ],
+      "tokens": 96,
+      "wall_ms": {
+        "existing_simd_control": [
+          0.47758300000000004,
+          0.5388339999999999,
+          0.8546250000000001,
+          0.973083,
+          2.1382499999999998,
+          0.517417
+        ],
+        "tiled_candidate": [
+          0.419167,
+          0.970333,
+          0.656916,
+          0.662084,
+          2.063375,
+          1.8843340000000002
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        96
+      ],
+      "gpu_median_ratio": 0.7922717636009667,
+      "gpu_ms": {
+        "existing_simd_control": [
+          1.0442500351928174,
+          0.8207916980609298,
+          0.6272500031627715,
+          1.0367499780841172,
+          0.6227500271052122,
+          0.262749963440001
+        ],
+        "tiled_candidate": [
+          1.0264166630804539,
+          0.4844582872465253,
+          1.8736667116172612,
+          1.820666657295078,
+          0.8012916659936309,
+          0.2847500145435333
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "middle-hole",
+      "max_abs_vs_scalar": 0.0,
+      "relative_l2_vs_scalar": 0.0,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.0009428356196454415,
+      "starts": [
+        0
+      ],
+      "tokens": 96,
+      "wall_ms": {
+        "existing_simd_control": [
+          1.24775,
+          0.991125,
+          0.784291,
+          1.2173749999999999,
+          0.793209,
+          0.449208
+        ],
+        "tiled_candidate": [
+          1.253708,
+          0.685625,
+          2.053291,
+          1.9801659999999999,
+          1.050833,
+          0.585792
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        96
+      ],
+      "gpu_median_ratio": 1.0037538416801566,
+      "gpu_ms": {
+        "existing_simd_control": [
+          0.2817499917000532,
+          0.2811250160448253,
+          0.2792499726638198,
+          0.28645829297602177,
+          0.32637501135468483,
+          0.29079162050038576
+        ],
+        "tiled_candidate": [
+          0.2781249932013452,
+          0.2784582902677357,
+          0.2782083465717733,
+          0.2947499742731452,
+          0.28912501875311136,
+          0.2876250073313713
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "last-hole",
+      "max_abs_vs_scalar": 0.0,
+      "relative_l2_vs_scalar": 0.0,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.0009262436737467006,
+      "starts": [
+        0
+      ],
+      "tokens": 96,
+      "wall_ms": {
+        "existing_simd_control": [
+          0.476875,
+          0.516791,
+          0.522916,
+          0.453917,
+          0.54925,
+          0.468125
+        ],
+        "tiled_candidate": [
+          0.44337499999999996,
+          0.455291,
+          0.455833,
+          0.463042,
+          0.473208,
+          0.4815
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        255
+      ],
+      "gpu_median_ratio": 0.9137081904494652,
+      "gpu_ms": {
+        "existing_simd_control": [
+          1.9239166285842657,
+          1.8711250158958137,
+          2.003124973271042,
+          1.9038333557546139,
+          2.0691250101663172,
+          3.8007916300557554
+        ],
+        "tiled_candidate": [
+          2.1531666279770434,
+          2.1402499987743795,
+          2.1447499748319387,
+          1.9373749964870512,
+          2.9351249686442316,
+          3.472625045105815
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "requested-boundary",
+      "max_abs_vs_scalar": 0.00390625,
+      "relative_l2_vs_scalar": 0.000040589737797229805,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.000904908501268512,
+      "starts": [
+        0
+      ],
+      "tokens": 255,
+      "wall_ms": {
+        "existing_simd_control": [
+          2.14575,
+          2.07275,
+          2.210333,
+          2.17125,
+          2.3707920000000002,
+          4.052625
+        ],
+        "tiled_candidate": [
+          2.386125,
+          2.330041,
+          2.3827499999999997,
+          2.1535,
+          3.257792,
+          3.713167
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        256
+      ],
+      "gpu_median_ratio": 1.138188506565108,
+      "gpu_ms": {
+        "existing_simd_control": [
+          1.9732500077225268,
+          2.3647500202059746,
+          2.8627083520404994,
+          2.994125010445714,
+          2.7607500087469816,
+          2.128958352841437
+        ],
+        "tiled_candidate": [
+          1.9621249521151185,
+          2.5284583680331707,
+          3.2752083498053253,
+          3.172999946400523,
+          1.9747500191442668,
+          1.9319166312925518
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "requested-boundary",
+      "max_abs_vs_scalar": 0.00390625,
+      "relative_l2_vs_scalar": 0.0000405863539801282,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.0009039867600897362,
+      "starts": [
+        0
+      ],
+      "tokens": 256,
+      "wall_ms": {
+        "existing_simd_control": [
+          2.4072910000000003,
+          2.648292,
+          3.216,
+          3.211417,
+          3.246416,
+          2.3892919999999997
+        ],
+        "tiled_candidate": [
+          2.4090420000000003,
+          2.88825,
+          3.5373330000000003,
+          3.595583,
+          2.227625,
+          2.176542
+        ]
+      },
+      "window": 1024
+    },
+    {
+      "commands": 15,
+      "contexts": [
+        257
+      ],
+      "gpu_median_ratio": 0.9845305479319372,
+      "gpu_ms": {
+        "existing_simd_control": [
+          2.1257500047795475,
+          1.9181249663233757,
+          1.963333343155682,
+          2.2335833054967225,
+          1.99516664724797,
+          3.266458341386169
+        ],
+        "tiled_candidate": [
+          1.982833375222981,
+          2.11237499024719,
+          2.073291630949825,
+          1.9967500120401382,
+          3.3998749568127096,
+          2.9682499589398503
+        ]
+      },
+      "guards_unchanged": true,
+      "head_dim": 256,
+      "kv_heads": 8,
+      "label": "requested-boundary",
+      "max_abs_vs_scalar": 0.00390625,
+      "relative_l2_vs_scalar": 0.000040583089471412085,
+      "repeatable_output_bits": true,
+      "sampled_fp64_max_abs": 0.0019464853069263155,
+      "sampled_fp64_relative_l2": 0.0009045004095304518,
+      "starts": [
+        0
+      ],
+      "tokens": 257,
+      "wall_ms": {
+        "existing_simd_control": [
+          3.15325,
+          2.174,
+          2.1894169999999997,
+          2.484833,
+          2.9892090000000002,
+          3.4961670000000002
+        ],
+        "tiled_candidate": [
+          2.253708,
+          2.3396250000000003,
+          2.297791,
+          2.227792,
+          3.836875,
+          3.2335
+        ]
+      },
+      "window": 1024
+    }
+  ],
+  "default_off": true,
+  "generated": {
+    "compiler_artifacts": "jit-library; offline AIR/metallib/disassembly required separately",
+    "entrypoint": "research_gemma4_prefill_tiled_online_bf16",
+    "executable_sha256": "d7764035ae2efcc30f97d48fe3727aa27784a81d2bf55f3d5420e58e64af1cf1",
+    "generator_version": "gemma4-prefill-online-v1",
+    "pipeline_resources": {
+      "max_total_threads_per_threadgroup": 1024,
+      "provenance": "public MTLComputePipelineState getters on the JIT-compiled candidate",
+      "static_threadgroup_memory_bytes": 0,
+      "thread_execution_width": 32
+    },
+    "source_sha256": "651a82a6dbe220d894de0ed9190307296520460456c6ecb5db86d166bf0e5bfa"
+  },
+  "output_projection_boundary": "external_bf16",
+  "qkv_boundary": "external_bf16",
+  "requested_tokens": 256,
+  "schema": "rvllm.gemma4.metal_prefill_referee.v1",
+  "scope": "Controlled BF16 inputs, permuted physical KV pages, absolute causal positions, windows, tails and holes, guarded outputs, sampled independent FP64 softmax/PV; no ANE execution.",
+  "status": "qualified",
+  "tensorops": {
+    "reason": "no stable queried Metal TensorOps ABI",
+    "status": "unsupported"
+  }
+}

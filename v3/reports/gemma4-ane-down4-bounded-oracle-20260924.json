@@ -1,0 +1,50 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "gemma4-ane-down4-bounded-oracle-20260924",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/debug/deps/rvllm_runtime-441a833077a9fb42",
+      "sha256": "48cf0aff8259140ed5086186700fbbffa998b16a122950453b11452c0e6a2882"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "--ignored",
+      "--exact",
+      "gemma_ane_decode::component_oracles::native_down4_bounded_provision_matches_plain_ffn",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RVLLM_ANE_FFN_ORACLE_MODEL_DIR": "/tmp/gemma4-12b-it-regular-config-20260924",
+      "RVLLM_ANE_FFN_ORACLE_MANIFEST": "/tmp/ane-int8-ffn-down4-pins-20260924/manifest.json",
+      "RVLLM_ANE_FFN_ORACLE_MANIFEST_SHA256": "f9c57ab1defd9d026b1fd2382ae94492ccaac83f849c902580458817941ef470",
+      "RVLLM_ANE_FFN_ORACLE_OUTPUT": "/tmp/ane-int8-ffn-down4-bounded-oracle-20260924",
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/tmp/ane-int8-ffn-down4-bounded-journal-20260924.jsonl"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/tmp/ane-int8-ffn-down4-pins-20260924/manifest.json",
+      "sha256": "f9c57ab1defd9d026b1fd2382ae94492ccaac83f849c902580458817941ef470"
+    },
+    {
+      "path": "/tmp/gemma4-12b-it-regular-config-20260924/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    }
+  ],
+  "after": ["gemma4-ane-down4-provision-20260924"],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "quiet_process_names": [],
+    "idle_llama_servers": []
+  },
+  "stable_seconds": 1,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600
+}

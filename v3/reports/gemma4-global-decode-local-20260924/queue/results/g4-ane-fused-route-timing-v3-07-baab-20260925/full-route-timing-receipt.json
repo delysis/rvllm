@@ -1,0 +1,579 @@
+{
+  "baseline_median_ms_per_token": 2065.4413545,
+  "baseline_range_drift_fraction": 0.07251563712672149,
+  "baseline_route": {
+    "fused_evaluations": 0,
+    "plan": "separate",
+    "separate_attention_evaluations": 576,
+    "separate_output_evaluations": 576
+  },
+  "candidate_median_ms_per_token": 2076.8217084999997,
+  "candidate_range_drift_fraction": 0.03667707784490437,
+  "candidate_route": {
+    "fused_evaluations": 12,
+    "plan": "layer0-fused-cached",
+    "separate_attention_evaluations": 564,
+    "separate_output_evaluations": 564
+  },
+  "claim": "Exploratory exact-cache full-route timing for the default-off layer-0 fused route. Independent opposite-order confirmation and longer stability remain required.",
+  "compiler_calls_after_load": 0,
+  "compiler_calls_after_timing": 0,
+  "compiler_calls_during_warmup_and_timing": 0,
+  "decoder_lifetime": "one exact-cache decoder per observation; load excluded from timing",
+  "expected_output": {
+    "position": 84,
+    "token": 3730,
+    "top_five_bits": [
+      [
+        3730,
+        1093656576
+      ],
+      [
+        37423,
+        3242795008
+      ],
+      [
+        9595,
+        3243368448
+      ],
+      [
+        861,
+        3243565056
+      ],
+      [
+        16045,
+        3244048384
+      ]
+    ]
+  },
+  "measured_tokens_per_arm": 6,
+  "median_baseline_over_candidate": 0.9945203028486163,
+  "observations": [
+    {
+      "arm": "candidate",
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 444.23508400000003,
+        "ffn": 547.0600029999998,
+        "fused_attention_output": 11.580791999999999,
+        "host": 7.855708000000618,
+        "output": 443.7986239999999,
+        "qkv": 451.0888329999999,
+        "total": 2068.863542,
+        "vocabulary": 163.24449800000002
+      },
+      "elapsed_ms": 2068.863792,
+      "index": 0,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 425.84503900000004,
+        "ffn": 539.435872,
+        "fused_attention_output": 0.0,
+        "host": 10.173593999999923,
+        "output": 456.024123,
+        "qkv": 471.71708499999994,
+        "total": 2066.522333,
+        "vocabulary": 163.32662
+      },
+      "elapsed_ms": 2066.5228340000003,
+      "index": 1,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 478.14291599999996,
+        "ffn": 596.33917,
+        "fused_attention_output": 0.0,
+        "host": 9.30887200000015,
+        "output": 457.77541399999996,
+        "qkv": 469.770628,
+        "total": 2177.374166,
+        "vocabulary": 166.03716599999998
+      },
+      "elapsed_ms": 2177.3744580000002,
+      "index": 2,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "block": 0,
+      "decode_breakdown_ms": {
+        "attention": 441.21058500000004,
+        "ffn": 557.1818299999999,
+        "fused_attention_output": 9.066832999999999,
+        "host": 12.563749999999857,
+        "output": 427.07945900000016,
+        "qkv": 452.998336,
+        "total": 2069.643708,
+        "vocabulary": 169.54291500000005
+      },
+      "elapsed_ms": 2069.644084,
+      "index": 3,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 454.0637929999999,
+        "ffn": 560.932457,
+        "fused_attention_output": 0.0,
+        "host": 14.516791999999953,
+        "output": 449.5692470000002,
+        "qkv": 460.374878,
+        "total": 2111.388708,
+        "vocabulary": 171.93154099999998
+      },
+      "elapsed_ms": 2111.389667,
+      "index": 4,
+      "order": "ABBA",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 443.302542,
+        "ffn": 555.1450430000001,
+        "fused_attention_output": 9.459166,
+        "host": 9.050539000000327,
+        "output": 439.9976229999999,
+        "qkv": 468.7624609999999,
+        "total": 2102.45375,
+        "vocabulary": 176.73637600000004
+      },
+      "elapsed_ms": 2102.4545,
+      "index": 5,
+      "order": "ABBA",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 441.00579099999993,
+        "ffn": 554.492999,
+        "fused_attention_output": 9.545292,
+        "host": 7.442168000000208,
+        "output": 423.873461,
+        "qkv": 450.9901659999999,
+        "total": 2050.2275,
+        "vocabulary": 162.87762300000003
+      },
+      "elapsed_ms": 2050.228083,
+      "index": 6,
+      "order": "ABBA",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "block": 1,
+      "decode_breakdown_ms": {
+        "attention": 438.1876219999999,
+        "ffn": 547.020497,
+        "fused_attention_output": 0.0,
+        "host": 8.392885000000632,
+        "output": 442.2283269999999,
+        "qkv": 452.8674189999998,
+        "total": 2043.6643330000002,
+        "vocabulary": 154.96758300000002
+      },
+      "elapsed_ms": 2043.6645000000003,
+      "index": 7,
+      "order": "ABBA",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 453.25850200000014,
+        "ffn": 573.235418,
+        "fused_attention_output": 9.568416999999998,
+        "host": 10.224616000000026,
+        "output": 444.85391699999997,
+        "qkv": 462.000337,
+        "total": 2125.424333,
+        "vocabulary": 172.28312599999998
+      },
+      "elapsed_ms": 2125.424458,
+      "index": 8,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 430.11983399999997,
+        "ffn": 552.436464,
+        "fused_attention_output": 0.0,
+        "host": 10.34003000000007,
+        "output": 449.224503,
+        "qkv": 464.70012600000007,
+        "total": 2064.3594580000004,
+        "vocabulary": 157.538501
+      },
+      "elapsed_ms": 2064.359875,
+      "index": 9,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "baseline",
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 429.1764620000001,
+        "ffn": 535.7287529999999,
+        "fused_attention_output": 0.0,
+        "host": 7.213067999999765,
+        "output": 442.0868760000001,
+        "qkv": 458.2506300000001,
+        "total": 2030.156083,
+        "vocabulary": 157.700294
+      },
+      "elapsed_ms": 2030.1563749999998,
+      "index": 10,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    },
+    {
+      "arm": "candidate",
+      "block": 2,
+      "decode_breakdown_ms": {
+        "attention": 438.827955,
+        "ffn": 552.560706,
+        "fused_attention_output": 9.216875,
+        "host": 11.196213999999884,
+        "output": 443.8883730000001,
+        "qkv": 457.16688000000005,
+        "total": 2083.998792,
+        "vocabulary": 171.14178899999996
+      },
+      "elapsed_ms": 2083.9993329999998,
+      "index": 11,
+      "order": "BAAB",
+      "output": {
+        "position": 84,
+        "token": 3730,
+        "top_five_bits": [
+          [
+            3730,
+            1093656576
+          ],
+          [
+            37423,
+            3242795008
+          ],
+          [
+            9595,
+            3243368448
+          ],
+          [
+            861,
+            3243565056
+          ],
+          [
+            16045,
+            3244048384
+          ]
+        ]
+      }
+    }
+  ],
+  "outputs_exact": true,
+  "promotion": false,
+  "schema": "rvllm.gemma4_ane_fused_attention_output_full_route_timing.v1",
+  "sequence": "BAAB/ABBA/BAAB",
+  "snapshot_sha256": "0b096c565cc841ee625081d23b1752af0590c25c8f48554451e97e1fb7140ee8",
+  "state_reset": "identical sealed prefill imported outside every timed interval",
+  "status": "measured",
+  "timed_scope": "one complete decode from embedding through vocabulary ranking",
+  "warmup_tokens_per_arm": 1,
+  "weight_plan": "static-int8-ffn-cached"
+}

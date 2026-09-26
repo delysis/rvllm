@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
-pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v3";
-pub const RESEARCH_KERNEL_COUNT: usize = 17;
+pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v4";
+pub const RESEARCH_KERNEL_COUNT: usize = 62;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -26,6 +26,51 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "wave2_gemm_mma32_load4",
     "wave2_qkv_mma32_load4",
     "wave2_rmsnorm_simd256",
+    "research_gemm_load4_m16n32k64",
+    "research_qkv_load4_m16n32k64",
+    "research_gemm_load4_m16n64k64",
+    "research_qkv_load4_m16n64k64",
+    "research_gemm_load4_m32n32k64",
+    "research_qkv_load4_m32n32k64",
+    "research_gemm_load4_m32n64k32",
+    "research_qkv_load4_m32n64k32",
+    "research_gemm_load4_m32n64k64",
+    "research_qkv_load4_m32n64k64",
+    "research_gemm_load4_m32n64k128",
+    "research_qkv_load4_m32n64k128",
+    "research_gemm_load4_m64n64k64",
+    "research_qkv_load4_m64n64k64",
+    "research_global_d512_r8p64t64",
+    "research_global_d512_r8p64t128",
+    "research_global_d512_r8p128t64",
+    "research_global_d512_r8p128t128",
+    "research_global_d512_r16p64t64",
+    "research_global_d512_r16p64t128",
+    "research_global_d512_r16p128t64",
+    "research_global_d512_r16p128t128",
+    "research_global_d512_r1p128t32",
+    "research_global_d512_split_r8s256t128_partial",
+    "research_global_d512_split_r8s256t128_merge",
+    "research_global_d512_atlas_r16k16p64t128",
+    "research_global_d512_atlas_r16k32p64t128",
+    "research_global_d512_atlas_tile_r16k16p64t128",
+    "research_global_d512_atlas_tile_r16k32p64t128",
+    "research_global_d512_atlas_mma_r16k16p64t128",
+    "research_global_d512_atlas_mma_r16k32p64t128",
+    "research_global_d512_atlas_mma_r16k16p128t128",
+    "research_global_d512_atlas_mma_r8k32p64t128",
+    "research_global_d512_atlas_mma_r16k16p64t64",
+    "research_global_d512_atlas_mma_r16k64p64t128",
+    "research_global_d512_split_mma_r8k32s256t128_partial",
+    "research_global_d512_split_mma_r8k32s256t128_merge",
+    "research_global_d512_split_coopkey_r8k8p64t128s32_partial",
+    "research_global_d512_split_coopkey_r8k8p64t128s32_merge",
+    "research_ffn_bf16_r4_sg2",
+    "research_qmv_w4_g32_r8_sg2",
+    "research_qmv_w8_g32_r8_sg2",
+    "research_global_d512_short_r4t128",
+    "research_qmv_w4_g32_r4_sg8_k8",
+    "research_qmv_w8_g32_r4_sg8_k8",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,15 +93,101 @@ pub enum ResearchKernel {
     Load4Gemm = 14,
     Load4Qkv = 15,
     Rms256 = 16,
+    Tile16x32K64Gemm = 17,
+    Tile16x32K64Qkv = 18,
+    Tile16x64K64Gemm = 19,
+    Tile16x64K64Qkv = 20,
+    Tile32x32K64Gemm = 21,
+    Tile32x32K64Qkv = 22,
+    Tile32x64K32Gemm = 23,
+    Tile32x64K32Qkv = 24,
+    Tile32x64K64Gemm = 25,
+    Tile32x64K64Qkv = 26,
+    Tile32x64K128Gemm = 27,
+    Tile32x64K128Qkv = 28,
+    Tile64x64K64Gemm = 29,
+    Tile64x64K64Qkv = 30,
+    GlobalD512R8P64T64 = 31,
+    GlobalD512R8P64T128 = 32,
+    GlobalD512R8P128T64 = 33,
+    GlobalD512R8P128T128 = 34,
+    GlobalD512R16P64T64 = 35,
+    GlobalD512R16P64T128 = 36,
+    GlobalD512R16P128T64 = 37,
+    GlobalD512R16P128T128 = 38,
+    GlobalD512R1P128T32 = 39,
+    GlobalD512SplitR8S256T128Partial = 40,
+    GlobalD512SplitR8S256T128Merge = 41,
+    GlobalD512AtlasR16K16P64T128 = 42,
+    GlobalD512AtlasR16K32P64T128 = 43,
+    GlobalD512AtlasTileR16K16P64T128 = 44,
+    GlobalD512AtlasTileR16K32P64T128 = 45,
+    GlobalD512AtlasMmaR16K16P64T128 = 46,
+    GlobalD512AtlasMmaR16K32P64T128 = 47,
+    GlobalD512AtlasMmaR16K16P128T128 = 48,
+    GlobalD512AtlasMmaR8K32P64T128 = 49,
+    GlobalD512AtlasMmaR16K16P64T64 = 50,
+    GlobalD512AtlasMmaR16K64P64T128 = 51,
+    GlobalD512SplitMmaR8K32S256T128Partial = 52,
+    GlobalD512SplitMmaR8K32S256T128Merge = 53,
+    GlobalD512SplitCoopKeyR8K8P64T128S32Partial = 54,
+    GlobalD512SplitCoopKeyR8K8P64T128S32Merge = 55,
+    FfnBf16R4Sg2 = 56,
+    QmvW4G32R8Sg2 = 57,
+    QmvW8G32R8Sg2 = 58,
+    GlobalD512ShortR4T128 = 59,
+    QmvW4G32R4Sg8K8 = 60,
+    QmvW8G32R4Sg8K8 = 61,
 }
 
 impl ResearchKernel {
     pub const fn name(self) -> &'static str {
         RESEARCH_KERNEL_NAMES[self as usize]
     }
+    /// Output rows covered by one group for the decode QMV entries.
+    pub const fn qmv_output_rows(self) -> Option<usize> {
+        match self {
+            Self::QmvW4G32R8Sg2 | Self::QmvW8G32R8Sg2 => Some(16),
+            Self::QmvW4G32R4Sg8K8 | Self::QmvW8G32R4Sg8K8 => Some(32),
+            _ => None,
+        }
+    }
     /// Source budgets, checked in addition to queried PSO/device limits.
     pub const fn limits(self) -> (usize, usize) {
         match self {
+            Self::FfnBf16R4Sg2 => (64, 0),
+            Self::QmvW4G32R8Sg2 => (64, 0),
+            Self::QmvW8G32R8Sg2 => (64, 0),
+            Self::GlobalD512ShortR4T128 => (128, 2048),
+            Self::QmvW4G32R4Sg8K8 | Self::QmvW8G32R4Sg8K8 => (256, 0),
+
+            Self::GlobalD512R8P64T64 => (64, 10016),
+            Self::GlobalD512R8P64T128 => (128, 10016),
+            Self::GlobalD512R8P128T64 => (64, 11040),
+            Self::GlobalD512R8P128T128 => (128, 11040),
+            Self::GlobalD512R16P64T64 => (64, 18976),
+            Self::GlobalD512R16P64T128 => (128, 18976),
+            Self::GlobalD512R16P128T64 => (64, 20000),
+            Self::GlobalD512R16P128T128 => (128, 20000),
+            Self::GlobalD512R1P128T32 => (32, 3200),
+            Self::GlobalD512SplitR8S256T128Partial => (128, 10016),
+            Self::GlobalD512SplitR8S256T128Merge => (32, 0),
+            Self::GlobalD512AtlasR16K16P64T128 | Self::GlobalD512AtlasTileR16K16P64T128 => {
+                (128, 21568)
+            }
+            Self::GlobalD512AtlasR16K32P64T128 | Self::GlobalD512AtlasTileR16K32P64T128 => {
+                (128, 26752)
+            }
+            Self::GlobalD512AtlasMmaR16K16P64T128 => (128, 10496),
+            Self::GlobalD512AtlasMmaR16K32P64T128 => (128, 16704),
+            Self::GlobalD512AtlasMmaR16K16P128T128 => (128, 18688),
+            Self::GlobalD512AtlasMmaR8K32P64T128 => (128, 12512),
+            Self::GlobalD512AtlasMmaR16K16P64T64 => (64, 10496),
+            Self::GlobalD512AtlasMmaR16K64P64T128 => (128, 29120),
+            Self::GlobalD512SplitMmaR8K32S256T128Partial => (128, 12512),
+            Self::GlobalD512SplitMmaR8K32S256T128Merge => (32, 0),
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32Partial => (128, 10016),
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32Merge => (32, 0),
             Self::ShortGemm => (128, 10496),
             Self::ShortQkv => (128, 10496),
             Self::RoundedGate => (128, 14336),
@@ -74,11 +205,75 @@ impl ResearchKernel {
             Self::Load4Gemm => (128, 8192),
             Self::Load4Qkv => (128, 8192),
             Self::Rms256 => (256, 32),
+            Self::Tile16x32K64Gemm | Self::Tile16x32K64Qkv => (64, 6144),
+            Self::Tile16x64K64Gemm | Self::Tile16x64K64Qkv => (128, 10240),
+            Self::Tile32x32K64Gemm | Self::Tile32x32K64Qkv => (128, 8192),
+            Self::Tile32x64K32Gemm | Self::Tile32x64K32Qkv => (128, 8192),
+            Self::Tile32x64K64Gemm | Self::Tile32x64K64Qkv => (128, 12288),
+            Self::Tile32x64K128Gemm | Self::Tile32x64K128Qkv => (128, 24576),
+            Self::Tile64x64K64Gemm | Self::Tile64x64K64Qkv => (128, 16384),
         }
     }
     pub const fn owner(self) -> crate::research::MetalResearchCandidate {
         use crate::research::MetalResearchCandidate;
         match self {
+            Self::FfnBf16R4Sg2 => MetalResearchCandidate::FfnBf16R4Sg2,
+            Self::QmvW4G32R8Sg2 => MetalResearchCandidate::QmvW4G32R8Sg2,
+            Self::QmvW8G32R8Sg2 => MetalResearchCandidate::QmvW8G32R8Sg2,
+            Self::GlobalD512ShortR4T128 => MetalResearchCandidate::GlobalD512ShortR4T128,
+            Self::QmvW4G32R4Sg8K8 => MetalResearchCandidate::QmvW4G32R4Sg8K8,
+            Self::QmvW8G32R4Sg8K8 => MetalResearchCandidate::QmvW8G32R4Sg8K8,
+
+            Self::GlobalD512R8P64T64 => MetalResearchCandidate::GlobalD512R8P64T64,
+            Self::GlobalD512R8P64T128 => MetalResearchCandidate::GlobalD512R8P64T128,
+            Self::GlobalD512R8P128T64 => MetalResearchCandidate::GlobalD512R8P128T64,
+            Self::GlobalD512R8P128T128 => MetalResearchCandidate::GlobalD512R8P128T128,
+            Self::GlobalD512R16P64T64 => MetalResearchCandidate::GlobalD512R16P64T64,
+            Self::GlobalD512R16P64T128 => MetalResearchCandidate::GlobalD512R16P64T128,
+            Self::GlobalD512R16P128T64 => MetalResearchCandidate::GlobalD512R16P128T64,
+            Self::GlobalD512R16P128T128 => MetalResearchCandidate::GlobalD512R16P128T128,
+            Self::GlobalD512R1P128T32 => MetalResearchCandidate::GlobalD512R1P128T32,
+            Self::GlobalD512SplitR8S256T128Partial | Self::GlobalD512SplitR8S256T128Merge => {
+                MetalResearchCandidate::GlobalD512SplitR8S256T128
+            }
+            Self::GlobalD512AtlasR16K16P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasR16K16P64T128
+            }
+            Self::GlobalD512AtlasR16K32P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasR16K32P64T128
+            }
+            Self::GlobalD512AtlasTileR16K16P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasTileR16K16P64T128
+            }
+            Self::GlobalD512AtlasTileR16K32P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasTileR16K32P64T128
+            }
+            Self::GlobalD512AtlasMmaR16K16P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T128
+            }
+            Self::GlobalD512AtlasMmaR16K32P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR16K32P64T128
+            }
+            Self::GlobalD512AtlasMmaR16K16P128T128 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR16K16P128T128
+            }
+            Self::GlobalD512AtlasMmaR8K32P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR8K32P64T128
+            }
+            Self::GlobalD512AtlasMmaR16K16P64T64 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T64
+            }
+            Self::GlobalD512AtlasMmaR16K64P64T128 => {
+                MetalResearchCandidate::GlobalD512AtlasMmaR16K64P64T128
+            }
+            Self::GlobalD512SplitMmaR8K32S256T128Partial
+            | Self::GlobalD512SplitMmaR8K32S256T128Merge => {
+                MetalResearchCandidate::GlobalD512SplitMmaR8K32S256T128
+            }
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32Partial
+            | Self::GlobalD512SplitCoopKeyR8K8P64T128S32Merge => {
+                MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32
+            }
             Self::ShortGemm | Self::ShortQkv => MetalResearchCandidate::ShortMma16x64,
             Self::RoundedGate => MetalResearchCandidate::RoundedGate32,
             Self::Gqa256 | Self::Gqa512 => MetalResearchCandidate::GqaKv8,
@@ -89,6 +284,27 @@ impl ResearchKernel {
             Self::LongGemm | Self::LongQkv => MetalResearchCandidate::LongMma32x64,
             Self::Load4Gemm | Self::Load4Qkv => MetalResearchCandidate::Mma32Load4,
             Self::Rms256 => MetalResearchCandidate::RmsnormSimd256,
+            Self::Tile16x32K64Gemm | Self::Tile16x32K64Qkv => {
+                MetalResearchCandidate::Load4M16N32K64
+            }
+            Self::Tile16x64K64Gemm | Self::Tile16x64K64Qkv => {
+                MetalResearchCandidate::Load4M16N64K64
+            }
+            Self::Tile32x32K64Gemm | Self::Tile32x32K64Qkv => {
+                MetalResearchCandidate::Load4M32N32K64
+            }
+            Self::Tile32x64K32Gemm | Self::Tile32x64K32Qkv => {
+                MetalResearchCandidate::Load4M32N64K32
+            }
+            Self::Tile32x64K64Gemm | Self::Tile32x64K64Qkv => {
+                MetalResearchCandidate::Load4M32N64K64
+            }
+            Self::Tile32x64K128Gemm | Self::Tile32x64K128Qkv => {
+                MetalResearchCandidate::Load4M32N64K128
+            }
+            Self::Tile64x64K64Gemm | Self::Tile64x64K64Qkv => {
+                MetalResearchCandidate::Load4M64N64K64
+            }
         }
     }
 }
@@ -96,10 +312,20 @@ impl ResearchKernel {
 /// Sample only at a quiescent owner boundary. These atomics do not synchronize
 /// Metal resources or establish that a command buffer completed successfully.
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct ResearchDispatchCounters {
     counts: [AtomicU64; RESEARCH_KERNEL_COUNT],
     overflowed: AtomicBool,
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios", test))]
+impl Default for ResearchDispatchCounters {
+    fn default() -> Self {
+        Self {
+            counts: std::array::from_fn(|_| AtomicU64::new(0)),
+            overflowed: AtomicBool::new(false),
+        }
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
@@ -122,13 +348,41 @@ impl ResearchDispatchCounters {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResearchDispatchSnapshot {
     pub counts: [u64; RESEARCH_KERNEL_COUNT],
     pub overflowed: bool,
 }
 
+impl Default for ResearchDispatchSnapshot {
+    fn default() -> Self {
+        Self {
+            counts: [0; RESEARCH_KERNEL_COUNT],
+            overflowed: false,
+        }
+    }
+}
+
 impl ResearchDispatchSnapshot {
+    /// Verify the entire append-only ledger, not just a positive candidate count.
+    pub fn verify_exact(self, kernel: ResearchKernel, expected: u64) -> Result<(), &'static str> {
+        if self.overflowed {
+            return Err("research dispatch counter overflow");
+        }
+        for (index, actual) in self.counts.into_iter().enumerate() {
+            if actual
+                != if index == kernel as usize {
+                    expected
+                } else {
+                    0
+                }
+            {
+                return Err("research dispatch ledger contains missing or unexpected work");
+            }
+        }
+        Ok(())
+    }
+
     pub fn checked_since(self, earlier: Self) -> Result<Self, &'static str> {
         if self.overflowed || earlier.overflowed {
             return Err("research dispatch counter overflow");

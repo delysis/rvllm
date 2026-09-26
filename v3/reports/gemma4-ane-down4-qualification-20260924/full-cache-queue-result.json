@@ -1,0 +1,848 @@
+{
+  "claim": "Preparation success does not qualify performance. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work.",
+  "exit_code": 0,
+  "file_error": null,
+  "files_unchanged": true,
+  "id": "gemma4-ane-down4-provision-20260924",
+  "kernel_game_submission_sha256": null,
+  "measurement": {
+    "ane_cycles": null,
+    "comparison_stratum": null,
+    "cpu_counter_error": null,
+    "cpu_counter_scope": "proc_pid_rusage V4; all process threads; excludes child processes, GPU, ANE and daemon CPU; includes observer overhead",
+    "cpu_cycles_per_instruction": 0.7926510125128816,
+    "cpu_cycles_per_unit": 605822507.0,
+    "cpu_frequency_hz": null,
+    "cpu_instructions_per_unit": 764299165.0,
+    "end_host": {
+      "low_power_mode": true,
+      "thermal_state": 1
+    },
+    "end_ms": 60134.457458,
+    "gpu_cycles": null,
+    "limitations": "Power is sampled about once per second; transient changes can be missed. Nominal thermal state does not prove constant clocks. Missing pmset limits are unknown. CPU cycles do not normalize accelerator performance. Compare repeated identical work only within matching sampled strata.",
+    "observer_journal_error": null,
+    "power_samples": [
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 1081.702,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by sharingd, powerd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 1051.437041
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 2546.3522080000002,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by sharingd, powerd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 2389.979833
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 3807.35075,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by sharingd, powerd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 3553.7805000000003
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 4917.142124999999,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by sharingd, powerd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 4813.078541000001
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 6118.0454580000005,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 5933.90125
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 7366.7067910000005,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 7290.184916
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 8484.383625,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 8384.506666
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 9637.07425,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 9489.29575
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 10761.994416,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 10641.55025
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 11853.945916,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 11766.779
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 13004.522416,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 12855.705625
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 14111.405665999999,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 14012.207041
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 15227.401916,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 15120.570416
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 16304.399833000001,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 16239.163291
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 17590.078708,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 17431.595875
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 18791.095791,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 18669.91775
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 19902.992875,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 19797.235416
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 21298.540208,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 21236.127333
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 22563.479625,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 22459.826458
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 23703.757332999998,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, useractivityd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 23623.861291
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 25021.497540999997,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, useractivityd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 24775.985166000002
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 26167.41225,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, useractivityd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 26081.481416
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 27711.391333000003,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 27182.21625
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 29264.927666,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 28758.775625
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 30514.60875,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 30335.779833
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 31992.408,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, useractivityd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 31612.22
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 33167.078457999996,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, useractivityd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 33086.782458
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 34799.726958,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 34514.69425
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 36087.095916000006,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t76%; charging; 1:33 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 35856.321458
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 37121.361708000004,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 37097.270833
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 38174.837791,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 38137.95983299999
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 39233.05925,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 39200.712
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 40267.053875000005,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 40236.538375000004
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 41304.4065,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 41275.170957999995
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 42341.854875000005,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 42312.268875
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 43387.941833,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 43357.423208
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 44421.91925,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 44396.139708
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 45563.308165999995,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 45429.345958
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 46629.073040999996,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 46595.498999999996
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 47671.550666,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 47635.66825
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 48875.045583,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 48676.32175
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 50007.059875000006,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 49886.923041
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 51073.419083,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 51014.498416
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 52199.769583,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 52079.457416
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 53299.360415999996,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 53206.011666
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 54599.108708,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 54304.9075
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 55761.59425,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 55656.246875000004
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 56792.273125,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 56764.423541
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 58046.910040999996,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 57796.678625
+      },
+      {
+        "controls": {
+          "available_cpus": null,
+          "cpu_speed_limit_percent": null,
+          "low_power_mode": true,
+          "pmset_power_mode": 1,
+          "power_source": "ac",
+          "scheduler_limit_percent": null,
+          "thermal_state": 1
+        },
+        "end_ms": 59141.138290999996,
+        "pmset_battery": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=21495907)\t77%; charging; 1:41 remaining present: true\n",
+        "pmset_settings": "System-wide power settings:\nCurrently in use:\n standby              1\n Sleep On Power Button 1\n hibernatefile        /var/vm/sleepimage\n powernap             1\n networkoversleep     0\n disksleep            10\n sleep                0 (sleep prevented by powerd, sharingd)\n hibernatemode        3\n ttyskeepawake        1\n displaysleep         10\n tcpkeepalive         1\n powermode            1\n womp                 1\n",
+        "pmset_thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "start_ms": 59059.600207999996
+      }
+    ],
+    "process_cpu_cycles": 605822507,
+    "process_cpu_instructions": 764299165,
+    "sampled_controls_eligible": false,
+    "schema": "rvllm.apple_phase_measurement.v1",
+    "start_host": {
+      "low_power_mode": true,
+      "thermal_state": 1
+    },
+    "start_ms": 1591.2316250000001,
+    "units": 1,
+    "wall_ms": 58543.225833000004
+  },
+  "overdue": false,
+  "purpose": "preparation",
+  "sampled_conditions_eligible": true,
+  "schema": "rvllm.experiment_result.v1",
+  "signal_or_missing_exit_code": false,
+  "status": "succeeded",
+  "stop_requested": false,
+  "validation": null,
+  "violations": []
+}

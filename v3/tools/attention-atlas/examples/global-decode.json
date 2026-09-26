@@ -1,0 +1,48 @@
+{
+  "schema": "rvllm.attention_atlas.spec.v1",
+  "id": "atlas-global-decode-s4",
+  "candidate": {
+    "strategy": "cooperative",
+    "softmax": "per_key",
+    "rows": 16,
+    "keys": 8,
+    "panel": 64,
+    "threads": 128,
+    "splits": 4
+  },
+  "shape": {
+    "queries": 1,
+    "live_keys": 4096,
+    "kv_heads": 1,
+    "dim": 512,
+    "window": 0,
+    "page_size": 32,
+    "max_blocks": 130,
+    "physical_blocks": 130
+  },
+  "cache": "separate_bf16",
+  "control": "existing_global_r16p64t128",
+  "input": {
+    "kind": "synthetic",
+    "fixture": {
+      "seed": 418565087603,
+      "first_position": 4095,
+      "pattern": "mixed"
+    }
+  },
+  "arena_limit_bytes": 1073741824,
+  "max_oracle_fmas": 1000000000,
+  "fp32_tolerance": {
+    "max_abs": 0.0002,
+    "rel_l2": 0.0002
+  },
+  "bf16_tolerance": {
+    "max_abs": 0.02,
+    "rel_l2": 0.01
+  },
+  "timing": {
+    "warmups": 2,
+    "blocks": 7,
+    "max_drift_fraction": 0.05
+  }
+}

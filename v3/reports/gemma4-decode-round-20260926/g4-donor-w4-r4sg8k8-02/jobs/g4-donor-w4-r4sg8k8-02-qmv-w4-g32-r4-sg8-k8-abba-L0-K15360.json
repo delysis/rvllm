@@ -1,0 +1,87 @@
+{
+  "after": [
+    "g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-compile-core",
+    "g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-oracle"
+  ],
+  "command": {
+    "args": [
+      "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/deps/rvllm_apple_metal-938ddf1012a82a45",
+      "5c15b42d11d253e99b81db209e00cd37a16ef81c41553863e6d17cd6597c3739",
+      "--ignored",
+      "--exact",
+      "research_decode_device_tests::decode_round_abba",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w4-r4sg8k8-02",
+    "env": {
+      "RVLLM_METAL_GLOBAL_DECODE_BUILD_RECEIPT": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-compile-core/build/build.json",
+      "RVLLM_METAL_GLOBAL_DECODE_CANDIDATE": "metal-qmv-w4-g32-r4-sg8-k8",
+      "RVLLM_METAL_GLOBAL_DECODE_LENGTH": "0",
+      "RVLLM_METAL_GLOBAL_DECODE_METALLIB": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-compile-core/build/kernel.metallib",
+      "RVLLM_METAL_GLOBAL_DECODE_OPERATOR_K": "15360",
+      "RVLLM_METAL_GLOBAL_DECODE_ORACLE_RECEIPT": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-oracle/native/oracle.json",
+      "RVLLM_METAL_GLOBAL_DECODE_REPORT_DIR": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-abba-L0-K15360/native",
+      "RVLLM_METAL_GLOBAL_DECODE_SOURCE": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w4-r4sg8k8-02/metal-qmv-w4-g32-r4-sg8-k8-core.metal"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/rvllm-retain-abba",
+      "sha256": "c7a73aa9b484ec64d39358118e10ef13f3a8912787b6b2e565768ce09a862d32"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3",
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "sam_audio_one.py",
+      "mpc-content"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-abba-L0-K15360",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w4-r4sg8k8-02/metal-qmv-w4-g32-r4-sg8-k8-core.metal",
+      "sha256": "f74e67aa911b101575a770b7803e59b0fda95b07c1b127c135113e905b61b918"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-compile-core/build/kernel.metallib",
+      "sha256": "5bbda735656a5502a3c7f7394f0692f8f74ce53ffa1aad089a1a674fd14747af"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-compile-core/build/build.json",
+      "sha256": "089393d32a17b595bf764910c196be155fa1abb1cbf6dcf44b2d2f0d3892c32f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w4-r4sg8k8-02/campaign.json",
+      "sha256": "b109c9ae66e5729e05a0c2645977e168c251035690574357ba4a5532df0d6899"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/deps/rvllm_apple_metal-938ddf1012a82a45",
+      "sha256": "5c15b42d11d253e99b81db209e00cd37a16ef81c41553863e6d17cd6597c3739"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-oracle/native/oracle.json",
+      "sha256": "764c525bbab33b84bc99b55cb607b8e0616a8b5d2d721425c5bdbd8d0acacbd2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-w4-r4sg8k8-02-qmv-w4-g32-r4-sg8-k8-oracle/native/w4-M1-N3840-K15360.bf16",
+      "sha256": "4a69754419c7f05561fea86042b7d55839a00c653d7802b357d52f9eb1336ace"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "exploratory_timing",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

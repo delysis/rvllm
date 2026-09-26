@@ -12,8 +12,73 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::MTLComputePipelineState;
 use rvllm_apple::device::AppleGpuFamily;
+use rvllm_apple::{AppleLowBitTensorRole, AppleLowBitWeightFormat};
 use rvllm_core::Result;
+use std::cell::Cell;
 use std::collections::HashMap;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LowBitDispatchSnapshot {
+    pub counts: [u64; AppleLowBitTensorRole::COUNT * 2],
+    pub overflowed: bool,
+}
+
+impl LowBitDispatchSnapshot {
+    pub fn checked_since(self, earlier: Self) -> core::result::Result<Self, &'static str> {
+        if self.overflowed || earlier.overflowed {
+            return Err("low-bit dispatch counter overflow");
+        }
+        let mut counts = [0; AppleLowBitTensorRole::COUNT * 2];
+        for (index, count) in counts.iter_mut().enumerate() {
+            *count = self.counts[index]
+                .checked_sub(earlier.counts[index])
+                .ok_or("low-bit dispatch counters reset within a request")?;
+        }
+        Ok(Self {
+            counts,
+            overflowed: false,
+        })
+    }
+    pub fn count(&self, format: AppleLowBitWeightFormat, role: AppleLowBitTensorRole) -> u64 {
+        let format_base = match format {
+            AppleLowBitWeightFormat::W4A16 => 0,
+            AppleLowBitWeightFormat::W8A16 => AppleLowBitTensorRole::COUNT,
+        };
+        self.counts[format_base + role.index()]
+    }
+
+    /// Require one exact low-bit route. This rejects both missing dispatches
+    /// and unexpected work in another role or format, so a qualification
+    /// receipt cannot mistake a partial/fallback route for the requested one.
+    pub fn verify_exact(
+        &self,
+        format: AppleLowBitWeightFormat,
+        expected_by_role: [u64; AppleLowBitTensorRole::COUNT],
+    ) -> core::result::Result<(), &'static str> {
+        if self.overflowed {
+            return Err("low-bit dispatch counter overflow");
+        }
+        for role_index in 0..AppleLowBitTensorRole::COUNT {
+            let expected = expected_by_role[role_index];
+            let base = match format {
+                AppleLowBitWeightFormat::W4A16 => 0,
+                AppleLowBitWeightFormat::W8A16 => AppleLowBitTensorRole::COUNT,
+            };
+            if self.counts[base + role_index] != expected {
+                return Err("low-bit dispatch ledger does not match the required role counts");
+            }
+            let other_base = if base == 0 {
+                AppleLowBitTensorRole::COUNT
+            } else {
+                0
+            };
+            if self.counts[other_base + role_index] != 0 {
+                return Err("low-bit dispatch ledger contains an unexpected weight format");
+            }
+        }
+        Ok(())
+    }
+}
 
 /// Cached compute pipeline state objects, keyed by function name.
 pub struct PipelineCache {
@@ -23,6 +88,8 @@ pub struct PipelineCache {
     kernel_options: MetalKernelOptions,
     max_threadgroup_memory: usize,
     research_dispatches: ResearchDispatchCounters,
+    low_bit_dispatches: Cell<[u64; AppleLowBitTensorRole::COUNT * 2]>,
+    low_bit_dispatch_overflowed: Cell<bool>,
 }
 
 impl PipelineCache {
@@ -39,6 +106,8 @@ impl PipelineCache {
             kernel_options,
             max_threadgroup_memory: 0,
             research_dispatches: ResearchDispatchCounters::default(),
+            low_bit_dispatches: Cell::new([0; AppleLowBitTensorRole::COUNT * 2]),
+            low_bit_dispatch_overflowed: Cell::new(false),
         }
     }
 
@@ -56,6 +125,32 @@ impl PipelineCache {
 
     pub(crate) fn record_research_dispatch(&self, kernel: ResearchKernel) {
         self.research_dispatches.record(kernel);
+    }
+
+    pub fn low_bit_dispatch_snapshot(&self) -> LowBitDispatchSnapshot {
+        LowBitDispatchSnapshot {
+            counts: self.low_bit_dispatches.get(),
+            overflowed: self.low_bit_dispatch_overflowed.get(),
+        }
+    }
+
+    pub(crate) fn record_low_bit_dispatch(
+        &self,
+        format: AppleLowBitWeightFormat,
+        role: AppleLowBitTensorRole,
+    ) {
+        let mut counts = self.low_bit_dispatches.get();
+        let base = match format {
+            AppleLowBitWeightFormat::W4A16 => 0,
+            AppleLowBitWeightFormat::W8A16 => AppleLowBitTensorRole::COUNT,
+        };
+        let slot = &mut counts[base + role.index()];
+        if let Some(next) = slot.checked_add(1) {
+            *slot = next;
+        } else {
+            self.low_bit_dispatch_overflowed.set(true);
+        }
+        self.low_bit_dispatches.set(counts);
     }
 
     /// Compile a named function from the context's library into a PSO.
@@ -190,5 +285,59 @@ impl std::fmt::Debug for PipelineCache {
             .field("count", &self.pipelines.len())
             .field("functions", &self.pipelines.keys().collect::<Vec<_>>())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn low_bit_dispatch_ledger_separates_roles_and_formats() {
+        let cache = PipelineCache::default();
+        let before = cache.low_bit_dispatch_snapshot();
+        cache.record_low_bit_dispatch(
+            AppleLowBitWeightFormat::W4A16,
+            AppleLowBitTensorRole::QueryProjection,
+        );
+        cache.record_low_bit_dispatch(
+            AppleLowBitWeightFormat::W4A16,
+            AppleLowBitTensorRole::DenseDownProjection,
+        );
+        let snapshot = cache.low_bit_dispatch_snapshot();
+        let delta = snapshot
+            .clone()
+            .checked_since(before)
+            .expect("checked delta");
+        assert_eq!(
+            snapshot.count(
+                AppleLowBitWeightFormat::W4A16,
+                AppleLowBitTensorRole::QueryProjection
+            ),
+            1
+        );
+        assert_eq!(
+            snapshot.count(
+                AppleLowBitWeightFormat::W8A16,
+                AppleLowBitTensorRole::QueryProjection
+            ),
+            0
+        );
+
+        let mut expected = [0; AppleLowBitTensorRole::COUNT];
+        expected[AppleLowBitTensorRole::QueryProjection.index()] = 1;
+        expected[AppleLowBitTensorRole::DenseDownProjection.index()] = 1;
+        assert!(snapshot
+            .verify_exact(AppleLowBitWeightFormat::W4A16, expected)
+            .is_ok());
+        assert!(snapshot
+            .verify_exact(AppleLowBitWeightFormat::W8A16, expected)
+            .is_err());
+        assert_eq!(delta, snapshot);
+        let reset = LowBitDispatchSnapshot {
+            counts: [0; AppleLowBitTensorRole::COUNT * 2],
+            overflowed: false,
+        };
+        assert!(reset.checked_since(snapshot).is_err());
     }
 }

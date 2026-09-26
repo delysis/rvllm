@@ -1,0 +1,45 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "gemma4-ane-down4-provision-20260924",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/aarch64-apple-darwin/release/rvllm_disaggregated_infer",
+      "sha256": "729418c460acb56e2a04acbd66677ff71fa9a9441e7a626e1c18360ec4c34907"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--context-capacity",
+      "1024",
+      "--prepare-ane-cache",
+      "ffn-int8-down4",
+      "--output-dir",
+      "{output}/cache"
+    ],
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "/tmp/gemma4-ane-down4-provision-journal-20260924.jsonl"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    }
+  ],
+  "after": [],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "quiet_process_names": [],
+    "idle_llama_servers": []
+  },
+  "stable_seconds": 1,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600
+}

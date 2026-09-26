@@ -39,13 +39,15 @@ struct Invocation {
 #[serde(deny_unknown_fields)]
 struct Conditions {
     power_source: String,
-    low_power_mode: bool,
-    pmset_power_mode: u64,
+    low_power_mode: Option<bool>,
+    pmset_power_mode: Option<u64>,
     thermal_state: Option<u64>,
     minimum_free_bytes: u64,
     disk_path: PathBuf,
     #[serde(default)]
     quiet_process_names: Vec<String>,
+    #[serde(default)]
+    observe_process_names: Vec<String>,
     #[serde(default)]
     idle_llama_servers: Vec<IdleLlamaServer>,
 }
@@ -82,6 +84,8 @@ struct Job {
 #[serde(rename_all = "snake_case")]
 enum Purpose {
     Timing,
+    ExploratoryTiming,
+    Correctness,
     Preparation,
 }
 
@@ -132,16 +136,20 @@ impl Job {
         if self.schema != SCHEMA
             || !valid_id(&self.id)
             || !matches!(c.power_source.as_str(), "ac" | "battery")
-            || c.pmset_power_mode > 2
-            || c.thermal_state.is_some_and(|state| state > 1)
-            || (self.purpose == Purpose::Timing && c.thermal_state.is_none())
+            || c.pmset_power_mode.is_some_and(|mode| mode > 2)
+            || c.thermal_state.is_some_and(|state| state > 3)
             || !c.disk_path.is_absolute()
             || !c.disk_path.is_dir()
-            || !(1..=600).contains(&self.stable_seconds)
-            || self.max_wait_seconds < self.stable_seconds
+            // Retained in v1 manifests for compatibility. Zero is the
+            // preferred policy: sample readiness immediately and record
+            // changing conditions instead of waiting for a stable stratum.
+            || self.stable_seconds > 600
             || self.max_wait_seconds > 86400
             || !(1..=3600).contains(&self.max_run_seconds)
             || c.quiet_process_names
+                .iter()
+                .any(|s| s.is_empty() || s.contains('/'))
+            || c.observe_process_names
                 .iter()
                 .any(|s| s.is_empty() || s.contains('/'))
             || c.idle_llama_servers.len() > 4
@@ -327,9 +335,17 @@ fn controls_match(observation: &Value, c: &Conditions) -> bool {
         && (0.0..=2500.0).contains(&age)
         && observation.get("observer_journal_error") == Some(&Value::Null)
         && controls["power_source"] == c.power_source
-        && controls["low_power_mode"] == c.low_power_mode
-        && controls["pmset_power_mode"] == c.pmset_power_mode
-        && matches!(controls["thermal_state"].as_u64(), Some(0 | 1))
+        && controls["low_power_mode"]
+            .as_bool()
+            .is_some_and(|value| c.low_power_mode.map_or(true, |required| value == required))
+        && controls["pmset_power_mode"].as_u64().is_some_and(|value| {
+            value <= 2
+                && c.pmset_power_mode
+                    .map_or(true, |required| value == required)
+        })
+        && controls["thermal_state"]
+            .as_u64()
+            .is_some_and(|state| state <= 3)
         && c.thermal_state
             .map_or(true, |state| controls["thermal_state"] == state)
         && ["cpu_speed_limit_percent", "scheduler_limit_percent"]
@@ -463,7 +479,7 @@ impl ProbeCache {
         &mut self,
         c: &Conditions,
         child: Option<u32>,
-    ) -> Result<(Instant, Vec<Value>, Vec<Value>)> {
+    ) -> Result<(Instant, Vec<Value>, Vec<Value>, Vec<Value>)> {
         if self.processes.is_none() {
             let started = Instant::now();
             let result = Command::new("/bin/ps")
@@ -492,12 +508,13 @@ impl ProbeCache {
             checks.push(value.clone());
         }
         let mut competing = blockers(processes, &c.quiet_process_names, child);
+        let observed = blockers(processes, &c.observe_process_names, child);
         competing.retain(|p| {
             !checks
                 .iter()
                 .any(|s| s["idle"] == true && s["pid"] == p["pid"])
         });
-        Ok((oldest, competing, checks))
+        Ok((oldest, competing, observed, checks))
     }
 }
 
@@ -527,11 +544,12 @@ fn probe_shared(
     if !controls_match(&initial_power, c) || available < c.minimum_free_bytes {
         return Ok(
             json!({"ready":false,"power":initial_power,"free_bytes":available,
-            "competing_processes":[],"idle_server_checks":[],"activity_sampled":false,
+            "competing_processes":[],"observed_processes":[],"idle_server_checks":[],
+            "activity_sampled":false,
             "probe_ms":started.elapsed().as_secs_f64()*1000.0}),
         );
     }
-    let (activity_observed, competing, idle_checks) = cache.activity(c, child)?;
+    let (activity_observed, competing, observed, idle_checks) = cache.activity(c, child)?;
     let observation = monitor.latest_observation();
     let probe_ms = started.elapsed().as_secs_f64() * 1000.0;
     let raw_sample_age_ms = sample_age_ms(disk_observed.min(activity_observed), Instant::now());
@@ -539,42 +557,9 @@ fn probe_shared(
         && available >= c.minimum_free_bytes && competing.is_empty()
         && idle_checks.iter().all(|s|s["idle"]==true) && probe_ms<=2500.0 && raw_sample_age_ms.is_some(),
         "power":observation,"free_bytes":available,"competing_processes":competing,
+        "observed_processes":observed,
         "idle_server_checks":idle_checks,"activity_sampled":true,"probe_ms":probe_ms,
         "raw_sample_age_ms":raw_sample_age_ms}))
-}
-
-struct StableGate {
-    since: Option<Instant>,
-    last_observed: Option<Instant>,
-    controls: Option<Value>,
-}
-
-impl StableGate {
-    fn new() -> Self {
-        Self {
-            since: None,
-            last_observed: None,
-            controls: None,
-        }
-    }
-    fn observe(&mut self, probe: &Value, now: Instant, required: Duration) -> bool {
-        let controls = &probe["power"]["sample"]["controls"];
-        if probe["ready"] != true {
-            *self = Self::new();
-            return false;
-        }
-        let continuous = self
-            .last_observed
-            .and_then(|last| now.checked_duration_since(last))
-            .is_some_and(|gap| gap <= Duration::from_millis(2500));
-        if !continuous || self.controls.as_ref() != Some(controls) {
-            self.controls = Some(controls.clone());
-            self.since = Some(now);
-        }
-        self.last_observed = Some(now);
-        self.since
-            .is_some_and(|start| now.duration_since(start) >= required)
-    }
 }
 
 /// Never let an early error detach a live accelerator child or release its lock.
@@ -601,7 +586,11 @@ fn launch_verified(
         .env_clear()
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .env("LANG", "C")
-        .envs(&call.env)
+        .envs(
+            call.env
+                .iter()
+                .map(|(key, value)| (key, value.replace("{output}", directory))),
+        )
         .args(
             call.args
                 .iter()
@@ -628,13 +617,19 @@ fn phase_eligible(phase: &Value, c: &Conditions) -> bool {
     }
 }
 
+fn purpose_accepts_ineligible(purpose: Purpose) -> bool {
+    matches!(
+        purpose,
+        Purpose::Preparation | Purpose::Correctness | Purpose::ExploratoryTiming
+    )
+}
+
 fn execute(
     job: &Job,
     queue: &Path,
     monitor: &PowerMonitor,
     stop: &AtomicBool,
     wait_started: Instant,
-    gate: &mut StableGate,
 ) -> Result<Option<bool>> {
     let mut observe = || -> std::result::Result<bool, String> {
         if wait_started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
@@ -658,15 +653,11 @@ fn execute(
                 job.id
             ));
         }
-        Ok(gate.observe(
-            &current,
-            Instant::now(),
-            Duration::from_secs(job.stable_seconds),
-        ))
+        Ok(current["ready"] == true)
     };
-    // Hashing can exceed the 2.5-second observation budget. Keep sampling
-    // the SAME stable gate while the scoped verifier runs, then join it.
-    // A fresh equal-valued sample alone cannot bridge an unobserved gap.
+    // Hashing can exceed the observation freshness budget. Keep sampling
+    // readiness while the scoped verifier runs, then join it. No condition
+    // dwell is required; every sampled transition remains in the receipts.
     if !super::prelaunch::verify(
         || job.verify_files().map_err(|e| e.to_string()),
         &mut observe,
@@ -744,7 +735,7 @@ fn execute(
     let mut accepted = exit.success()
         && !overdue
         && files_unchanged.is_ok()
-        && (job.purpose == Purpose::Preparation || eligible);
+        && (purpose_accepts_ineligible(job.purpose) || eligible);
     if accepted {
         if let Some(call) = &job.validator {
             verify_pin(&call.executable)?;
@@ -754,18 +745,30 @@ fn execute(
             validation = json!({"exit_code":status.code(),"success":status.success()});
         }
     }
+    let rejected = exit.success()
+        && !overdue
+        && files_unchanged.is_ok()
+        && job.purpose == Purpose::Timing
+        && !eligible;
+    let status = if accepted {
+        "succeeded"
+    } else if rejected {
+        "rejected"
+    } else {
+        "failed"
+    };
     let report = json!({"schema":"rvllm.experiment_result.v1","id":job.id,"purpose":job.purpose,
-        "status":if accepted {"succeeded"}else{"failed"},
+        "status":status,
         "exit_code":exit.code(),"signal_or_missing_exit_code":exit.code().is_none(),
         "sampled_conditions_eligible":eligible,"violations":violations,"overdue":overdue,
         "files_unchanged":files_unchanged.is_ok(),"file_error":files_unchanged.err(),
         "validation":validation,"measurement":measurement,
         "kernel_game_submission_sha256":job.kernel_game_submission.as_ref().map(|pin|pin.sha256.to_ascii_lowercase()),
         "stop_requested":stopped(queue,stop),
-        "claim":"Preparation success does not qualify performance. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work."});
+        "claim":"Preparation and exploratory-timing success do not qualify performance promotion. Exploratory timing may succeed when sampled_conditions_eligible is false; retain and stratify all observations. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work."});
     atomic_json(&output.join("report.json"), &report)?;
     eprintln!("experiment {}: {}", job.id, report["status"]);
-    Ok(Some(accepted))
+    Ok(Some(accepted || rejected))
 }
 
 fn manifest_paths(queue: &Path) -> Result<Vec<PathBuf>> {
@@ -780,21 +783,75 @@ fn manifest_paths(queue: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn dependencies_ready(job: &Job, queue: &Path) -> Result<bool> {
+#[derive(Debug, PartialEq)]
+enum DependencyState {
+    Ready,
+    Waiting,
+    Failed(String),
+}
+
+fn dependency_state(job: &Job, queue: &Path) -> Result<DependencyState> {
     for dependency in &job.after {
         let report = queue.join("results").join(dependency).join("report.json");
         if !report.exists() {
-            return Ok(false);
+            return Ok(DependencyState::Waiting);
         }
         let value = read_json(&report)?;
-        if value["status"] != "succeeded" {
-            return Err(format!("dependency {dependency} did not succeed; queue stopped").into());
+        if !matches!(value["status"].as_str(), Some("succeeded" | "rejected")) {
+            return Ok(DependencyState::Failed(dependency.clone()));
         }
     }
-    Ok(true)
+    Ok(DependencyState::Ready)
 }
 
-fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
+fn quarantine_manifest(queue: &Path, path: &Path, job: &Job, reason: &str) -> Result<()> {
+    let directory = queue.join("quarantined-jobs");
+    fs::create_dir_all(&directory)?;
+    let destination = directory.join(format!("{}.json", job.id));
+    let receipt = directory.join(format!("{}.receipt.json", job.id));
+    if destination.exists() || receipt.exists() {
+        return Err(format!("quarantine identity already exists for {}", job.id).into());
+    }
+    let manifest_sha256 = digest(path)?;
+    fs::rename(path, &destination)?;
+    let report_path = queue.join("results").join(&job.id).join("report.json");
+    let report = if report_path.is_file() {
+        json!({"path":report_path,"sha256":digest(&report_path)?})
+    } else {
+        Value::Null
+    };
+    atomic_json(
+        &receipt,
+        &json!({
+            "schema":"rvllm.experiment_quarantine.v1",
+            "id":job.id,
+            "reason":reason,
+            "manifest":{"path":destination,"sha256":manifest_sha256},
+            "report":report,
+            "claim":"Quarantine preserves terminal evidence and prevents replay; independent jobs may continue."
+        }),
+    )?;
+    Ok(())
+}
+
+fn quarantine_receipts(queue: &Path) -> Result<Vec<Value>> {
+    let directory = queue.join("quarantined-jobs");
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if entry.file_type()?.is_file() && name.to_string_lossy().ends_with(".receipt.json") {
+            paths.push(entry.path());
+        }
+    }
+    paths.sort();
+    paths.into_iter().map(|path| read_json(&path)).collect()
+}
+
+fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -> Result<()> {
     let _queue_lock = lock(&queue.join("worker.lock"))?;
     let result = run_owned(queue, accelerator_lock, idle_seconds);
     if let Err(error) = &result {
@@ -806,7 +863,7 @@ fn run(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
     result
 }
 
-fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result<()> {
+fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -> Result<()> {
     let _accelerator_lock = lock(accelerator_lock)?;
     // A stopped queue needs neither a power observer nor a signal handler.
     // This also permits a real executable smoke without sampling hardware.
@@ -820,12 +877,14 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
     let stop = Arc::new(AtomicBool::new(false));
     let signal = Arc::clone(&stop);
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
-    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    let monitor = PowerMonitor::start(Some(
-        &queue.join(format!("power-{stamp}-{}.jsonl", std::process::id())),
-    ))?;
+    // Sampling invokes macOS power tools. Keep it entirely off while an
+    // always-on daemon has no work instead of burning CPU and growing an idle
+    // journal forever. A monitor remains live across condition waits and job
+    // execution so its history still spans the complete admission interval.
+    let mut monitor = None;
     let mut idle = Instant::now();
-    let mut waiting = BTreeMap::<String, (Instant, StableGate)>::new();
+    let mut idle_jobs_modified = None;
+    let mut waiting = BTreeMap::<String, Instant>::new();
     loop {
         if stopped(queue, &stop) {
             atomic_json(
@@ -833,6 +892,14 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
                 &json!({"status":"stopped","pid":std::process::id()}),
             )?;
             return Ok(());
+        }
+        let jobs_modified = fs::metadata(queue.join("jobs"))?.modified()?;
+        if idle_jobs_modified == Some(jobs_modified) {
+            if idle_seconds.is_some_and(|seconds| idle.elapsed() >= Duration::from_secs(seconds)) {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_secs(1));
+            continue;
         }
         let mut selected = None;
         let mut pending = Vec::new();
@@ -842,7 +909,16 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
             let result = queue.join("results").join(&job.id);
             if result.exists() {
                 let report = read_json(&result.join("report.json"))?;
-                if report["status"] != "succeeded" {
+                if !matches!(report["status"].as_str(), Some("succeeded" | "rejected")) {
+                    if idle_seconds.is_none() {
+                        quarantine_manifest(
+                            queue,
+                            &path,
+                            &job,
+                            "terminal failed or incomplete result",
+                        )?;
+                        continue;
+                    }
                     return Err(format!(
                         "job {} has failed or incomplete output; no replay",
                         job.id
@@ -852,13 +928,28 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
                 continue;
             }
             job.validate()?;
-            if !dependencies_ready(&job, queue)? {
-                pending.push(json!({"id":job.id,"waiting_for_dependencies":job.after}));
-                continue;
+            match dependency_state(&job, queue)? {
+                DependencyState::Ready => {}
+                DependencyState::Waiting => {
+                    pending.push(json!({"id":job.id,"waiting_for_dependencies":job.after}));
+                    continue;
+                }
+                DependencyState::Failed(dependency) if idle_seconds.is_none() => {
+                    quarantine_manifest(
+                        queue,
+                        &path,
+                        &job,
+                        &format!("dependency {dependency} did not succeed"),
+                    )?;
+                    continue;
+                }
+                DependencyState::Failed(dependency) => {
+                    return Err(
+                        format!("dependency {dependency} did not succeed; queue stopped").into(),
+                    );
+                }
             }
-            let (started, gate) = waiting
-                .entry(job.id.clone())
-                .or_insert_with(|| (Instant::now(), StableGate::new()));
+            let started = waiting.entry(job.id.clone()).or_insert_with(Instant::now);
             if started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
                 return Err(format!(
                     "job {} expired waiting for conditions; no trial started",
@@ -866,16 +957,23 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
                 )
                 .into());
             }
-            let observation = probe_shared(&monitor, &job.conditions, None, &mut probes)?;
+            if monitor.is_none() {
+                let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+                monitor = Some(PowerMonitor::start(Some(
+                    &queue.join(format!("power-{stamp}-{}.jsonl", std::process::id())),
+                ))?);
+            }
+            let observation = probe_shared(
+                monitor.as_ref().expect("monitor initialized above"),
+                &job.conditions,
+                None,
+                &mut probes,
+            )?;
             pending.push(
                 json!({"id":job.id,"wait_seconds":started.elapsed().as_secs(),
                 "conditions":observation}),
             );
-            if gate.observe(
-                &observation,
-                Instant::now(),
-                Duration::from_secs(job.stable_seconds),
-            ) {
+            if observation["ready"] == true {
                 selected = Some(job);
                 break;
             }
@@ -889,30 +987,37 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
                 &queue.join("state.json"),
                 &json!({"status":"starting","id":job.id,"pid":std::process::id()}),
             )?;
-            let (wait_started, gate) = waiting
-                .get_mut(&job.id)
-                .ok_or("selected job is missing its stable gate")?;
-            match execute(&job, queue, &monitor, &stop, *wait_started, gate)? {
+            let wait_started = waiting
+                .get(&job.id)
+                .ok_or("selected job is missing its waiting deadline")?;
+            match execute(
+                &job,
+                queue,
+                monitor
+                    .as_ref()
+                    .ok_or("selected job is missing its power monitor")?,
+                &stop,
+                *wait_started,
+            )? {
                 Some(false) => {
+                    if idle_seconds.is_none() {
+                        quarantine_manifest(
+                            queue,
+                            &queue.join("jobs").join(format!("{}.json", job.id)),
+                            &job,
+                            "trial or validator failed",
+                        )?;
+                        waiting.remove(&job.id);
+                        continue;
+                    }
                     return Err(
                         format!("job {} failed; queue stopped without retry", job.id).into(),
-                    )
+                    );
                 }
                 Some(true) => {
                     waiting.remove(&job.id);
-                    // Running this trial interrupts every other job's quiet
-                    // window, even when the child finishes between samples.
-                    for (_, gate) in waiting.values_mut() {
-                        *gate = StableGate::new();
-                    }
                 }
-                None => {
-                    // Hashing inputs takes time. If conditions changed, keep
-                    // the original waiting deadline and begin a fresh window.
-                    if let Some((_, gate)) = waiting.get_mut(&job.id) {
-                        *gate = StableGate::new();
-                    }
-                }
+                None => {}
             }
         } else {
             let status = if pending.is_empty() {
@@ -924,10 +1029,20 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
                 &queue.join("state.json"),
                 &json!({"status":status,"pid":std::process::id(),"pending":pending}),
             )?;
+            if pending.is_empty() {
+                monitor = None;
+                // Submission publishes a manifest by renaming it into jobs/;
+                // that directory mtime is the cheap generation signal. Avoid
+                // reparsing every historical manifest/result once per second
+                // while still noticing newly published work promptly.
+                idle_jobs_modified = Some(jobs_modified);
+            } else {
+                idle_jobs_modified = None;
+            }
             if !pending.is_empty() {
                 idle = Instant::now();
             }
-            if idle.elapsed() >= Duration::from_secs(idle_seconds) {
+            if idle_seconds.is_some_and(|seconds| idle.elapsed() >= Duration::from_secs(seconds)) {
                 return Ok(());
             }
             std::thread::sleep(Duration::from_secs(1));
@@ -937,7 +1052,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: u64) -> Result
 
 pub(super) fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    let usage="usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | status QUEUE | stop QUEUE";
+    let usage = "usage: rvllm_experiment_queue submit QUEUE JOB.json | run QUEUE GLOBAL_LOCK [IDLE_SECONDS] | daemon QUEUE GLOBAL_LOCK | status QUEUE | stop QUEUE";
     if args.len() < 2 {
         return Err(usage.into());
     }
@@ -958,7 +1073,13 @@ pub(super) fn main() -> Result<()> {
             // The producer lock prevents two submitters from replacing an id.
             let _producer = lock(&queue.join("submit.lock"))?;
             let destination = queue.join("jobs").join(format!("{}.json", job.id));
-            if destination.exists() || queue.join("results").join(&job.id).exists() {
+            if destination.exists()
+                || queue.join("results").join(&job.id).exists()
+                || queue
+                    .join("quarantined-jobs")
+                    .join(format!("{}.json", job.id))
+                    .exists()
+            {
                 return Err("job id already exists".into());
             }
             for dependency in &job.after {
@@ -987,7 +1108,14 @@ pub(super) fn main() -> Result<()> {
             if idle > 86400 {
                 return Err("idle time must be <= 86400 seconds".into());
             }
-            run(&queue, &lock_path, idle)
+            run(&queue, &lock_path, Some(idle))
+        }
+        Some("daemon") if args.len() == 3 => {
+            let lock_path = PathBuf::from(&args[2]);
+            if !lock_path.is_absolute() {
+                return Err("global lock must be absolute".into());
+            }
+            run(&queue, &lock_path, None)
         }
         Some("stop") if args.len() == 2 => {
             File::create_new(queue.join("STOP"))?;
@@ -1012,7 +1140,8 @@ pub(super) fn main() -> Result<()> {
             println!(
                 "{}",
                 serde_json::to_string_pretty(
-                    &json!({"state":if state.exists(){read_json(&state)?}else{Value::Null},"jobs":jobs})
+                    &json!({"state":if state.exists(){read_json(&state)?}else{Value::Null},
+                        "jobs":jobs,"quarantined":quarantine_receipts(&queue)?})
                 )?
             );
             Ok(())
@@ -1027,12 +1156,13 @@ mod tests {
     fn conditions() -> Conditions {
         Conditions {
             power_source: "ac".into(),
-            low_power_mode: true,
-            pmset_power_mode: 1,
+            low_power_mode: Some(true),
+            pmset_power_mode: Some(1),
             thermal_state: Some(0),
             minimum_free_bytes: 1,
             disk_path: PathBuf::from("/"),
             quiet_process_names: vec!["cargo".into()],
+            observe_process_names: vec![],
             idle_llama_servers: vec![],
         }
     }
@@ -1060,55 +1190,49 @@ mod tests {
         }
     }
     #[test]
-    fn stable_window_resets_on_activity_or_any_control_change() {
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let needed = Duration::from_secs(5);
-        let mut p = json!({"ready":true,"power":observation()});
-        assert!(!gate.observe(&p, now, needed));
-        for seconds in 1..5 {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
-        }
-        assert!(gate.observe(&p, now + needed, needed));
-        p["ready"] = json!(false);
-        assert!(!gate.observe(&p, now + needed, needed));
-        p["ready"] = json!(true);
-        assert!(!gate.observe(&p, now + needed, needed));
-        p["power"]["sample"]["controls"]["available_cpus"] = json!(16);
-        assert!(!gate.observe(&p, now + needed + Duration::from_secs(1), needed));
-    }
-
-    #[test]
-    fn stable_window_rejects_observation_gaps_and_backwards_time() {
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let needed = Duration::from_secs(5);
-        let p = json!({"ready":true,"power":observation()});
-        for seconds in [0, 2, 4] {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
-        }
-        assert!(gate.observe(&p, now + Duration::from_secs(5), needed));
-        // Equal controls on either side of an unobserved interval do not
-        // establish uninterrupted quiet. The whole window must start again.
-        for seconds in [8, 10, 12] {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
-        }
-        assert!(gate.observe(&p, now + Duration::from_secs(13), needed));
-        assert!(!gate.observe(&p, now + Duration::from_secs(12), needed));
-    }
-
-    #[test]
-    fn preparation_can_accept_benign_thermals_but_never_unknown_or_serious() {
+    fn unpinned_jobs_accept_every_known_thermal_state_but_never_unknown() {
         let mut c = conditions();
         c.thermal_state = None;
         let mut value = observation();
         assert!(controls_match(&value, &c));
-        value["sample"]["controls"]["thermal_state"] = json!(1);
-        assert!(controls_match(&value, &c));
-        for state in [json!(2), json!(3), Value::Null] {
+        for state in [json!(1), json!(2), json!(3)] {
+            value["sample"]["controls"]["thermal_state"] = state;
+            assert!(controls_match(&value, &c));
+        }
+        for state in [json!(4), Value::Null] {
             value["sample"]["controls"]["thermal_state"] = state;
             assert!(!controls_match(&value, &c));
         }
+    }
+
+    #[test]
+    fn unpinned_power_modes_accept_known_values_but_never_unknown() {
+        let mut c = conditions();
+        c.low_power_mode = None;
+        c.pmset_power_mode = None;
+        let mut value = observation();
+        for low_power_mode in [false, true] {
+            value["sample"]["controls"]["low_power_mode"] = json!(low_power_mode);
+            for mode in 0..=2 {
+                value["sample"]["controls"]["pmset_power_mode"] = json!(mode);
+                assert!(controls_match(&value, &c));
+            }
+        }
+        for mode in [json!(3), Value::Null] {
+            value["sample"]["controls"]["pmset_power_mode"] = mode;
+            assert!(!controls_match(&value, &c));
+        }
+        value["sample"]["controls"]["pmset_power_mode"] = json!(1);
+        value["sample"]["controls"]["low_power_mode"] = Value::Null;
+        assert!(!controls_match(&value, &c));
+    }
+
+    #[test]
+    fn exploratory_timing_retains_ineligible_data_without_weakening_timing() {
+        assert!(purpose_accepts_ineligible(Purpose::ExploratoryTiming));
+        assert!(purpose_accepts_ineligible(Purpose::Correctness));
+        assert!(purpose_accepts_ineligible(Purpose::Preparation));
+        assert!(!purpose_accepts_ineligible(Purpose::Timing));
     }
     #[test]
     fn only_owned_trial_descendants_are_exempt_from_activity_gate() {
@@ -1134,6 +1258,7 @@ mod tests {
         };
         let mut c = conditions();
         c.quiet_process_names = vec!["cargo".into(), "llama-server".into()];
+        c.observe_process_names = vec!["cargo".into(), "llama-server".into()];
         c.idle_llama_servers = vec![IdleLlamaServer {
             pid: 22,
             port: 8093,
@@ -1142,6 +1267,7 @@ mod tests {
             cache.activity(&c, None).unwrap().1,
             vec![json!({"pid":11,"name":"cargo"})]
         );
+        assert_eq!(cache.activity(&c, None).unwrap().2.len(), 2);
         c.idle_llama_servers.clear();
         assert_eq!(
             cache.activity(&c, Some(11)).unwrap().1,
@@ -1150,6 +1276,7 @@ mod tests {
         assert_eq!(cache.activity(&c, None).unwrap().1.len(), 2);
         c.quiet_process_names.clear();
         assert!(cache.activity(&c, None).unwrap().1.is_empty());
+        assert_eq!(cache.activity(&c, None).unwrap().2.len(), 2);
         assert_eq!(cache.processes.as_ref().unwrap().0, now);
     }
 
@@ -1246,31 +1373,94 @@ mod tests {
             max_wait_seconds: 10,
             max_run_seconds: 10,
         };
-        assert!(dependencies_ready(&job, dir.path()).is_err());
+        assert_eq!(
+            dependency_state(&job, dir.path()).unwrap(),
+            DependencyState::Failed("first".into())
+        );
     }
 
     #[test]
-    fn pin_verification_cannot_bridge_an_unobserved_stable_window_gap() {
-        let mut gate = StableGate::new();
-        let now = Instant::now();
-        let needed = Duration::from_secs(5);
-        let p = json!({"ready":true,"power":observation()});
-        for seconds in 0..5 {
-            assert!(!gate.observe(&p, now + Duration::from_secs(seconds), needed));
-        }
-        assert!(gate.observe(&p, now + needed, needed));
-        let mut observations = 0;
-        let accepted = super::super::prelaunch::verify(
-            || Ok(()),
-            || {
-                observations += 1;
-                let seconds = if observations == 1 { 5 } else { 8 };
-                Ok(gate.observe(&p, now + Duration::from_secs(seconds), needed))
-            },
+    fn condition_rejected_dependency_allows_downstream_work() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("results/first")).unwrap();
+        atomic_json(
+            &dir.path().join("results/first/report.json"),
+            &json!({"status":"rejected","sampled_conditions_eligible":false}),
         )
         .unwrap();
-        assert!(!accepted);
-        assert_eq!(gate.since, Some(now + Duration::from_secs(8)));
+        let job = Job {
+            schema: SCHEMA.into(),
+            id: "second".into(),
+            purpose: Purpose::Timing,
+            command: Invocation {
+                executable: Pin {
+                    path: "/unused".into(),
+                    sha256: "0".repeat(64),
+                },
+                cwd: "/".into(),
+                args: vec![],
+                env: BTreeMap::new(),
+            },
+            validator: None,
+            inputs: vec![],
+            kernel_game_submission: None,
+            after: vec!["first".into()],
+            conditions: conditions(),
+            stable_seconds: 1,
+            max_wait_seconds: 10,
+            max_run_seconds: 10,
+        };
+        assert_eq!(
+            dependency_state(&job, dir.path()).unwrap(),
+            DependencyState::Ready
+        );
+    }
+
+    #[test]
+    fn quarantine_preserves_manifest_and_report_identities() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("jobs")).unwrap();
+        fs::create_dir_all(dir.path().join("results/second")).unwrap();
+        let report = dir.path().join("results/second/report.json");
+        atomic_json(&report, &json!({"status":"failed"})).unwrap();
+        let job = Job {
+            schema: SCHEMA.into(),
+            id: "second".into(),
+            purpose: Purpose::Correctness,
+            command: Invocation {
+                executable: Pin {
+                    path: "/unused".into(),
+                    sha256: "0".repeat(64),
+                },
+                cwd: "/".into(),
+                args: vec![],
+                env: BTreeMap::new(),
+            },
+            validator: None,
+            inputs: vec![],
+            kernel_game_submission: None,
+            after: vec![],
+            conditions: conditions(),
+            stable_seconds: 0,
+            max_wait_seconds: 10,
+            max_run_seconds: 10,
+        };
+        let manifest = dir.path().join("jobs/second.json");
+        atomic_json(&manifest, &serde_json::to_value(&job).unwrap()).unwrap();
+        let manifest_hash = digest(&manifest).unwrap();
+        let report_hash = digest(&report).unwrap();
+
+        quarantine_manifest(dir.path(), &manifest, &job, "test failure").unwrap();
+
+        assert!(!manifest.exists());
+        let quarantined = dir.path().join("quarantined-jobs/second.json");
+        assert_eq!(digest(&quarantined).unwrap(), manifest_hash);
+        let receipt = read_json(&dir.path().join("quarantined-jobs/second.receipt.json")).unwrap();
+        assert_eq!(receipt["reason"], "test failure");
+        assert_eq!(receipt["manifest"]["sha256"], manifest_hash);
+        assert_eq!(receipt["report"]["sha256"], report_hash);
+        assert_eq!(quarantine_receipts(dir.path()).unwrap(), vec![receipt]);
+        assert!(quarantine_manifest(dir.path(), &quarantined, &job, "retry").is_err());
     }
 
     #[test]
@@ -1298,23 +1488,71 @@ mod tests {
     }
 
     #[test]
+    fn output_placeholder_expands_in_environment_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = PathBuf::from("/usr/bin/env");
+        let call = Invocation {
+            executable: Pin {
+                sha256: digest(&executable).unwrap(),
+                path: executable,
+            },
+            cwd: dir.path().to_owned(),
+            args: vec![],
+            env: BTreeMap::from([(
+                "RVLLM_QUEUE_OUTPUT_TEST".into(),
+                "{output}/receipt.json".into(),
+            )]),
+        };
+        let mut child = launch_verified(&call, dir.path(), "trial", || Ok(())).unwrap();
+        assert!(child.0.wait().unwrap().success());
+        let stdout = fs::read_to_string(dir.path().join("trial.stdout")).unwrap();
+        assert!(stdout.lines().any(|line| {
+            line == format!(
+                "RVLLM_QUEUE_OUTPUT_TEST={}/receipt.json",
+                dir.path().display()
+            )
+        }));
+    }
+
+    #[test]
     fn stopped_worker_returns_before_observer_or_manifest_reads() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("jobs")).unwrap();
         fs::create_dir(dir.path().join("results")).unwrap();
         fs::write(dir.path().join("jobs/must-not-read.json"), b"invalid").unwrap();
         fs::write(dir.path().join("STOP"), b"preserved").unwrap();
-        run_owned(dir.path(), &dir.path().join("hardware.lock"), 0).unwrap();
+        run_owned(dir.path(), &dir.path().join("hardware.lock"), Some(0)).unwrap();
         assert_eq!(
             read_json(&dir.path().join("state.json")).unwrap()["status"],
             "stopped"
         );
         assert_eq!(fs::read(dir.path().join("STOP")).unwrap(), b"preserved");
         assert_eq!(fs::read_dir(dir.path().join("results")).unwrap().count(), 0);
-        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with("power-")));
+        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("power-")
+        }));
+    }
+
+    #[test]
+    fn idle_worker_does_not_start_a_power_observer() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("jobs")).unwrap();
+        fs::create_dir(dir.path().join("results")).unwrap();
+        run_owned(dir.path(), &dir.path().join("hardware.lock"), Some(0)).unwrap();
+        assert_eq!(
+            read_json(&dir.path().join("state.json")).unwrap()["status"],
+            "idle"
+        );
+        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("power-")
+        }));
     }
 }

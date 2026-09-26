@@ -27,6 +27,7 @@ cuda = [
 # the live device is a Blackwell consumer part. Implies `cuda`.
 gb10 = ["cuda", "rvllm-mem/gb10"]
 apple = ["dep:rvllm-apple", "dep:rvllm-apple-metal"]
+"metal-stage-instrumentation" = ["apple", "rvllm-apple-metal/metal-stage-instrumentation"]
 macos-private-ane-research = ["apple", "rvllm-apple/macos-private-ane-research", "dep:ctrlc", "dep:fs4"]
 
 [[bin]]

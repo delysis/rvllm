@@ -1,0 +1,68 @@
+{
+  "cases": [
+    {
+      "first_gpu_ms": 0.17424998804926872,
+      "guard_untouched": true,
+      "kernel": "gemma4_qmv_q4_g64_r8_sg2",
+      "repeated_bit_exact": true,
+      "second_gpu_ms": 0.008875038474798203,
+      "shape": [
+        17,
+        64
+      ],
+      "status": "passed"
+    },
+    {
+      "first_gpu_ms": 0.16550003783777356,
+      "guard_untouched": true,
+      "kernel": "gemma4_qmv_q8_g64_r8_sg2",
+      "repeated_bit_exact": true,
+      "second_gpu_ms": 0.6936666322872043,
+      "shape": [
+        17,
+        64
+      ],
+      "status": "passed"
+    },
+    {
+      "first_gpu_ms": 2.2016250295564532,
+      "guard_untouched": true,
+      "kernel": "gemma4_ffn_gateup_gelu_q4_g64_r4_sg2",
+      "repeated_bit_exact": true,
+      "second_gpu_ms": 2.243458351586014,
+      "shape": [
+        1,
+        3840,
+        15360
+      ],
+      "sparse_nonzero_oracle": true,
+      "status": "passed"
+    },
+    {
+      "first_gpu_ms": 1.6981250373646617,
+      "guard_untouched": true,
+      "kernel": "gemma4_ffn_gateup_gelu_bf16_r4_sg2",
+      "repeated_bit_exact": true,
+      "second_gpu_ms": 2.0438333740457892,
+      "shape": [
+        1,
+        3840,
+        15360
+      ],
+      "sparse_nonzero_oracle": true,
+      "status": "passed"
+    },
+    {
+      "first_gpu_ms": 0.6801667041145265,
+      "guard_untouched": true,
+      "kernel": "gemma4_global_d512_g16_short_unsplit",
+      "length": 3,
+      "repeated_bit_exact": true,
+      "second_gpu_ms": 0.008000002708286047,
+      "status": "passed"
+    }
+  ],
+  "device": "Apple M4 Max",
+  "schema": "rvllm.gemma4_metal_next_oracle.v1",
+  "status": "passed"
+}

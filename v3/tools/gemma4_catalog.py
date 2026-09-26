@@ -7,7 +7,11 @@ MAX_JSON=128*1024
 PATH=Path(__file__).resolve().with_name('gemma4_metal_catalog.json')
 NAMES=('off','metal-short-mma16x64','metal-rounded-gate32','metal-gqa-kv8',
        'metal-mma32-prefetch','metal-attn-q4','metal-rms-simd32','metal-mma32-f32',
-       'metal-long-mma32x64','metal-mma32-load4','metal-rmsnorm-simd256')
+       'metal-long-mma32x64','metal-mma32-load4','metal-rmsnorm-simd256',
+       'metal-load4-m16n32k64','metal-load4-m16n64k64','metal-load4-m32n32k64',
+       'metal-load4-m32n64k32','metal-load4-m32n64k64','metal-load4-m32n64k128',
+       'metal-load4-m64n64k64')
+SUPPORT_SOURCES=('crates/rvllm-apple-metal/src/research_shaders/load4_tiled_common.metal',)
 CONTRACTS={'baseline','storage-boundaries-preserved','fp32-online-softmax',
            'same-contraction-order','reduction-order-change','operand-lowering-change',
            'layout-only-bitwise-fp32-gate'}
@@ -59,7 +63,7 @@ def validate(value: dict) -> dict:
                 or budget['kernel']!=kernel or type(budget['threads']) is not int or budget['threads'] not in (32,64,128,256)
                 or type(budget['source_shared_bytes']) is not int or not 0<=budget['source_shared_bytes']<=32768
                 or budget['source_shared_bytes']%4):raise ValueError('invalid source resource budget')
-    if len(all_kernels)!=17:raise ValueError('incomplete append-only entry registry')
+    if len(all_kernels)!=31:raise ValueError('incomplete append-only entry registry')
     return value
 
 def load(path: Path=PATH) -> dict:
@@ -75,7 +79,7 @@ def exports(value: dict) -> dict[str,tuple[str,...]]:
     return {r['name']:tuple(r['kernels']) for r in value['candidates']}
 
 def sources(value: dict) -> list[str]:
-    return [r['source_file'] for r in value['candidates'] if r['source_file'] is not None]
+    return [r['source_file'] for r in value['candidates'] if r['source_file'] is not None]+list(SUPPORT_SOURCES)
 
 def verify_exported(reviewed: dict,actual: dict) -> None:
     if validate(actual)!=validate(reviewed):raise ValueError('runtime catalog differs from reviewed golden')

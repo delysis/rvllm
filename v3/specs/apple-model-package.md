@@ -76,8 +76,11 @@ cargo run --release -p rvllm-apple --features package-builder \
 - Native HF package assembly accepts a uniform F16 or BF16 tensor set. It does
   not relabel ordinary tensors as W4A16/W8A16; those formats require the
   dedicated quantizing exporter and their independent quality gates. The
-  initial exporter accepts explicitly named, two-dimensional, dense
-  `.mlp.down_proj.weight` tensors from uniform F16 checkpoints only.
+  exporter accepts explicitly named, two-dimensional dense projection tensors
+  from uniform F16 checkpoints only. A layer may replace only its
+  `.mlp.down_proj.weight`, or the complete dense Q/K/V/O/gate/up/down set;
+  incomplete multi-role sets fail closed. LM-head and MoE replacement remain
+  unsupported.
 - The metallib root must contain `rvllm.metallib` and `pipelines.json` for all
   six platform/dtype variants. Pipeline manifests must declare the supported
   schema, exact dtype, 32-token KV page ABI, and a consistent kernel set.
@@ -92,11 +95,12 @@ Schema v2 records and verifies byte length plus SHA-256 for:
 - every precompiled Metal library and pipeline manifest.
 
 Schema v3 adds exact tensor-level low-bit descriptors and authenticates their
-packed-value and little-endian FP16-scale files. It fixes the role to a dense
-down projection, activation type to F16, ABI version to 1, and group size to
-32. Package opening checks the exact shape-derived file sizes and validates the
-integer domain, tail padding, scales, and zero-scale groups with bounded
-row-sized reads. Schema v2 is forbidden from declaring these sidecars.
+packed-value and little-endian FP16-scale files. It fixes each descriptor to an
+explicit projection role, activation type F16, ABI version 1, and group size
+32. Package opening checks role/name/shape consistency, complete-layer set
+membership, exact shape-derived file sizes, integer domain, tail padding,
+scales, and zero-scale groups with bounded row-sized reads. Schema v2 is
+forbidden from declaring these sidecars.
 
 The model, tokenizer, chat-template, and numerical-ABI fingerprints are derived
 from those authenticated assets and recomputed when the package opens. They are

@@ -13,7 +13,24 @@ use objc2_metal::{
     MTLSize,
 };
 use rvllm_apple::device::AppleGpuFamily;
+use rvllm_apple::AppleLowBitTensorRole;
 use rvllm_core::Result;
+
+fn low_bit_qkv_dispatch_columns(skip_kv: bool, q_dim: u32, kv_dim: u32) -> [(bool, u32); 3] {
+    [(true, 0), (!skip_kv, q_dim), (!skip_kv, q_dim + kv_dim)]
+}
+
+fn qkv_fusion_allowed(has_low_bit_qkv: bool, otherwise_allowed: bool) -> bool {
+    !has_low_bit_qkv && otherwise_allowed
+}
+
+fn low_bit_descriptor_matches(
+    projection: MetalLowBitProjectionOffsets,
+    role: AppleLowBitTensorRole,
+    shape: [u32; 2],
+) -> bool {
+    projection.role() == role && projection.shape() == shape
+}
 
 // Shared research shape check; all FFI/resource checks stay in this boundary crate.
 fn research_layer_eligible(
@@ -76,6 +93,73 @@ pub fn supports_research_rounded_gate(
             arena_bytes,
             capture_gate_up,
         )
+}
+
+/// Construct the exact same request for execution and diagnostic accounting.
+#[allow(clippy::too_many_arguments)]
+pub fn research_bf16_gate_request(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    capture_gate_up: bool,
+    arena_bytes: usize,
+) -> crate::research_decode::GateUpRequest {
+    crate::research_decode::GateUpRequest {
+        selected: pipelines.kernel_options().research,
+        dtype: pipelines.float_type(),
+        decode: matches!(phase, MetalPhase::Decode),
+        quantized_accumulation: pipelines.kernel_options().quantized_bf16_accumulation,
+        model: crate::research::Gemma12bResearchShape {
+            tokens: dims.num_tokens,
+            hidden: dims.hidden,
+            intermediate: dims.intermediate,
+            layers: dims.num_layers,
+            heads: dims.num_heads,
+            kv_heads: dims.num_kv_heads,
+            head_dim: dims.head_dim,
+            attention_window: dims.attention_window,
+            moe_experts: dims.moe_num_experts,
+            moe_top_k: dims.moe_top_k,
+            moe_intermediate: dims.moe_intermediate,
+            ple: dims.ple_dim,
+        },
+        capture_gate_up,
+        has_low_bit_gate_or_up: weights.low_bit_gate_proj.is_some()
+            || weights.low_bit_up_proj.is_some(),
+        offsets: [
+            scratch.normed_hidden,
+            weights.gate_up_offset,
+            scratch.activated,
+        ],
+        arena_bytes,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn supports_research_bf16_gate(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    capture_gate_up: bool,
+    arena_bytes: usize,
+) -> bool {
+    crate::research_decode_metal::gate_up_plan(
+        pipelines,
+        research_bf16_gate_request(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            capture_gate_up,
+            arena_bytes,
+        ),
+    )
+    .is_some()
 }
 
 // Measured on M4 Max with Gemma 4 E2B: cooperative projection remains faster
@@ -244,6 +328,12 @@ pub struct MetalLayerWeights {
     pub layer_scalar_dim: u32,
     pub gate_up_offset: usize,
     pub down_proj_offset: Option<usize>,
+    pub low_bit_q_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_k_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_v_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_o_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_gate_proj: Option<MetalLowBitProjectionOffsets>,
+    pub low_bit_up_proj: Option<MetalLowBitProjectionOffsets>,
     pub low_bit_down_proj: Option<MetalLowBitProjectionOffsets>,
     pub moe: Option<MetalMoeWeights>,
     pub per_layer_inputs_offset: Option<usize>,
@@ -273,6 +363,8 @@ pub struct MetalScratch {
     pub k_offset: usize,
     pub v_offset: usize,
     pub attn_out: usize,
+    /// Dedicated FP32 sufficient-statistic storage for bounded split-KV decode.
+    pub global_decode_partials: Option<usize>,
     pub gate_up_out: usize,
     pub activated: usize,
     pub mlp_out: usize,
@@ -322,6 +414,42 @@ pub struct MetalLayerTraceScratch {
 pub struct MetalLayerDebugSkip {
     pub skip_kv_projection: bool,
     pub skip_local_kv_cache_write: bool,
+}
+
+fn validate_debug_skip(debug_skip: MetalLayerDebugSkip) -> Result<()> {
+    if debug_skip.skip_kv_projection && !debug_skip.skip_local_kv_cache_write {
+        return Err(rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::InvalidWeightBlob {
+                reason: "cannot write the local KV cache after skipping K/V projection",
+            },
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "debug_skip_kv_projection",
+                device: "apple-silicon",
+            },
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod debug_skip_tests {
+    use super::*;
+
+    #[test]
+    fn skipping_kv_projection_requires_skipping_its_cache_write() {
+        assert!(validate_debug_skip(MetalLayerDebugSkip::default()).is_ok());
+        assert!(validate_debug_skip(MetalLayerDebugSkip {
+            skip_kv_projection: true,
+            skip_local_kv_cache_write: true,
+        })
+        .is_ok());
+        assert!(validate_debug_skip(MetalLayerDebugSkip {
+            skip_kv_projection: true,
+            skip_local_kv_cache_write: false,
+        })
+        .is_err());
+    }
 }
 
 /// Metadata buffer offsets (positions, slot mapping, etc).
@@ -776,6 +904,8 @@ pub unsafe fn metal_forward_layer(
         attention_kv_cache_k_offset,
         attention_kv_cache_v_offset,
         debug_skip,
+        #[cfg(feature = "metal-stage-instrumentation")]
+        None,
     )?;
     cmd_buf.commit();
 
@@ -799,6 +929,9 @@ pub unsafe fn metal_encode_forward_layer(
     attention_kv_cache_k_offset: usize,
     attention_kv_cache_v_offset: usize,
     debug_skip: MetalLayerDebugSkip,
+    #[cfg(feature = "metal-stage-instrumentation")] mut stage_profiler: Option<
+        &mut crate::stage_instrumentation::MetalStageProfiler,
+    >,
 ) -> Result<()> {
     let allow_prefill_mma = trace.is_none() && supports_gemma4_prefill_mma(pipelines, dims, phase);
     let buf = arena.buffer_retained();
@@ -807,6 +940,7 @@ pub unsafe fn metal_encode_forward_layer(
     let q_dim = dims.num_heads * dims.head_dim;
     let kv_dim = dims.num_kv_heads * dims.head_dim;
     let qkv_n = q_dim + 2 * kv_dim;
+    validate_debug_skip(debug_skip)?;
     let native_down_proj_offset = validate_down_projection_sources(
         weights.down_proj_offset,
         weights.low_bit_down_proj.is_some(),
@@ -816,7 +950,11 @@ pub unsafe fn metal_encode_forward_layer(
     .unwrap_or(0);
     if let Some(projection) = weights.low_bit_down_proj {
         let expected = [hidden, dims.intermediate];
-        if projection.shape() != expected {
+        if !low_bit_descriptor_matches(
+            projection,
+            AppleLowBitTensorRole::DenseDownProjection,
+            expected,
+        ) {
             return Err(rvllm_core::RvllmError::apple(
                 rvllm_core::AppleError::InvalidWeightBlob {
                     reason: "low-bit down projection shape does not match prepared layer",
@@ -829,12 +967,99 @@ pub unsafe fn metal_encode_forward_layer(
             ));
         }
     }
-    let use_fused_qkv_rope_cache = trace.is_none()
-        && !debug_skip.skip_kv_projection
-        && !debug_skip.skip_local_kv_cache_write
-        && weights.q_norm_offset.is_some()
-        && weights.k_norm_offset.is_some()
-        && supports_qkv_rope_cache_fusion(dims);
+    let low_bit_qkv = match (
+        weights.low_bit_q_proj,
+        weights.low_bit_k_proj,
+        weights.low_bit_v_proj,
+    ) {
+        (None, None, None) => None,
+        (Some(q), Some(k), Some(v)) => {
+            if !low_bit_descriptor_matches(
+                q,
+                AppleLowBitTensorRole::QueryProjection,
+                [q_dim, hidden],
+            ) || !low_bit_descriptor_matches(
+                k,
+                AppleLowBitTensorRole::KeyProjection,
+                [kv_dim, hidden],
+            ) || !low_bit_descriptor_matches(
+                v,
+                AppleLowBitTensorRole::ValueProjection,
+                [kv_dim, hidden],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit Q/K/V projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_qkv_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            Some((q, k, v))
+        }
+        _ => {
+            return Err(rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit Q/K/V projections must be installed as one complete set",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_qkv_projection_set",
+                    device: "apple-silicon",
+                },
+            ));
+        }
+    };
+    let low_bit_gate_up = match (weights.low_bit_gate_proj, weights.low_bit_up_proj) {
+        (None, None) => None,
+        (Some(gate), Some(up)) => {
+            if !low_bit_descriptor_matches(
+                gate,
+                AppleLowBitTensorRole::DenseGateProjection,
+                [dims.intermediate, hidden],
+            ) || !low_bit_descriptor_matches(
+                up,
+                AppleLowBitTensorRole::DenseUpProjection,
+                [dims.intermediate, hidden],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit gate/up projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_gate_up_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            Some((gate, up))
+        }
+        _ => {
+            return Err(rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit gate/up projections must be installed as one complete set",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_gate_up_projection_set",
+                    device: "apple-silicon",
+                },
+            ));
+        }
+    };
+    let use_fused_qkv_rope_cache = qkv_fusion_allowed(
+        low_bit_qkv.is_some(),
+        trace.is_none()
+            && !debug_skip.skip_kv_projection
+            && !debug_skip.skip_local_kv_cache_write
+            && weights.q_norm_offset.is_some()
+            && weights.k_norm_offset.is_some()
+            && supports_qkv_rope_cache_fusion(dims),
+    );
     let use_qkv_prefill_projection = use_fused_qkv_rope_cache
         && matches!(phase, MetalPhase::Prefill { .. })
         && supports_qkv_prefill_projection(pipelines, dims);
@@ -857,6 +1082,13 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.begin(
+            cmd_buf,
+            crate::stage_instrumentation::MetalStage::NormResidual,
+        );
+    }
     // 1. RMSNorm(residual) → normed_hidden
     {
         let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
@@ -909,8 +1141,127 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            if dims.attention_window == 0 {
+                crate::stage_instrumentation::MetalStage::QkvFull
+            } else {
+                crate::stage_instrumentation::MetalStage::QkvSliding
+            },
+        );
+    }
     // 2-4. QKV projection and optional Gemma-style Q/K/V norms before RoPE.
-    if let (Some(q_norm_offset), Some(k_norm_offset)) =
+    if let Some((q_projection, k_projection, v_projection)) = low_bit_qkv {
+        if !debug_skip.skip_kv_projection {
+            for ((enabled, column), projection) in
+                low_bit_qkv_dispatch_columns(debug_skip.skip_kv_projection, q_dim, kv_dim)
+                    .into_iter()
+                    .zip([q_projection, k_projection, v_projection])
+            {
+                debug_assert!(enabled);
+                encode_low_bit_projection_strided(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    projection,
+                    scratch.normed_hidden,
+                    scratch.qkv_out,
+                    num_tokens,
+                    qkv_n,
+                    column,
+                    phase,
+                )?;
+            }
+            encode_split_qkv(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.qkv_out,
+                scratch.q_offset,
+                scratch.k_offset,
+                scratch.v_offset,
+                num_tokens,
+                q_dim,
+                kv_dim,
+            )?;
+        } else {
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                q_projection,
+                scratch.normed_hidden,
+                scratch.q_offset,
+                num_tokens,
+                q_dim,
+                0,
+                phase,
+            )?;
+        }
+        if let Some(q_norm_offset) = weights.q_norm_offset {
+            encode_headwise_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.q_offset,
+                scratch.q_offset,
+                q_norm_offset,
+                dims.head_dim,
+                dims.num_heads,
+                dims.rms_eps,
+                num_tokens,
+                "low_bit_q_norm",
+            )?;
+        }
+        if !debug_skip.skip_kv_projection {
+            if let Some(k_norm_offset) = weights.k_norm_offset {
+                encode_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.k_offset,
+                    scratch.k_offset,
+                    k_norm_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "low_bit_k_norm",
+                )?;
+            }
+            if let Some(v_norm_offset) = weights.v_norm_offset {
+                encode_headwise_rmsnorm(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.v_offset,
+                    scratch.v_offset,
+                    v_norm_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "low_bit_v_norm",
+                )?;
+            } else {
+                encode_headwise_rmsnorm_unit(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.v_offset,
+                    scratch.v_offset,
+                    dims.head_dim,
+                    dims.num_kv_heads,
+                    dims.rms_eps,
+                    num_tokens,
+                    "low_bit_v_norm_unit",
+                )?;
+            }
+        }
+    } else if let (Some(q_norm_offset), Some(k_norm_offset)) =
         (weights.q_norm_offset, weights.k_norm_offset)
     {
         if let Some(trace) = trace {
@@ -1415,85 +1766,146 @@ pub unsafe fn metal_encode_forward_layer(
         encoder.endEncoding();
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            if dims.attention_window == 0 {
+                crate::stage_instrumentation::MetalStage::AttentionFull
+            } else {
+                crate::stage_instrumentation::MetalStage::AttentionSliding
+            },
+        );
+    }
     // 7. Attention
     match phase {
         MetalPhase::Decode => {
-            let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
-                rvllm_core::RvllmError::apple(
-                    rvllm_core::AppleError::MetalUnavailable,
-                    rvllm_core::AppleCtx {
-                        backend: "metal",
-                        op: "attn_decode",
-                        device: "apple-silicon",
+            // Explicit opt-in only; unsupported requests retain the unchanged
+            // incumbent route. The adapter records only actual candidate encodes.
+            let split_encoded = if let Some(partials) = scratch.global_decode_partials {
+                crate::attention_global_decode_metal::try_encode_split_global_decode(
+                    pipelines,
+                    cmd_buf,
+                    buf,
+                    dims,
+                    phase,
+                    crate::attention_global_decode::SplitDecodeBuffers {
+                        common: crate::attention_global_decode::DecodeBuffers {
+                            q: scratch.q_offset,
+                            k: attention_kv_cache_k_offset,
+                            v: attention_kv_cache_v_offset,
+                            output: scratch.attn_out,
+                            block_tables: meta.block_tables_offset,
+                            context_lens: meta.context_lens_offset,
+                            positions: meta.positions_offset,
+                        },
+                        partials,
                     },
-                )
-            })?;
-            let use_online = supports_attention_decode_online(dims);
-            let pso = pipelines.get(if use_online {
-                "attention_decode_online_f16"
+                    crate::attention_global_decode::DecodeOutput::Bf16,
+                )?
             } else {
-                "attention_decode_f16"
-            })?;
-            encoder.setComputePipelineState(pso);
-            encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
-            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
-            encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_v_offset, 2);
-            encoder.setBuffer_offset_atIndex(Some(buf), scratch.attn_out, 3);
-            encoder.setBuffer_offset_atIndex(Some(buf), meta.block_tables_offset, 4);
-            encoder.setBuffer_offset_atIndex(Some(buf), meta.context_lens_offset, 5);
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
-                4,
-                6,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
-                4,
-                7,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
-                4,
-                8,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
-                4,
-                9,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
-                4,
-                10,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.max_blocks_per_seq as *const _ as *mut _),
-                4,
-                11,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
-                4,
-                12,
-            );
-            encoder.setBytes_length_atIndex(
-                std::ptr::NonNull::new_unchecked(&dims.attention_window as *const _ as *mut _),
-                4,
-                13,
-            );
-            let total_heads = num_tokens * dims.num_heads;
-            let groups = MTLSize {
-                width: total_heads as usize,
-                height: 1,
-                depth: 1,
+                None
             };
-            let tpg = MTLSize {
-                width: if use_online { 32 } else { 1 },
-                height: 1,
-                depth: 1,
-            };
-            encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
-            encoder.endEncoding();
+            if split_encoded.is_none()
+                && crate::attention_global_decode_metal::try_encode_global_decode(
+                    pipelines,
+                    cmd_buf,
+                    buf,
+                    dims,
+                    phase,
+                    crate::attention_global_decode::DecodeBuffers {
+                        q: scratch.q_offset,
+                        k: attention_kv_cache_k_offset,
+                        v: attention_kv_cache_v_offset,
+                        output: scratch.attn_out,
+                        block_tables: meta.block_tables_offset,
+                        context_lens: meta.context_lens_offset,
+                        positions: meta.positions_offset,
+                    },
+                    crate::attention_global_decode::DecodeOutput::Bf16,
+                )?
+                .is_none()
+            {
+                let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+                    rvllm_core::RvllmError::apple(
+                        rvllm_core::AppleError::MetalUnavailable,
+                        rvllm_core::AppleCtx {
+                            backend: "metal",
+                            op: "attn_decode",
+                            device: "apple-silicon",
+                        },
+                    )
+                })?;
+                let use_online = supports_attention_decode_online(dims);
+                let pso = pipelines.get(if use_online {
+                    "attention_decode_online_f16"
+                } else {
+                    "attention_decode_f16"
+                })?;
+                encoder.setComputePipelineState(pso);
+                encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
+                encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_k_offset, 1);
+                encoder.setBuffer_offset_atIndex(Some(buf), attention_kv_cache_v_offset, 2);
+                encoder.setBuffer_offset_atIndex(Some(buf), scratch.attn_out, 3);
+                encoder.setBuffer_offset_atIndex(Some(buf), meta.block_tables_offset, 4);
+                encoder.setBuffer_offset_atIndex(Some(buf), meta.context_lens_offset, 5);
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&num_tokens as *const _ as *mut _),
+                    4,
+                    6,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.num_heads as *const _ as *mut _),
+                    4,
+                    7,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.num_kv_heads as *const _ as *mut _),
+                    4,
+                    8,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.head_dim as *const _ as *mut _),
+                    4,
+                    9,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.block_size as *const _ as *mut _),
+                    4,
+                    10,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(
+                        &dims.max_blocks_per_seq as *const _ as *mut _,
+                    ),
+                    4,
+                    11,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.attn_scale as *const _ as *mut _),
+                    4,
+                    12,
+                );
+                encoder.setBytes_length_atIndex(
+                    std::ptr::NonNull::new_unchecked(&dims.attention_window as *const _ as *mut _),
+                    4,
+                    13,
+                );
+                let total_heads = num_tokens * dims.num_heads;
+                let groups = MTLSize {
+                    width: total_heads as usize,
+                    height: 1,
+                    depth: 1,
+                };
+                let tpg = MTLSize {
+                    width: if use_online { 32 } else { 1 },
+                    height: 1,
+                    depth: 1,
+                };
+                encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+                encoder.endEncoding();
+            }
         }
         MetalPhase::Prefill {
             max_seqlen_q: _,
@@ -1714,40 +2126,106 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            if dims.attention_window == 0 {
+                crate::stage_instrumentation::MetalStage::OProjectionFull
+            } else {
+                crate::stage_instrumentation::MetalStage::OProjectionSliding
+            },
+        );
+    }
     // 8. O projection, post-attention norm, then residual add.
     let attn_addition_offset = if let Some(post_attn_norm_offset) = weights.post_attn_norm_offset {
-        if let Some(trace) = trace {
-            encode_gemm_with_output(
+        if let Some(projection) = weights.low_bit_o_proj {
+            if !low_bit_descriptor_matches(
+                projection,
+                AppleLowBitTensorRole::OutputProjection,
+                [hidden, q_dim],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit output projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_o_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                projection,
+                scratch.attn_out,
+                scratch.mlp_out,
+                num_tokens,
+                hidden,
+                0,
+                phase,
+            )?;
+            encode_rmsnorm(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.mlp_out,
+                scratch.normed_hidden,
+                post_attn_norm_offset,
+                hidden,
+                dims.rms_eps,
+                num_tokens,
+                "post_attn_norm_low_bit",
+            )?;
+            if let Some(trace) = trace {
+                encode_trace_copy(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.mlp_out,
+                    trace.after_o_proj,
+                    num_tokens * hidden,
+                    "trace_after_o_proj",
+                )?;
+            }
+        } else {
+            if let Some(trace) = trace {
+                encode_gemm_with_output(
+                    &cmd_buf,
+                    pipelines,
+                    buf,
+                    scratch.attn_out,
+                    weights.o_proj_offset,
+                    trace.after_o_proj,
+                    num_tokens,
+                    hidden,
+                    q_dim,
+                    1.0,
+                    0.0,
+                    false,
+                    allow_prefill_mma,
+                )?;
+            }
+            encode_gemm_rmsnorm(
                 &cmd_buf,
                 pipelines,
                 buf,
                 scratch.attn_out,
                 weights.o_proj_offset,
-                trace.after_o_proj,
+                post_attn_norm_offset,
+                scratch.normed_hidden,
                 num_tokens,
                 hidden,
                 q_dim,
-                1.0,
-                0.0,
-                false,
+                dims.rms_eps,
+                "post_attn_norm",
                 allow_prefill_mma,
             )?;
         }
-        encode_gemm_rmsnorm(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.attn_out,
-            weights.o_proj_offset,
-            post_attn_norm_offset,
-            scratch.normed_hidden,
-            num_tokens,
-            hidden,
-            q_dim,
-            dims.rms_eps,
-            "post_attn_norm",
-            allow_prefill_mma,
-        )?;
         if let Some(trace) = trace {
             encode_trace_copy(
                 &cmd_buf,
@@ -1761,21 +2239,52 @@ pub unsafe fn metal_encode_forward_layer(
         }
         scratch.normed_hidden
     } else {
-        encode_gemm_with_output(
-            &cmd_buf,
-            pipelines,
-            buf,
-            scratch.attn_out,
-            weights.o_proj_offset,
-            scratch.mlp_out,
-            num_tokens,
-            hidden,
-            q_dim,
-            1.0,
-            0.0,
-            false,
-            allow_prefill_mma,
-        )?;
+        if let Some(projection) = weights.low_bit_o_proj {
+            if !low_bit_descriptor_matches(
+                projection,
+                AppleLowBitTensorRole::OutputProjection,
+                [hidden, q_dim],
+            ) {
+                return Err(rvllm_core::RvllmError::apple(
+                    rvllm_core::AppleError::InvalidWeightBlob {
+                        reason: "low-bit output projection shape does not match prepared layer",
+                    },
+                    rvllm_core::AppleCtx {
+                        backend: "metal",
+                        op: "low_bit_o_projection_shape",
+                        device: "apple-silicon",
+                    },
+                ));
+            }
+            encode_low_bit_projection_strided(
+                &cmd_buf,
+                pipelines,
+                buf,
+                projection,
+                scratch.attn_out,
+                scratch.mlp_out,
+                num_tokens,
+                hidden,
+                0,
+                phase,
+            )?;
+        } else {
+            encode_gemm_with_output(
+                &cmd_buf,
+                pipelines,
+                buf,
+                scratch.attn_out,
+                weights.o_proj_offset,
+                scratch.mlp_out,
+                num_tokens,
+                hidden,
+                q_dim,
+                1.0,
+                0.0,
+                false,
+                allow_prefill_mma,
+            )?;
+        }
         if let Some(trace) = trace {
             encode_trace_copy(
                 &cmd_buf,
@@ -1829,6 +2338,14 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            crate::stage_instrumentation::MetalStage::FfnGateUpActivation,
+        );
+    }
     // 11. Dense FFN branch: Gate||Up projection, GELU, Down projection.
     let two_inter = 2 * dims.intermediate;
     let has_per_layer_input_branch = dims.ple_dim > 0
@@ -1837,24 +2354,66 @@ pub unsafe fn metal_encode_forward_layer(
         && weights.per_layer_projection_offset.is_some()
         && weights.post_per_layer_input_norm_offset.is_some();
     let mut layer_scale_fused = false;
-    let rounded_gate = supports_research_rounded_gate(
+    let bf16_gate = crate::research_decode_metal::try_encode_gate_up(
         pipelines,
-        dims,
-        phase,
-        weights,
-        scratch,
-        trace.is_some(),
-        buf.length(),
-    ) && try_encode_research_rounded_gate(
         cmd_buf,
-        pipelines,
-        buf,
-        dims,
-        weights,
-        scratch,
-        trace.is_some(),
+        &buf,
+        research_bf16_gate_request(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            trace.is_some(),
+            buf.length(),
+        ),
     )?;
-    if !rounded_gate {
+    let rounded_gate = !bf16_gate
+        && low_bit_gate_up.is_none()
+        && supports_research_rounded_gate(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            trace.is_some(),
+            buf.length(),
+        )
+        && try_encode_research_rounded_gate(
+            cmd_buf,
+            pipelines,
+            buf,
+            dims,
+            weights,
+            scratch,
+            trace.is_some(),
+        )?;
+    if let Some((gate_projection, up_projection)) = low_bit_gate_up {
+        encode_low_bit_projection_strided(
+            &cmd_buf,
+            pipelines,
+            buf,
+            gate_projection,
+            scratch.normed_hidden,
+            scratch.gate_up_out,
+            num_tokens,
+            two_inter,
+            0,
+            phase,
+        )?;
+        encode_low_bit_projection_strided(
+            &cmd_buf,
+            pipelines,
+            buf,
+            up_projection,
+            scratch.normed_hidden,
+            scratch.gate_up_out,
+            num_tokens,
+            two_inter,
+            dims.intermediate,
+            phase,
+        )?;
+    } else if !rounded_gate && !bf16_gate {
         encode_gemm_with_output(
             &cmd_buf,
             pipelines,
@@ -1883,7 +2442,7 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    if !rounded_gate {
+    if !rounded_gate && !bf16_gate {
         encode_gelu_mul(
             &cmd_buf,
             pipelines,
@@ -1907,6 +2466,11 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(cmd_buf, crate::stage_instrumentation::MetalStage::FfnDown);
+    }
     let ffn_addition_offset = if let Some(moe) = weights.moe {
         let Some(topk_indices_offset) = scratch.moe_topk_indices else {
             return Err(missing_moe_scratch("moe_topk_indices"));
@@ -1935,6 +2499,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.activated,
                 scratch.mlp_out,
                 num_tokens,
+                phase,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2090,6 +2655,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.activated,
                 raw_output,
                 num_tokens,
+                phase,
             )?;
             encode_rmsnorm(
                 &cmd_buf,
@@ -2159,6 +2725,7 @@ pub unsafe fn metal_encode_forward_layer(
                 scratch.activated,
                 scratch.mlp_out,
                 num_tokens,
+                phase,
             )?;
         } else {
             encode_gemm_with_output(
@@ -2382,6 +2949,14 @@ pub unsafe fn metal_encode_forward_layer(
         }
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+        profiler.begin(
+            cmd_buf,
+            crate::stage_instrumentation::MetalStage::NormResidual,
+        );
+    }
     if !layer_scale_fused {
         encode_layer_scale(
             &cmd_buf,
@@ -2395,6 +2970,10 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    if let Some(profiler) = stage_profiler.as_deref_mut() {
+        profiler.end(cmd_buf);
+    }
     Ok(())
 }
 
@@ -2547,7 +3126,7 @@ fn validate_down_projection_sources(
     }
 }
 
-unsafe fn encode_gelu_mul(
+pub(crate) unsafe fn encode_gelu_mul(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
     buf: &ProtocolObject<dyn MTLBuffer>,
@@ -2998,6 +3577,51 @@ unsafe fn encode_headwise_rmsnorm(
         depth: 1,
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
+    encoder.endEncoding();
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_headwise_rmsnorm_unit(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    input_offset: usize,
+    output_offset: usize,
+    head_dim: u32,
+    num_heads: u32,
+    eps: f32,
+    num_tokens: u32,
+    op: &'static str,
+) -> Result<()> {
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op,
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    encoder.setComputePipelineState(pipelines.get("rmsnorm_headwise_unit_f16")?);
+    encoder.setBuffer_offset_atIndex(Some(buf), input_offset, 0);
+    encoder.setBuffer_offset_atIndex(Some(buf), output_offset, 1);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::from(&head_dim).cast(), 4, 2);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::from(&eps).cast(), 4, 3);
+    encoder.setBytes_length_atIndex(std::ptr::NonNull::from(&num_heads).cast(), 4, 4);
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        MTLSize {
+            width: num_tokens.saturating_mul(num_heads) as usize,
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 256,
+            height: 1,
+            depth: 1,
+        },
+    );
     encoder.endEncoding();
     Ok(())
 }
@@ -4491,6 +5115,50 @@ unsafe fn encode_split_qkv(
 mod tests {
     use super::*;
 
+    fn test_low_bit_descriptor(role: AppleLowBitTensorRole) -> MetalLowBitProjectionOffsets {
+        MetalLowBitProjectionOffsets::new_for_role(
+            role,
+            rvllm_apple::AppleLowBitWeightFormat::W4A16,
+            4,
+            32,
+            0,
+            64,
+            64,
+            8,
+        )
+        .expect("test descriptor")
+    }
+
+    #[test]
+    fn low_bit_qkv_forces_standalone_route_and_skip_omits_kv_dispatches() {
+        assert!(qkv_fusion_allowed(false, true));
+        assert!(!qkv_fusion_allowed(true, true));
+        assert_eq!(
+            low_bit_qkv_dispatch_columns(false, 8, 4),
+            [(true, 0), (true, 8), (true, 12)]
+        );
+        assert_eq!(
+            low_bit_qkv_dispatch_columns(true, 8, 4),
+            [(true, 0), (false, 8), (false, 12)]
+        );
+    }
+
+    #[test]
+    fn low_bit_descriptor_roles_cannot_be_swapped_at_equal_shape() {
+        let q = test_low_bit_descriptor(AppleLowBitTensorRole::QueryProjection);
+        let k = test_low_bit_descriptor(AppleLowBitTensorRole::KeyProjection);
+        assert!(low_bit_descriptor_matches(
+            q,
+            AppleLowBitTensorRole::QueryProjection,
+            [4, 32]
+        ));
+        assert!(!low_bit_descriptor_matches(
+            k,
+            AppleLowBitTensorRole::QueryProjection,
+            [4, 32]
+        ));
+    }
+
     #[test]
     fn down_projection_execution_source_is_exactly_one() {
         assert_eq!(
@@ -4652,6 +5320,7 @@ mod tests {
             k_offset: 80,
             v_offset: 88,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
@@ -4672,6 +5341,7 @@ mod tests {
             k_offset: 80,
             v_offset: 96,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
@@ -4692,6 +5362,7 @@ mod tests {
             k_offset: 2048,
             v_offset: 3072,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
@@ -4715,6 +5386,7 @@ mod tests {
             k_offset: 128,
             v_offset: 160,
             attn_out: 0,
+            global_decode_partials: None,
             gate_up_out: 0,
             activated: 0,
             mlp_out: 0,
@@ -5500,6 +6172,20 @@ mod tests {
     }
 }
 
+fn low_bit_research_encoding_error() -> rvllm_core::RvllmError {
+    rvllm_core::RvllmError::apple(
+        rvllm_core::AppleError::InvalidWeightBlob {
+            reason: "native BF16 low-bit research encode failed",
+        },
+        rvllm_core::AppleCtx {
+            backend: "metal",
+            op: "low_bit_research",
+            device: "apple-silicon",
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 unsafe fn encode_low_bit_down_projection(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
@@ -5508,7 +6194,62 @@ unsafe fn encode_low_bit_down_projection(
     activation_offset: usize,
     output_offset: usize,
     num_tokens: u32,
+    phase: MetalPhase,
 ) -> Result<()> {
+    let selected = pipelines.kernel_options().research;
+    let targeted = matches!(
+        (selected, projection.role()),
+        (
+            crate::MetalResearchCandidate::QmvW4G32R8Sg2,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW4G32R4Sg8K8,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R8Sg2,
+            AppleLowBitTensorRole::OutputProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R4Sg8K8,
+            AppleLowBitTensorRole::OutputProjection
+        )
+    );
+    // This selector owns decode only. Prefill and other phases retain the
+    // incumbent route even when the research candidate is selected.
+    if targeted
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(phase, MetalPhase::Decode)
+    {
+        // Never reinterpret BF16 activations as the legacy F16 low-bit ABI on
+        // refusal. The existing n4 BF16 schedule is the role-specific control.
+        let encoded = projection
+            .try_encode_strided_bf16_decode_candidate(
+                cmd_buf,
+                pipelines,
+                buf,
+                activation_offset,
+                output_offset,
+                num_tokens as usize,
+                projection.shape()[0] as usize,
+                0,
+            )
+            .map_err(|_| low_bit_research_encoding_error())?;
+        if !encoded {
+            projection
+                .encode_strided_bf16_n4(
+                    cmd_buf,
+                    pipelines,
+                    buf,
+                    activation_offset,
+                    output_offset,
+                    num_tokens as usize,
+                    projection.shape()[0] as usize,
+                    0,
+                )
+                .map_err(|_| low_bit_research_encoding_error())?;
+        }
+        return Ok(());
+    }
+
     projection
         .encode(
             cmd_buf,
@@ -5532,8 +6273,100 @@ unsafe fn encode_low_bit_down_projection(
         })
 }
 
+#[allow(clippy::too_many_arguments)]
+unsafe fn encode_low_bit_projection_strided(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    projection: MetalLowBitProjectionOffsets,
+    activation_offset: usize,
+    output_offset: usize,
+    num_tokens: u32,
+    output_row_stride: u32,
+    output_column: u32,
+    phase: MetalPhase,
+) -> Result<()> {
+    let selected = pipelines.kernel_options().research;
+    let targeted = matches!(
+        (selected, projection.role()),
+        (
+            crate::MetalResearchCandidate::QmvW4G32R8Sg2,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW4G32R4Sg8K8,
+            AppleLowBitTensorRole::DenseDownProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R8Sg2,
+            AppleLowBitTensorRole::OutputProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R4Sg8K8,
+            AppleLowBitTensorRole::OutputProjection
+        )
+    );
+    // This selector owns decode only. Prefill and other phases retain the
+    // incumbent route even when the research candidate is selected.
+    if targeted
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(phase, MetalPhase::Decode)
+    {
+        // Never reinterpret BF16 activations as the legacy F16 low-bit ABI on
+        // refusal. The existing n4 BF16 schedule is the role-specific control.
+        let encoded = projection
+            .try_encode_strided_bf16_decode_candidate(
+                cmd_buf,
+                pipelines,
+                buf,
+                activation_offset,
+                output_offset,
+                num_tokens as usize,
+                output_row_stride as usize,
+                output_column as usize,
+            )
+            .map_err(|_| low_bit_research_encoding_error())?;
+        if !encoded {
+            projection
+                .encode_strided_bf16_n4(
+                    cmd_buf,
+                    pipelines,
+                    buf,
+                    activation_offset,
+                    output_offset,
+                    num_tokens as usize,
+                    output_row_stride as usize,
+                    output_column as usize,
+                )
+                .map_err(|_| low_bit_research_encoding_error())?;
+        }
+        return Ok(());
+    }
+
+    projection
+        .encode_strided(
+            cmd_buf,
+            pipelines,
+            buf,
+            activation_offset,
+            output_offset,
+            num_tokens as usize,
+            output_row_stride as usize,
+            output_column as usize,
+        )
+        .map_err(|_| {
+            rvllm_core::RvllmError::apple(
+                rvllm_core::AppleError::InvalidWeightBlob {
+                    reason: "low-bit strided projection encoding failed",
+                },
+                rvllm_core::AppleCtx {
+                    backend: "metal",
+                    op: "low_bit_projection_strided",
+                    device: "apple-silicon",
+                },
+            )
+        })
+}
+
 /// Encode a GEMM operation into the command buffer.
-unsafe fn encode_gemm(
+pub(crate) unsafe fn encode_gemm(
     cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
     pipelines: &PipelineCache,
     buf: &ProtocolObject<dyn MTLBuffer>,

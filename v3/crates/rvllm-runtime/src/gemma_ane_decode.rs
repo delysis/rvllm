@@ -13,12 +13,14 @@ use crate::gemma_head_ranking::{
 #[cfg(test)]
 use half::bf16;
 use half::f16;
-use rvllm_apple::ane_attention::{AneAttention, AneAttentionProgram};
+use rvllm_apple::ane_attention::{
+    AneAttention, AneAttentionOutput, AneAttentionOutputCompile, AneAttentionProgram,
+};
 use rvllm_apple::ane_attention_layout::{KvImportPacking, PackedAttentionLayout};
 use rvllm_apple::ane_dynamic_ffn::{AneDynamicFfn, AneDynamicFfnProgram};
 use rvllm_apple::ane_dynamic_linear::{AneDynamicLinear, AneDynamicLinearProgram};
 use rvllm_apple::ane_int8_ffn_weights::{AneInt8FfnWeights, AneInt8LinearWeights};
-use rvllm_apple::ane_linear::{AneGatedFfn, AneLinear, AneProgramCachePolicy};
+use rvllm_apple::ane_linear::{compile_budget_used, AneGatedFfn, AneLinear, AneProgramCachePolicy};
 use rvllm_apple::ane_lut4_ffn_weights::AneLut4FfnWeights;
 use rvllm_apple::gemma_decode_math::{
     add_residual_f16, rms_norm_f16_in_place, scale_layer_f16, GemmaRope,
@@ -69,6 +71,40 @@ pub enum AneWeightPlan {
     /// Qualification only: compare both FFNs on every activation, bit for bit.
     /// Requires strict cache loading and a durable driver journal.
     StaticInt8StackedFfnChecked,
+    /// Two weight-independent QKV programs with per-layer resident weights;
+    /// output, attention and INT8 FFNs retain their exact cached graphs.
+    DynamicQkvStaticInt8FfnCached,
+}
+
+/// Explicit, default-off attention/output execution policy.
+///
+/// Experimental arms are explicit and fail closed: a missing cached fused
+/// graph aborts preparation and can never fall back to the two-request route.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AneAttentionOutputPlan {
+    #[default]
+    Separate,
+    Layer0FusedCached,
+    AllSlidingFusedCached,
+}
+
+impl AneAttentionOutputPlan {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Separate => "separate",
+            Self::Layer0FusedCached => "layer0-fused-cached",
+            Self::AllSlidingFusedCached => "all-sliding-fused-cached",
+        }
+    }
+
+    fn fuses_layer(self, layer: usize, shape: PrefillLayerShape) -> bool {
+        shape.sliding_window == Some(1024)
+            && match self {
+                Self::Separate => false,
+                Self::Layer0FusedCached => layer == 0,
+                Self::AllSlidingFusedCached => true,
+            }
+    }
 }
 
 impl AneWeightPlan {
@@ -91,6 +127,7 @@ impl AneWeightPlan {
             }
             Self::StaticInt8StackedFfnCached => "static-int8-stacked-ffn-cached",
             Self::StaticInt8StackedFfnChecked => "static-int8-stacked-ffn-checked",
+            Self::DynamicQkvStaticInt8FfnCached => "dynamic-qkv-static-int8-ffn-cached",
         }
     }
 
@@ -109,6 +146,7 @@ impl AneWeightPlan {
             | Self::StaticInt8FfnSlidingQkvTiles4Cached
             | Self::StaticInt8StackedFfnCached => 162,
             Self::StaticInt8StackedFfnChecked => 210,
+            Self::DynamicQkvStaticInt8FfnCached => 116,
         }
     }
 
@@ -124,7 +162,8 @@ impl AneWeightPlan {
             | Self::StaticInt8FfnSlidingQkvCached
             | Self::StaticInt8FfnSlidingQkvTiles4Cached
             | Self::StaticInt8StackedFfnCached
-            | Self::StaticInt8StackedFfnChecked => AneProgramCachePolicy::RequireExisting,
+            | Self::StaticInt8StackedFfnChecked
+            | Self::DynamicQkvStaticInt8FfnCached => AneProgramCachePolicy::RequireExisting,
             Self::DynamicFfn | Self::StaticFfnDynamicOutput => AneProgramCachePolicy::Compile,
         }
     }
@@ -136,6 +175,7 @@ impl AneWeightPlan {
             Self::StaticInt8InterleavedFfnCached => StaticFfnPrecision::Int8Interleaved,
             Self::StaticInt8FfnTransposeAttentionCached => StaticFfnPrecision::Int8,
             Self::StaticInt8FfnCached
+            | Self::DynamicQkvStaticInt8FfnCached
             | Self::StaticInt8FfnSlidingQkvCached
             | Self::StaticInt8FfnSlidingQkvTiles4Cached => StaticFfnPrecision::Int8,
             Self::StaticInt8StackedFfnCached | Self::StaticInt8StackedFfnChecked => {
@@ -555,8 +595,9 @@ fn check_ffn_output(layer: usize, baseline: &[f16], candidate: &[f16]) -> Result
 
 struct Layer {
     shape: PrefillLayerShape,
-    qkv: AneLinear,
+    qkv: QkvProjection,
     attention: AneAttention,
+    fused_attention_output: Option<AneAttentionOutput>,
     output: OutputProjection,
     ffn: FeedForward,
     input_norm: Vec<f16>,
@@ -572,6 +613,20 @@ struct Layer {
     attended: Vec<f16>,
 }
 
+enum QkvProjection {
+    Static(AneLinear),
+    Dynamic(AneDynamicLinear),
+}
+
+impl QkvProjection {
+    fn project(&mut self, input: &[f16], output: &mut [f16]) -> Result<(), String> {
+        match self {
+            Self::Static(projection) => projection.project(input, output),
+            Self::Dynamic(projection) => projection.project(input, output),
+        }
+    }
+}
+
 /// Timings cover application calls, including their I/O and scheduling waits.
 /// They are not hardware counters or an isolated ANE device-time measurement.
 #[derive(Default, Debug)]
@@ -579,6 +634,8 @@ pub struct AneDecodeTimes {
     pub qkv_ms: f64,
     pub attention_ms: f64,
     pub output_ms: f64,
+    /// One application call containing attention and output projection.
+    pub fused_attention_output_ms: f64,
     pub ffn_ms: f64,
     pub vocabulary_ms: f64,
     pub host_ms: f64,
@@ -615,6 +672,28 @@ pub struct GemmaAneDecode {
     head_ranking_eligible: bool,
     head_ranking_timing: bool,
     last_head_ranking: Option<(HeadRankingStats, Option<f64>)>,
+    attention_output_plan: AneAttentionOutputPlan,
+    compiler_calls_during_load: usize,
+    compiler_calls_at_load_completion: usize,
+    fused_attention_output_evaluations: usize,
+    separate_attention_evaluations: usize,
+    separate_output_evaluations: usize,
+    qkv_evaluations: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AneAttentionOutputRouteEvidence {
+    pub plan: &'static str,
+    pub fused_layers: Vec<usize>,
+    pub compiler_calls_during_load: usize,
+    /// `None` means the process-global counter moved backwards; callers must
+    /// reject that receipt rather than treating it as zero compilation.
+    pub compiler_calls_since_load: Option<usize>,
+    pub fused_attention_output_evaluations: usize,
+    pub separate_attention_evaluations: usize,
+    pub separate_output_evaluations: usize,
+    pub dynamic_qkv_layers: Vec<usize>,
+    pub qkv_evaluations: usize,
 }
 
 impl GemmaAneDecode {
@@ -689,6 +768,26 @@ impl GemmaAneDecode {
         weights: AneWeightPlan,
         compile_budget: usize,
     ) -> Result<Self, String> {
+        Self::load_with_attention_output_plan(
+            model_dir,
+            capacity,
+            weights,
+            compile_budget,
+            AneAttentionOutputPlan::Separate,
+        )
+    }
+
+    /// Prepare an explicitly selected attention/output route. The fused arm
+    /// requires an already-provisioned graph even if other preparation is
+    /// allowed a bounded compile budget.
+    pub fn load_with_attention_output_plan(
+        model_dir: &Path,
+        capacity: usize,
+        weights: AneWeightPlan,
+        compile_budget: usize,
+        attention_output_plan: AneAttentionOutputPlan,
+    ) -> Result<Self, String> {
+        let compiler_calls_before = compile_budget_used();
         if matches!(
             weights,
             AneWeightPlan::StaticInt8Chunk4FfnCached
@@ -696,6 +795,7 @@ impl GemmaAneDecode {
                 | AneWeightPlan::StaticInt8Down4FfnCached
                 | AneWeightPlan::StaticInt8InterleavedFfnCached
                 | AneWeightPlan::StaticInt8FfnTransposeAttentionCached
+                | AneWeightPlan::DynamicQkvStaticInt8FfnCached
         ) && compile_budget != 0
         {
             return Err(
@@ -759,6 +859,22 @@ impl GemmaAneDecode {
         } else {
             None
         };
+        let dynamic_qkv_programs = if weights == AneWeightPlan::DynamicQkvStaticInt8FfnCached {
+            Some([
+                AneDynamicLinearProgram::compile_with_cache_policy(
+                    HIDDEN,
+                    8192,
+                    AneProgramCachePolicy::RequireExisting,
+                )?,
+                AneDynamicLinearProgram::compile_with_cache_policy(
+                    HIDDEN,
+                    8704,
+                    AneProgramCachePolicy::RequireExisting,
+                )?,
+            ])
+        } else {
+            None
+        };
         let mut layers = Vec::with_capacity(LAYERS);
         for index in 0..LAYERS {
             let started = Instant::now();
@@ -774,17 +890,25 @@ impl GemmaAneDecode {
                 qkv_weights.extend(load("self_attn.v_proj.weight")?);
             }
             let projection_width = q_width + kv_width * if shared_value { 1 } else { 2 };
-            let qkv =
-                if weights == AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached && !shared_value {
-                    load_static_qkv_tiles4(&qkv_weights, projection_width, cache_policy)?
-                } else {
-                    load_static_qkv(
-                        &qkv_weights,
-                        projection_width,
-                        weights.quantizes_qkv(!shared_value),
-                        cache_policy,
-                    )?
-                };
+            let qkv = if let Some(programs) = &dynamic_qkv_programs {
+                QkvProjection::Dynamic(
+                    programs[usize::from(shared_value)].create_layer(&qkv_weights)?,
+                )
+            } else if weights == AneWeightPlan::StaticInt8FfnSlidingQkvTiles4Cached && !shared_value
+            {
+                QkvProjection::Static(load_static_qkv_tiles4(
+                    &qkv_weights,
+                    projection_width,
+                    cache_policy,
+                )?)
+            } else {
+                QkvProjection::Static(load_static_qkv(
+                    &qkv_weights,
+                    projection_width,
+                    weights.quantizes_qkv(!shared_value),
+                    cache_policy,
+                )?)
+            };
             drop(qkv_weights);
             let output_weights = load("self_attn.o_proj.weight")?;
             let output = match &output_programs {
@@ -799,6 +923,19 @@ impl GemmaAneDecode {
                     cache_policy,
                 )?),
             };
+            let fused_attention_output = if attention_output_plan.fuses_layer(index, shape) {
+                let layout = PackedAttentionLayout::sliding(16, 8, 256, 1024)?;
+                let fused = AneAttentionOutputCompile::compile_layer(
+                    layout,
+                    &output_weights,
+                    HIDDEN,
+                    AneProgramCachePolicy::RequireExisting,
+                )?;
+                Some(fused.create_request()?)
+            } else {
+                None
+            };
+            let attention = if shared_value { &global } else { &sliding }.create_request()?;
             drop(output_weights);
             let gate = load("mlp.gate_proj.weight")?;
             let up = load("mlp.up_proj.weight")?;
@@ -836,7 +973,8 @@ impl GemmaAneDecode {
                 qkv,
                 output,
                 ffn: layer_ffn,
-                attention: if shared_value { &global } else { &sliding }.create_request()?,
+                attention,
+                fused_attention_output,
                 input_norm: load("input_layernorm.weight")?,
                 query_norm: load("self_attn.q_norm.weight")?,
                 key_norm: load("self_attn.k_norm.weight")?,
@@ -873,6 +1011,10 @@ impl GemmaAneDecode {
                 first + HEAD_ROWS
             );
         }
+        let compiler_calls_at_load_completion = compile_budget_used();
+        let compiler_calls_during_load = compiler_calls_at_load_completion
+            .checked_sub(compiler_calls_before)
+            .ok_or("ANE compiler-call counter moved backwards")?;
         Ok(Self {
             layers,
             head,
@@ -895,7 +1037,43 @@ impl GemmaAneDecode {
                 && compile_budget == 0,
             head_ranking_timing: false,
             last_head_ranking: None,
+            attention_output_plan,
+            compiler_calls_during_load,
+            compiler_calls_at_load_completion,
+            fused_attention_output_evaluations: 0,
+            separate_attention_evaluations: 0,
+            separate_output_evaluations: 0,
+            qkv_evaluations: 0,
         })
+    }
+
+    pub fn attention_output_route_evidence(&self) -> AneAttentionOutputRouteEvidence {
+        AneAttentionOutputRouteEvidence {
+            plan: self.attention_output_plan.name(),
+            fused_layers: self
+                .layers
+                .iter()
+                .enumerate()
+                .filter_map(|(index, layer)| {
+                    layer.fused_attention_output.is_some().then_some(index)
+                })
+                .collect(),
+            compiler_calls_during_load: self.compiler_calls_during_load,
+            compiler_calls_since_load: compile_budget_used()
+                .checked_sub(self.compiler_calls_at_load_completion),
+            fused_attention_output_evaluations: self.fused_attention_output_evaluations,
+            separate_attention_evaluations: self.separate_attention_evaluations,
+            separate_output_evaluations: self.separate_output_evaluations,
+            dynamic_qkv_layers: self
+                .layers
+                .iter()
+                .enumerate()
+                .filter_map(|(index, layer)| {
+                    matches!(&layer.qkv, QkvProjection::Dynamic(_)).then_some(index)
+                })
+                .collect(),
+            qkv_evaluations: self.qkv_evaluations,
+        }
     }
 
     /// Replace every layer's KV state after validating the entire snapshot.
@@ -944,24 +1122,27 @@ impl GemmaAneDecode {
         self.next_position = None;
         let mut scratch = Vec::new();
         for (layer, saved) in self.layers.iter_mut().zip(&snapshot.layers) {
-            if packing == KvImportPacking::Blocked32 {
-                layer.attention.import_cache_blocked32_with_scratch(
+            match packing {
+                KvImportPacking::Blocked32 => layer.attention.import_cache_blocked32_with_scratch(
                     &saved.keys,
                     &saved.values,
                     snapshot.tokens,
                     &mut scratch,
-                )?;
-            } else if packing == KvImportPacking::ReuseScratch {
-                layer.attention.import_cache_with_scratch(
+                )?,
+                KvImportPacking::ReuseScratch => layer.attention.import_cache_with_scratch(
                     &saved.keys,
                     &saved.values,
                     snapshot.tokens,
                     &mut scratch,
-                )?;
-            } else {
-                layer
-                    .attention
-                    .import_cache(&saved.keys, &saved.values, snapshot.tokens)?;
+                )?,
+                KvImportPacking::Baseline => {
+                    layer
+                        .attention
+                        .import_cache(&saved.keys, &saved.values, snapshot.tokens)?
+                }
+            }
+            if let Some(fused) = &mut layer.fused_attention_output {
+                fused.import_cache(&saved.keys, &saved.values, snapshot.tokens)?;
             }
         }
         self.next_position = Some(snapshot.tokens);
@@ -1028,7 +1209,11 @@ impl GemmaAneDecode {
         let scale = f16::from_f32((HIDDEN as f32).sqrt()).to_f32();
         scale_layer_f16(&mut self.hidden, scale)?;
         for (index, layer) in self.layers.iter_mut().enumerate() {
-            if layer.attention.tokens_seen() != position {
+            let route_tokens_seen = layer.fused_attention_output.as_ref().map_or_else(
+                || layer.attention.tokens_seen(),
+                AneAttentionOutput::tokens_seen,
+            );
+            if route_tokens_seen != position {
                 return Err("ANE layer KV positions disagree".into());
             }
             self.normalized.copy_from_slice(&self.hidden);
@@ -1040,6 +1225,10 @@ impl GemmaAneDecode {
             )?;
             let timer = Instant::now();
             layer.qkv.project(&self.normalized, &mut layer.projected)?;
+            self.qkv_evaluations = self
+                .qkv_evaluations
+                .checked_add(1)
+                .ok_or("QKV evaluation count overflow")?;
             times.qkv_ms += milliseconds(timer);
             let q_width = layer.shape.query_heads * layer.shape.head_dim;
             let kv_width = layer.shape.kv_heads * layer.shape.head_dim;
@@ -1071,14 +1260,35 @@ impl GemmaAneDecode {
             };
             rope.apply_f16(query, position as u32)?;
             rope.apply_f16(key, position as u32)?;
-            let timer = Instant::now();
-            layer
-                .attention
-                .decode(query, key, &layer.value, &mut layer.attended)?;
-            times.attention_ms += milliseconds(timer);
-            let timer = Instant::now();
-            layer.output.project(&layer.attended, &mut self.branch)?;
-            times.output_ms += milliseconds(timer);
+            if let Some(fused) = &mut layer.fused_attention_output {
+                if fused.tokens_seen() != position {
+                    return Err("fused ANE layer KV positions disagree".into());
+                }
+                let timer = Instant::now();
+                fused.decode(query, key, &layer.value, &mut self.branch)?;
+                times.fused_attention_output_ms += milliseconds(timer);
+                self.fused_attention_output_evaluations = self
+                    .fused_attention_output_evaluations
+                    .checked_add(1)
+                    .ok_or("fused attention/output evaluation count overflow")?;
+            } else {
+                let timer = Instant::now();
+                layer
+                    .attention
+                    .decode(query, key, &layer.value, &mut layer.attended)?;
+                times.attention_ms += milliseconds(timer);
+                self.separate_attention_evaluations = self
+                    .separate_attention_evaluations
+                    .checked_add(1)
+                    .ok_or("attention evaluation count overflow")?;
+                let timer = Instant::now();
+                layer.output.project(&layer.attended, &mut self.branch)?;
+                times.output_ms += milliseconds(timer);
+                self.separate_output_evaluations = self
+                    .separate_output_evaluations
+                    .checked_add(1)
+                    .ok_or("output evaluation count overflow")?;
+            }
             rms_norm_f16_in_place(
                 &mut self.branch,
                 HIDDEN,
@@ -1165,6 +1375,7 @@ impl GemmaAneDecode {
             - times.qkv_ms
             - times.attention_ms
             - times.output_ms
+            - times.fused_attention_output_ms
             - times.ffn_ms
             - times.vocabulary_ms;
         Ok(AneDecodedToken {
@@ -1413,6 +1624,1500 @@ mod int8_projection_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fused_attention_output_plan_is_narrow_and_default_off() {
+        let sliding = PrefillLayerShape {
+            query_heads: 16,
+            kv_heads: 8,
+            head_dim: 256,
+            sliding_window: Some(1024),
+        };
+        let global = PrefillLayerShape {
+            query_heads: 16,
+            kv_heads: 1,
+            head_dim: 512,
+            sliding_window: None,
+        };
+        assert_eq!(
+            AneAttentionOutputPlan::default(),
+            AneAttentionOutputPlan::Separate
+        );
+        assert!(!AneAttentionOutputPlan::Separate.fuses_layer(0, sliding));
+        assert!(AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(0, sliding));
+        assert!(!AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(1, sliding));
+        assert!(!AneAttentionOutputPlan::Layer0FusedCached.fuses_layer(0, global));
+        assert!(AneAttentionOutputPlan::AllSlidingFusedCached.fuses_layer(0, sliding));
+        assert!(AneAttentionOutputPlan::AllSlidingFusedCached.fuses_layer(1, sliding));
+        assert!(!AneAttentionOutputPlan::AllSlidingFusedCached.fuses_layer(0, global));
+    }
+
+    #[test]
+    fn fused_attention_output_plan_names_are_receipt_stable() {
+        assert_eq!(AneAttentionOutputPlan::Separate.name(), "separate");
+        assert_eq!(
+            AneAttentionOutputPlan::Layer0FusedCached.name(),
+            "layer0-fused-cached"
+        );
+        assert_eq!(
+            AneAttentionOutputPlan::AllSlidingFusedCached.name(),
+            "all-sliding-fused-cached"
+        );
+    }
+
+    #[test]
+    fn dynamic_qkv_plan_is_default_off_cache_only_and_reduces_programs() {
+        let plan = AneWeightPlan::DynamicQkvStaticInt8FfnCached;
+        assert_eq!(plan.name(), "dynamic-qkv-static-int8-ffn-cached");
+        assert_eq!(plan.program_count(), 116);
+        assert_eq!(plan.cache_policy(), AneProgramCachePolicy::RequireExisting);
+        assert_eq!(plan.static_ffn_precision(), StaticFfnPrecision::Int8);
+        assert!(!plan.quantizes_qkv(true));
+        assert!(!plan.quantizes_qkv(false));
+        let error = GemmaAneDecode::load_with_compile_budget(
+            Path::new("/must-not-read-dynamic-qkv-model"),
+            1024,
+            plan,
+            1,
+        )
+        .err()
+        .expect("candidate inference must reject compilation before model access");
+        assert!(error.contains("zero compile budget"));
+    }
+
+    #[test]
+    #[ignore = "private ANE fused full-route bounded provisioning; at most 48 compiler calls"]
+    fn hardware_layer0_fused_attention_output_full_route_provision() {
+        use serde_json::json;
+        use std::io::Write;
+
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        assert_eq!(
+            compile_budget_used(),
+            0,
+            "provisioner requires a fresh process"
+        );
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let part = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_PROVISION_PART")
+            .expect("provision part required");
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_FULL_ROUTE_PROVISION_RECEIPT")
+                .expect("receipt path required"),
+        );
+        let mut receipt = std::fs::File::create_new(receipt_path).unwrap();
+        let entries = match part.as_str() {
+            "qkv" => json!(provision_static_cache_with_capacity(
+                &model,
+                AneStaticCachePart::QueryKeyValue,
+                1024,
+            )
+            .unwrap()),
+            "output" => {
+                json!(provision_static_cache_with_capacity(
+                    &model,
+                    AneStaticCachePart::Output,
+                    1024
+                )
+                .unwrap())
+            }
+            "ffn-int8" => json!(provision_static_cache_with_capacity(
+                &model,
+                AneStaticCachePart::FeedForwardInt8,
+                1024,
+            )
+            .unwrap()),
+            "vocab-attention" => json!(provision_static_cache_with_capacity(
+                &model,
+                AneStaticCachePart::VocabularyAndAttention,
+                1024,
+            )
+            .unwrap()),
+            "fused-layer0" => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+                let weights = load_tensor(&tensors[&name]).unwrap();
+                let fused = AneAttentionOutputCompile::compile_layer(
+                    PackedAttentionLayout::sliding(16, 8, 256, 1024).unwrap(),
+                    &weights,
+                    HIDDEN,
+                    AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+                )
+                .unwrap();
+                drop((fused, weights, tensors));
+                json!(1)
+            }
+            "fused-sliding" => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let mut entries = 0;
+                for index in 0..LAYERS {
+                    let shape = layer_shape(&arch, index);
+                    if shape.sliding_window != Some(1024) {
+                        continue;
+                    }
+                    let name = format!(
+                        "{}.layers.{index}.self_attn.o_proj.weight",
+                        arch.weight_prefix
+                    );
+                    let weights = load_tensor(&tensors[&name]).unwrap();
+                    let fused = AneAttentionOutputCompile::compile_layer(
+                        PackedAttentionLayout::sliding(16, 8, 256, 1024).unwrap(),
+                        &weights,
+                        HIDDEN,
+                        AneProgramCachePolicy::ReuseOrCompileUpTo(48),
+                    )
+                    .unwrap();
+                    drop((fused, weights));
+                    entries += 1;
+                }
+                drop(tensors);
+                json!(entries)
+            }
+            "dynamic-qkv" => {
+                for (input, output) in [(HIDDEN, 8192), (HIDDEN, 8704)] {
+                    let program = AneDynamicLinearProgram::compile_with_cache_policy(
+                        input,
+                        output,
+                        AneProgramCachePolicy::ReuseOrCompileUpTo(2),
+                    )
+                    .unwrap();
+                    drop(program);
+                }
+                json!({
+                    "entries":2,
+                    "sliding":{"input":HIDDEN,"output":8192,"mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8192).unwrap()},
+                    "global":{"input":HIDDEN,"output":8704,"mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8704).unwrap()}
+                })
+            }
+            _ => panic!("unknown fused full-route provision part {part}"),
+        };
+        let compiler_calls = compile_budget_used();
+        assert!(compiler_calls <= 48);
+        let report = json!({
+            "schema":"rvllm.gemma4_ane_fused_full_route_provision.v1",
+            "part":part,
+            "entries":entries,
+            "compiler_calls":compiler_calls,
+            "evaluation_calls":0,
+            "claim":"Bounded setup provisioning only; no correctness, timing, or promotion claim."
+        });
+        writeln!(receipt, "{report}").unwrap();
+        receipt.flush().unwrap();
+    }
+
+    #[test]
+    #[ignore = "private ANE layer-0 real-weight output/FFN compile; one compiler call, zero evaluations"]
+    fn hardware_layer0_output_ffn_real_weight_compile() {
+        use rvllm_apple::ane_linear::AneOutputFfnCompile;
+
+        assert_eq!(compile_budget_used(), 0, "probe requires a fresh process");
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+        let prefix = format!("{}.layers.0", arch.weight_prefix);
+        let load = |suffix: &str| load_tensor(&tensors[&format!("{prefix}.{suffix}")]);
+        let output = load("self_attn.o_proj.weight").unwrap();
+        let gate = load("mlp.gate_proj.weight").unwrap();
+        let up = load("mlp.up_proj.weight").unwrap();
+        let down = load("mlp.down_proj.weight").unwrap();
+        let ffn = AneInt8FfnWeights::quantize(&gate, &up, &down, HIDDEN, INTERMEDIATE).unwrap();
+        drop((gate, up, down));
+        let post_gamma = load("post_attention_layernorm.weight").unwrap();
+        let pre_gamma = load("pre_feedforward_layernorm.weight").unwrap();
+        let compiled = AneOutputFfnCompile::compile_only(
+            &output,
+            4096,
+            &ffn,
+            &post_gamma,
+            &pre_gamma,
+            1e-6,
+            AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+        )
+        .unwrap();
+        assert_eq!(compile_budget_used(), 1);
+        assert_eq!(compiled.identity().input_bytes, (HIDDEN + 4096) * 64);
+        assert_eq!(compiled.identity().output_bytes, HIDDEN * 64);
+        println!("identity={:?}", compiled.identity());
+    }
+
+    #[test]
+    #[ignore = "private ANE fused full-route referee; exact-cache dependent-token baseline/candidate comparison, no timing claim"]
+    fn hardware_layer0_fused_attention_output_full_route() {
+        use super::two_token_reference::live_tests::{load_snapshot, signature};
+        use serde_json::json;
+        use std::io::Write;
+
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let snapshot_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_TWO_TOKEN_SNAPSHOT").expect("snapshot required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_FULL_ROUTE_RECEIPT").expect("receipt path required"),
+        );
+        let mut receipt = std::fs::File::create_new(receipt_path).unwrap();
+        let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
+        let candidate_plan = match std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_PLAN").as_deref() {
+            Ok("all-sliding") => AneAttentionOutputPlan::AllSlidingFusedCached,
+            Ok(value) => panic!("unknown fused full-route plan {value}"),
+            Err(std::env::VarError::NotPresent) => AneAttentionOutputPlan::Layer0FusedCached,
+            Err(error) => panic!("invalid fused full-route plan: {error}"),
+        };
+        let expected_fused_layers = match candidate_plan {
+            AneAttentionOutputPlan::Layer0FusedCached => vec![0],
+            AneAttentionOutputPlan::AllSlidingFusedCached => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let layers = (0..LAYERS)
+                    .filter(|&index| layer_shape(&arch, index).sliding_window == Some(1024))
+                    .collect::<Vec<_>>();
+                drop(tensors);
+                layers
+            }
+            AneAttentionOutputPlan::Separate => unreachable!(),
+        };
+        let candidate_weight_plan = match std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_WEIGHT_PLAN") {
+            Ok(value) if value == "dynamic-qkv" => AneWeightPlan::DynamicQkvStaticInt8FfnCached,
+            Ok(value) => panic!("unknown fused full-route weight plan {value}"),
+            Err(std::env::VarError::NotPresent) => AneWeightPlan::StaticInt8FfnCached,
+            Err(error) => panic!("invalid fused full-route weight plan: {error}"),
+        };
+        // A weight-plan experiment must hold the already-qualified attention
+        // route constant. Otherwise its timing would merely re-measure the
+        // all-sliding attention/output win while attributing the combination
+        // to dynamic QKV.
+        let baseline_plan = if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached
+        {
+            candidate_plan
+        } else {
+            AneAttentionOutputPlan::Separate
+        };
+        let tokens = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TOKENS")
+            .map(|value| {
+                value
+                    .parse::<usize>()
+                    .expect("token count must be an integer")
+            })
+            .unwrap_or(2);
+        assert!((2..=32).contains(&tokens), "token count must be 2..=32");
+        assert!(snapshot.tokens + tokens <= 1024);
+        assert_eq!(compile_budget_used(), 0, "referee requires a fresh process");
+        let compiler_calls_before = compile_budget_used();
+
+        let run = |weight_plan, plan| {
+            let mut decoder =
+                GemmaAneDecode::load_with_attention_output_plan(&model, 1024, weight_plan, 0, plan)
+                    .unwrap();
+            decoder.import_prefill(&snapshot).unwrap();
+            let mut residuals = Vec::with_capacity(tokens * LAYERS);
+            let mut predictions = Vec::with_capacity(tokens);
+            let mut next = anchor;
+            for _ in 0..tokens {
+                let decoded = decoder
+                    .decode_with_observer(next, &mut |_, hidden| {
+                        residuals.push(hidden.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+                        Ok(())
+                    })
+                    .unwrap();
+                next = decoded.token;
+                predictions.push(signature(&decoded));
+            }
+            assert_eq!(residuals.len(), tokens * LAYERS);
+            (
+                predictions,
+                residuals,
+                decoder.attention_output_route_evidence(),
+            )
+        };
+
+        let (baseline_predictions, baseline_residuals, baseline_route) =
+            run(AneWeightPlan::StaticInt8FfnCached, baseline_plan);
+        let expected_baseline_fused_layers = if baseline_plan == candidate_plan {
+            expected_fused_layers.clone()
+        } else {
+            Vec::new()
+        };
+        assert_eq!(baseline_route.fused_layers, expected_baseline_fused_layers);
+        assert_eq!(baseline_route.compiler_calls_during_load, 0);
+        assert_eq!(baseline_route.compiler_calls_since_load, Some(0));
+        assert_eq!(
+            baseline_route.fused_attention_output_evaluations,
+            tokens * baseline_route.fused_layers.len()
+        );
+        assert_eq!(
+            baseline_route.separate_attention_evaluations,
+            tokens * (LAYERS - baseline_route.fused_layers.len())
+        );
+        assert_eq!(
+            baseline_route.separate_output_evaluations,
+            tokens * (LAYERS - baseline_route.fused_layers.len())
+        );
+
+        let (candidate_predictions, candidate_residuals, candidate_route) =
+            run(candidate_weight_plan, candidate_plan);
+        assert_eq!(candidate_route.fused_layers, expected_fused_layers);
+        assert_eq!(candidate_route.compiler_calls_during_load, 0);
+        assert_eq!(candidate_route.compiler_calls_since_load, Some(0));
+        assert_eq!(
+            candidate_route.fused_attention_output_evaluations,
+            tokens * candidate_route.fused_layers.len()
+        );
+        assert_eq!(
+            candidate_route.separate_attention_evaluations,
+            tokens * (LAYERS - candidate_route.fused_layers.len())
+        );
+        assert_eq!(
+            candidate_route.separate_output_evaluations,
+            tokens * (LAYERS - candidate_route.fused_layers.len())
+        );
+        assert_eq!(candidate_residuals, baseline_residuals);
+        assert_eq!(candidate_predictions, baseline_predictions);
+        assert_eq!(baseline_route.dynamic_qkv_layers, Vec::<usize>::new());
+        assert_eq!(baseline_route.qkv_evaluations, tokens * LAYERS);
+        let expected_dynamic_qkv_layers =
+            if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached {
+                (0..LAYERS).collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+        assert_eq!(
+            candidate_route.dynamic_qkv_layers,
+            expected_dynamic_qkv_layers
+        );
+        assert_eq!(candidate_route.qkv_evaluations, tokens * LAYERS);
+
+        let compiler_calls_after = compile_budget_used();
+        assert_eq!(compiler_calls_after, compiler_calls_before);
+        let report = json!({
+            "schema":"rvllm.gemma4_ane_fused_attention_output_full_route.v1",
+            "snapshot_sha256":snapshot_sha256,
+            "tokens":tokens,
+            "baseline_weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
+            "candidate_weight_plan":candidate_weight_plan.name(),
+            "dynamic_qkv_cache_identity":if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached { Some(json!({
+                "sliding_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8192).unwrap(),
+                "global_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8704).unwrap(),
+                "compiled_programs":2,
+                "replaced_per_layer_programs":48
+            })) } else { None },
+            "baseline_predictions":baseline_predictions,
+            "candidate_predictions":candidate_predictions,
+            "all_layer_residuals_exact":true,
+            "final_predictions_exact":true,
+            "baseline_route":{
+                "plan":baseline_route.plan,
+                "fused_layers":baseline_route.fused_layers,
+                "fused_evaluations":baseline_route.fused_attention_output_evaluations,
+                "separate_attention_evaluations":baseline_route.separate_attention_evaluations,
+                "separate_output_evaluations":baseline_route.separate_output_evaluations,
+                "dynamic_qkv_layers":baseline_route.dynamic_qkv_layers,
+                "qkv_evaluations":baseline_route.qkv_evaluations,
+            },
+            "candidate_route":{
+                "plan":candidate_route.plan,
+                "fused_layers":candidate_route.fused_layers,
+                "fused_evaluations":candidate_route.fused_attention_output_evaluations,
+                "separate_attention_evaluations":candidate_route.separate_attention_evaluations,
+                "separate_output_evaluations":candidate_route.separate_output_evaluations,
+                "dynamic_qkv_layers":candidate_route.dynamic_qkv_layers,
+                "qkv_evaluations":candidate_route.qkv_evaluations,
+            },
+            "compiler_calls_before":compiler_calls_before,
+            "compiler_calls_after":compiler_calls_after,
+            "compiler_calls_delta":0,
+            "timing_claim":false,
+            "promotion":false,
+            "claim":"Dependent-token exact-cache full-route fused correctness and dispatch evidence only."
+        });
+        writeln!(receipt, "{}", report).unwrap();
+        receipt.flush().unwrap();
+    }
+
+    #[test]
+    #[ignore = "private cached-only full-route ANE timing; reset-identical bounded-token ABBA/BAAB, zero compiler calls"]
+    fn hardware_layer0_fused_attention_output_full_route_abba_timing() {
+        use super::two_token_reference::live_tests::{load_snapshot, signature};
+        use serde_json::json;
+        use std::time::Instant;
+
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA4_MODEL_DIR").expect("model directory required"),
+        );
+        let snapshot_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_TWO_TOKEN_SNAPSHOT").expect("snapshot required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_RECEIPT")
+                .expect("timing receipt path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite timing receipt"
+        );
+        assert_eq!(compile_budget_used(), 0, "timing requires a fresh process");
+        let (snapshot, anchor, snapshot_sha256) = load_snapshot(&snapshot_path);
+        let candidate_plan = match std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_PLAN").as_deref() {
+            Ok("all-sliding") => AneAttentionOutputPlan::AllSlidingFusedCached,
+            Ok(value) => panic!("unknown fused full-route plan {value}"),
+            Err(std::env::VarError::NotPresent) => AneAttentionOutputPlan::Layer0FusedCached,
+            Err(error) => panic!("invalid fused full-route plan: {error}"),
+        };
+        let expected_fused_layers = match candidate_plan {
+            AneAttentionOutputPlan::Layer0FusedCached => vec![0],
+            AneAttentionOutputPlan::AllSlidingFusedCached => {
+                let (arch, tensors) = validated_weights(&model, 1024).unwrap();
+                let layers = (0..LAYERS)
+                    .filter(|&index| layer_shape(&arch, index).sliding_window == Some(1024))
+                    .collect::<Vec<_>>();
+                drop(tensors);
+                layers
+            }
+            AneAttentionOutputPlan::Separate => unreachable!(),
+        };
+        let candidate_weight_plan = match std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_WEIGHT_PLAN") {
+            Ok(value) if value == "dynamic-qkv" => AneWeightPlan::DynamicQkvStaticInt8FfnCached,
+            Ok(value) => panic!("unknown fused full-route weight plan {value}"),
+            Err(std::env::VarError::NotPresent) => AneWeightPlan::StaticInt8FfnCached,
+            Err(error) => panic!("invalid fused full-route weight plan: {error}"),
+        };
+        let baseline_plan = if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached
+        {
+            candidate_plan
+        } else {
+            AneAttentionOutputPlan::Separate
+        };
+        let measured_tokens = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_TOKENS")
+            .map(|value| {
+                value
+                    .parse::<usize>()
+                    .expect("timing token count must be an integer")
+            })
+            .unwrap_or(1);
+        assert!(
+            (1..=8).contains(&measured_tokens),
+            "timing token count must be 1..=8"
+        );
+        assert!(snapshot.tokens + measured_tokens <= 1024);
+
+        let reverse_order = std::env::var("RVLLM_ANE_FUSED_FULL_ROUTE_TIMING_ORDER")
+            .map(|value| value == "BAAB_FIRST")
+            .unwrap_or(false);
+        let (sequence_name, sequence) = if reverse_order {
+            (
+                "BAAB/ABBA/BAAB",
+                [
+                    "candidate",
+                    "baseline",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "baseline",
+                    "candidate",
+                ],
+            )
+        } else {
+            (
+                "ABBA/BAAB/ABBA",
+                [
+                    "baseline",
+                    "candidate",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "baseline",
+                    "candidate",
+                    "baseline",
+                    "candidate",
+                    "candidate",
+                    "baseline",
+                ],
+            )
+        };
+        let block_order = |block: usize| {
+            if reverse_order {
+                if block == 1 {
+                    "ABBA"
+                } else {
+                    "BAAB"
+                }
+            } else if block == 1 {
+                "BAAB"
+            } else {
+                "ABBA"
+            }
+        };
+        let mut observations = Vec::with_capacity(sequence.len());
+        let mut baseline_ms = Vec::with_capacity(6);
+        let mut candidate_ms = Vec::with_capacity(6);
+        let mut expected_warmup = None;
+        let mut expected_outputs = None;
+        let mut baseline_fused_evaluations = 0;
+        let mut baseline_attention_evaluations = 0;
+        let mut baseline_output_evaluations = 0;
+        let mut candidate_fused_evaluations = 0;
+        let mut candidate_attention_evaluations = 0;
+        let mut candidate_output_evaluations = 0;
+        let mut baseline_qkv_evaluations = 0;
+        let mut candidate_qkv_evaluations = 0;
+        for (index, arm) in sequence.into_iter().enumerate() {
+            let plan = match arm {
+                "baseline" => baseline_plan,
+                "candidate" => candidate_plan,
+                _ => unreachable!(),
+            };
+            let weight_plan = if arm == "candidate" {
+                candidate_weight_plan
+            } else {
+                AneWeightPlan::StaticInt8FfnCached
+            };
+            // The private runtime gives a deterministic model-directory lease
+            // to one live decoder.  Keep exactly one decoder alive per arm;
+            // load, snapshot import and equal warmup remain outside timing.
+            let mut decoder =
+                GemmaAneDecode::load_with_attention_output_plan(&model, 1024, weight_plan, 0, plan)
+                    .unwrap();
+            assert_eq!(
+                decoder
+                    .attention_output_route_evidence()
+                    .compiler_calls_during_load,
+                0
+            );
+            assert_eq!(
+                compile_budget_used(),
+                0,
+                "all programs must be exact cache hits"
+            );
+            decoder.import_prefill(&snapshot).unwrap();
+            let warmup = signature(&decoder.decode(anchor).unwrap());
+            if let Some(expected) = &expected_warmup {
+                assert_eq!(&warmup, expected, "full-route warmup drift in arm {index}");
+            } else {
+                expected_warmup = Some(warmup);
+            }
+            decoder.import_prefill(&snapshot).unwrap();
+            let mut next = anchor;
+            let mut outputs = Vec::with_capacity(measured_tokens);
+            let mut breakdown = AneDecodeTimes::default();
+            let started = Instant::now();
+            for _ in 0..measured_tokens {
+                let decoded = decoder.decode(next).unwrap();
+                next = decoded.token;
+                outputs.push(signature(&decoded));
+                breakdown.qkv_ms += decoded.times.qkv_ms;
+                breakdown.attention_ms += decoded.times.attention_ms;
+                breakdown.output_ms += decoded.times.output_ms;
+                breakdown.fused_attention_output_ms += decoded.times.fused_attention_output_ms;
+                breakdown.ffn_ms += decoded.times.ffn_ms;
+                breakdown.vocabulary_ms += decoded.times.vocabulary_ms;
+                breakdown.host_ms += decoded.times.host_ms;
+                breakdown.total_ms += decoded.times.total_ms;
+            }
+            let batch_elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+            let elapsed_ms = batch_elapsed_ms / measured_tokens as f64;
+            if let Some(expected) = &expected_outputs {
+                assert_eq!(&outputs, expected, "full-route output drift in arm {index}");
+            } else {
+                expected_outputs = Some(outputs.clone());
+            }
+            let route = decoder.attention_output_route_evidence();
+            if arm == "baseline" {
+                baseline_ms.push(elapsed_ms);
+                let expected_baseline_fused_layers = if baseline_plan == candidate_plan {
+                    expected_fused_layers.clone()
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(route.fused_layers, expected_baseline_fused_layers);
+                baseline_fused_evaluations += route.fused_attention_output_evaluations;
+                baseline_attention_evaluations += route.separate_attention_evaluations;
+                baseline_output_evaluations += route.separate_output_evaluations;
+                baseline_qkv_evaluations += route.qkv_evaluations;
+                assert!(route.dynamic_qkv_layers.is_empty());
+            } else {
+                candidate_ms.push(elapsed_ms);
+                assert_eq!(route.fused_layers, expected_fused_layers);
+                candidate_fused_evaluations += route.fused_attention_output_evaluations;
+                candidate_attention_evaluations += route.separate_attention_evaluations;
+                candidate_output_evaluations += route.separate_output_evaluations;
+                candidate_qkv_evaluations += route.qkv_evaluations;
+                assert_eq!(
+                    route.dynamic_qkv_layers.len(),
+                    if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached {
+                        LAYERS
+                    } else {
+                        0
+                    }
+                );
+            }
+            assert_eq!(route.compiler_calls_since_load, Some(0));
+            observations.push(json!({
+                "index":index,
+                "block":index / 4,
+                "order":block_order(index / 4),
+                "arm":arm,
+                "tokens":measured_tokens,
+                "batch_elapsed_ms":batch_elapsed_ms,
+                "elapsed_ms_per_token":elapsed_ms,
+                "decode_breakdown_ms":{
+                    "scope":"per-token mean within measured batch",
+                    "qkv":breakdown.qkv_ms / measured_tokens as f64,
+                    "attention":breakdown.attention_ms / measured_tokens as f64,
+                    "output":breakdown.output_ms / measured_tokens as f64,
+                    "fused_attention_output":breakdown.fused_attention_output_ms / measured_tokens as f64,
+                    "ffn":breakdown.ffn_ms / measured_tokens as f64,
+                    "vocabulary":breakdown.vocabulary_ms / measured_tokens as f64,
+                    "host":breakdown.host_ms / measured_tokens as f64,
+                    "total":breakdown.total_ms / measured_tokens as f64,
+                },
+                "outputs":outputs,
+            }));
+        }
+
+        let median = |values: &mut Vec<f64>| {
+            values.sort_by(f64::total_cmp);
+            (values[(values.len() - 1) / 2] + values[values.len() / 2]) * 0.5
+        };
+        let baseline_median_ms = median(&mut baseline_ms);
+        let candidate_median_ms = median(&mut candidate_ms);
+        let baseline_drift = baseline_ms[baseline_ms.len() - 1] / baseline_ms[0] - 1.0;
+        let candidate_drift = candidate_ms[candidate_ms.len() - 1] / candidate_ms[0] - 1.0;
+        let evaluations_per_route = 6 * (1 + measured_tokens);
+        let baseline_fused_layers = if baseline_plan == candidate_plan {
+            expected_fused_layers.len()
+        } else {
+            0
+        };
+        assert_eq!(
+            baseline_fused_evaluations,
+            evaluations_per_route * baseline_fused_layers
+        );
+        assert_eq!(
+            baseline_attention_evaluations,
+            evaluations_per_route * (LAYERS - baseline_fused_layers)
+        );
+        assert_eq!(
+            baseline_output_evaluations,
+            evaluations_per_route * (LAYERS - baseline_fused_layers)
+        );
+        assert_eq!(baseline_qkv_evaluations, evaluations_per_route * LAYERS);
+        assert_eq!(
+            candidate_fused_evaluations,
+            evaluations_per_route * expected_fused_layers.len()
+        );
+        assert_eq!(
+            candidate_attention_evaluations,
+            evaluations_per_route * (LAYERS - expected_fused_layers.len())
+        );
+        assert_eq!(
+            candidate_output_evaluations,
+            evaluations_per_route * (LAYERS - expected_fused_layers.len())
+        );
+        assert_eq!(candidate_qkv_evaluations, evaluations_per_route * LAYERS);
+        let compiler_calls_after_timing = compile_budget_used();
+        assert_eq!(compiler_calls_after_timing, 0);
+        let expected_warmup = expected_warmup.unwrap();
+        let expected_outputs = expected_outputs.unwrap();
+
+        let report = json!({
+            "schema":"rvllm.gemma4_ane_fused_attention_output_full_route_timing.v2",
+            "status":"measured",
+            "snapshot_sha256":snapshot_sha256,
+            "baseline_weight_plan":AneWeightPlan::StaticInt8FfnCached.name(),
+            "candidate_weight_plan":candidate_weight_plan.name(),
+            "dynamic_qkv_cache_identity":if candidate_weight_plan == AneWeightPlan::DynamicQkvStaticInt8FfnCached { Some(json!({
+                "sliding_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8192).unwrap(),
+                "global_mil_sha256":AneDynamicLinearProgram::cache_identity(HIDDEN,8704).unwrap(),
+                "compiled_programs":2,"replaced_per_layer_programs":48
+            })) } else { None },
+            "sequence":sequence_name,
+            "warmup_tokens_per_arm":1,
+            "measured_observations_per_route":6,
+            "measured_tokens_per_observation":measured_tokens,
+            "measured_tokens_total_per_route":6 * measured_tokens,
+            "decoder_lifetime":"one exact-cache decoder per observation; load excluded from timing",
+            "state_reset":"identical sealed prefill imported outside every timed interval",
+            "timed_scope":"bounded dependent-token batch from embedding through vocabulary ranking; reported latency is batch wall time divided by token count",
+            "baseline_median_ms_per_token":baseline_median_ms,
+            "candidate_median_ms_per_token":candidate_median_ms,
+            "median_baseline_over_candidate":baseline_median_ms / candidate_median_ms,
+            "baseline_range_drift_fraction":baseline_drift,
+            "candidate_range_drift_fraction":candidate_drift,
+            "outputs_exact":true,
+            "expected_warmup_output":expected_warmup,
+            "expected_outputs":expected_outputs,
+            "baseline_route":{
+                "plan":baseline_plan.name(),
+                "fused_evaluations":baseline_fused_evaluations,
+                "separate_attention_evaluations":baseline_attention_evaluations,
+                "separate_output_evaluations":baseline_output_evaluations,
+                "qkv_evaluations":baseline_qkv_evaluations,
+            },
+            "candidate_route":{
+                "plan":candidate_plan.name(),
+                "fused_evaluations":candidate_fused_evaluations,
+                "separate_attention_evaluations":candidate_attention_evaluations,
+                "separate_output_evaluations":candidate_output_evaluations,
+                "qkv_evaluations":candidate_qkv_evaluations,
+            },
+            "compiler_calls_after_load":0,
+            "compiler_calls_after_timing":compiler_calls_after_timing,
+            "compiler_calls_during_warmup_and_timing":0,
+            "observations":observations,
+            "promotion":false,
+            "claim":"Exploratory exact-cache full-route timing for an explicit default-off fused route. Independent opposite-order confirmation and longer stability remain required."
+        });
+        std::fs::write(
+            receipt_path,
+            serde_json::to_vec_pretty(&report).expect("serialize full-route timing receipt"),
+        )
+        .expect("preserve full-route timing receipt");
+    }
+
+    #[test]
+    #[ignore = "private ANE layer-0 fused attention/output compile-source probe; one compiler attempt, zero evaluations, explicit journal and receipt"]
+    fn hardware_layer0_fused_attention_output_compile_source() {
+        use rvllm_apple::ane_attention::AneAttentionOutputCompile;
+        use rvllm_apple::ane_linear::compile_budget_used;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        let journal_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").expect("driver journal path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite fused receipt"
+        );
+        assert!(
+            !journal_path.exists(),
+            "refusing to append to an old driver journal"
+        );
+        assert_eq!(compile_budget_used(), 0, "probe requires a fresh process");
+
+        let prepared = (|| -> Result<_, String> {
+            let (arch, entries) = super::validated_weights(&model, 1024)?;
+            let shape = super::layer_shape(&arch, 0);
+            let layout = match shape.sliding_window {
+                Some(window) => rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    window,
+                )?,
+                None => rvllm_apple::ane_attention_layout::PackedAttentionLayout::new(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    1024,
+                )?,
+            };
+            let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+            let weights = super::load_tensor(
+                entries
+                    .get(&name)
+                    .ok_or_else(|| format!("missing ANE tensor {name}"))?,
+            )?;
+            let identity =
+                AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN)?;
+            let result = AneAttentionOutputCompile::compile_layer(
+                layout,
+                &weights,
+                super::HIDDEN,
+                super::AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+            )
+            .map(drop);
+            drop(weights);
+            Ok((identity, result))
+        })();
+        let compiler_calls = compile_budget_used();
+        let (status, identity, error) = match prepared {
+            Ok((identity, Ok(()))) => ("compiled", Some(identity), None),
+            Ok((identity, Err(error))) => ("failed", Some(identity), Some(error)),
+            Err(error) => ("failed", None, Some(error)),
+        };
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_compile_source.v1",
+            "status":status,
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":identity.as_ref().map(|value| serde_json::json!({
+                "mil_sha256":value.mil_sha256,
+                "weight_blob_sha256":value.weight_blob_sha256,
+                "input_bytes":value.input_bytes,
+                "output_bytes":value.output_bytes,
+            })),
+            "compiler_calls":compiler_calls,
+            "compiler_call_limit":1,
+            "accelerator_evaluations":0,
+            "external_inputs":1,
+            "external_outputs":1,
+            "driver_journal":journal_path,
+            "error":error,
+            "claim":"Layer-0 compile-source evidence only; no inference, correctness, speed, route, or promotion claim."
+        });
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused receipt"),
+        )
+        .expect("preserve fused receipt");
+        assert_eq!(
+            compiler_calls, 1,
+            "compile-source requires exactly one compiler attempt"
+        );
+        assert_eq!(
+            status, "compiled",
+            "fused compile failed; inspect preserved receipt and journal"
+        );
+    }
+
+    #[test]
+    #[ignore = "private ANE layer-0 fused attention/output exact-cache reload probe; zero compiler calls and zero evaluations"]
+    fn hardware_layer0_fused_attention_output_reload_existing() {
+        use rvllm_apple::ane_attention::AneAttentionOutputCompile;
+        use rvllm_apple::ane_linear::compile_budget_used;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        let journal_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").expect("driver journal path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite fused reload receipt"
+        );
+        assert!(
+            !journal_path.exists(),
+            "refusing to append to an old driver journal"
+        );
+        assert_eq!(compile_budget_used(), 0, "probe requires a fresh process");
+
+        let prepared = (|| -> Result<_, String> {
+            let (arch, entries) = super::validated_weights(&model, 1024)?;
+            let shape = super::layer_shape(&arch, 0);
+            let layout = match shape.sliding_window {
+                Some(window) => rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    window,
+                )?,
+                None => rvllm_apple::ane_attention_layout::PackedAttentionLayout::new(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    1024,
+                )?,
+            };
+            let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+            let weights = super::load_tensor(
+                entries
+                    .get(&name)
+                    .ok_or_else(|| format!("missing ANE tensor {name}"))?,
+            )?;
+            let identity =
+                AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN)?;
+            let result = AneAttentionOutputCompile::compile_layer(
+                layout,
+                &weights,
+                super::HIDDEN,
+                super::AneProgramCachePolicy::RequireExisting,
+            )
+            .map(drop);
+            drop(weights);
+            Ok((identity, result))
+        })();
+        let compiler_calls = compile_budget_used();
+        let (status, identity, error) = match prepared {
+            Ok((identity, Ok(()))) => ("loaded", Some(identity), None),
+            Ok((identity, Err(error))) => ("failed", Some(identity), Some(error)),
+            Err(error) => ("failed", None, Some(error)),
+        };
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_reload_existing.v1",
+            "status":status,
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":identity.as_ref().map(|value| serde_json::json!({
+                "mil_sha256":value.mil_sha256,
+                "weight_blob_sha256":value.weight_blob_sha256,
+                "input_bytes":value.input_bytes,
+                "output_bytes":value.output_bytes,
+            })),
+            "compiler_calls":compiler_calls,
+            "compiler_call_limit":0,
+            "accelerator_evaluations":0,
+            "external_inputs":1,
+            "external_outputs":1,
+            "driver_journal":journal_path,
+            "error":error,
+            "claim":"Layer-0 exact-cache reload evidence only; no inference, correctness, speed, route, or promotion claim."
+        });
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused reload receipt"),
+        )
+        .expect("preserve fused reload receipt");
+        assert_eq!(
+            compiler_calls, 0,
+            "exact-cache reload must not call the compiler"
+        );
+        assert_eq!(
+            status, "loaded",
+            "fused exact-cache reload failed; inspect preserved receipt and journal"
+        );
+    }
+
+    #[test]
+    #[ignore = "private ANE layer-0 fused attention/output compile-then-reload probe; one compiler call, two loads, zero evaluations"]
+    fn hardware_layer0_fused_attention_output_compile_then_reload() {
+        use rvllm_apple::ane_attention::AneAttentionOutputCompile;
+        use rvllm_apple::ane_linear::compile_budget_used;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        let journal_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").expect("driver journal path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite fused compile-reload receipt"
+        );
+        assert!(
+            !journal_path.exists(),
+            "refusing to append to an old driver journal"
+        );
+        assert_eq!(compile_budget_used(), 0, "probe requires a fresh process");
+
+        let prepared = (|| -> Result<_, String> {
+            let (arch, entries) = super::validated_weights(&model, 1024)?;
+            let shape = super::layer_shape(&arch, 0);
+            let layout = match shape.sliding_window {
+                Some(window) => rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    window,
+                )?,
+                None => rvllm_apple::ane_attention_layout::PackedAttentionLayout::new(
+                    shape.query_heads,
+                    shape.kv_heads,
+                    shape.head_dim,
+                    1024,
+                )?,
+            };
+            let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+            let weights = super::load_tensor(
+                entries
+                    .get(&name)
+                    .ok_or_else(|| format!("missing ANE tensor {name}"))?,
+            )?;
+            let identity =
+                AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN)?;
+            let first = AneAttentionOutputCompile::compile_layer(
+                layout,
+                &weights,
+                super::HIDDEN,
+                super::AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+            )?;
+            let compiler_calls_after_first_load = compile_budget_used();
+            drop(first);
+            let second = AneAttentionOutputCompile::compile_layer(
+                layout,
+                &weights,
+                super::HIDDEN,
+                super::AneProgramCachePolicy::RequireExisting,
+            )?;
+            let compiler_calls_after_second_load = compile_budget_used();
+            drop(second);
+            drop(weights);
+            Ok((
+                identity,
+                compiler_calls_after_first_load,
+                compiler_calls_after_second_load,
+            ))
+        })();
+        let compiler_calls = compile_budget_used();
+        let (status, identity, after_first, after_second, error) = match prepared {
+            Ok((identity, after_first, after_second)) => (
+                "loaded_twice",
+                Some(identity),
+                Some(after_first),
+                Some(after_second),
+                None,
+            ),
+            Err(error) => ("failed", None, None, None, Some(error)),
+        };
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_compile_then_reload.v1",
+            "status":status,
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":identity.as_ref().map(|value| serde_json::json!({
+                "mil_sha256":value.mil_sha256,
+                "weight_blob_sha256":value.weight_blob_sha256,
+                "input_bytes":value.input_bytes,
+                "output_bytes":value.output_bytes,
+            })),
+            "compiler_calls_after_first_load":after_first,
+            "compiler_calls_after_second_load":after_second,
+            "compiler_calls":compiler_calls,
+            "compiler_call_limit":1,
+            "loads":2,
+            "accelerator_evaluations":0,
+            "external_inputs":1,
+            "external_outputs":1,
+            "driver_journal":journal_path,
+            "error":error,
+            "claim":"Layer-0 same-client compile/reload evidence only; no inference, correctness, speed, route, cross-process persistence, or promotion claim."
+        });
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused compile-reload receipt"),
+        )
+        .expect("preserve fused compile-reload receipt");
+        assert_eq!(
+            compiler_calls, 1,
+            "second load must reuse the compiled graph"
+        );
+        assert_eq!(
+            after_first,
+            Some(1),
+            "first load must consume the single compiler call"
+        );
+        assert_eq!(
+            after_second,
+            Some(1),
+            "second load must not call the compiler"
+        );
+        assert_eq!(
+            status, "loaded_twice",
+            "fused same-client reload failed; inspect preserved receipt and journal"
+        );
+    }
+
+    #[test]
+    #[ignore = "private ANE corrected fused attention/output real-weight oracle; one compile and twelve bounded evaluations"]
+    fn hardware_layer0_fused_attention_output_real_weight_oracle() {
+        use rvllm_apple::ane_attention::AneAttentionOutputCompile;
+        use rvllm_apple::ane_linear::compile_budget_used;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite oracle receipt"
+        );
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        assert_eq!(compile_budget_used(), 0, "oracle requires a fresh process");
+
+        let (arch, entries) = super::validated_weights(&model, 1024).unwrap();
+        let shape = super::layer_shape(&arch, 0);
+        let layout = rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+            shape.query_heads,
+            shape.kv_heads,
+            shape.head_dim,
+            shape.sliding_window.unwrap(),
+        )
+        .unwrap();
+        let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+        let weights = super::load_tensor(entries.get(&name).unwrap()).unwrap();
+        let identity =
+            AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN).unwrap();
+
+        // Every token has the same V. Attention therefore has an exact,
+        // score-independent result at every tested mask/ring boundary: each
+        // query head receives the V row of its KV head. This makes head/group
+        // flattening and the real checkpoint projection independently visible.
+        let kv_value: Vec<f16> = (0..layout.kv_width())
+            .map(|i| f16::from_f32(((i * 17 + 5) % 127) as f32 / 1024.0 - 0.0625))
+            .collect();
+        let mut attended = vec![f16::ZERO; layout.query_width()];
+        for kv_head in 0..layout.kv_heads() {
+            for group in 0..layout.groups() {
+                let head = kv_head * layout.groups() + group;
+                let src = kv_head * layout.head_dim();
+                let dst = head * layout.head_dim();
+                attended[dst..dst + layout.head_dim()]
+                    .copy_from_slice(&kv_value[src..src + layout.head_dim()]);
+            }
+        }
+        let expected: Vec<f32> = weights
+            .chunks_exact(layout.query_width())
+            .map(|row| {
+                row.iter()
+                    .zip(&attended)
+                    .map(|(weight, value)| weight.to_f32() * value.to_f32())
+                    .sum()
+            })
+            .collect();
+        assert_eq!(expected.len(), super::HIDDEN);
+        assert!(expected.iter().all(|value| value.is_finite()));
+
+        let program = AneAttentionOutputCompile::compile_layer(
+            layout,
+            &weights,
+            super::HIDDEN,
+            super::AneProgramCachePolicy::ReuseOrCompileUpTo(1),
+        )
+        .unwrap();
+        let mut request = program.create_request().unwrap();
+        let query = vec![f16::ZERO; layout.query_width()];
+        let mut encoded_query = vec![0; query.len() * 2];
+        layout.encode_query(&query, &mut encoded_query).unwrap();
+        let mut mask = vec![0; layout.capacity() * 2];
+        let mut cases = Vec::new();
+        let mut violations = 0_usize;
+        let mut evaluations = 0_usize;
+        let guard = 64_usize;
+        for tokens in [1_usize, 31, 32, 33, 1024, 1025] {
+            let keys = vec![f16::ZERO; tokens * layout.kv_width()];
+            let values: Vec<_> = (0..tokens).flat_map(|_| kv_value.iter().copied()).collect();
+            let packed = layout.import_cache(&keys, &values, tokens).unwrap();
+            let mut guarded = vec![0xa5_u8; guard + packed.len() + guard];
+            let input = &mut guarded[guard..guard + packed.len()];
+            input.copy_from_slice(&packed);
+            for (row, data) in input
+                .chunks_exact_mut(layout.row_bytes())
+                .zip(encoded_query.chunks_exact(layout.groups() * 2))
+            {
+                row[..data.len()].copy_from_slice(data);
+            }
+            layout.encode_mask(tokens, &mut mask).unwrap();
+            let mask_offset = layout.mask_offset();
+            input[mask_offset..mask_offset + mask.len()].copy_from_slice(&mask);
+
+            let mut repeat_outputs = Vec::new();
+            let mut maximum_absolute_error = 0.0_f32;
+            for _ in 0..2 {
+                let mut actual = vec![f16::ZERO; super::HIDDEN];
+                request.evaluate_packed(input, &mut actual).unwrap();
+                evaluations += 1;
+                for (actual, expected) in actual.iter().zip(&expected) {
+                    let error = (actual.to_f32() - expected).abs();
+                    let tolerance = 0.002 + 0.01 * expected.abs();
+                    if !actual.is_finite() || error > tolerance {
+                        violations += 1;
+                    }
+                    maximum_absolute_error = maximum_absolute_error.max(error);
+                }
+                repeat_outputs.push(actual);
+            }
+            let repeated_bits_identical = repeat_outputs[0]
+                .iter()
+                .zip(&repeat_outputs[1])
+                .all(|(first, second)| first.to_bits() == second.to_bits());
+            if !repeated_bits_identical {
+                violations += 1;
+            }
+            let guards_unchanged = guarded[..guard].iter().all(|&byte| byte == 0xa5)
+                && guarded[guard + packed.len()..]
+                    .iter()
+                    .all(|&byte| byte == 0xa5);
+            if !guards_unchanged {
+                violations += 1;
+            }
+            cases.push(serde_json::json!({
+                "tokens":tokens,
+                "maximum_absolute_error":maximum_absolute_error,
+                "repeated_output_bits_identical":repeated_bits_identical,
+                "input_guards_unchanged":guards_unchanged,
+            }));
+        }
+        drop(request);
+        drop(program);
+        let compiler_calls = compile_budget_used();
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_real_weight_oracle.v1",
+            "status":if violations == 0 { "passed" } else { "failed" },
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":{
+                "mil_sha256":identity.mil_sha256,
+                "weight_blob_sha256":identity.weight_blob_sha256,
+                "input_bytes":identity.input_bytes,
+                "output_bytes":identity.output_bytes,
+            },
+            "compiler_calls":compiler_calls,
+            "compiler_call_limit":1,
+            "accelerator_evaluations":evaluations,
+            "external_inputs":1,
+            "external_outputs":1,
+            "tested_tokens":[1,31,32,33,1024,1025],
+            "cases":cases,
+            "violations":violations,
+            "tolerance":"0.002 + 0.01 * abs(independent_fp32_projection_reference)",
+            "claim":"Corrected layer-0 fused attention/output component oracle only; constant-V construction makes the attention result independent of scores and exposes head/group flattening. No timing, full-route, checkpoint-quality, or promotion claim."
+        });
+        std::fs::write(
+            receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused oracle receipt"),
+        )
+        .expect("preserve fused oracle receipt");
+        assert!(
+            compiler_calls <= 1,
+            "oracle may reuse the exact cached graph but must never compile more than once"
+        );
+        assert_eq!(evaluations, 12);
+        assert_eq!(violations, 0, "inspect preserved fused oracle receipt");
+    }
+
+    #[test]
+    #[ignore = "cached-only ANE fused attention/output timing; 12 alternating arms, zero compiler calls"]
+    fn hardware_layer0_fused_attention_output_abba_timing() {
+        use rvllm_apple::ane_attention::{AneAttentionOutputCompile, AneAttentionProgram};
+        use rvllm_apple::ane_linear::{compile_budget_used, AneLinear};
+        use std::time::Instant;
+
+        let model = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_GEMMA_MODEL_DIR").expect("model directory required"),
+        );
+        let receipt_path = std::path::PathBuf::from(
+            std::env::var_os("RVLLM_ANE_FUSED_ATTENTION_OUTPUT_RECEIPT")
+                .expect("receipt path required"),
+        );
+        assert!(
+            !receipt_path.exists(),
+            "refusing to overwrite timing receipt"
+        );
+        assert!(std::env::var_os("RVLLM_ANE_DIAGNOSTIC_JOURNAL").is_some());
+        assert_eq!(compile_budget_used(), 0, "timing requires a fresh process");
+
+        let (arch, entries) = super::validated_weights(&model, 1024).unwrap();
+        let shape = super::layer_shape(&arch, 0);
+        let layout = rvllm_apple::ane_attention_layout::PackedAttentionLayout::sliding(
+            shape.query_heads,
+            shape.kv_heads,
+            shape.head_dim,
+            shape.sliding_window.unwrap(),
+        )
+        .unwrap();
+        let name = format!("{}.layers.0.self_attn.o_proj.weight", arch.weight_prefix);
+        let weights = super::load_tensor(entries.get(&name).unwrap()).unwrap();
+        let identity =
+            AneAttentionOutputCompile::source_identity(layout, &weights, super::HIDDEN).unwrap();
+        let policy = super::AneProgramCachePolicy::ReuseOrCompileUpTo(3);
+        let mut baseline_attention = AneAttentionProgram::compile_sliding_with_cache_policy(
+            shape.query_heads,
+            shape.kv_heads,
+            shape.head_dim,
+            shape.sliding_window.unwrap(),
+            policy,
+        )
+        .unwrap()
+        .create_request()
+        .unwrap();
+        let mut baseline_output = AneLinear::compile_with_cache_policy(
+            &weights,
+            layout.query_width(),
+            super::HIDDEN,
+            1,
+            policy,
+        )
+        .unwrap();
+        let mut fused =
+            AneAttentionOutputCompile::compile_layer(layout, &weights, super::HIDDEN, policy)
+                .unwrap()
+                .create_request()
+                .unwrap();
+        let setup_compiler_calls = compile_budget_used();
+        assert!(
+            setup_compiler_calls <= 3,
+            "bounded timing setup exceeded its compiler-call budget"
+        );
+
+        let imported = 1024_usize;
+        let keys: Vec<_> = (0..imported * layout.kv_width())
+            .map(|i| f16::from_f32(((i * 13 + 7) % 97) as f32 / 1024.0 - 0.046875))
+            .collect();
+        let values: Vec<_> = (0..keys.len())
+            .map(|i| f16::from_f32(((i * 17 + 5) % 127) as f32 / 1024.0 - 0.0625))
+            .collect();
+        baseline_attention
+            .import_cache(&keys, &values, imported)
+            .unwrap();
+        fused.import_cache(&keys, &values, imported).unwrap();
+        let query: Vec<_> = (0..layout.query_width())
+            .map(|i| f16::from_f32(((i * 19 + 3) % 113) as f32 / 1024.0 - 0.0546875))
+            .collect();
+        let key: Vec<_> = (0..layout.kv_width())
+            .map(|i| f16::from_f32(((i * 23 + 11) % 109) as f32 / 1024.0 - 0.052734375))
+            .collect();
+        let value: Vec<_> = (0..layout.kv_width())
+            .map(|i| f16::from_f32(((i * 29 + 13) % 131) as f32 / 1024.0 - 0.0634765625))
+            .collect();
+        let mut attended = vec![f16::ZERO; layout.query_width()];
+        let mut baseline_projected = vec![f16::ZERO; super::HIDDEN];
+        let mut fused_projected = vec![f16::ZERO; super::HIDDEN];
+
+        // Equal warmup work establishes both persistent request paths before
+        // any measured block. Sliding positions remain comparable thereafter.
+        for _ in 0..8 {
+            baseline_attention
+                .decode(&query, &key, &value, &mut attended)
+                .unwrap();
+            baseline_output
+                .project(&attended, &mut baseline_projected)
+                .unwrap();
+            fused
+                .decode(&query, &key, &value, &mut fused_projected)
+                .unwrap();
+        }
+        let maximum_warmup_difference = baseline_projected
+            .iter()
+            .zip(&fused_projected)
+            .map(|(baseline, fused)| (baseline.to_f32() - fused.to_f32()).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(maximum_warmup_difference < 0.004);
+
+        let repetitions = 64_usize;
+        let reverse_order = std::env::var("RVLLM_ANE_FUSED_TIMING_ORDER")
+            .map(|value| value == "BAAB_FIRST")
+            .unwrap_or(false);
+        let (sequence_name, sequence) = if reverse_order {
+            (
+                "BAAB/ABBA/BAAB",
+                [
+                    "fused", "baseline", "baseline", "fused", // BAAB
+                    "baseline", "fused", "fused", "baseline", // ABBA
+                    "fused", "baseline", "baseline", "fused", // BAAB
+                ],
+            )
+        } else {
+            (
+                "ABBA/BAAB/ABBA",
+                [
+                    "baseline", "fused", "fused", "baseline", // ABBA
+                    "fused", "baseline", "baseline", "fused", // BAAB
+                    "baseline", "fused", "fused", "baseline", // ABBA
+                ],
+            )
+        };
+        let mut observations = Vec::new();
+        let mut baseline_ms = Vec::new();
+        let mut fused_ms = Vec::new();
+        for (index, arm) in sequence.into_iter().enumerate() {
+            let started = Instant::now();
+            match arm {
+                "baseline" => {
+                    for _ in 0..repetitions {
+                        baseline_attention
+                            .decode(&query, &key, &value, &mut attended)
+                            .unwrap();
+                        baseline_output
+                            .project(&attended, &mut baseline_projected)
+                            .unwrap();
+                    }
+                }
+                "fused" => {
+                    for _ in 0..repetitions {
+                        fused
+                            .decode(&query, &key, &value, &mut fused_projected)
+                            .unwrap();
+                    }
+                }
+                _ => unreachable!(),
+            }
+            let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+            let per_token_ms = elapsed_ms / repetitions as f64;
+            if arm == "baseline" {
+                baseline_ms.push(per_token_ms);
+            } else {
+                fused_ms.push(per_token_ms);
+            }
+            observations.push(serde_json::json!({
+                "index":index,
+                "block":index / 4,
+                "order":if reverse_order {
+                    match index / 4 { 1 => "ABBA", _ => "BAAB" }
+                } else {
+                    match index / 4 { 1 => "BAAB", _ => "ABBA" }
+                },
+                "arm":arm,
+                "repetitions":repetitions,
+                "elapsed_ms":elapsed_ms,
+                "milliseconds_per_token":per_token_ms,
+            }));
+        }
+        let median = |values: &mut Vec<f64>| {
+            values.sort_by(f64::total_cmp);
+            (values[(values.len() - 1) / 2] + values[values.len() / 2]) * 0.5
+        };
+        let baseline_median_ms = median(&mut baseline_ms);
+        let fused_median_ms = median(&mut fused_ms);
+        let ratio = baseline_median_ms / fused_median_ms;
+        let baseline_drift = baseline_ms[baseline_ms.len() - 1] / baseline_ms[0] - 1.0;
+        let fused_drift = fused_ms[fused_ms.len() - 1] / fused_ms[0] - 1.0;
+        let compiler_calls = compile_budget_used();
+        let receipt = serde_json::json!({
+            "schema":"rvllm.ane_fused_attention_output_abba_timing.v1",
+            "status":"measured",
+            "layer":0,
+            "model_dir":model,
+            "cache_identity":{
+                "mil_sha256":identity.mil_sha256,
+                "weight_blob_sha256":identity.weight_blob_sha256,
+                "input_bytes":identity.input_bytes,
+                "output_bytes":identity.output_bytes,
+            },
+            "setup_compiler_calls":setup_compiler_calls,
+            "compiler_calls_after_timing":compiler_calls,
+            "setup_compiler_call_limit":3,
+            "compiler_calls_during_timing":compiler_calls - setup_compiler_calls,
+            "warmup_tokens_per_arm":8,
+            "measured_tokens_per_arm":repetitions * 6,
+            "sequence":sequence_name,
+            "baseline_evaluations_per_token":2,
+            "fused_evaluations_per_token":1,
+            "baseline_median_ms_per_token":baseline_median_ms,
+            "fused_median_ms_per_token":fused_median_ms,
+            "median_baseline_over_fused":ratio,
+            "baseline_range_drift_fraction":baseline_drift,
+            "fused_range_drift_fraction":fused_drift,
+            "maximum_warmup_output_difference":maximum_warmup_difference,
+            "observations":observations,
+            "claim":"Layer-0 component timing only. Both arms use persistent KV surfaces and incremental newest-Q/K/V/mask writes. Baseline includes attention evaluation/read plus output-projection write/evaluation/read; fused includes one evaluation/read. No full-route or promotion claim."
+        });
+        std::fs::write(
+            receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("serialize fused timing receipt"),
+        )
+        .expect("preserve fused timing receipt");
+        assert_eq!(
+            compiler_calls, setup_compiler_calls,
+            "no compiler call is permitted during warmup or timing"
+        );
+        assert_eq!(baseline_attention.tokens_seen(), fused.tokens_seen());
+    }
+
     #[test]
     fn interleaved_is_cached_only_and_does_not_change_projection_precision() {
         let plan = super::AneWeightPlan::StaticInt8InterleavedFfnCached;

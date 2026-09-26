@@ -6,6 +6,8 @@ use rvllm_apple::{
 use rvllm_core::{AppleCtx, AppleError, BlockId, Result, RvllmError, TokenId};
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use std::cell::Cell;
+#[cfg(feature = "metal-stage-instrumentation")]
+use std::cell::RefCell;
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use std::cmp::max;
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -109,6 +111,11 @@ use objc2_metal::{
 use rvllm_apple::RolloutBucket;
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use rvllm_apple_metal::arena::{MetalBufferArena, MetalRegion};
+#[cfg(all(
+    feature = "metal-stage-instrumentation",
+    any(target_os = "macos", target_os = "ios")
+))]
+use rvllm_apple_metal::stage_instrumentation::{MetalStage, MetalStageProfiler};
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 use rvllm_apple_metal::{
     context::MetalContext,
@@ -451,6 +458,8 @@ struct MetalProbePerfCounters {
     last_step_cpu_wall_ns: Cell<u64>,
     last_step_command_buffer_wait_ns: Cell<u64>,
     last_step_gpu_execution_ns: Cell<Option<u64>>,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    last_stage_timing_receipt: RefCell<Option<serde_json::Value>>,
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -479,6 +488,8 @@ impl MetalProbePerfCounters {
         self.last_step_cpu_wall_ns.set(0);
         self.last_step_command_buffer_wait_ns.set(0);
         self.last_step_gpu_execution_ns.set(None);
+        #[cfg(feature = "metal-stage-instrumentation")]
+        self.last_stage_timing_receipt.borrow_mut().take();
     }
 
     fn snapshot(&self) -> MetalProbePerfStats {
@@ -1378,6 +1389,8 @@ struct ModelGpuSubmission {
     wall_start: Instant,
     num_tokens: usize,
     is_decode: bool,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    stage_profiler: MetalStageProfiler,
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -1444,6 +1457,19 @@ impl ModelGpuSubmission {
                 && gpu_end > gpu_start)
                 .then(|| ((gpu_end - gpu_start) * 1e9) as u64),
         );
+        #[cfg(feature = "metal-stage-instrumentation")]
+        {
+            let receipt = unsafe { self.stage_profiler.receipt() }.map_err(|_| {
+                RvllmError::apple(
+                    AppleError::FeatureNotAvailable {
+                        backend: "model-metal-backend",
+                        op: "resolve_stage_timing",
+                    },
+                    model_ctx("resolve_stage_timing"),
+                )
+            })?;
+            *perf.last_stage_timing_receipt.borrow_mut() = Some(receipt);
+        }
 
         let outputs = match self.output {
             ModelGpuOutput::Prefill => Vec::new(),
@@ -1915,6 +1941,11 @@ impl ModelMetalBackend {
     #[must_use]
     pub fn probe_perf_stats(&self) -> MetalProbePerfStats {
         self.perf.snapshot()
+    }
+
+    #[cfg(feature = "metal-stage-instrumentation")]
+    pub fn last_stage_timing_receipt(&self) -> Option<serde_json::Value> {
+        self.perf.last_stage_timing_receipt.borrow().clone()
     }
 
     /// Encoded research dispatches, not proof of GPU completion or accuracy.
@@ -2647,11 +2678,13 @@ impl ModelMetalBackend {
                     model_ctx("prepare"),
                 ));
             }
-            let load_plan = rvllm_apple_metal::gemma4_model::MetalModelLoadPlan::new(
-                &ctx,
-                &self.model_dir,
-                options.limits,
-            )?;
+            let load_plan =
+                rvllm_apple_metal::gemma4_model::MetalModelLoadPlan::new_with_research_candidate(
+                    &ctx,
+                    &self.model_dir,
+                    options.limits,
+                    options.kernels.research,
+                )?;
             let memory_report = *load_plan.memory_report();
             let mut arena = MetalBufferArena::new(ctx.device(), load_plan.arena_bytes())?;
             let state = load_plan.load(&ctx, &mut arena, float_type)?;
@@ -2659,38 +2692,42 @@ impl ModelMetalBackend {
         } else {
             let (arena_bytes, memory_report) = match self.low_bit_residency_policy {
             MetalLowBitResidencyPolicy::HybridFallback => {
-                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_additional_weights(
+                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_additional_weights_and_research(
                     &ctx,
                     &self.model_dir,
                     additional_weight_bytes,
+                    self.kernel_options.research,
                 )?
             }
             MetalLowBitResidencyPolicy::ReplaceNative => {
-                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_low_bit_replacements(
+                Gemma4MetalState::required_probe_model_arena_bytes_for_device_with_low_bit_replacements_and_research(
                     &ctx,
                     &self.model_dir,
                     &low_bit_replacements,
+                    self.kernel_options.research,
                 )?
             }
         };
             let mut arena = MetalBufferArena::new(ctx.device(), arena_bytes)?;
             let state = match self.low_bit_residency_policy {
                 MetalLowBitResidencyPolicy::HybridFallback => {
-                    Gemma4MetalState::load_probe_model_with_float_type_and_additional_weights(
+                    Gemma4MetalState::load_probe_model_with_float_type_additional_weights_and_research(
                         &ctx,
                         &mut arena,
                         &self.model_dir,
                         float_type,
                         additional_weight_bytes,
+                        self.kernel_options.research,
                     )?
                 }
                 MetalLowBitResidencyPolicy::ReplaceNative => {
-                    Gemma4MetalState::load_probe_model_with_float_type_and_low_bit_replacements(
+                    Gemma4MetalState::load_probe_model_with_float_type_low_bit_replacements_and_research(
                         &ctx,
                         &mut arena,
                         &self.model_dir,
                         float_type,
                         &low_bit_replacements,
+                        self.kernel_options.research,
                     )?
                 }
             };
@@ -2751,6 +2788,7 @@ impl ModelMetalBackend {
                 })?;
                 Ok(MetalLowBitWeightReplacement {
                     tensor_name: tensor.tensor_name.clone(),
+                    role: tensor.role,
                     format: tensor.format,
                     shape: [tensor.shape[0] as usize, tensor.shape[1] as usize],
                     packed_values_bytes: values,
@@ -2829,12 +2867,35 @@ impl ModelMetalBackend {
             let layer_index = state
                 .layers
                 .iter()
-                .position(|layer| layer.down_proj_name == replacement.tensor_name)
+                .position(|layer| match replacement.role {
+                    rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                        layer.q_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::KeyProjection => {
+                        layer.k_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                        layer.v_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                        layer.o_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                        layer.gate_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                        layer.up_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                        layer.down_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::LmHead => false,
+                })
                 .ok_or_else(|| {
                     RvllmError::apple(
                         AppleError::InvalidWeightBlob {
                             reason:
-                                "low-bit tensor does not match a prepared dense down projection",
+                                "low-bit tensor does not match its prepared dense projection role",
                         },
                         model_ctx("prepare_low_bit_weights"),
                     )
@@ -2848,22 +2909,51 @@ impl ModelMetalBackend {
                     model_ctx("prepare_low_bit_weights"),
                 ));
             }
-            let half_bytes = std::mem::size_of::<f16>();
-            let intermediate = layer
-                .gate_up
-                .size
-                .checked_div(2)
-                .and_then(|elements| elements.checked_div(half_bytes))
-                .and_then(|elements| elements.checked_div(state.hidden_size))
+            let intermediate = replacements
+                .iter()
+                .find(|candidate| {
+                    candidate.role == rvllm_apple::AppleLowBitTensorRole::DenseDownProjection
+                        && candidate.tensor_name == layer.down_proj_name
+                })
+                .map(|candidate| candidate.shape[1])
+                .or_else(|| {
+                    layer.down_proj.as_ref().and_then(|region| {
+                        region
+                            .size
+                            .checked_div(std::mem::size_of::<f16>())
+                            .and_then(|elements| elements.checked_div(state.hidden_size))
+                    })
+                })
                 .ok_or_else(|| {
                     RvllmError::apple(
                         AppleError::InvalidWeightBlob {
-                            reason: "prepared dense FFN shape is invalid",
+                            reason: "prepared dense FFN intermediate size is unavailable",
                         },
                         model_ctx("prepare_low_bit_weights"),
                     )
                 })?;
-            let expected_shape = [state.hidden_size, intermediate];
+            let expected_shape = match replacement.role {
+                rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                    [layer.dims.q_dim, state.hidden_size]
+                }
+                rvllm_apple::AppleLowBitTensorRole::KeyProjection
+                | rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                    [layer.dims.kv_dim, state.hidden_size]
+                }
+                rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                    [state.hidden_size, layer.dims.q_dim]
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseGateProjection
+                | rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                    [intermediate, state.hidden_size]
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                    [state.hidden_size, intermediate]
+                }
+                rvllm_apple::AppleLowBitTensorRole::LmHead => {
+                    unreachable!("LM head rejected above")
+                }
+            };
             if replacement.shape != expected_shape
                 || tensor.shape
                     != [
@@ -2887,7 +2977,8 @@ impl ModelMetalBackend {
             {
                 return Err(RvllmError::apple(
                     AppleError::InvalidWeightBlob {
-                        reason: "low-bit tensor shape does not match prepared dense FFN",
+                        reason:
+                            "low-bit tensor shape does not match prepared dense projection role",
                     },
                     model_ctx("prepare_low_bit_weights"),
                 ));
@@ -2895,13 +2986,19 @@ impl ModelMetalBackend {
 
             let values_len = replacement.packed_values_bytes;
             let values = arena.region(
-                &format!("metal_low_bit_layer_{layer_index}_packed_values"),
+                &format!(
+                    "metal_low_bit_layer_{layer_index}_{}_packed_values",
+                    replacement.role.report_name()
+                ),
                 values_len,
                 16,
             )?;
             let scale_bytes = replacement.scales_bytes;
             let scales = arena.region(
-                &format!("metal_low_bit_layer_{layer_index}_scales"),
+                &format!(
+                    "metal_low_bit_layer_{layer_index}_{}_scales",
+                    replacement.role.report_name()
+                ),
                 scale_bytes,
                 16,
             )?;
@@ -2929,7 +3026,8 @@ impl ModelMetalBackend {
                         )
                     })?;
             }
-            let projection = MetalLowBitProjectionOffsets::new(
+            let projection = MetalLowBitProjectionOffsets::new_for_role(
+                replacement.role,
                 replacement.format,
                 replacement.shape[0],
                 replacement.shape[1],
@@ -2946,13 +3044,62 @@ impl ModelMetalBackend {
                     model_ctx("prepare_low_bit_weights"),
                 )
             })?;
-            state.layers[layer_index].low_bit_down_proj = Some(projection);
+            let layer = &mut state.layers[layer_index];
+            match replacement.role {
+                rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                    layer.low_bit_q_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::KeyProjection => {
+                    layer.low_bit_k_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                    layer.low_bit_v_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                    layer.low_bit_o_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                    layer.low_bit_gate_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                    layer.low_bit_up_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                    layer.low_bit_down_proj = Some(projection)
+                }
+                rvllm_apple::AppleLowBitTensorRole::LmHead => {
+                    unreachable!("LM head rejected above")
+                }
+            }
         }
         for replacement in replacements {
             let layer = state
                 .layers
                 .iter()
-                .find(|layer| layer.down_proj_name == replacement.tensor_name)
+                .find(|layer| match replacement.role {
+                    rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                        layer.q_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::KeyProjection => {
+                        layer.k_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                        layer.v_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                        layer.o_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                        layer.gate_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                        layer.up_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                        layer.down_proj_name == replacement.tensor_name
+                    }
+                    rvllm_apple::AppleLowBitTensorRole::LmHead => false,
+                })
                 .ok_or_else(|| {
                     RvllmError::apple(
                         AppleError::InvalidWeightBlob {
@@ -2961,8 +3108,31 @@ impl ModelMetalBackend {
                         model_ctx("prepare_low_bit_weights"),
                     )
                 })?;
-            if layer.low_bit_down_proj.is_none()
-                || (self.low_bit_residency_policy == MetalLowBitResidencyPolicy::ReplaceNative
+            let installed = match replacement.role {
+                rvllm_apple::AppleLowBitTensorRole::QueryProjection => {
+                    layer.low_bit_q_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::KeyProjection => layer.low_bit_k_proj.is_some(),
+                rvllm_apple::AppleLowBitTensorRole::ValueProjection => {
+                    layer.low_bit_v_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::OutputProjection => {
+                    layer.low_bit_o_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseGateProjection => {
+                    layer.low_bit_gate_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseUpProjection => {
+                    layer.low_bit_up_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::DenseDownProjection => {
+                    layer.low_bit_down_proj.is_some()
+                }
+                rvllm_apple::AppleLowBitTensorRole::LmHead => false,
+            };
+            if !installed
+                || (replacement.role == rvllm_apple::AppleLowBitTensorRole::DenseDownProjection
+                    && self.low_bit_residency_policy == MetalLowBitResidencyPolicy::ReplaceNative
                     && layer.down_proj.is_some())
             {
                 return Err(RvllmError::apple(
@@ -3701,6 +3871,9 @@ impl ModelMetalBackend {
     fn enqueue_probe_layers(
         &self,
         external_cmd_buf: Option<&ProtocolObject<dyn MTLCommandBuffer>>,
+        #[cfg(feature = "metal-stage-instrumentation")] mut stage_profiler: Option<
+            &mut MetalStageProfiler,
+        >,
         state: &Gemma4MetalState,
         num_tokens: usize,
         phase: MetalPhase,
@@ -3814,7 +3987,14 @@ impl ModelMetalBackend {
             }
 
             let hidden = state.hidden_size;
-            let intermediate = one.gate_up.size / 2 / half_bytes / hidden;
+            // Replacement residency deliberately omits the native fused
+            // gate/up allocation. Preserve the authenticated logical shape
+            // from the low-bit down descriptor instead of inferring zero from
+            // that absent storage.
+            let intermediate = one.low_bit_down_proj.map_or_else(
+                || one.gate_up.size / 2 / half_bytes / hidden,
+                |projection| projection.shape()[1] as usize,
+            );
             let down_proj_offset = match (one.down_proj.as_ref(), one.low_bit_down_proj.is_some()) {
                 (Some(native), false) => Some(native.offset),
                 (_, true) => None,
@@ -3870,6 +4050,12 @@ impl ModelMetalBackend {
                 layer_scalar_dim: one.layer_scalar_dim,
                 gate_up_offset: one.gate_up.offset,
                 down_proj_offset,
+                low_bit_q_proj: one.low_bit_q_proj,
+                low_bit_k_proj: one.low_bit_k_proj,
+                low_bit_v_proj: one.low_bit_v_proj,
+                low_bit_o_proj: one.low_bit_o_proj,
+                low_bit_gate_proj: one.low_bit_gate_proj,
+                low_bit_up_proj: one.low_bit_up_proj,
                 low_bit_down_proj: one.low_bit_down_proj,
                 moe: one.moe.as_ref().map(|moe| MetalMoeWeights {
                     router_proj_offset: moe.router_proj.offset,
@@ -3903,6 +4089,10 @@ impl ModelMetalBackend {
                 k_offset: one.k.offset,
                 v_offset: one.v.offset,
                 attn_out: one.attn_out.offset,
+                global_decode_partials: one
+                    .global_decode_partials
+                    .as_ref()
+                    .map(|region| region.offset),
                 gate_up_out: one.gate_up_out.offset,
                 activated: one.activated.offset,
                 mlp_out: one.mlp_out.offset,
@@ -4007,6 +4197,8 @@ impl ModelMetalBackend {
                         attention_kv_cache_k_offset,
                         attention_kv_cache_v_offset,
                         shared_kv_debug_skip,
+                        #[cfg(feature = "metal-stage-instrumentation")]
+                        stage_profiler.as_deref_mut(),
                     )?;
                 } else {
                     metal_forward_layer(
@@ -4217,7 +4409,26 @@ impl ModelMetalBackend {
         rounded_gate_encoder_fused: bool,
     ) -> u64 {
         let mut count = 10;
-        if !(weights.q_norm_offset.is_some() && weights.k_norm_offset.is_some()) {
+        let low_bit_qkv = weights.low_bit_q_proj.is_some()
+            && weights.low_bit_k_proj.is_some()
+            && weights.low_bit_v_proj.is_some();
+        let low_bit_gate_up =
+            weights.low_bit_gate_proj.is_some() && weights.low_bit_up_proj.is_some();
+        if low_bit_qkv {
+            if debug_skip.skip_kv_projection {
+                // Native Q projection+norm is one fused encoder; low-bit Q is
+                // a projection followed by standalone normalization.
+                count += weights.q_norm_offset.is_some() as u64;
+            } else {
+                // Three projections replace one native QKV projection, then a
+                // split and standalone per-head norms replace fused handling.
+                count += 3;
+                count += weights.q_norm_offset.is_some() as u64;
+                count += weights.k_norm_offset.is_some() as u64;
+                // V always receives either learned or unit headwise RMSNorm.
+                count += 1;
+            }
+        } else if !(weights.q_norm_offset.is_some() && weights.k_norm_offset.is_some()) {
             count += weights.q_norm_offset.is_some() as u64;
             count += weights.k_norm_offset.is_some() as u64;
             count += weights.v_norm_offset.is_some() as u64;
@@ -4247,7 +4458,12 @@ impl ModelMetalBackend {
                 .saturating_sub(1)
         };
         if weights.post_attn_norm_offset.is_some() {
-            count += projection_norm_bonus(dims.hidden, dims.num_heads * dims.head_dim);
+            if weights.low_bit_o_proj.is_some() {
+                // Low-bit projection and RMSNorm are always separate.
+                count += 1;
+            } else {
+                count += projection_norm_bonus(dims.hidden, dims.num_heads * dims.head_dim);
+            }
         }
         if weights.moe.is_some() || weights.post_ff_norm_offset.is_some() {
             count += projection_norm_bonus(dims.hidden, dims.intermediate);
@@ -4260,6 +4476,7 @@ impl ModelMetalBackend {
             count += projection_norm_bonus(dims.hidden, dims.ple_dim);
         }
         if !trace_enabled
+            && !low_bit_qkv
             && !debug_skip.skip_kv_projection
             && !debug_skip.skip_local_kv_cache_write
             && weights.q_norm_offset.is_some()
@@ -4269,9 +4486,12 @@ impl ModelMetalBackend {
             count = count.saturating_sub(2);
             count += u64::from(qkv_prefill_projection_eligible);
         }
+        // Separate low-bit gate and up projections replace one native fused
+        // gate-up projection encoder.
+        count += u64::from(low_bit_gate_up);
         // The candidate replaces two encoders with one. Its predicate includes
         // live PSO limits and buffer bounds, not merely the requested selector.
-        count.saturating_sub(u64::from(rounded_gate_encoder_fused))
+        count.saturating_sub(u64::from(rounded_gate_encoder_fused && !low_bit_gate_up))
     }
 
     fn encode_prefill_first_token(
@@ -4417,12 +4637,33 @@ impl ModelMetalBackend {
             let cmd_buf = queue.commandBuffer().ok_or_else(|| {
                 RvllmError::apple(AppleError::MetalUnavailable, model_ctx("launch_prefill"))
             })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            let mut stage_profiler =
+                MetalStageProfiler::new(ctx.device(), state.num_layers * 7 + 2).map_err(|_| {
+                    RvllmError::apple(
+                        AppleError::FeatureNotAvailable {
+                            backend: "model-metal-backend",
+                            op: "create_stage_timing",
+                        },
+                        model_ctx("launch_prefill"),
+                    )
+                })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.begin(&cmd_buf, MetalStage::Embedding)
+            };
             self.encode_embedding_gather(&cmd_buf, state, num_tokens)?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.end(&cmd_buf)
+            };
             self.perf.add_embedding_encoders(1);
             let ple_encoders = self.encode_ple_inputs(&cmd_buf, state, num_tokens)?;
             self.perf.add_ple_encoders(ple_encoders);
             self.enqueue_probe_layers(
                 Some(&cmd_buf),
+                #[cfg(feature = "metal-stage-instrumentation")]
+                Some(&mut stage_profiler),
                 state,
                 num_tokens,
                 MetalPhase::Prefill {
@@ -4432,7 +4673,15 @@ impl ModelMetalBackend {
                 "launch_prefill",
             )?;
             let output = if sample_first_token {
+                #[cfg(feature = "metal-stage-instrumentation")]
+                unsafe {
+                    stage_profiler.begin(&cmd_buf, MetalStage::LmHead)
+                };
                 self.encode_prefill_first_token(&cmd_buf, state, num_tokens)?;
+                #[cfg(feature = "metal-stage-instrumentation")]
+                unsafe {
+                    stage_profiler.end(&cmd_buf)
+                };
                 ModelGpuOutput::Tokens {
                     req_ids: handoff.req_ids.clone(),
                     sampled: state.sampled.clone(),
@@ -4449,11 +4698,15 @@ impl ModelMetalBackend {
                 wall_start,
                 num_tokens,
                 is_decode: false,
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler,
             }));
         }
         self.enqueue_embedding_gather(state, num_tokens)?;
         self.enqueue_ple_inputs(state, num_tokens)?;
         self.enqueue_probe_layers(
+            None,
+            #[cfg(feature = "metal-stage-instrumentation")]
             None,
             state,
             num_tokens,
@@ -4579,12 +4832,33 @@ impl ModelMetalBackend {
             let cmd_buf = queue.commandBuffer().ok_or_else(|| {
                 RvllmError::apple(AppleError::MetalUnavailable, model_ctx("launch_rollout"))
             })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            let mut stage_profiler =
+                MetalStageProfiler::new(ctx.device(), state.num_layers * 7 + 2).map_err(|_| {
+                    RvllmError::apple(
+                        AppleError::FeatureNotAvailable {
+                            backend: "model-metal-backend",
+                            op: "create_stage_timing",
+                        },
+                        model_ctx("launch_rollout"),
+                    )
+                })?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.begin(&cmd_buf, MetalStage::Embedding)
+            };
             self.encode_embedding_gather(&cmd_buf, state, num_tokens)?;
+            #[cfg(feature = "metal-stage-instrumentation")]
+            unsafe {
+                stage_profiler.end(&cmd_buf)
+            };
             self.perf.add_embedding_encoders(1);
             let ple_encoders = self.encode_ple_inputs(&cmd_buf, state, num_tokens)?;
             self.perf.add_ple_encoders(ple_encoders);
             self.enqueue_probe_layers(
                 Some(&cmd_buf),
+                #[cfg(feature = "metal-stage-instrumentation")]
+                Some(&mut stage_profiler),
                 state,
                 num_tokens,
                 MetalPhase::Decode,
@@ -4611,6 +4885,8 @@ impl ModelMetalBackend {
                 return Ok(ModelLaunchResult::Ready(outputs));
             }
             unsafe {
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler.begin(&cmd_buf, MetalStage::LmHead);
                 metal_encode_finalize_sample(
                     &cmd_buf,
                     pipelines,
@@ -4629,6 +4905,8 @@ impl ModelMetalBackend {
                     state.final_argmax_partial_max.offset,
                     state.final_argmax_partial_idx.offset,
                 )?;
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler.end(&cmd_buf);
             }
             self.perf
                 .add_final_sample_encoders(metal_finalize_sample_encoder_count(
@@ -4648,11 +4926,15 @@ impl ModelMetalBackend {
                 wall_start,
                 num_tokens,
                 is_decode: true,
+                #[cfg(feature = "metal-stage-instrumentation")]
+                stage_profiler,
             }));
         } else {
             self.enqueue_embedding_gather(state, num_tokens)?;
             self.enqueue_ple_inputs(state, num_tokens)?;
             self.enqueue_probe_layers(
+                None,
+                #[cfg(feature = "metal-stage-instrumentation")]
                 None,
                 state,
                 num_tokens,

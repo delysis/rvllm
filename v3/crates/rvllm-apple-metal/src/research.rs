@@ -19,9 +19,125 @@ pub enum MetalResearchCandidate {
     LongMma32x64,
     Mma32Load4,
     RmsnormSimd256,
+    Load4M16N32K64,
+    Load4M16N64K64,
+    Load4M32N32K64,
+    Load4M32N64K32,
+    Load4M32N64K64,
+    Load4M32N64K128,
+    Load4M64N64K64,
+    GlobalD512R8P64T64,
+    GlobalD512R8P64T128,
+    GlobalD512R8P128T64,
+    GlobalD512R8P128T128,
+    GlobalD512R16P64T64,
+    GlobalD512R16P64T128,
+    GlobalD512R16P128T64,
+    GlobalD512R16P128T128,
+    GlobalD512R1P128T32,
+    GlobalD512SplitR8S256T128,
+    GlobalD512SplitMmaR8K32S256T128,
+    GlobalD512SplitCoopKeyR8K8P64T128S32,
+    GlobalD512AtlasR16K16P64T128,
+    GlobalD512AtlasR16K32P64T128,
+    GlobalD512AtlasTileR16K16P64T128,
+    GlobalD512AtlasTileR16K32P64T128,
+    GlobalD512AtlasMmaR16K16P64T128,
+    GlobalD512AtlasMmaR16K32P64T128,
+    GlobalD512AtlasMmaR16K16P128T128,
+    GlobalD512AtlasMmaR8K32P64T128,
+    GlobalD512AtlasMmaR16K16P64T64,
+    GlobalD512AtlasMmaR16K64P64T128,
+    FfnBf16R4Sg2,
+    QmvW4G32R8Sg2,
+    QmvW8G32R8Sg2,
+    GlobalD512ShortR4T128,
+    QmvW4G32R4Sg8K8,
+    QmvW8G32R4Sg8K8,
 }
 
 impl MetalResearchCandidate {
+    /// Explicit decode family, never inferred from a coincidentally matching shape.
+    pub const fn global_decode_tile(self) -> Option<crate::attention_global_decode::DecodeTile> {
+        if matches!(self, Self::GlobalD512ShortR4T128) {
+            return Some(crate::attention_global_decode::SHORT_R4T128);
+        }
+        use crate::attention_global_decode::DecodeTile;
+        let (rows, keys, panel, threads, per_tile_softmax, simd_matrix) = match self {
+            Self::GlobalD512R8P64T64 => (8, 8, 64, 64, false, false),
+            Self::GlobalD512R8P64T128 => (8, 8, 64, 128, false, false),
+            Self::GlobalD512R8P128T64 => (8, 8, 128, 64, false, false),
+            Self::GlobalD512R8P128T128 => (8, 8, 128, 128, false, false),
+            Self::GlobalD512R16P64T64 => (16, 8, 64, 64, false, false),
+            Self::GlobalD512R16P64T128 => (16, 8, 64, 128, false, false),
+            Self::GlobalD512R16P128T64 => (16, 8, 128, 64, false, false),
+            Self::GlobalD512R16P128T128 => (16, 8, 128, 128, false, false),
+            Self::GlobalD512R1P128T32 => (1, 8, 128, 32, false, false),
+            Self::GlobalD512AtlasR16K16P64T128 => (16, 16, 64, 128, false, false),
+            Self::GlobalD512AtlasR16K32P64T128 => (16, 32, 64, 128, false, false),
+            Self::GlobalD512AtlasTileR16K16P64T128 => (16, 16, 64, 128, true, false),
+            Self::GlobalD512AtlasTileR16K32P64T128 => (16, 32, 64, 128, true, false),
+            Self::GlobalD512AtlasMmaR16K16P64T128 => (16, 16, 64, 128, true, true),
+            Self::GlobalD512AtlasMmaR16K32P64T128 => (16, 32, 64, 128, true, true),
+            Self::GlobalD512AtlasMmaR16K16P128T128 => (16, 16, 128, 128, true, true),
+            Self::GlobalD512AtlasMmaR8K32P64T128 => (8, 32, 64, 128, true, true),
+            Self::GlobalD512AtlasMmaR16K16P64T64 => (16, 16, 64, 64, true, true),
+            Self::GlobalD512AtlasMmaR16K64P64T128 => (16, 64, 64, 128, true, true),
+            _ => return None,
+        };
+        Some(DecodeTile {
+            rows,
+            keys,
+            panel,
+            threads,
+            per_tile_softmax,
+            simd_matrix,
+        })
+    }
+
+    pub const fn split_global_decode_tile(
+        self,
+    ) -> Option<crate::attention_global_decode::SplitDecodeTile> {
+        match self {
+            Self::GlobalD512SplitR8S256T128 => {
+                Some(crate::attention_global_decode::SPLIT_R8S256T128)
+            }
+            Self::GlobalD512SplitMmaR8K32S256T128 => {
+                Some(crate::attention_global_decode::SPLIT_MATRIX_R8K32S256T128)
+            }
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32 => {
+                Some(crate::attention_global_decode::SPLIT_COOP_KEY_R8K8P64T128S32)
+            }
+            _ => None,
+        }
+    }
+
+    /// Native-storage decode operator arms in the additive next-round packet.
+    pub const fn decode_round_operator(self) -> bool {
+        matches!(
+            self,
+            Self::FfnBf16R4Sg2
+                | Self::QmvW4G32R8Sg2
+                | Self::QmvW8G32R8Sg2
+                | Self::QmvW4G32R4Sg8K8
+                | Self::QmvW8G32R4Sg8K8
+        )
+    }
+
+    /// These sources have explicit BF16 operands and (for QMV) FP16 scales.
+    /// They must never participate in the generic half -> bfloat rewrite.
+    pub const fn explicit_storage_abi(self) -> bool {
+        matches!(
+            self,
+            Self::FfnBf16R4Sg2
+                | Self::QmvW4G32R8Sg2
+                | Self::QmvW8G32R8Sg2
+                | Self::GlobalD512ShortR4T128
+                | Self::QmvW4G32R4Sg8K8
+                | Self::QmvW8G32R4Sg8K8
+        )
+    }
+
     pub const fn name(self) -> &'static str {
         self.spec().name
     }
@@ -80,6 +196,10 @@ impl Gemma12bResearchShape {
             && (candidate.spec().window_independent
                 || matches!((self.kv_heads, self.head_dim, self.attention_window),
                     (8, 256, 1024) | (1, 512, 0)))
+            && (candidate.global_decode_tile().is_none()
+                && candidate.split_global_decode_tile().is_none()
+                || (self.tokens == 1 && self.kv_heads == 1
+                    && self.head_dim == 512 && self.attention_window == 0))
             && candidate != MetalResearchCandidate::Off
             && (candidate.spec().min_tokens..=candidate.spec().max_tokens).contains(&self.tokens)
     }

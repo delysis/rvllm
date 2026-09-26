@@ -1,0 +1,64 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "mlx-metal-debug-build-v0322-20260924-v2",
+  "purpose": "preparation",
+  "after": [],
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600,
+  "stable_seconds": 5,
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [],
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "mlx_lm.benchmark",
+      "mlx_gemma4_stage_bench.py"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/tools/build_mlx_metal_debug.py",
+      "sha256": "9e49e35458cee469c4ce5dd45c255b5ee5c9b2649d4ea2f5733843da8e58b6d4"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-source-v0.32.2/CMakeLists.txt",
+      "sha256": "609cc1c59996fd33c71a2c1630cec738d3b2aed690ab06407ea78d99d56d7fdc"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-source-v0.32.2/setup.py",
+      "sha256": "61eee16e79eb9512c1ce19c032e1c7722b400b80c3196c87874934e3fb3424da"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/pyproject.toml",
+      "sha256": "120d277fb8e34c388d0696a0be8bb900189344f159a1c66f463521298e2b9b4d"
+    }
+  ],
+  "command": {
+    "executable": {
+      "path": "/Users/george/christian_mystics/venv/bin/python",
+      "sha256": "695fc18cdb9a699c6b1ea88ce4027854782ed704eb34cc3200e6f8380155b6a8"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "tools/build_mlx_metal_debug.py",
+      "--mlx-source",
+      "/Users/george/.cache/rvllm-mlx-source-v0.32.2",
+      "--expected-commit",
+      "1f8e74e3f12f31365464a6867c6579f0e9b29d85",
+      "--target",
+      "/Users/george/.cache/rvllm-mlx-metal-debug-v0.32.2",
+      "--receipt",
+      "/Users/george/.cache/rvllm-mlx-metal-debug-v0.32.2-build.json"
+    ],
+    "env": {}
+  },
+  "validator": null,
+  "kernel_game_submission": null
+}

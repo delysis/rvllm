@@ -54,14 +54,27 @@ impl MetalPlatformCapabilities {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod arena;
+#[cfg(feature = "attention-atlas-research")]
+pub mod attention_atlas;
+pub mod attention_global_decode;
+#[cfg(all(test, target_os = "macos"))]
+mod attention_global_decode_device_tests;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub mod attention_global_decode_metal;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod context;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod gemma4_model;
 pub mod kernels;
 pub mod options;
+pub mod prefill_attention_candidate;
 pub mod research;
 pub mod research_catalog;
+pub mod research_decode;
+#[cfg(all(test, target_os = "macos"))]
+mod research_decode_device_tests;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub mod research_decode_metal;
 pub mod research_evidence;
 pub mod research_next;
 pub mod research_projection;
@@ -69,11 +82,18 @@ pub use options::{MetalKernelOptions, MetalModelLimits};
 pub use research::MetalResearchCandidate;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod layer_forward;
+#[cfg(all(test, target_os = "macos"))]
+mod load4_tile_tests;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod low_bit_metal;
 pub mod memory_budget;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod pipeline;
+#[cfg(all(
+    feature = "metal-stage-instrumentation",
+    any(target_os = "macos", target_os = "ios")
+))]
+pub mod stage_instrumentation;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 mod unavailable;
 #[cfg(any(target_os = "macos", target_os = "ios"))]

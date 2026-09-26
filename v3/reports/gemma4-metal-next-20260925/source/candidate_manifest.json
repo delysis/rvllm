@@ -1,0 +1,50 @@
+{
+  "status": "research_candidates_uncompiled_unmeasured",
+  "target": "Gemma 4 12B dense / Apple Metal decode-first",
+  "candidates": [
+    {
+      "id": "q4-g64-r8-sg2",
+      "entry": "gemma4_qmv_q4_g64_r8_sg2",
+      "threads": 64,
+      "outputs_per_threadgroup": 16,
+      "initial_roles": ["ffn_down"],
+      "quality_gate_required": true,
+      "rationale": "fused affine group-64 dequantization, eight rows/SIMDgroup, two SIMDgroups/TG"
+    },
+    {
+      "id": "q8-g64-r8-sg2",
+      "entry": "gemma4_qmv_q8_g64_r8_sg2",
+      "threads": 64,
+      "outputs_per_threadgroup": 16,
+      "initial_roles": ["output_head"],
+      "quality_gate_required": true,
+      "rationale": "same row-cooperative decode mapping; targets role already showing W8 wins"
+    },
+    {
+      "id": "ffn-gateup-gelu-q4-g64-r4-sg2",
+      "entry": "gemma4_ffn_gateup_gelu_q4_g64_r4_sg2",
+      "threads": 64,
+      "outputs_per_threadgroup": 8,
+      "exact_shape": {"hidden": 3840, "intermediate": 15360, "tokens": 1},
+      "quality_gate_required": true,
+      "rationale": "reuse x across gate/up and eliminate materialized 2I intermediate plus GELU launch"
+    },
+    {
+      "id": "ffn-gateup-gelu-bf16-r4-sg2",
+      "entry": "gemma4_ffn_gateup_gelu_bf16_r4_sg2",
+      "threads": 64,
+      "outputs_per_threadgroup": 8,
+      "exact_shape": {"hidden": 3840, "intermediate": 15360, "tokens": 1},
+      "quality_gate_required": false,
+      "rationale": "isolates fusion benefit without quantization"
+    },
+    {
+      "id": "global-d512-g16-short-unsplit",
+      "entry": "gemma4_global_d512_g16_short_unsplit",
+      "threads": 128,
+      "exact_shape": {"hq": 16, "hkv": 1, "d": 512, "max_live_kv": 512},
+      "integration_status": "prototype_contiguous_kv_needs_paged_adapter",
+      "rationale": "avoid split/merge tax in short-context regime"
+    }
+  ]
+}

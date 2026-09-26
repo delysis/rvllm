@@ -1,0 +1,1642 @@
+//! Offline, explicit queue preparation. No accelerator execution, implicit
+//! submission, shell, environment-based dispatch, winner selection or promotion.
+#![forbid(unsafe_code)]
+use rvllm_apple_metal::{MetalFloatType, MetalKernelOptions, MetalResearchCandidate};
+use serde_json::{json, Value};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+};
+type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+const PREFIX: &str = "RVLLM_METAL_GLOBAL_DECODE_";
+
+fn write(path: &Path, bytes: &[u8]) -> Result {
+    let mut file = std::fs::File::create_new(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+fn json_new(path: &Path, value: &Value) -> Result {
+    write(path, &serde_json::to_vec_pretty(value)?)
+}
+fn json_new_or_identical(path: &Path, value: &Value) -> Result {
+    let bytes = serde_json::to_vec_pretty(value)?;
+    match std::fs::File::create_new(path) {
+        Ok(mut file) => {
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            if read(path)? == *value {
+                Ok(())
+            } else {
+                Err(format!("immutable artifact differs: {}", path.display()).into())
+            }
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+fn read(path: &Path) -> Result<Value> {
+    Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+}
+fn absolute(text: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(text);
+    if !path.is_absolute() {
+        return Err("paths must be absolute".into());
+    }
+    Ok(path)
+}
+fn hash(path: &Path) -> Result<String> {
+    let output = Command::new("/usr/bin/shasum")
+        .args(["-a", "256", "--"])
+        .arg(path)
+        .output()?;
+    if !output.status.success() {
+        return Err("shasum failed".into());
+    }
+    let line = String::from_utf8(output.stdout)?;
+    let value = line.split_whitespace().next().ok_or("no SHA256")?;
+    if value.len() != 64 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("bad SHA256".into());
+    }
+    Ok(value.to_ascii_lowercase())
+}
+fn pin(path: &Path) -> Result<Value> {
+    Ok(json!({"path":path,"sha256":hash(path)?}))
+}
+/// Snapshot a build output before publishing a job that depends on its bytes.
+/// Content-addressed names let independent campaigns share identical binaries
+/// without ever replacing a file that an older manifest has pinned.
+fn snapshot_executable(source: &Path, queue: &Path, role: &str) -> Result<PathBuf> {
+    let source_hash = hash(source)?;
+    let directory = queue.join("executables");
+    std::fs::create_dir_all(&directory)?;
+    let destination = directory.join(format!("{source_hash}-{role}"));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)
+    {
+        Ok(mut output) => {
+            let mut input = std::fs::File::open(source)?;
+            std::io::copy(&mut input, &mut output)?;
+            output.sync_all()?;
+            std::fs::set_permissions(&destination, std::fs::metadata(source)?.permissions())?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.into()),
+    }
+    if hash(source)? != source_hash || hash(&destination)? != source_hash {
+        return Err(format!(
+            "executable snapshot changed or is incomplete: {}",
+            destination.display()
+        )
+        .into());
+    }
+    Ok(destination)
+}
+fn candidates() -> Vec<MetalResearchCandidate> {
+    rvllm_apple_metal::research_catalog::ALL_CANDIDATES
+        .iter()
+        .copied()
+        .filter(|c| {
+            c.global_decode_tile().is_some()
+                || c.split_global_decode_tile().is_some()
+                || c.decode_round_operator()
+        })
+        .collect()
+}
+fn validate_selected(selected: &[String]) -> Result {
+    let candidates = candidates();
+    for (index, name) in selected.iter().enumerate() {
+        if !candidates.iter().any(|candidate| candidate.name() == name)
+            || selected[..index].contains(name)
+        {
+            return Err(format!("unknown or duplicate selected candidate: {name}").into());
+        }
+    }
+    Ok(())
+}
+fn validate_timing_request(length: u32, selected: &[String]) -> Result {
+    if length == 0 {
+        if selected.is_empty()
+            || selected.iter().any(|name| {
+                name.parse::<MetalResearchCandidate>()
+                    .map_or(true, |c| !c.decode_round_operator())
+            })
+        {
+            return Err("projection cells require explicit operator selectors and LENGTH=0".into());
+        }
+        return validate_selected(selected);
+    }
+    if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) {
+        return Err("timing length must be 256, 512, 1024, 2048, or 4096".into());
+    }
+    validate_selected(selected)?;
+    if selected.iter().any(|name| {
+        name.parse::<MetalResearchCandidate>().is_ok_and(|c| {
+            c.decode_round_operator()
+                || (c == MetalResearchCandidate::GlobalD512ShortR4T128 && length > 512)
+        })
+    }) {
+        return Err("requested length is outside the selected candidate contract".into());
+    }
+    Ok(())
+}
+
+fn operator_oracle_identity_matches(candidate: MetalResearchCandidate, identity: &Value) -> bool {
+    if !candidate.decode_round_operator() {
+        return false;
+    }
+    let kernel = candidate.kernels()[0];
+    let (rows, threads, grid) = if candidate == MetalResearchCandidate::FfnBf16R4Sg2 {
+        (8, 64, 1920)
+    } else {
+        let Some(rows) = kernel.qmv_output_rows() else {
+            return false;
+        };
+        if rows == 0 || 3840 % rows != 0 {
+            return false;
+        }
+        (rows, kernel.limits().0, 3840 / rows)
+    };
+    identity["rows"] == rows
+        && identity["keys"] == 1
+        && identity["panel"] == 32
+        && identity["threads"] == threads
+        && identity["grid"] == json!([grid, 1, 1])
+        && identity["kernel"] == kernel.name()
+        && identity["kernels"][0]["threads"] == threads
+}
+fn tool(name: &str) -> Result<PathBuf> {
+    let output = Command::new("/usr/bin/xcrun")
+        .args(["--sdk", "macosx", "--find", name])
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("missing Xcode tool {name}").into());
+    }
+    absolute(String::from_utf8(output.stdout)?.trim())
+}
+fn compile(source: &Path, directory: &Path) -> Result {
+    std::fs::create_dir(directory)?;
+    let source_hash = hash(source)?;
+    let metal = tool("metal")?;
+    let linker = tool("metallib")?;
+    let compiler_pins = json!([
+        pin(Path::new("/usr/bin/xcrun"))?,
+        pin(&metal)?,
+        pin(&linker)?
+    ]);
+    let air = directory.join("kernel.air");
+    let library = directory.join("kernel.metallib");
+    let compile_args = vec![
+        "--sdk".into(),
+        "macosx".into(),
+        "metal".into(),
+        "-std=metal3.1".into(),
+        "-fno-fast-math".into(),
+        "-c".into(),
+        source.to_string_lossy().into_owned(),
+        "-o".into(),
+        air.to_string_lossy().into_owned(),
+    ];
+    let link_args = vec![
+        "--sdk".into(),
+        "macosx".into(),
+        "metallib".into(),
+        air.to_string_lossy().into_owned(),
+        "-o".into(),
+        library.to_string_lossy().into_owned(),
+    ];
+    for (name, args) in [("metal", &compile_args), ("metallib", &link_args)] {
+        let output = Command::new("/usr/bin/xcrun").args(args).output()?;
+        write(&directory.join(format!("{name}.stdout")), &output.stdout)?;
+        write(&directory.join(format!("{name}.stderr")), &output.stderr)?;
+        if !output.status.success() {
+            return Err(format!("{name} failed; preserve logs").into());
+        }
+    }
+    if hash(source)? != source_hash
+        || compiler_pins
+            != json!([
+                pin(Path::new("/usr/bin/xcrun"))?,
+                pin(&metal)?,
+                pin(&linker)?
+            ])
+    {
+        return Err("source/compiler identity changed during compilation".into());
+    }
+    json_new(
+        &directory.join("build.json"),
+        &json!({"schema":"rvllm.global-decode.build.v1",
+        "status":"compiled","source_sha256":source_hash,"metallib_sha256":hash(&library)?,
+        "air_sha256":hash(&air)?,"air_path":air,
+        "flags":["-std=metal3.1","-fno-fast-math"],"compile_argv":compile_args,
+        "link_argv":link_args,"tool_pins":compiler_pins,"native_execution":false}),
+    )
+}
+fn id(config: &Value, candidate: MetalResearchCandidate, suffix: &str) -> Result<String> {
+    let campaign = config["campaign"].as_str().ok_or("campaign missing")?;
+    if let Some(tile) = candidate.global_decode_tile() {
+        if tile.keys != 8 || tile.per_tile_softmax {
+            return Ok(format!(
+                "{campaign}-r{}k{}p{}t{}{}-{suffix}",
+                tile.rows,
+                tile.keys,
+                tile.panel,
+                tile.threads,
+                if tile.simd_matrix {
+                    "-mma"
+                } else if tile.per_tile_softmax {
+                    "-tile"
+                } else {
+                    "-key"
+                }
+            ));
+        }
+        Ok(format!(
+            "{campaign}-r{}p{}t{}-{suffix}",
+            tile.rows, tile.panel, tile.threads
+        ))
+    } else if candidate.decode_round_operator() {
+        Ok(format!(
+            "{campaign}-{}-{suffix}",
+            candidate.name().trim_start_matches("metal-")
+        ))
+    } else {
+        let tile = candidate
+            .split_global_decode_tile()
+            .ok_or("candidate has no global decode identity")?;
+        Ok(if tile.simd_matrix {
+            format!(
+                "{campaign}-split-r{}k{}s{}t{}-mma-{suffix}",
+                tile.rows, tile.keys, tile.partition, tile.threads
+            )
+        } else {
+            format!(
+                "{campaign}-split-r{}s{}t{}-{suffix}",
+                tile.rows, tile.partition, tile.threads
+            )
+        })
+    }
+}
+fn succeeded(queue: &Path, id: &str) -> Result<PathBuf> {
+    let directory = queue.join("results").join(id);
+    let report = read(&directory.join("report.json"))?;
+    if report["status"] != "succeeded" || report["files_unchanged"] != true {
+        return Err(
+            format!("required queue result is not a successful unchanged-input job: {id}").into(),
+        );
+    }
+    Ok(directory)
+}
+#[allow(clippy::too_many_arguments)]
+fn job(
+    config: &Value,
+    root: &Path,
+    job_id: &str,
+    purpose: &str,
+    executable: &Path,
+    args: Vec<String>,
+    env: Value,
+    inputs: Vec<Value>,
+    after: Vec<String>,
+) -> Result {
+    let value = json!({"schema":"rvllm.experiment_job.v1","id":job_id,"purpose":purpose,
+        "command":{"executable":pin(executable)?,"cwd":root,"args":args,"env":env},
+        "inputs":inputs,"after":after,"conditions":config["conditions"],
+        "stable_seconds":0,"max_wait_seconds":7200,"max_run_seconds":3600});
+    json_new_or_identical(&root.join("jobs").join(format!("{job_id}.json")), &value)
+}
+
+fn advancement_id(config: &Value, length: u32) -> Result<String> {
+    Ok(format!(
+        "{}-advance-L{length}",
+        config["campaign"].as_str().ok_or("campaign missing")?
+    ))
+}
+
+fn operator_advancement_id(config: &Value, stage: &str) -> Result<String> {
+    if !matches!(stage, "compile" | "oracle") {
+        return Err("unknown operator advancement stage".into());
+    }
+    Ok(format!(
+        "{}-operator-advance-{stage}",
+        config["campaign"].as_str().ok_or("campaign missing")?
+    ))
+}
+
+fn operator_advancement_job(
+    config: &Value,
+    root: &Path,
+    stage: &str,
+    after: Vec<String>,
+    names: &[String],
+) -> Result<String> {
+    let job_id = operator_advancement_id(config, stage)?;
+    let generator = absolute(
+        config["job_generator"]["path"]
+            .as_str()
+            .ok_or("job generator missing")?,
+    )?;
+    let mut args = vec![
+        "operator-advance".into(),
+        root.to_string_lossy().into_owned(),
+        stage.into(),
+        "{output}".into(),
+    ];
+    args.extend_from_slice(names);
+    job(
+        config,
+        root,
+        &job_id,
+        "preparation",
+        &generator,
+        args,
+        json!({}),
+        vec![pin(&root.join("campaign.json"))?],
+        after,
+    )?;
+    Ok(job_id)
+}
+
+fn advancement_job(
+    config: &Value,
+    root: &Path,
+    length: u32,
+    stage_jobs: &[String],
+    expected: &[String],
+) -> Result<String> {
+    let job_id = advancement_id(config, length)?;
+    let executable = absolute(
+        config["job_generator"]["path"]
+            .as_str()
+            .ok_or("job generator missing")?,
+    )?;
+    let mut args = vec![
+        "advance".into(),
+        root.to_string_lossy().into_owned(),
+        length.to_string(),
+        "{output}".into(),
+    ];
+    args.extend(expected.iter().cloned());
+    job(
+        config,
+        root,
+        &job_id,
+        "preparation",
+        &executable,
+        args,
+        json!({}),
+        vec![pin(&root.join("campaign.json"))?],
+        stage_jobs.to_vec(),
+    )?;
+    Ok(job_id)
+}
+fn source_path(root: &Path, c: MetalResearchCandidate, flavor: &str) -> PathBuf {
+    root.join(format!("{}-{flavor}.metal", c.name()))
+}
+fn prepare(
+    campaign: &str,
+    root: &Path,
+    queue: &Path,
+    test: &Path,
+    conditions: &Path,
+    selected: &[String],
+) -> Result {
+    validate_selected(selected)?;
+    if campaign.is_empty()
+        || campaign.len() > 32
+        || !campaign
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err("campaign ID must be 1..32 ASCII letters/digits/-/_".into());
+    }
+    let policy = read(conditions)?;
+    // The power source is always explicit. Other controls may be intentionally
+    // unconstrained for exploratory campaigns; the queue records every sampled
+    // value so later analysis can stratify rather than waiting for an idealized
+    // host state. Confirmation campaigns should pin all four controls.
+    if !matches!(policy["power_source"].as_str(), Some("ac" | "battery"))
+        || !(policy["low_power_mode"].is_null() || policy["low_power_mode"].is_boolean())
+        || !(policy["pmset_power_mode"].is_null()
+            || matches!(policy["pmset_power_mode"].as_u64(), Some(0..=2)))
+        || !(policy["thermal_state"].is_null()
+            || matches!(policy["thermal_state"].as_u64(), Some(0..=2)))
+    {
+        return Err(
+            "power source must be explicit; optional controls must be null or valid".into(),
+        );
+    }
+    std::fs::create_dir(root)?;
+    std::fs::create_dir(root.join("jobs"))?;
+    let executable = std::env::current_exe()?;
+    let queue_runner = executable
+        .parent()
+        .ok_or("generator has no parent directory")?
+        .join("rvllm_experiment_queue");
+    let retainer = executable
+        .parent()
+        .ok_or("generator has no parent directory")?
+        .join("rvllm-retain-abba");
+    let generator_snapshot = snapshot_executable(&executable, queue, "generator")?;
+    let test_snapshot = snapshot_executable(test, queue, "test")?;
+    let runner_snapshot = snapshot_executable(&queue_runner, queue, "submitter")?;
+    let retainer_snapshot = snapshot_executable(&retainer, queue, "retainer")?;
+    let exploratory = policy["low_power_mode"].is_null()
+        || policy["pmset_power_mode"].is_null()
+        || policy["thermal_state"].is_null();
+    // Legacy implicit campaigns stay unchanged. New arms must be named.
+    let family = candidates()
+        .into_iter()
+        .filter(|c| {
+            if selected.is_empty() {
+                !c.explicit_storage_abi()
+            } else {
+                selected.iter().any(|name| name == c.name())
+            }
+        })
+        .collect::<Vec<_>>();
+    let operator_family = !family.is_empty() && family.iter().all(|c| c.decode_round_operator());
+    let names = family.iter().map(|c| c.name()).collect::<Vec<_>>();
+    let config = json!({"schema":"rvllm.global-decode.campaign.v1","campaign":campaign,
+        "candidate_names":names,
+        "queue":queue,"test_executable":pin(&test_snapshot)?,"job_generator":pin(&generator_snapshot)?,
+        "queue_runner":pin(&runner_snapshot)?,
+        "abba_retainer":pin(&retainer_snapshot)?,"exploratory":exploratory,
+        "conditions":policy,"conditions_input":pin(conditions)?,
+        "screen_length":256,"advancement_lengths":[512,1024,2048],
+        "deferred_confirmation_lengths":[4096],
+        "split_kv":false,"local_prefill":false,
+        "promotion":false,"status":"proposed_unqualified"});
+    json_new(&root.join("campaign.json"), &config)?;
+    let mut all = Vec::new();
+    let metal = tool("metal")?;
+    let linker = tool("metallib")?;
+    for &candidate in &family {
+        let core = rvllm_apple_metal::kernels::kernel_source_with_options(
+            MetalFloatType::Bf16,
+            MetalKernelOptions {
+                research: candidate,
+                ..MetalKernelOptions::default()
+            },
+        );
+        let flavors: &[&str] = if candidate.decode_round_operator() {
+            &["core"]
+        } else {
+            &["core", "oracle"]
+        };
+        for &flavor in flavors {
+            let path = source_path(root, candidate, flavor);
+            let mut bytes = core.as_bytes().to_vec();
+            if flavor == "oracle" {
+                bytes.push(b'\n');
+                bytes.extend_from_slice(include_bytes!(
+                    "../research_shaders/global_decode_oracle.metal"
+                ));
+            }
+            write(&path, &bytes)?;
+            let job_id = id(&config, candidate, &format!("compile-{flavor}"))?;
+            job(
+                &config,
+                root,
+                &job_id,
+                "preparation",
+                &generator_snapshot,
+                vec![
+                    "compile".into(),
+                    path.to_string_lossy().into_owned(),
+                    "{output}/build".into(),
+                ],
+                json!({}),
+                vec![
+                    pin(&path)?,
+                    pin(&root.join("campaign.json"))?,
+                    pin(Path::new("/usr/bin/xcrun"))?,
+                    pin(&metal)?,
+                    pin(&linker)?,
+                ],
+                vec![],
+            )?;
+            all.push(job_id);
+        }
+    }
+    if operator_family {
+        let operator_names = names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        let oracle_ids = family
+            .iter()
+            .map(|&candidate| id(&config, candidate, "oracle"))
+            .collect::<Result<Vec<_>>>()?;
+        operator_advancement_job(&config, root, "oracle", oracle_ids, &operator_names)?;
+        let compile_advance =
+            operator_advancement_job(&config, root, "compile", all.clone(), &operator_names)?;
+        all.push(compile_advance);
+    }
+    json_new(&root.join("compile-jobs.json"), &json!(all))
+}
+fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String]) -> Result {
+    let config_path = root.join("campaign.json");
+    let config = read(&config_path)?;
+    let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
+    let test = absolute(
+        config["test_executable"]["path"]
+            .as_str()
+            .ok_or("test missing")?,
+    )?;
+    if pin(&test)? != config["test_executable"]
+        || pin(&std::env::current_exe()?)? != config["job_generator"]
+    {
+        return Err("test/generator executable identity drift".into());
+    }
+    let retainer = if timing {
+        let path = absolute(
+            config["abba_retainer"]["path"]
+                .as_str()
+                .ok_or("ABBA retainer missing")?,
+        )?;
+        if pin(&path)? != config["abba_retainer"] {
+            return Err("ABBA retainer identity drift".into());
+        }
+        Some(path)
+    } else {
+        None
+    };
+    let timing_length = if timing {
+        Some(length.unwrap_or(256))
+    } else {
+        None
+    };
+    validate_selected(selected)?;
+    if let Some(length) = timing_length {
+        if selected.is_empty()
+            && config["candidate_names"].as_array().is_some_and(|names| {
+                names.iter().any(|name| {
+                    name.as_str()
+                        .and_then(|s| s.parse::<MetalResearchCandidate>().ok())
+                        .is_some_and(MetalResearchCandidate::explicit_storage_abi)
+                })
+            })
+        {
+            return Err("new-round timing requires explicit candidate selection".into());
+        }
+        validate_timing_request(length, selected)?;
+    }
+    if let Some(family) = config["candidate_names"].as_array() {
+        if selected
+            .iter()
+            .any(|name| !family.iter().any(|item| item == name.as_str()))
+        {
+            return Err("candidate was not prepared in this immutable campaign".into());
+        }
+    }
+    let mut all = Vec::new();
+    // Never prune the family from partial results. A failed compile/oracle stops
+    // generation; revised families require a new explicit campaign identity.
+    for candidate in candidates() {
+        if config["candidate_names"]
+            .as_array()
+            .is_some_and(|names| !names.iter().any(|name| name == candidate.name()))
+        {
+            continue;
+        }
+        if !selected.is_empty() && !selected.iter().any(|name| name == candidate.name()) {
+            continue;
+        }
+        // The split oracle validates the production partial+merge entry points
+        // directly and therefore needs the exact core source.  Only the
+        // single-pass oracle uses the appended diagnostic entry point.
+        let flavor = if timing
+            || candidate.split_global_decode_tile().is_some()
+            || candidate.decode_round_operator()
+        {
+            "core"
+        } else {
+            "oracle"
+        };
+        let compile_id = id(&config, candidate, &format!("compile-{flavor}"))?;
+        let built = succeeded(&queue, &compile_id)?.join("build");
+        let source = source_path(root, candidate, flavor);
+        let library = built.join("kernel.metallib");
+        let build_path = built.join("build.json");
+        let build = read(&build_path)?;
+        if build["status"] != "compiled"
+            || build["source_sha256"] != hash(&source)?
+            || build["metallib_sha256"] != hash(&library)?
+        {
+            return Err("compiled identity mismatch".into());
+        }
+        let mut inputs = vec![
+            pin(&source)?,
+            pin(&library)?,
+            pin(&build_path)?,
+            pin(&config_path)?,
+        ];
+        let mut after = vec![compile_id];
+        let mut env = json!({});
+        env[format!("{PREFIX}CANDIDATE")] = json!(candidate.name());
+        env[format!("{PREFIX}SOURCE")] = json!(source);
+        env[format!("{PREFIX}METALLIB")] = json!(library);
+        env[format!("{PREFIX}BUILD_RECEIPT")] = json!(build_path);
+        let split_matrix = candidate
+            .split_global_decode_tile()
+            .is_some_and(|tile| tile.simd_matrix);
+        if timing {
+            inputs.push(pin(&test)?);
+            let oracle_id = id(&config, candidate, "oracle")?;
+            let oracle_path = succeeded(&queue, &oracle_id)?.join(if split_matrix {
+                "native/split-matrix-oracle.json"
+            } else if candidate.split_global_decode_tile().is_some() {
+                "native/split-oracle.json"
+            } else if candidate
+                .global_decode_tile()
+                .is_some_and(|tile| tile.simd_matrix)
+            {
+                "native/matrix-oracle.json"
+            } else {
+                "native/oracle.json"
+            });
+            let oracle = read(&oracle_path)?;
+            let matrix = candidate
+                .global_decode_tile()
+                .is_some_and(|tile| tile.simd_matrix)
+                || split_matrix;
+            let expected_oracle_schema = if candidate.decode_round_operator() {
+                "rvllm.decode-round.oracle.v1"
+            } else if split_matrix {
+                "rvllm.global-decode.split-matrix-oracle.v1"
+            } else if candidate.split_global_decode_tile().is_some() {
+                "rvllm.global-decode.split-oracle.v1"
+            } else if matrix {
+                "rvllm.global-decode.matrix-oracle.v1"
+            } else {
+                "rvllm.global-decode.oracle.v1"
+            };
+            if oracle["schema"] != expected_oracle_schema
+                || oracle["status"] != "passed"
+                || oracle["identity"]["candidate"] != candidate.name()
+                || oracle["identity"]["core_sha256"] != hash(&source)?
+                || oracle["identity"]["test_executable_sha256"]
+                    != config["test_executable"]["sha256"]
+                || (candidate.decode_round_operator()
+                    && !operator_oracle_identity_matches(candidate, &oracle["identity"]))
+                || ((matrix || candidate == MetalResearchCandidate::GlobalD512ShortR4T128)
+                    && (oracle["numerical_contract"]
+                        != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
+                        || oracle["fp64_max_abs_bound"] != 5.0e-4
+                        || oracle["fp64_relative_l2_bound"] != 1.0e-4))
+            {
+                return Err(
+                    "passed native oracle with exact source/executable identity required".into(),
+                );
+            }
+            inputs.push(pin(&oracle_path)?);
+            env[format!("{PREFIX}ORACLE_RECEIPT")] = json!(oracle_path);
+            after.push(oracle_id);
+            for case in oracle["cases"].as_array().ok_or("oracle cases missing")? {
+                let path = absolute(case["bf16_file"].as_str().ok_or("oracle output missing")?)?;
+                if case["bf16_sha256"] != hash(&path)? {
+                    return Err("oracle output changed".into());
+                }
+                inputs.push(pin(&path)?);
+            }
+        }
+        let cells = if timing && candidate.decode_round_operator() {
+            let keys: &[u32] = match candidate {
+                MetalResearchCandidate::FfnBf16R4Sg2 => &[3840],
+                MetalResearchCandidate::QmvW4G32R8Sg2 => &[15360],
+                MetalResearchCandidate::QmvW4G32R4Sg8K8 => &[15360],
+                MetalResearchCandidate::QmvW8G32R8Sg2 => &[4096, 8192],
+                MetalResearchCandidate::QmvW8G32R4Sg8K8 => &[4096, 8192],
+                _ => unreachable!(),
+            };
+            keys.iter()
+                .map(|&k| (timing_length, Some(k)))
+                .collect::<Vec<_>>()
+        } else {
+            vec![(timing_length, None)]
+        };
+        for (length, operator_k) in cells {
+            let suffix = if let Some(k) = operator_k {
+                format!("abba-L0-K{k}")
+            } else {
+                length.map_or("oracle".into(), |n| format!("abba-L{n}"))
+            };
+            if let Some(k) = operator_k {
+                env[format!("{PREFIX}OPERATOR_K")] = json!(k.to_string());
+            }
+            let job_id = id(&config, candidate, &suffix)?;
+            // The existing queue expands {output} in argv ONLY, never in env.
+            // Its exclusive result directory is results/<immutable job ID>.
+            env[format!("{PREFIX}REPORT_DIR")] =
+                json!(queue.join("results").join(&job_id).join("native"));
+            let test_name = if candidate.decode_round_operator() {
+                if timing {
+                    "decode_round_abba"
+                } else {
+                    "decode_round_oracle"
+                }
+            } else if timing && candidate.split_global_decode_tile().is_some() {
+                "global_decode_split_abba_v2"
+            } else if timing {
+                "global_decode_abba"
+            } else if split_matrix {
+                "global_decode_split_matrix_device_oracle"
+            } else if candidate.split_global_decode_tile().is_some() {
+                "global_decode_split_device_oracle"
+            } else if candidate
+                .global_decode_tile()
+                .is_some_and(|tile| tile.simd_matrix)
+            {
+                "global_decode_matrix_device_oracle"
+            } else {
+                "global_decode_device_oracle"
+            };
+            if let Some(n) = length {
+                env[format!("{PREFIX}LENGTH")] = json!(n.to_string());
+            }
+            let mut args = vec![
+                "--ignored".into(),
+                "--exact".into(),
+                format!(
+                    "{}::{test_name}",
+                    if candidate.decode_round_operator() {
+                        "research_decode_device_tests"
+                    } else {
+                        "attention_global_decode_device_tests"
+                    }
+                ),
+                "--test-threads=1".into(),
+                "--nocapture".into(),
+            ];
+            let command = if let Some(retainer) = &retainer {
+                let test_sha = config["test_executable"]["sha256"]
+                    .as_str()
+                    .ok_or("test executable SHA-256 missing")?;
+                args.insert(0, test_sha.into());
+                args.insert(0, test.to_string_lossy().into_owned());
+                retainer
+            } else {
+                &test
+            };
+            job(
+                &config,
+                root,
+                &job_id,
+                if timing && config["exploratory"] == true {
+                    "exploratory_timing"
+                } else if timing {
+                    "timing"
+                } else {
+                    "correctness"
+                },
+                command,
+                args,
+                env.clone(),
+                inputs.clone(),
+                after.clone(),
+            )?;
+            all.push(job_id);
+        }
+    }
+    let output = timing_length.map_or_else(
+        || "oracle-jobs.json".to_owned(),
+        |length| format!("timing-jobs-L{length}.json"),
+    );
+    if let Some(length) = timing_length {
+        let expected = candidates()
+            .into_iter()
+            .filter(|candidate| {
+                (config["candidate_names"].as_array().map_or(true, |names| {
+                    names.iter().any(|name| name == candidate.name())
+                })) && (selected.is_empty() || selected.iter().any(|name| name == candidate.name()))
+            })
+            .map(|candidate| candidate.name().to_owned())
+            .collect::<Vec<_>>();
+        // The additive round has no automatic advancement or promotion path.
+        // L512 is a separate explicit request after reviewing the L256 screen.
+        let next_round = expected.iter().any(|name| {
+            name.parse::<MetalResearchCandidate>()
+                .is_ok_and(MetalResearchCandidate::explicit_storage_abi)
+        });
+        if !next_round {
+            let advance = advancement_job(&config, root, length, &all, &expected)?;
+            all.push(advance);
+        }
+    }
+    json_new_or_identical(&root.join(output), &json!(all))
+}
+
+#[derive(Debug, Clone)]
+struct StageScore {
+    candidate: String,
+    candidate_ms_per_dispatch: f64,
+    partial_ms_per_operation: Option<f64>,
+    merge_ms_per_operation: Option<f64>,
+    control_drift_passed: bool,
+    receipt_path: PathBuf,
+    receipt_sha256: String,
+    queue_report_path: PathBuf,
+    queue_report_sha256: String,
+}
+
+fn sample_work_and_gpu_seconds(sample: &Value, split: bool, arm: &str) -> Result<(u64, f64)> {
+    if !split {
+        return Ok((
+            sample["dispatches"]
+                .as_u64()
+                .ok_or("sample dispatches missing")?,
+            sample["gpu_seconds"]
+                .as_f64()
+                .ok_or("sample GPU time missing")?,
+        ));
+    }
+    let operations = sample["operations"]
+        .as_u64()
+        .ok_or("sample operations missing")?;
+    let partial = sample["partial_gpu_seconds"]
+        .as_f64()
+        .ok_or("sample partial GPU time missing")?;
+    let merge = sample["merge_gpu_seconds"]
+        .as_f64()
+        .ok_or("sample merge GPU time missing")?;
+    let total = sample["total_gpu_seconds"]
+        .as_f64()
+        .ok_or("sample total GPU time missing")?;
+    let candidate_arm = arm == "B";
+    let component_sum = partial + merge;
+    let sum_tolerance = 8.0 * f64::EPSILON * total.abs().max(component_sum.abs()).max(1.0);
+    if sample["partial_dispatches"].as_u64() != Some(if candidate_arm { 100 } else { 0 })
+        || sample["merge_dispatches"].as_u64() != Some(if candidate_arm { 100 } else { 0 })
+        || sample["baseline_dispatches"].as_u64() != Some(if candidate_arm { 0 } else { 100 })
+        || (candidate_arm && (total - component_sum).abs() > sum_tolerance)
+        || (candidate_arm && (partial <= 0.0 || merge <= 0.0))
+        || (!candidate_arm && (partial != 0.0 || merge != 0.0))
+    {
+        return Err("split ABBA component work or total is inconsistent".into());
+    }
+    Ok((operations, total))
+}
+
+fn score_stage_cell(
+    root: &Path,
+    queue: &Path,
+    config: &Value,
+    length: u32,
+    candidate_name: &str,
+) -> Result<StageScore> {
+    let candidate = candidates()
+        .into_iter()
+        .find(|candidate| candidate.name() == candidate_name)
+        .ok_or("unknown advancement candidate")?;
+    let job_id = id(config, candidate, &format!("abba-L{length}"))?;
+    let result = queue.join("results").join(&job_id);
+    let queue_report_path = result.join("report.json");
+    let queue_report = read(&queue_report_path)?;
+    if queue_report["schema"] != "rvllm.experiment_result.v1"
+        || queue_report["id"] != job_id
+        || queue_report["status"] != "succeeded"
+        || queue_report["files_unchanged"] != true
+    {
+        return Err(format!(
+            "stage queue result is not successful and immutable: {candidate_name}"
+        )
+        .into());
+    }
+    let receipt_path = result.join("native/abba.json");
+    let receipt = read(&receipt_path)?;
+    let source = source_path(root, candidate, "core");
+    let compile_id = id(config, candidate, "compile-core")?;
+    let build_dir = succeeded(queue, &compile_id)?.join("build");
+    let library = build_dir.join("kernel.metallib");
+    let build_path = build_dir.join("build.json");
+    let oracle_id = id(config, candidate, "oracle")?;
+    let split = candidate.split_global_decode_tile();
+    let split_matrix = split.is_some_and(|tile| tile.simd_matrix);
+    let matrix = candidate
+        .global_decode_tile()
+        .is_some_and(|tile| tile.simd_matrix)
+        || split_matrix;
+    let oracle_path = succeeded(queue, &oracle_id)?.join(if split_matrix {
+        "native/split-matrix-oracle.json"
+    } else if split.is_some() {
+        "native/split-oracle.json"
+    } else if matrix {
+        "native/matrix-oracle.json"
+    } else {
+        "native/oracle.json"
+    });
+    let oracle = read(&oracle_path)?;
+    let expected_schema = if split.is_some() {
+        "rvllm.global-decode.abba.v2"
+    } else {
+        "rvllm.global-decode.abba.v1"
+    };
+    let expected_oracle_schema = if split_matrix {
+        "rvllm.global-decode.split-matrix-oracle.v1"
+    } else if split.is_some() {
+        "rvllm.global-decode.split-oracle.v1"
+    } else if matrix {
+        "rvllm.global-decode.matrix-oracle.v1"
+    } else {
+        "rvllm.global-decode.oracle.v1"
+    };
+    if receipt["schema"] != expected_schema
+        || receipt["status"] != "collected"
+        || receipt["candidate"] != candidate_name
+        || receipt["length"] != length
+        || receipt["baseline"] != "attention_decode_f16 (BF16 typed)"
+        || receipt["blocks"] != 5
+        || (split.is_none() && receipt["dispatches_per_sample"] != 100)
+        || (split.is_some()
+            && (receipt["operations_per_sample"] != 100
+                || receipt["candidate_dispatches_per_operation"] != 2
+                || receipt["timing_metric"]
+                    != "total_gpu_seconds = partial_gpu_seconds + merge_gpu_seconds"
+                || receipt["conditions_are_observations_only"] != true
+                || receipt["correctness_prerequisite"] != "passed"))
+        || receipt["warmups_per_arm"] != 5
+        || receipt["source_compiles_during_samples"] != 0
+        || receipt["promotion"] != false
+        || receipt["identity"]["candidate"] != candidate_name
+        || receipt["identity"]["oracle_library"] != false
+        || receipt["identity"]["source_sha256"] != hash(&source)?
+        || receipt["identity"]["core_sha256"] != hash(&source)?
+        || receipt["identity"]["metallib_sha256"] != hash(&library)?
+        || receipt["identity"]["build_receipt_sha256"] != hash(&build_path)?
+        || receipt["identity"]["test_executable_sha256"] != config["test_executable"]["sha256"]
+        || receipt["oracle_receipt_sha256"] != hash(&oracle_path)?
+        || oracle["schema"] != expected_oracle_schema
+        || oracle["status"] != "passed"
+        || (matrix
+            && (oracle["numerical_contract"]
+                != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
+                || oracle["fp64_max_abs_bound"] != 5.0e-4
+                || oracle["fp64_relative_l2_bound"] != 1.0e-4))
+        || (split.is_some() && oracle["identity"] != receipt["identity"])
+        || oracle["identity"]["candidate"] != candidate_name
+        || oracle["identity"]["core_sha256"] != hash(&source)?
+        || oracle["identity"]["test_executable_sha256"] != config["test_executable"]["sha256"]
+    {
+        return Err(format!("stage receipt identity or work mismatch: {candidate_name}").into());
+    }
+    if let Some(tile) = candidate.global_decode_tile() {
+        if receipt["identity"]["rows"] != tile.rows
+            || receipt["identity"]["panel"] != tile.panel
+            || receipt["identity"]["threads"] != tile.threads
+            || receipt["identity"]["grid"] != json!([16 / tile.rows, 1, 1])
+        {
+            return Err(format!("stage receipt launch geometry mismatch: {candidate_name}").into());
+        }
+    } else if let Some(tile) = split {
+        if receipt["identity"]["rows"] != tile.rows
+            || receipt["identity"]["keys"] != tile.keys
+            || receipt["identity"]["panel"] != tile.panel
+            || receipt["identity"]["threads"] != tile.threads
+            || receipt["identity"]["simd_matrix"] != tile.simd_matrix
+            || receipt["identity"]["grid"] != json!([2, 16, 1])
+            || receipt["identity"]["scratch_bytes"] != 16 * 16 * 514 * 4
+            || receipt["identity"]["kernels"].as_array().map(Vec::len) != Some(2)
+        {
+            return Err(
+                format!("split stage receipt launch geometry mismatch: {candidate_name}").into(),
+            );
+        }
+    }
+    let samples = receipt["samples"]
+        .as_array()
+        .ok_or("ABBA samples missing")?;
+    if samples.len() != 20 {
+        return Err("ABBA receipt must contain exactly 20 samples".into());
+    }
+    let mut arms = BTreeMap::<&str, usize>::from([("A", 0), ("B", 0)]);
+    let mut blocks = BTreeMap::<u64, BTreeMap<&str, usize>>::new();
+    let mut candidate_seconds = 0.0;
+    let mut partial_seconds = 0.0;
+    let mut merge_seconds = 0.0;
+    for sample in samples {
+        let arm = sample["arm"].as_str().ok_or("sample arm missing")?;
+        let block = sample["block"].as_u64().ok_or("sample block missing")?;
+        let (work, seconds) = sample_work_and_gpu_seconds(sample, split.is_some(), arm)?;
+        if work != 100 || !seconds.is_finite() || seconds <= 0.0 {
+            return Err("ABBA sample work or GPU time is invalid".into());
+        }
+        *arms.get_mut(arm).ok_or("unknown ABBA arm")? += 1;
+        *blocks.entry(block).or_default().entry(arm).or_default() += 1;
+        if arm == "B" {
+            candidate_seconds += seconds;
+            if split.is_some() {
+                partial_seconds += sample["partial_gpu_seconds"].as_f64().unwrap();
+                merge_seconds += sample["merge_gpu_seconds"].as_f64().unwrap();
+            }
+        }
+    }
+    if arms != BTreeMap::from([("A", 10), ("B", 10)])
+        || blocks.len() != 5
+        || blocks
+            .values()
+            .any(|block| block.get("A") != Some(&2) || block.get("B") != Some(&2))
+    {
+        return Err("ABBA ordering cells are incomplete or non-equivalent".into());
+    }
+    Ok(StageScore {
+        candidate: candidate_name.to_owned(),
+        candidate_ms_per_dispatch: candidate_seconds * 1000.0 / 10.0 / 100.0,
+        partial_ms_per_operation: split.map(|_| partial_seconds * 1000.0 / 10.0 / 100.0),
+        merge_ms_per_operation: split.map(|_| merge_seconds * 1000.0 / 10.0 / 100.0),
+        control_drift_passed: split.is_some() || receipt["control_drift_passed"] == true,
+        receipt_sha256: hash(&receipt_path)?,
+        receipt_path,
+        queue_report_sha256: hash(&queue_report_path)?,
+        queue_report_path,
+    })
+}
+
+fn select_survivors(length: u32, scores: &mut [StageScore]) -> Result<Vec<String>> {
+    if scores.is_empty() {
+        return Err("cannot advance an empty stage".into());
+    }
+    scores.sort_by(|left, right| {
+        left.candidate_ms_per_dispatch
+            .total_cmp(&right.candidate_ms_per_dispatch)
+            .then_with(|| left.candidate.cmp(&right.candidate))
+    });
+    if scores.len() == 1 && matches!(length, 256 | 512 | 1024 | 2048) {
+        return Ok(vec![scores[0].candidate.clone()]);
+    }
+    let (anchor, multiplier) = match length {
+        256 | 512 | 1024 if scores.len() >= 2 => (scores[1].candidate_ms_per_dispatch, 1.10),
+        2048 => (scores[0].candidate_ms_per_dispatch, 1.05),
+        _ => return Err("stage length or candidate count cannot satisfy policy".into()),
+    };
+    Ok(scores
+        .iter()
+        .take_while(|score| score.candidate_ms_per_dispatch <= anchor * multiplier)
+        .map(|score| score.candidate.clone())
+        .collect())
+}
+
+fn submit_or_verify(queue_runner: &Path, queue: &Path, manifest: &Path) -> Result {
+    let expected = read(manifest)?;
+    let id = expected["id"].as_str().ok_or("generated job ID missing")?;
+    let status = Command::new(queue_runner)
+        .arg("submit")
+        .arg(queue)
+        .arg(manifest)
+        .status()?;
+    if status.success() {
+        return Ok(());
+    }
+    let queued = queue.join("jobs").join(format!("{id}.json"));
+    let attempted = queue.join("results").join(id).join("job.json");
+    let (existing, attempted_result) = if queued.is_file() {
+        (queued, None)
+    } else if attempted.is_file() {
+        (
+            attempted,
+            Some(queue.join("results").join(id).join("report.json")),
+        )
+    } else {
+        return Err(
+            format!("queue submission failed without an identical durable job: {id}").into(),
+        );
+    };
+    if read(&existing)? != expected {
+        return Err(format!("queue already contains a different job identity: {id}").into());
+    }
+    if let Some(report_path) = attempted_result {
+        let report = read(&report_path)?;
+        if report["id"] != id || !matches!(report["status"].as_str(), Some("running" | "succeeded"))
+        {
+            return Err(format!("queue already contains a failed or invalid attempt: {id}").into());
+        }
+    }
+    Ok(())
+}
+
+fn advance(root: &Path, length: u32, output: &Path, expected: &[String]) -> Result {
+    if expected.iter().any(|name| {
+        name.parse::<MetalResearchCandidate>()
+            .is_ok_and(MetalResearchCandidate::explicit_storage_abi)
+    }) {
+        return Err("the next decode round has no automatic advancement path".into());
+    }
+    if !matches!(length, 256 | 512 | 1024 | 2048 | 4096) || expected.is_empty() {
+        return Err("invalid or empty advancement stage".into());
+    }
+    if expected.iter().collect::<BTreeSet<_>>().len() != expected.len() {
+        return Err("duplicate advancement candidate".into());
+    }
+    let config_path = root.join("campaign.json");
+    let config = read(&config_path)?;
+    if pin(&std::env::current_exe()?)? != config["job_generator"] {
+        return Err("job generator identity drift".into());
+    }
+    let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
+    let queue_runner = absolute(
+        config["queue_runner"]["path"]
+            .as_str()
+            .ok_or("queue runner missing")?,
+    )?;
+    if pin(&queue_runner)? != config["queue_runner"] {
+        return Err("queue runner identity drift".into());
+    }
+    let mut scores = expected
+        .iter()
+        .map(|candidate| score_stage_cell(root, &queue, &config, length, candidate))
+        .collect::<Result<Vec<_>>>()?;
+    let selected = if length == 4096 {
+        Vec::new()
+    } else {
+        select_survivors(length, &mut scores)?
+    };
+    let next_length = match length {
+        256 => Some(512),
+        512 => Some(1024),
+        1024 => Some(2048),
+        2048 => Some(4096),
+        4096 => None,
+        _ => unreachable!(),
+    };
+    let score_json = scores
+        .iter()
+        .map(|score| {
+            json!({
+                "candidate":score.candidate,
+                "candidate_mean_ms_per_dispatch":score.candidate_ms_per_dispatch,
+                "partial_mean_ms_per_operation":score.partial_ms_per_operation,
+                "merge_mean_ms_per_operation":score.merge_ms_per_operation,
+                "total_mean_ms_per_operation":score.candidate_ms_per_dispatch,
+                "control_drift_passed":score.control_drift_passed,
+                "native_receipt":{"path":score.receipt_path,"sha256":score.receipt_sha256},
+                "queue_report":{"path":score.queue_report_path,"sha256":score.queue_report_sha256}
+            })
+        })
+        .collect::<Vec<_>>();
+    let receipt = json!({
+        "schema":"rvllm.global-decode.advancement.v1",
+        "campaign":config["campaign"],
+        "campaign_sha256":hash(&config_path)?,
+        "completed_length":length,
+        "next_length":next_length,
+        "expected_candidates":expected,
+        "scores":score_json,
+        "selected_candidates":selected,
+        "rule":if length == 2048 {"fastest plus candidates within 5 percent"}
+            else if length == 4096 {"terminal evidence only; no automatic promotion"}
+            else {"fastest two plus candidates within 10 percent of second-fastest"},
+        "promotion":false
+    });
+    if !output.is_absolute() || !output.is_dir() {
+        return Err(
+            "advancement output must be the existing absolute queue result directory".into(),
+        );
+    }
+    json_new_or_identical(&output.join("advancement.json"), &receipt)?;
+    let Some(next_length) = next_length else {
+        return Ok(());
+    };
+    generate(root, true, Some(next_length), &selected)?;
+    let list = read(&root.join(format!("timing-jobs-L{next_length}.json")))?;
+    for job_id in list.as_array().ok_or("generated timing job list missing")? {
+        let job_id = job_id.as_str().ok_or("generated timing job ID missing")?;
+        submit_or_verify(
+            &queue_runner,
+            &queue,
+            &root.join("jobs").join(format!("{job_id}.json")),
+        )?;
+    }
+    Ok(())
+}
+
+/// Queue-owned stage transition for exact-shape storage operators. Compile
+/// success permits an oracle job; only oracle success permits timing jobs.
+/// This does not select a winner or promote a production route.
+fn operator_advance(root: &Path, stage: &str, output: &Path, expected: &[String]) -> Result {
+    let config_path = root.join("campaign.json");
+    let config = read(&config_path)?;
+    if expected.is_empty()
+        || config["candidate_names"] != json!(expected)
+        || expected.iter().any(|name| {
+            name.parse::<MetalResearchCandidate>()
+                .map_or(true, |candidate| !candidate.decode_round_operator())
+        })
+    {
+        return Err("operator advancement requires the entire exact candidate family".into());
+    }
+    if pin(&std::env::current_exe()?)? != config["job_generator"] {
+        return Err("job generator identity drift".into());
+    }
+    let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
+    let job_id = operator_advancement_id(&config, stage)?;
+    if output != queue.join("results").join(&job_id) || !output.is_dir() {
+        return Err("operator advancement output is not its queue result directory".into());
+    }
+    let queue_runner = absolute(
+        config["queue_runner"]["path"]
+            .as_str()
+            .ok_or("queue runner missing")?,
+    )?;
+    if pin(&queue_runner)? != config["queue_runner"] {
+        return Err("queue runner identity drift".into());
+    }
+    let list = match stage {
+        "compile" => {
+            generate(root, false, None, expected)?;
+            root.join("oracle-jobs.json")
+        }
+        "oracle" => {
+            generate(root, true, Some(0), expected)?;
+            root.join("timing-jobs-L0.json")
+        }
+        _ => return Err("unknown operator advancement stage".into()),
+    };
+    let jobs = read(&list)?;
+    let ids = jobs
+        .as_array()
+        .ok_or("generated operator job list missing")?;
+    if ids.is_empty() {
+        return Err("generated operator job list is empty".into());
+    }
+    for id in ids {
+        let id = id.as_str().ok_or("generated operator job ID missing")?;
+        submit_or_verify(
+            &queue_runner,
+            &queue,
+            &root.join("jobs").join(format!("{id}.json")),
+        )?;
+    }
+    if stage == "compile" {
+        submit_or_verify(
+            &queue_runner,
+            &queue,
+            &root.join("jobs").join(format!(
+                "{}.json",
+                operator_advancement_id(&config, "oracle")?
+            )),
+        )?;
+    }
+    json_new_or_identical(
+        &output.join("operator-advancement.json"),
+        &json!({"schema":"rvllm.decode-round.operator-advancement.v1",
+            "campaign":config["campaign"],"campaign_sha256":hash(&config_path)?,
+            "stage":stage,"candidate_names":expected,"submitted_jobs":jobs,
+            "submitted_list_sha256":hash(&list)?,"promotion":false}),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_directory(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "rvllm-global-decode-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        directory
+    }
+
+    fn score(candidate: &str, milliseconds: f64) -> StageScore {
+        StageScore {
+            candidate: candidate.into(),
+            candidate_ms_per_dispatch: milliseconds,
+            partial_ms_per_operation: None,
+            merge_ms_per_operation: None,
+            control_drift_passed: true,
+            receipt_path: PathBuf::from("receipt"),
+            receipt_sha256: "a".repeat(64),
+            queue_report_path: PathBuf::from("report"),
+            queue_report_sha256: "b".repeat(64),
+        }
+    }
+
+    #[test]
+    fn timing_request_accepts_screen_and_explicit_survivors() {
+        validate_timing_request(256, &[]).unwrap();
+        validate_timing_request(
+            512,
+            &[
+                "metal-global-d512-r16p128t128".to_owned(),
+                "metal-global-d512-r16p64t128".to_owned(),
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn timing_request_rejects_unknown_length_candidate_and_duplicate() {
+        assert!(validate_timing_request(128, &[]).is_err());
+        assert!(validate_timing_request(512, &["not-a-candidate".to_owned()]).is_err());
+        let duplicate = "metal-global-d512-r16p128t128".to_owned();
+        assert!(validate_timing_request(512, &[duplicate.clone(), duplicate]).is_err());
+    }
+
+    #[test]
+    fn split_v2_sample_accepts_roundtrip_ulp_and_fails_closed() {
+        let sample = json!({"operations":100,"partial_dispatches":100,
+            "merge_dispatches":100,"baseline_dispatches":0,
+            "partial_gpu_seconds":0.75,"merge_gpu_seconds":0.25,
+            "total_gpu_seconds":1.0});
+        assert_eq!(
+            sample_work_and_gpu_seconds(&sample, true, "B").unwrap(),
+            (100, 1.0)
+        );
+        let mut roundtrip_ulp = sample.clone();
+        roundtrip_ulp["total_gpu_seconds"] = json!(1.0 + f64::EPSILON);
+        assert_eq!(
+            sample_work_and_gpu_seconds(&roundtrip_ulp, true, "B").unwrap(),
+            (100, 1.0 + f64::EPSILON)
+        );
+        let mut mismatched = sample.clone();
+        mismatched["total_gpu_seconds"] = json!(0.75);
+        assert!(sample_work_and_gpu_seconds(&mismatched, true, "B").is_err());
+        let mut incomplete = sample;
+        incomplete
+            .as_object_mut()
+            .unwrap()
+            .remove("merge_gpu_seconds");
+        assert!(sample_work_and_gpu_seconds(&incomplete, true, "B").is_err());
+    }
+
+    #[test]
+    fn selected_oracle_candidates_are_strictly_validated() {
+        validate_selected(&["metal-global-d512-r1p128t32".to_owned()]).unwrap();
+        assert!(validate_selected(&["not-a-candidate".to_owned()]).is_err());
+        let duplicate = "metal-global-d512-r1p128t32".to_owned();
+        assert!(validate_selected(&[duplicate.clone(), duplicate]).is_err());
+    }
+
+    #[test]
+    fn atlas_schedule_ids_do_not_alias_the_k8_control_or_each_other() {
+        let config = json!({"campaign":"test"});
+        let names = [
+            "metal-global-d512-r16p64t128",
+            "metal-global-d512-atlas_r16k16p64t128",
+            "metal-global-d512-atlas_r16k32p64t128",
+            "metal-global-d512-atlas_tile_r16k16p64t128",
+            "metal-global-d512-atlas_tile_r16k32p64t128",
+            "metal-global-d512-atlas_mma_r16k16p64t128",
+            "metal-global-d512-atlas_mma_r16k32p64t128",
+            "metal-global-d512-atlas_mma_r16k16p128t128",
+            "metal-global-d512-atlas_mma_r8k32p64t128",
+            "metal-global-d512-atlas_mma_r16k16p64t64",
+            "metal-global-d512-atlas_mma_r16k64p64t128",
+            "metal-global-d512-split-r8s256t128",
+            "metal-global-d512-split-mma_r8k32s256t128",
+        ];
+        let ids = names
+            .into_iter()
+            .map(|name| {
+                let candidate = name.parse::<MetalResearchCandidate>().unwrap();
+                id(&config, candidate, "oracle").unwrap()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(ids.len(), names.len());
+    }
+
+    #[test]
+    fn successive_halving_uses_absolute_candidate_time_and_widens_ties() {
+        let mut screen = vec![
+            score("slow", 12.0),
+            score("fast", 10.0),
+            score("near_second", 11.0),
+            score("second", 10.5),
+        ];
+        assert_eq!(
+            select_survivors(256, &mut screen).unwrap(),
+            ["fast", "second", "near_second"]
+        );
+        let mut finalists = vec![
+            score("outside", 10.51),
+            score("winner", 10.0),
+            score("tie", 10.5),
+        ];
+        assert_eq!(
+            select_survivors(2048, &mut finalists).unwrap(),
+            ["winner", "tie"]
+        );
+        let mut control = vec![score("control", 3.5)];
+        assert_eq!(select_survivors(256, &mut control).unwrap(), ["control"]);
+    }
+
+    #[test]
+    fn immutable_json_recovery_accepts_only_identical_content() {
+        let directory = temp_directory("immutable");
+        let path = directory.join("receipt.json");
+        let value = json!({"selected":["a","b"]});
+        json_new_or_identical(&path, &value).unwrap();
+        json_new_or_identical(&path, &value).unwrap();
+        assert!(json_new_or_identical(&path, &json!({"selected":["b"]})).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn executable_snapshot_is_content_addressed_and_never_repaired_in_place() {
+        let directory = temp_directory("executables");
+        let executable = std::env::current_exe().unwrap();
+        let first = snapshot_executable(&executable, &directory, "test").unwrap();
+        assert_eq!(hash(&first).unwrap(), hash(&executable).unwrap());
+        assert_eq!(
+            snapshot_executable(&executable, &directory, "test").unwrap(),
+            first
+        );
+        std::fs::write(&first, b"corrupted snapshot").unwrap();
+        assert!(snapshot_executable(&executable, &directory, "test").is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn operator_continuation_refuses_wrong_family_stage_and_output_owner() {
+        let directory = temp_directory("operator-advance");
+        let root = directory.join("campaign");
+        let queue = directory.join("queue");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&queue).unwrap();
+        let names = vec![MetalResearchCandidate::QmvW8G32R4Sg8K8.name().to_owned()];
+        json_new(
+            &root.join("campaign.json"),
+            &json!({"campaign":"operator-probe","candidate_names":names,
+                "queue":queue,"job_generator":pin(&std::env::current_exe().unwrap()).unwrap()}),
+        )
+        .unwrap();
+        assert!(
+            operator_advancement_id(&read(&root.join("campaign.json")).unwrap(), "other").is_err()
+        );
+        assert!(operator_advance(&root, "compile", &directory, &["off".into()]).is_err());
+        assert!(operator_advance(&root, "compile", &directory, &names).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn operator_timing_rejects_stale_launch_geometry_in_native_oracle() {
+        let candidate = MetalResearchCandidate::QmvW8G32R4Sg8K8;
+        let mut identity = json!({"rows":32,"keys":1,"panel":32,"threads":256,
+            "grid":[120,1,1],"kernel":candidate.kernels()[0].name(),
+            "kernels":[{"threads":256}]});
+        assert!(operator_oracle_identity_matches(candidate, &identity));
+        identity["rows"] = json!(16);
+        identity["threads"] = json!(64);
+        identity["grid"] = json!([240, 1, 1]);
+        assert!(!operator_oracle_identity_matches(candidate, &identity));
+    }
+
+    #[test]
+    fn stage_scoring_requires_sealed_identity_and_exact_work() {
+        let directory = temp_directory("stage");
+        let root = directory.join("campaign");
+        let queue = directory.join("queue");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir_all(queue.join("results")).unwrap();
+        let candidate = candidates()[0];
+        let campaign = "synthetic";
+        let config = json!({
+            "campaign":campaign,
+            "test_executable":{"sha256":"test-pin"}
+        });
+        let source = source_path(&root, candidate, "core");
+        std::fs::write(&source, b"sealed source").unwrap();
+        let compile_id = id(&config, candidate, "compile-core").unwrap();
+        let build_dir = queue.join("results").join(&compile_id).join("build");
+        std::fs::create_dir_all(&build_dir).unwrap();
+        let library = build_dir.join("kernel.metallib");
+        let build = build_dir.join("build.json");
+        std::fs::write(&library, b"sealed library").unwrap();
+        std::fs::write(&build, b"sealed build receipt").unwrap();
+        json_new(
+            &queue.join("results").join(&compile_id).join("report.json"),
+            &json!({"status":"succeeded","files_unchanged":true}),
+        )
+        .unwrap();
+        let oracle_id = id(&config, candidate, "oracle").unwrap();
+        let oracle_dir = queue.join("results").join(&oracle_id);
+        std::fs::create_dir_all(oracle_dir.join("native")).unwrap();
+        let oracle = oracle_dir.join("native/oracle.json");
+        json_new(
+            &oracle,
+            &json!({"schema":"rvllm.global-decode.oracle.v1","status":"passed",
+                "identity":{"candidate":candidate.name(),
+                "core_sha256":hash(&source).unwrap(),"test_executable_sha256":"test-pin"}}),
+        )
+        .unwrap();
+        json_new(
+            &oracle_dir.join("report.json"),
+            &json!({"status":"succeeded","files_unchanged":true}),
+        )
+        .unwrap();
+        let timing_id = id(&config, candidate, "abba-L256").unwrap();
+        let timing_dir = queue.join("results").join(timing_id);
+        std::fs::create_dir_all(timing_dir.join("native")).unwrap();
+        let tile = candidate.global_decode_tile().unwrap();
+        let mut samples = Vec::new();
+        for block in 0..5 {
+            for arm in ["A", "B", "B", "A"] {
+                samples.push(json!({"arm":arm,"block":block,"dispatches":100,
+                    "gpu_seconds":if arm == "A" {2.0} else {1.0}}));
+            }
+        }
+        let receipt_path = timing_dir.join("native/abba.json");
+        let receipt = json!({"schema":"rvllm.global-decode.abba.v1","status":"collected",
+            "baseline":"attention_decode_f16 (BF16 typed)","blocks":5,
+            "candidate":candidate.name(),"length":256,"dispatches_per_sample":100,
+            "warmups_per_arm":5,"source_compiles_during_samples":0,"promotion":false,
+            "control_drift_passed":false,"oracle_receipt_sha256":hash(&oracle).unwrap(),
+            "identity":{"candidate":candidate.name(),"oracle_library":false,
+                "source_sha256":hash(&source).unwrap(),"core_sha256":hash(&source).unwrap(),
+                "metallib_sha256":hash(&library).unwrap(),"build_receipt_sha256":hash(&build).unwrap(),
+                "test_executable_sha256":"test-pin","rows":tile.rows,"panel":tile.panel,
+                "threads":tile.threads,"grid":[16 / tile.rows,1,1]},"samples":samples});
+        json_new(&receipt_path, &receipt).unwrap();
+        json_new(
+            &timing_dir.join("report.json"),
+            &json!({"schema":"rvllm.experiment_result.v1","status":"succeeded",
+                "id":timing_dir.file_name().unwrap().to_str().unwrap(),"files_unchanged":true}),
+        )
+        .unwrap();
+        let score = score_stage_cell(&root, &queue, &config, 256, candidate.name()).unwrap();
+        assert_eq!(score.candidate_ms_per_dispatch, 10.0);
+        let mut changed = receipt;
+        changed["samples"][0]["dispatches"] = json!(99);
+        std::fs::write(&receipt_path, serde_json::to_vec_pretty(&changed).unwrap()).unwrap();
+        assert!(score_stage_cell(&root, &queue, &config, 256, candidate.name()).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+}
+fn main() -> Result {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.as_slice() {
+        [action,file] if action=="test-exe" => {
+            let text = std::fs::read_to_string(absolute(file)?)?;
+            let mut found = Vec::new();
+            for line in text.lines() {
+                let value: Value = serde_json::from_str(line)?;
+                if value["reason"]=="compiler-artifact" && value["target"]["name"]=="rvllm_apple_metal"
+                    && value["profile"]["test"]==true {
+                    if let Some(path) = value["executable"].as_str() { found.push(path.to_owned()); }
+                }
+            }
+            found.sort(); found.dedup();
+            if found.len()!=1 { return Err("expected one exact crate test executable in cargo JSON".into()); }
+            println!("{}",found[0]); Ok(())
+        }
+        [action,source,directory] if action=="compile" => compile(&absolute(source)?,&absolute(directory)?),
+        [action,candidate,path] if action=="emit-source" => {
+            let candidate: MetalResearchCandidate = candidate.parse()?;
+            validate_selected(&[candidate.name().to_owned()])?;
+            let source = rvllm_apple_metal::kernels::kernel_source_with_options(
+                MetalFloatType::Bf16,
+                MetalKernelOptions {
+                    research: candidate,
+                    ..MetalKernelOptions::default()
+                },
+            );
+            write(&absolute(path)?, source.as_bytes())
+        }
+        [action,campaign,root,queue,test,conditions,selected @ ..] if action=="prepare" =>
+            prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected),
+        [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false,None,&[]),
+        [action,root,selected @ ..] if action=="oracle-jobs" && !selected.is_empty() =>
+            generate(&absolute(root)?,false,None,selected),
+        [action,root] if action=="timing-jobs" => generate(&absolute(root)?,true,None,&[]),
+        [action,root,length,selected @ ..] if action=="timing-jobs" && !selected.is_empty() => {
+            let length = length.parse()?;
+            generate(&absolute(root)?,true,Some(length),selected)
+        }
+        [action,root,length,output,expected @ ..] if action=="advance" && !expected.is_empty() =>
+            advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
+        [action,root,stage,output,expected @ ..] if action=="operator-advance" && !expected.is_empty() =>
+            operator_advance(&absolute(root)?,stage,&absolute(output)?,expected),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE... | operator-advance ROOT compile|oracle QUEUE_OUTPUT EXPECTED_CANDIDATE...".into()),
+    }
+}
+
+#[cfg(test)]
+mod next_round_queue_tests {
+    use super::*;
+    #[test]
+    fn projection_cells_and_short_lengths_are_explicit_and_bounded() {
+        let ffn = MetalResearchCandidate::FfnBf16R4Sg2.name().to_owned();
+        let short = MetalResearchCandidate::GlobalD512ShortR4T128
+            .name()
+            .to_owned();
+        assert!(validate_timing_request(0, &[ffn.clone()]).is_ok());
+        assert!(validate_timing_request(0, &[]).is_err());
+        assert!(validate_timing_request(256, &[ffn]).is_err());
+        assert!(validate_timing_request(256, &[short.clone()]).is_ok());
+        assert!(validate_timing_request(512, &[short.clone()]).is_ok());
+        assert!(validate_timing_request(1024, &[short.clone()]).is_err());
+        assert!(validate_timing_request(0, &[short]).is_err());
+    }
+}

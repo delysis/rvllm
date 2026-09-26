@@ -3,6 +3,7 @@
 
 use crate::ane_int8_ffn_weights::{AneInt8FfnWeights, AneInt8LinearWeights};
 use crate::ane_lut4_ffn_weights::AneLut4FfnWeights;
+use crate::ane_output_ffn::{AneOutputFfnIdentity, AneOutputFfnSource};
 use half::f16;
 pub use rvllm_apple_ane_sys::{compile_budget_used, AneProgramCachePolicy};
 use rvllm_apple_ane_sys::{AneInMemoryKernel, AneInMemoryProgram};
@@ -63,25 +64,12 @@ impl AneLinear {
         spatial: usize,
         policy: AneProgramCachePolicy,
     ) -> Result<Self, String> {
-        let elements = input_channels
+        input_channels
             .checked_mul(output_channels)
             .filter(|&n| n != 0 && n == weights.len())
             .ok_or("ANE linear weight shape mismatch or overflow")?;
-        let weight_bytes = elements
-            .checked_mul(2)
-            .filter(|&n| n <= u32::MAX as usize)
-            .ok_or("ANE linear weight blob exceeds 4 GiB")?;
         let layout = LinearLayout::new(input_channels, output_channels, spatial)?;
-        let mut blob = vec![0_u8; 128 + weight_bytes];
-        blob[0..4].copy_from_slice(&1_u32.to_le_bytes());
-        blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
-        blob[64..68].copy_from_slice(&0xDEAD_BEEF_u32.to_le_bytes());
-        blob[68..72].copy_from_slice(&1_u32.to_le_bytes());
-        blob[72..80].copy_from_slice(&(weight_bytes as u64).to_le_bytes());
-        blob[80..88].copy_from_slice(&128_u64.to_le_bytes());
-        for (bytes, weight) in blob[128..].chunks_exact_mut(2).zip(weights) {
-            bytes.copy_from_slice(&weight.to_le_bytes());
-        }
+        let blob = fp16_linear_weight_blob(weights)?;
         let mil = linear_mil(input_channels, output_channels, spatial);
         Self::compile_program(&mil, &blob, input_channels, output_channels, layout, policy)
     }
@@ -197,6 +185,88 @@ impl AneLinear {
             self.logical_spatial,
             output,
         )
+    }
+}
+
+pub(crate) fn fp16_linear_weight_blob(weights: &[f16]) -> Result<Vec<u8>, String> {
+    let weight_bytes = weights
+        .len()
+        .checked_mul(2)
+        .filter(|&n| n != 0 && n <= u32::MAX as usize)
+        .ok_or("ANE linear weight blob is empty or exceeds 4 GiB")?;
+    let mut blob = vec![0_u8; 128 + weight_bytes];
+    blob[0..4].copy_from_slice(&1_u32.to_le_bytes());
+    blob[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    blob[64..68].copy_from_slice(&0xDEAD_BEEF_u32.to_le_bytes());
+    blob[68..72].copy_from_slice(&1_u32.to_le_bytes());
+    blob[72..80].copy_from_slice(&(weight_bytes as u64).to_le_bytes());
+    blob[80..88].copy_from_slice(&128_u64.to_le_bytes());
+    for (bytes, weight) in blob[128..].chunks_exact_mut(2).zip(weights) {
+        bytes.copy_from_slice(&weight.to_le_bytes());
+    }
+    Ok(blob)
+}
+
+/// Compile-only owner for the unqualified output-projection/FFN boundary.
+/// It intentionally has no request or evaluation method: device component
+/// correctness must establish RMS reduction semantics before runtime wiring.
+pub struct AneOutputFfnCompile {
+    _program: AneInMemoryProgram,
+    identity: AneOutputFfnIdentity,
+}
+
+impl AneOutputFfnCompile {
+    pub fn source_identity(
+        output_weights: &[f16],
+        attention_width: usize,
+        ffn: &AneInt8FfnWeights,
+        post_attention_gamma: &[f16],
+        pre_ffn_gamma: &[f16],
+        epsilon: f32,
+    ) -> Result<AneOutputFfnIdentity, String> {
+        Ok(AneOutputFfnSource::build(
+            output_weights,
+            attention_width,
+            ffn,
+            post_attention_gamma,
+            pre_ffn_gamma,
+            epsilon,
+        )?
+        .identity)
+    }
+
+    pub fn compile_only(
+        output_weights: &[f16],
+        attention_width: usize,
+        ffn: &AneInt8FfnWeights,
+        post_attention_gamma: &[f16],
+        pre_ffn_gamma: &[f16],
+        epsilon: f32,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        let source = AneOutputFfnSource::build(
+            output_weights,
+            attention_width,
+            ffn,
+            post_attention_gamma,
+            pre_ffn_gamma,
+            epsilon,
+        )?;
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &source.mil,
+            &source.blob,
+            source.identity.input_bytes,
+            source.identity.output_bytes,
+            policy,
+        )?;
+        Ok(Self {
+            _program: program,
+            identity: source.identity,
+        })
+    }
+
+    pub fn identity(&self) -> &AneOutputFfnIdentity {
+        &self.identity
     }
 }
 

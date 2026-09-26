@@ -1,0 +1,83 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "gemma4-ane-down4-11-b6-down4-20260924",
+  "purpose": "timing",
+  "after": [
+    "gemma4-ane-down4-10-b5-down4-20260924"
+  ],
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 1800,
+  "stable_seconds": 0,
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": []
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-load4-tournament-20260924-delivery-5/bf16-off.metallib",
+      "sha256": "6efa8fbed39f6d36fb83fe823da1a5d0733c22970b96b431439be27a07617705"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "sha256": "beaf90a0986571cc3ca473ee9f0c4834919ddcb29cf3cd2eb95fe68a0b2ee313"
+    }
+  ],
+  "command": {
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/aarch64-apple-darwin/release/rvllm_disaggregated_infer",
+      "sha256": "729418c460acb56e2a04acbd66677ff71fa9a9441e7a626e1c18360ec4c34907"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--context-capacity",
+      "1024",
+      "--interleave",
+      "true",
+      "--max-new-tokens",
+      "10",
+      "--ane-compile-budget",
+      "0",
+      "--metallib-bf16",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-load4-tournament-20260924-delivery-5/bf16-off.metallib",
+      "--output-dir",
+      "{output}/inference",
+      "--ane-weights",
+      "static-int8-down4-ffn-cached",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt",
+      "--prompt-file",
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-ane-down4-timing-20260924/copy-prompt.txt"
+    ],
+    "env": {
+      "RVLLM_METAL_RESEARCH": "off"
+    }
+  },
+  "validator": null,
+  "kernel_game_submission": null
+}

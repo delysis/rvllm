@@ -17,6 +17,151 @@ const GQA_VALUE_DIM: usize = 11;
 const GQA_OUTPUT_HEAD: usize = 1;
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+fn encoder_count_low_bit_descriptor(
+    role: rvllm_apple::AppleLowBitTensorRole,
+    n: usize,
+    k: usize,
+) -> rvllm_apple_metal::low_bit_metal::MetalLowBitProjectionOffsets {
+    let values = n * k.div_ceil(2);
+    let scales = n * k.div_ceil(rvllm_apple::APPLE_LOW_BIT_GROUP_SIZE) * 2;
+    rvllm_apple_metal::low_bit_metal::MetalLowBitProjectionOffsets::new_for_role(
+        role,
+        AppleLowBitWeightFormat::W4A16,
+        n,
+        k,
+        0,
+        values,
+        values.next_multiple_of(4),
+        scales,
+    )
+    .expect("encoder-count descriptor")
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn layer_encoder_count_tracks_low_bit_projection_branches_exactly() {
+    use rvllm_apple::AppleLowBitTensorRole as Role;
+    let dims = MetalLayerDims {
+        layer_idx: 0,
+        attention_window: 0,
+        num_tokens: 4,
+        hidden: 32,
+        num_layers: 1,
+        num_heads: 4,
+        num_kv_heads: 2,
+        head_dim: 1,
+        intermediate: 64,
+        moe_num_experts: 0,
+        moe_top_k: 0,
+        moe_intermediate: 0,
+        ple_dim: 0,
+        block_size: 16,
+        max_blocks_per_seq: 1,
+        num_blocks_total: 1,
+        attn_scale: 1.0,
+        rms_eps: 1e-6,
+        rope_dim: 1,
+        softcap: 0.0,
+    };
+    let mut weights = MetalLayerWeights {
+        attn_norm_offset: 0,
+        qkv_offset: 0,
+        qkv_bias_offset: None,
+        q_norm_offset: None,
+        k_norm_offset: None,
+        v_norm_offset: None,
+        o_proj_offset: 0,
+        mlp_norm_offset: 0,
+        post_attn_norm_offset: None,
+        pre_ff_norm_offset: None,
+        post_ff_norm_offset: None,
+        layer_scalar_offset: None,
+        layer_scalar_dim: 0,
+        gate_up_offset: 0,
+        down_proj_offset: Some(0),
+        low_bit_q_proj: None,
+        low_bit_k_proj: None,
+        low_bit_v_proj: None,
+        low_bit_o_proj: None,
+        low_bit_gate_proj: None,
+        low_bit_up_proj: None,
+        low_bit_down_proj: None,
+        moe: None,
+        per_layer_inputs_offset: None,
+        per_layer_input_gate_offset: None,
+        per_layer_projection_offset: None,
+        post_per_layer_input_norm_offset: None,
+    };
+    let estimate = |weights: &MetalLayerWeights, skip_kv: bool, rounded_gate: bool| {
+        ModelMetalBackend::estimate_layer_encoder_count(
+            weights,
+            &dims,
+            false,
+            MetalLayerDebugSkip {
+                skip_kv_projection: skip_kv,
+                ..MetalLayerDebugSkip::default()
+            },
+            false,
+            false,
+            rounded_gate,
+        )
+    };
+    assert_eq!(estimate(&weights, false, false), 10);
+    assert_eq!(estimate(&weights, false, true), 9);
+    weights.low_bit_down_proj = Some(encoder_count_low_bit_descriptor(
+        Role::DenseDownProjection,
+        32,
+        64,
+    ));
+    weights.down_proj_offset = None;
+    assert_eq!(estimate(&weights, false, false), 10);
+    weights.low_bit_q_proj = Some(encoder_count_low_bit_descriptor(
+        Role::QueryProjection,
+        4,
+        32,
+    ));
+    weights.low_bit_k_proj = Some(encoder_count_low_bit_descriptor(Role::KeyProjection, 2, 32));
+    weights.low_bit_v_proj = Some(encoder_count_low_bit_descriptor(
+        Role::ValueProjection,
+        2,
+        32,
+    ));
+    assert_eq!(estimate(&weights, false, false), 14);
+    assert_eq!(estimate(&weights, true, false), 10);
+    weights.low_bit_o_proj = Some(encoder_count_low_bit_descriptor(
+        Role::OutputProjection,
+        32,
+        4,
+    ));
+    assert_eq!(estimate(&weights, false, false), 14);
+    weights.post_attn_norm_offset = Some(0);
+    assert_eq!(estimate(&weights, false, false), 16);
+    weights.low_bit_gate_proj = Some(encoder_count_low_bit_descriptor(
+        Role::DenseGateProjection,
+        64,
+        32,
+    ));
+    weights.low_bit_up_proj = Some(encoder_count_low_bit_descriptor(
+        Role::DenseUpProjection,
+        64,
+        32,
+    ));
+    assert_eq!(estimate(&weights, false, false), 17);
+    assert_eq!(estimate(&weights, false, true), 17);
+
+    let mut gate_up_only = weights;
+    gate_up_only.low_bit_q_proj = None;
+    gate_up_only.low_bit_k_proj = None;
+    gate_up_only.low_bit_v_proj = None;
+    gate_up_only.low_bit_o_proj = None;
+    gate_up_only.post_attn_norm_offset = None;
+    gate_up_only.low_bit_down_proj = None;
+    gate_up_only.down_proj_offset = Some(0);
+    assert_eq!(estimate(&gate_up_only, false, false), 11);
+    assert_eq!(estimate(&gate_up_only, false, true), 11);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -561,6 +706,7 @@ fn runtime_low_bit_replacement(
     };
     MetalLowBitWeightReplacement {
         tensor_name: tensor_name.into(),
+        role: rvllm_apple::AppleLowBitTensorRole::DenseDownProjection,
         format,
         shape,
         packed_values_bytes: shape[0] * row_bytes,
@@ -9284,6 +9430,117 @@ fn schema_v3_w4_w8_down_proj_sidecars_are_selected_and_execute_real_layer() {
             .collect(replacement_ticket)
             .expect("collect native-replacement low-bit prefill")
             .is_empty());
+        let _ = fs::remove_dir_all(package_root);
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal and RVLLM_TEST_APPLE_METALLIB_ROOT"]
+fn schema_v3_complete_dense_low_bit_layer_installs_and_dispatches_every_role() {
+    use rvllm_apple::model_package_builder::{
+        build_apple_model_package, AppleLowBitExportRequest, AppleModelPackageBuildConfig,
+    };
+    let Some(metallib_root) = std::env::var_os("RVLLM_TEST_APPLE_METALLIB_ROOT") else {
+        eprintln!("skipping: RVLLM_TEST_APPLE_METALLIB_ROOT is not set");
+        return;
+    };
+    let dir = write_tiny_one_layer_full_nonzero_fixture();
+    let config_path = dir.join("config.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&config_path).expect("config")).expect("parse config");
+    config
+        .as_object_mut()
+        .expect("config object")
+        .insert("model_type".to_owned(), Value::String("gemma4".to_owned()));
+    fs::write(
+        &config_path,
+        serde_json::to_vec_pretty(&config).expect("config bytes"),
+    )
+    .expect("write config");
+    fs::write(dir.join("tokenizer.json"), b"tiny-tokenizer").expect("tokenizer");
+
+    for format in [
+        AppleLowBitWeightFormat::W4A16,
+        AppleLowBitWeightFormat::W8A16,
+    ] {
+        let package_root = dir.with_file_name(format!(
+            "{}-complete-{}-package",
+            dir.file_name()
+                .and_then(|name| name.to_str())
+                .expect("name"),
+            format.name()
+        ));
+        let names = [
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.self_attn.k_proj.weight",
+            "model.layers.0.self_attn.v_proj.weight",
+            "model.layers.0.self_attn.o_proj.weight",
+            "model.layers.0.mlp.gate_proj.weight",
+            "model.layers.0.mlp.up_proj.weight",
+            "model.layers.0.mlp.down_proj.weight",
+        ];
+        let report = build_apple_model_package(&AppleModelPackageBuildConfig {
+            model_dir: dir.clone(),
+            metallib_root: std::path::PathBuf::from(&metallib_root),
+            output_dir: package_root.clone(),
+            package_id: format!("tiny-complete-{}", format.name()),
+            weight_format: None,
+            low_bit_down_projections: names
+                .iter()
+                .map(|name| AppleLowBitExportRequest {
+                    tensor_name: (*name).to_owned(),
+                    format,
+                })
+                .collect(),
+        })
+        .expect("build complete low-bit package");
+        assert_eq!(report.low_bit_tensors, 7);
+
+        let mut backend = ModelMetalBackend::from_model_package_path(package_root.clone())
+            .expect("backend")
+            .with_low_bit_residency_policy(MetalLowBitResidencyPolicy::ReplaceNative);
+        backend
+            .prepare(&one_layer_plan(package_root.clone()))
+            .expect("prepare");
+        let layer = &backend.state.as_ref().expect("state").layers[0];
+        assert!(layer.low_bit_q_proj.is_some());
+        assert!(layer.low_bit_k_proj.is_some());
+        assert!(layer.low_bit_v_proj.is_some());
+        assert!(layer.low_bit_o_proj.is_some());
+        assert!(layer.low_bit_gate_proj.is_some());
+        assert!(layer.low_bit_up_proj.is_some());
+        assert!(layer.low_bit_down_proj.is_some());
+        assert!(layer.down_proj.is_none());
+        let before = backend
+            .pipelines
+            .as_ref()
+            .expect("pipelines")
+            .low_bit_dispatch_snapshot();
+        let handoff = rvllm_apple::HandoffCapsule::new(
+            rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+            vec![rvllm_core::ReqId(1)],
+            vec![rvllm_core::TokenId(2); 3],
+            vec![0, 3],
+            vec![2],
+            vec![3],
+        );
+        let ticket = backend.launch_prefill(&handoff).expect("launch");
+        assert!(backend.collect(ticket).expect("collect").is_empty());
+        let delta = backend
+            .pipelines
+            .as_ref()
+            .expect("pipelines")
+            .low_bit_dispatch_snapshot()
+            .checked_since(before)
+            .expect("dispatch delta");
+        let mut expected = [0; rvllm_apple::AppleLowBitTensorRole::COUNT];
+        expected.fill(1);
+        expected[rvllm_apple::AppleLowBitTensorRole::LmHead.index()] = 0;
+        delta
+            .verify_exact(format, expected)
+            .expect("exact role dispatches");
         let _ = fs::remove_dir_all(package_root);
     }
     let _ = fs::remove_dir_all(dir);

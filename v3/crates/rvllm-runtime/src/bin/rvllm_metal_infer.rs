@@ -76,6 +76,12 @@ struct InferReport {
     decode_ms: f64,
     tok_per_s: f64,
     arena_bytes: usize,
+    library_compiles: u64,
+    pipeline_state_compiles: u64,
+    last_step_gpu_execution_ns: Option<u64>,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    metal_stage_timing: Option<serde_json::Value>,
+    research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
     embedding_encoders: u64,
@@ -642,7 +648,8 @@ fn report_value(
     report: &InferReport,
     comparison: Option<&ReferenceComparison>,
 ) -> serde_json::Value {
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut value = serde_json::json!({
         "schema": JSON_SCHEMA,
         "claim": CLAIM,
         "metal_compute_dtype": report.metal_compute_dtype,
@@ -663,6 +670,10 @@ fn report_value(
         "decode_ms": report.decode_ms,
         "tok_per_s": report.tok_per_s,
         "arena_bytes": report.arena_bytes,
+        "library_compiles": report.library_compiles,
+        "pipeline_state_compiles": report.pipeline_state_compiles,
+        "last_step_gpu_execution_ns": report.last_step_gpu_execution_ns,
+        "research_dispatch": report.research_dispatch,
         "command_buffers": report.command_buffers,
         "encoders": report.encoders,
         "embedding_encoders": report.embedding_encoders,
@@ -694,7 +705,19 @@ fn report_value(
         "large_model_opt_in": report.large_model_opt_in,
         "max_supported_total_tokens": report.max_supported_total_tokens,
         "hf_reference": hf_reference_value(comparison),
-    })
+    });
+    #[cfg(feature = "metal-stage-instrumentation")]
+    value
+        .as_object_mut()
+        .expect("infer report must be a JSON object")
+        .insert(
+            "metal_stage_timing".to_owned(),
+            report
+                .metal_stage_timing
+                .clone()
+                .unwrap_or(serde_json::Value::Null),
+        );
+    value
 }
 
 fn print_text_report(report: &InferReport, comparison: Option<&ReferenceComparison>) {
@@ -800,6 +823,10 @@ struct SessionCaseReport {
     prefill_ms: f64,
     decode_ms: f64,
     tok_per_s: f64,
+    library_compiles: u64,
+    pipeline_state_compiles: u64,
+    last_step_gpu_execution_ns: Option<u64>,
+    research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
     embedding_encoders: u64,
@@ -1222,6 +1249,23 @@ fn stats_delta(
     }
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn research_dispatch_value(
+    snapshot: rvllm_apple_metal::research_evidence::ResearchDispatchSnapshot,
+) -> serde_json::Value {
+    let counts = rvllm_apple_metal::research_evidence::RESEARCH_KERNEL_NAMES
+        .iter()
+        .copied()
+        .zip(snapshot.counts)
+        .filter(|(_, count)| *count != 0)
+        .collect::<std::collections::BTreeMap<_, _>>();
+    serde_json::json!({
+        "schema": rvllm_apple_metal::research_evidence::RESEARCH_DISPATCH_SCHEMA,
+        "counts": counts,
+        "overflowed": snapshot.overflowed,
+    })
+}
+
 fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
     let status = match &report.comparison {
         Some(comparison) if !comparison.matched => "fail",
@@ -1241,6 +1285,10 @@ fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
         "prefill_ms": report.prefill_ms,
         "decode_ms": report.decode_ms,
         "tok_per_s": report.tok_per_s,
+        "library_compiles": report.library_compiles,
+        "pipeline_state_compiles": report.pipeline_state_compiles,
+        "last_step_gpu_execution_ns": report.last_step_gpu_execution_ns,
+        "research_dispatch": report.research_dispatch,
         "command_buffers": report.command_buffers,
         "encoders": report.encoders,
         "embedding_encoders": report.embedding_encoders,
@@ -1371,6 +1419,7 @@ fn session_report_value(
     metal_compute_dtype: &str,
     metal_weight_dtype: &str,
     metal_moe_router_weight_dtype: &str,
+    research_dispatch: serde_json::Value,
 ) -> serde_json::Value {
     let generated_tokens: usize = case_reports
         .iter()
@@ -1398,6 +1447,10 @@ fn session_report_value(
         "generated_tokens": generated_tokens,
         "tok_per_s": tok_per_s,
         "arena_bytes": arena_bytes,
+        "library_compiles": final_stats.library_compiles,
+        "pipeline_state_compiles": final_stats.pipeline_state_compiles,
+        "last_step_gpu_execution_ns": final_stats.last_step_gpu_execution_ns,
+        "research_dispatch": research_dispatch,
         "command_buffers": final_stats.command_buffers,
         "encoders": final_stats.encoders,
         "embedding_encoders": final_stats.embedding_encoders,
@@ -1517,6 +1570,12 @@ fn run_direct_session(
     for (idx, case) in cases.iter().enumerate() {
         let case_start = std::time::Instant::now();
         let before = backend.probe_perf_stats();
+        let dispatch_before = backend.probe_research_dispatches().ok_or_else(|| {
+            format!(
+                "session case {} research counters unavailable",
+                case.spec.name
+            )
+        })?;
         let req_id = ReqId((idx + 1) as u64);
         let prompt_tokens = case
             .prompt_token_ids
@@ -1595,6 +1654,16 @@ fn run_direct_session(
         let decode_ms = ms(decode_start.elapsed());
         let after = backend.probe_perf_stats();
         let delta = stats_delta(before, after);
+        let dispatch_after = backend.probe_research_dispatches().ok_or_else(|| {
+            format!(
+                "session case {} research counters unavailable",
+                case.spec.name
+            )
+        })?;
+        let research_dispatch = dispatch_after
+            .checked_since(dispatch_before)
+            .map(research_dispatch_value)
+            .map_err(|error| format!("session case {}: {error}", case.spec.name))?;
         let mut output_token_ids = case.prompt_token_ids.clone();
         output_token_ids.extend(generated_token_ids.iter().copied());
         let generated_text = decode_text(tokenizer, &generated_token_ids, "generated")?;
@@ -1625,6 +1694,10 @@ fn run_direct_session(
             prefill_ms,
             decode_ms,
             tok_per_s,
+            library_compiles: delta.library_compiles,
+            pipeline_state_compiles: delta.pipeline_state_compiles,
+            last_step_gpu_execution_ns: delta.last_step_gpu_execution_ns,
+            research_dispatch,
             command_buffers: delta.command_buffers,
             encoders: delta.encoders,
             embedding_encoders: delta.embedding_encoders,
@@ -1647,6 +1720,65 @@ fn run_direct_session(
             max_supported_total_tokens: case.max_supported_total_tokens,
             comparison,
         });
+
+        // Persist each completed case. Long-context sessions can take minutes per
+        // case; withholding all evidence until the final case makes a bounded
+        // timeout erase otherwise valid measurements. The checkpoint uses the
+        // normal report schema and explicitly declares whether more cases remain.
+        if args.report.is_some() {
+            let checkpoint_status = if case_reports
+                .iter()
+                .any(|case| matches!(&case.comparison, Some(comparison) if !comparison.matched))
+            {
+                "fail"
+            } else {
+                "pass"
+            };
+            let checkpoint_stats = backend.probe_perf_stats();
+            let checkpoint_dispatch = backend
+                .probe_research_dispatches()
+                .map(research_dispatch_value)
+                .unwrap_or(serde_json::Value::Null);
+            let checkpoint_arena_bytes = backend
+                .probe_arena_stats()
+                .map(|arena| arena.capacity_bytes)
+                .unwrap_or(0);
+            let mut checkpoint = session_report_value(
+                args,
+                SessionBackend::Direct,
+                checkpoint_status,
+                prepare_ms,
+                case_reports.iter().map(|case| case.prefill_ms).sum(),
+                case_reports.iter().map(|case| case.decode_ms).sum(),
+                ms(total_start.elapsed()),
+                &case_reports,
+                checkpoint_stats,
+                checkpoint_arena_bytes,
+                backend.metal_debug_sync_enabled(),
+                effective_large_opt_in,
+                max_supported_total_tokens,
+                &metal_compute_dtype,
+                &metal_weight_dtype,
+                &metal_moe_router_weight_dtype,
+                checkpoint_dispatch,
+            );
+            let object = checkpoint
+                .as_object_mut()
+                .expect("session report must be a JSON object");
+            object.insert(
+                "checkpoint_completed_cases".to_owned(),
+                serde_json::json!(case_reports.len()),
+            );
+            object.insert(
+                "checkpoint_total_cases".to_owned(),
+                serde_json::json!(cases.len()),
+            );
+            object.insert(
+                "checkpoint_complete".to_owned(),
+                serde_json::json!(case_reports.len() == cases.len()),
+            );
+            write_report_if_requested(args.report.as_ref(), &checkpoint)?;
+        }
     }
     let status = if case_reports
         .iter()
@@ -1657,11 +1789,16 @@ fn run_direct_session(
         "pass"
     };
     let stats = backend.probe_perf_stats();
+    let research_dispatch = backend
+        .probe_research_dispatches()
+        .map(research_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
     let arena_bytes = backend
         .probe_arena_stats()
         .map(|arena| arena.capacity_bytes)
         .unwrap_or(0);
-    Ok(session_report_value(
+    #[allow(unused_mut)]
+    let mut report = session_report_value(
         args,
         SessionBackend::Direct,
         status,
@@ -1678,7 +1815,28 @@ fn run_direct_session(
         &metal_compute_dtype,
         &metal_weight_dtype,
         &metal_moe_router_weight_dtype,
-    ))
+        research_dispatch,
+    );
+    let object = report
+        .as_object_mut()
+        .expect("session report must be a JSON object");
+    object.insert(
+        "checkpoint_completed_cases".to_owned(),
+        serde_json::json!(case_reports.len()),
+    );
+    object.insert(
+        "checkpoint_total_cases".to_owned(),
+        serde_json::json!(cases.len()),
+    );
+    object.insert("checkpoint_complete".to_owned(), serde_json::json!(true));
+    #[cfg(feature = "metal-stage-instrumentation")]
+    object.insert(
+        "metal_stage_timing".to_owned(),
+        backend
+            .last_stage_timing_receipt()
+            .unwrap_or(serde_json::Value::Null),
+    );
+    Ok(report)
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -1699,6 +1857,11 @@ impl SharedModelMetalBackend {
 
     fn probe_perf_stats(&self) -> rvllm_runtime::apple_metal_backend::MetalProbePerfStats {
         self.inner.borrow().probe_perf_stats()
+    }
+
+    #[cfg(feature = "metal-stage-instrumentation")]
+    fn last_stage_timing_receipt(&self) -> Option<serde_json::Value> {
+        self.inner.borrow().last_stage_timing_receipt()
     }
 
     fn probe_arena_bytes(&self) -> usize {
@@ -1723,6 +1886,12 @@ impl SharedModelMetalBackend {
 
     fn metal_moe_router_weight_dtype_report(&self) -> &'static str {
         self.inner.borrow().metal_moe_router_weight_dtype_report()
+    }
+
+    fn probe_research_dispatches(
+        &self,
+    ) -> Option<rvllm_apple_metal::research_evidence::ResearchDispatchSnapshot> {
+        self.inner.borrow().probe_research_dispatches()
     }
 }
 
@@ -1905,6 +2074,10 @@ fn run_engine_session(
             prefill_ms: per_case_prefill_ms,
             decode_ms: per_case_decode_ms,
             tok_per_s,
+            library_compiles: 0,
+            pipeline_state_compiles: 0,
+            last_step_gpu_execution_ns: None,
+            research_dispatch: serde_json::Value::Null,
             command_buffers: 0,
             encoders: 0,
             embedding_encoders: 0,
@@ -1936,7 +2109,12 @@ fn run_engine_session(
     } else {
         "pass"
     };
-    Ok(session_report_value(
+    let research_dispatch = stats_backend
+        .probe_research_dispatches()
+        .map(research_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
+    #[allow(unused_mut)]
+    let mut report = session_report_value(
         args,
         SessionBackend::Engine,
         status,
@@ -1953,7 +2131,19 @@ fn run_engine_session(
         stats_backend.metal_compute_dtype_report(),
         stats_backend.metal_weight_dtype_report(),
         stats_backend.metal_moe_router_weight_dtype_report(),
-    ))
+        research_dispatch,
+    );
+    #[cfg(feature = "metal-stage-instrumentation")]
+    report
+        .as_object_mut()
+        .expect("session report must be a JSON object")
+        .insert(
+            "metal_stage_timing".to_owned(),
+            stats_backend
+                .last_stage_timing_receipt()
+                .unwrap_or(serde_json::Value::Null),
+        );
+    Ok(report)
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -2402,6 +2592,10 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         Vec::new()
     };
     let stats = backend.probe_perf_stats();
+    let research_dispatch = backend
+        .probe_research_dispatches()
+        .map(research_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
     let arena_bytes = backend
         .probe_arena_stats()
         .map(|arena| arena.capacity_bytes)
@@ -2425,6 +2619,12 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         decode_ms,
         tok_per_s,
         arena_bytes,
+        library_compiles: stats.library_compiles,
+        pipeline_state_compiles: stats.pipeline_state_compiles,
+        last_step_gpu_execution_ns: stats.last_step_gpu_execution_ns,
+        #[cfg(feature = "metal-stage-instrumentation")]
+        metal_stage_timing: backend.last_stage_timing_receipt(),
+        research_dispatch,
         command_buffers: stats.command_buffers,
         encoders: stats.encoders,
         embedding_encoders: stats.embedding_encoders,
@@ -2939,6 +3139,15 @@ mod tests {
             decode_ms: 3.0,
             tok_per_s: 4.0,
             arena_bytes: 5,
+            library_compiles: 1,
+            pipeline_state_compiles: 31,
+            last_step_gpu_execution_ns: Some(1_000_000),
+            #[cfg(feature = "metal-stage-instrumentation")]
+            metal_stage_timing: Some(serde_json::json!({
+                "schema": "rvllm.metal_stage_timing.v1",
+                "sampling_point": "compute_stage_boundary"
+            })),
+            research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
             embedding_encoders: 1,
@@ -2976,6 +3185,15 @@ mod tests {
         assert_eq!(value["claim"], CLAIM);
         assert_eq!(value["finish_reason"], "length");
         assert_eq!(value["generated_text"], " world");
+        assert_eq!(value["library_compiles"], 1);
+        assert_eq!(value["pipeline_state_compiles"], 31);
+        assert_eq!(value["last_step_gpu_execution_ns"], 1_000_000);
+        #[cfg(feature = "metal-stage-instrumentation")]
+        assert_eq!(
+            value["metal_stage_timing"]["schema"],
+            "rvllm.metal_stage_timing.v1"
+        );
+        assert_eq!(value["research_dispatch"]["schema"], "test");
         assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
         assert_eq!(
             value["max_supported_total_tokens"].as_u64(),
@@ -3000,6 +3218,12 @@ mod tests {
             decode_ms: 3.0,
             tok_per_s: 4.0,
             arena_bytes: 5,
+            library_compiles: 1,
+            pipeline_state_compiles: 31,
+            last_step_gpu_execution_ns: Some(1_000_000),
+            #[cfg(feature = "metal-stage-instrumentation")]
+            metal_stage_timing: None,
+            research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
             embedding_encoders: 1,

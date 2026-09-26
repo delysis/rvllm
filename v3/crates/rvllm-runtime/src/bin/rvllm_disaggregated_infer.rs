@@ -98,6 +98,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(flag) = args.next() {
         if flag == "--help" || flag == "-h" {
             println!("Gemma 4 12B: Metal prefill, ANE decode, greedy text generation.\n\nUsage: rvllm_disaggregated_infer --model-dir PATH --prompt TEXT [options]\n\n  --metallib-bf16 PATH           Precompiled BF16 Metal library (or RVLLM_METAL_METALLIB_BF16)\n  --prompt TEXT                 One user text turn; may be repeated\n  --prompt-file PATH            Read one user text turn from a UTF-8 file\n  --max-new-tokens N             Output limit including EOS (default 64)\n  --context-capacity 64|1024     Prompt plus decoded input capacity (default 1024)\n  --ane-weights PLAN             static-int8-ffn-cached (default), static-all-cached, or research plans\n  --ane-compile-budget 0..16     Bounded recovery of missing cached programs (default 0)\n  --retain-metal BOOL            Keep Metal loaded during ANE decode (default false)\n  --interleave BOOL              Prepare both backends once, then prefill/decode each request\n  --interactive BOOL             Read successive user prompts from stdin, one per line; implies interleave\n  --runtime-worker BOOL          Use the serial runtime owner (INT8/MMA/SIMD; default false)\n  --output-dir PATH              Optional local report directory\n  --hf-reference PATH           Verify against pinned token IDs; requires output directory\n  --capture-layer-states BOOL    Capture first ANE step; requires output directory\n  --prepare-ane-cache PART       qkv, output, ffn, ffn-int8, ffn-lut4, head-attention\n\nText input uses the qualified single-user, non-thinking checkpoint template.\nMultiple prompts share initialization. Model histories, tools and multimodal inputs are unsupported.");
+            println!("\n  --context-capacity 2048|4096   Metal prefill-only; never accepted for ANE decode");
             println!("\n  --prefill-only BOOL            First-token/KV screen; original reference retained; never loads ANE");
             println!("\n  --inspect-ane-cache PART       Strict load inspection of a cache part; zero compiles/evaluations");
             println!(
@@ -271,8 +272,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("stacked FFN checking requires references, an output directory, a driver journal and zero compile budget".into());
     }
-    if !matches!(context_capacity, 64 | 1024) {
-        return Err("--context-capacity must be a qualified capacity: 64 or 1024".into());
+    if !qualified_context_capacity(context_capacity, prefill_only) {
+        return Err("--context-capacity must be 64 or 1024; Metal prefill-only additionally accepts 2048 or 4096".into());
     }
     if compile_budget > 16
         || (compile_budget != 0
@@ -1268,6 +1269,11 @@ fn export_seed(
     Ok(())
 }
 
+fn qualified_context_capacity(context_capacity: usize, prefill_only: bool) -> bool {
+    matches!(context_capacity, 64 | 1024)
+        || (prefill_only && matches!(context_capacity, 2048 | 4096))
+}
+
 fn write_f16(path: &Path, values: &[f16]) -> Result<String, Box<dyn std::error::Error>> {
     let mut output = std::io::BufWriter::new(std::fs::File::create_new(path)?);
     let mut hash = Sha256::new();
@@ -1286,7 +1292,7 @@ fn write_f16(path: &Path, values: &[f16]) -> Result<String, Box<dyn std::error::
 
 #[cfg(test)]
 mod tests {
-    use super::validate_text_budget;
+    use super::{qualified_context_capacity, validate_text_budget};
     use sha2::Digest as _;
 
     #[test]
@@ -1309,5 +1315,21 @@ mod tests {
         assert!(validate_text_budget(&[2], 0, 1024).is_err());
         assert!(validate_text_budget(&[], 1, 1024).is_err());
         assert!(validate_text_budget(&[2; 2], usize::MAX, usize::MAX).is_err());
+    }
+
+    #[test]
+    fn long_context_capacity_is_metal_prefill_only() {
+        for context_capacity in [64, 1024] {
+            assert!(qualified_context_capacity(context_capacity, false));
+            assert!(qualified_context_capacity(context_capacity, true));
+        }
+        for context_capacity in [2048, 4096] {
+            assert!(!qualified_context_capacity(context_capacity, false));
+            assert!(qualified_context_capacity(context_capacity, true));
+        }
+        for context_capacity in [0, 63, 65, 2047, 2049, 4095, 4097] {
+            assert!(!qualified_context_capacity(context_capacity, false));
+            assert!(!qualified_context_capacity(context_capacity, true));
+        }
     }
 }

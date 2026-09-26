@@ -16,6 +16,12 @@ authors.workspace = true
 
 [features]
 default = []
+metal-stage-instrumentation = []
+# Explicit operator experiments; never part of the shipping selector.
+attention-atlas-research = ["dep:serde"]
+# Opt-in, device-only referee for authenticated real checkpoint projection
+# tensors. It is deliberately excluded from normal builds and dispatch.
+low-bit-real-weight-research = ["dep:serde"]
 
 [dependencies]
 rvllm-core = { workspace = true }
@@ -23,7 +29,9 @@ rvllm-apple = { workspace = true }
 rvllm-loader = { workspace = true }
 half = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
 serde_json.workspace = true
+sha2 = "0.10"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2 = "0.6"
@@ -33,6 +41,7 @@ objc2-metal = { version = "0.3", features = [
     "MTLCommandQueue",
     "MTLCommandBuffer",
     "MTLComputeCommandEncoder",
+    "MTLComputePass",
     "MTLComputePipeline",
     "MTLLibrary",
     "MTLBuffer",
@@ -41,8 +50,37 @@ objc2-metal = { version = "0.3", features = [
     "MTLArgument",
     "MTLTexture",
     "MTLPixelFormat",
+    "MTLCounters",
     "std",
     "objc2-io-surface",
 ] }
 
 [dev-dependencies]
+
+[[bin]]
+name = "rvllm-attention-atlas"
+path = "src/bin/rvllm-attention-atlas.rs"
+required-features = ["attention-atlas-research"]
+
+[[bin]]
+name = "rvllm-low-bit-real-weight"
+path = "src/bin/rvllm-low-bit-real-weight.rs"
+required-features = ["low-bit-real-weight-research"]
+
+[[bin]]
+name = "rvllm-low-bit-receipt-validate"
+path = "src/bin/rvllm-low-bit-receipt-validate.rs"
+required-features = ["low-bit-real-weight-research"]
+
+[[bin]]
+name = "rvllm-low-bit-campaign-summary"
+path = "src/bin/rvllm-low-bit-campaign-summary.rs"
+
+[[bin]]
+name = "rvllm-low-bit-direct-summary"
+path = "src/bin/rvllm-low-bit-direct-summary.rs"
+
+[[bin]]
+name = "rvllm-prefill-receipt-validate"
+path = "src/bin/rvllm-prefill-receipt-validate.rs"
+required-features = ["attention-atlas-research"]

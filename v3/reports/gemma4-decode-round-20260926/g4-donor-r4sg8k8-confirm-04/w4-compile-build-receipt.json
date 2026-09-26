@@ -1,0 +1,46 @@
+{
+  "air_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-r4sg8k8-confirm-04-qmv-w4-g32-r4-sg8-k8-compile-core/build/kernel.air",
+  "air_sha256": "33191b760a2d759a531164e23fb6bce2d7d949dfe394f83154b914dd35baac07",
+  "compile_argv": [
+    "--sdk",
+    "macosx",
+    "metal",
+    "-std=metal3.1",
+    "-fno-fast-math",
+    "-c",
+    "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-r4sg8k8-confirm-04/metal-qmv-w4-g32-r4-sg8-k8-core.metal",
+    "-o",
+    "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-r4sg8k8-confirm-04-qmv-w4-g32-r4-sg8-k8-compile-core/build/kernel.air"
+  ],
+  "flags": [
+    "-std=metal3.1",
+    "-fno-fast-math"
+  ],
+  "link_argv": [
+    "--sdk",
+    "macosx",
+    "metallib",
+    "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-r4sg8k8-confirm-04-qmv-w4-g32-r4-sg8-k8-compile-core/build/kernel.air",
+    "-o",
+    "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-donor-r4sg8k8-confirm-04-qmv-w4-g32-r4-sg8-k8-compile-core/build/kernel.metallib"
+  ],
+  "metallib_sha256": "5bbda735656a5502a3c7f7394f0692f8f74ce53ffa1aad089a1a674fd14747af",
+  "native_execution": false,
+  "schema": "rvllm.global-decode.build.v1",
+  "source_sha256": "f74e67aa911b101575a770b7803e59b0fda95b07c1b127c135113e905b61b918",
+  "status": "compiled",
+  "tool_pins": [
+    {
+      "path": "/usr/bin/xcrun",
+      "sha256": "583d56907aafdf0634bd23d58af21a78cae0cb0727bc12a4ea2565271a8b57af"
+    },
+    {
+      "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metal",
+      "sha256": "3c7420a3853873c8bdfa6b532a71e7ed3dc3af4f46c1d215eef4b78d419ad392"
+    },
+    {
+      "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metallib",
+      "sha256": "92a9f7c97e4a54c5889f32c03c0ce28fc4743e18dad26ec0a0c9bde132e1716b"
+    }
+  ]
+}

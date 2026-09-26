@@ -115,6 +115,37 @@ kernel void rmsnorm_headwise_f16(
     }
 }
 
+kernel void rmsnorm_headwise_unit_f16(
+    device const half *input      [[buffer(0)]],
+    device half       *output     [[buffer(1)]],
+    constant uint     &head_dim   [[buffer(2)]],
+    constant float    &eps        [[buffer(3)]],
+    constant uint     &num_heads  [[buffer(4)]],
+    uint tid                      [[thread_index_in_threadgroup]],
+    uint tg_size                  [[threads_per_threadgroup]],
+    uint gid                      [[threadgroup_position_in_grid]]
+) {
+    uint token = gid / num_heads;
+    uint head = gid % num_heads;
+    uint base = token * num_heads * head_dim + head * head_dim;
+    threadgroup float shared_sum[256];
+    float local_sum = 0.0f;
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        float v = float(input[base + i]);
+        local_sum += v * v;
+    }
+    shared_sum[tid] = local_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint s = tg_size / 2; s > 0; s >>= 1) {
+        if (tid < s) shared_sum[tid] += shared_sum[tid + s];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float rms = rsqrt(shared_sum[0] / float(head_dim) + eps);
+    for (uint i = tid; i < head_dim; i += tg_size) {
+        output[base + i] = f16_sat(float(input[base + i]) * rms);
+    }
+}
+
 // ============================================================================
 // GEMM (f16, tiled)
 // ============================================================================
@@ -140,6 +171,8 @@ kernel void projection_w4a16_f16(
     constant uint      &M         [[buffer(4)]],
     constant uint      &N         [[buffer(5)]],
     constant uint      &K         [[buffer(6)]],
+    constant uint      &C_stride  [[buffer(7)]],
+    constant uint      &C_column  [[buffer(8)]],
     uint2 output                   [[threadgroup_position_in_grid]],
     ushort lane                    [[thread_index_in_simdgroup]]
 ) {
@@ -159,7 +192,7 @@ kernel void projection_w4a16_f16(
     }
     float total = simd_sum(partial);
     if (lane == 0) {
-        C[m * N + n] = half(clamp(total, -65504.0f, 65504.0f));
+        C[m * C_stride + C_column + n] = half(clamp(total, -65504.0f, 65504.0f));
     }
 }
 
@@ -171,6 +204,8 @@ kernel void projection_w8a16_f16(
     constant uint      &M         [[buffer(4)]],
     constant uint      &N         [[buffer(5)]],
     constant uint      &K         [[buffer(6)]],
+    constant uint      &C_stride  [[buffer(7)]],
+    constant uint      &C_column  [[buffer(8)]],
     uint2 output                   [[threadgroup_position_in_grid]],
     ushort lane                    [[thread_index_in_simdgroup]]
 ) {
@@ -187,7 +222,336 @@ kernel void projection_w8a16_f16(
     }
     float total = simd_sum(partial);
     if (lane == 0) {
-        C[m * N + n] = half(clamp(total, -65504.0f, 65504.0f));
+        C[m * C_stride + C_column + n] = half(clamp(total, -65504.0f, 65504.0f));
+    }
+}
+
+// Experimental native-BF16 activation/output ABI.  The quantizer's group-32
+// scales intentionally remain FP16: they are package metadata, not activation
+// tensors, and retaining their established two-byte encoding permits an
+// isolated A-dtype experiment without silently changing quantized weights.
+// Accumulation and the SIMD reduction remain FP32; only the projection input
+// and its single storage-rounding output boundary are BF16.
+kernel void experimental_projection_w4abf16_bf16(
+    device const bfloat *A         [[buffer(0)]],
+    device const uchar  *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n = output.x;
+    uint m = output.y;
+    if (m >= M || n >= N) return;
+    uint packed_row_bytes = (K + 1u) >> 1u;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float partial = 0.0f;
+    for (uint k = uint(lane); k < K; k += 32u) {
+        uchar packed = W[n * packed_row_bytes + (k >> 1u)];
+        int q = int((k & 1u) == 0u ? (packed & 0x0fu) : (packed >> 4u));
+        q = q >= 8 ? q - 16 : q;
+        float scale = float(scales[n * groups_per_row + (k >> 5u)]);
+        partial += float(A[m * K + k]) * (float(q) * scale);
+    }
+    float total = simd_sum(partial);
+    if (lane == 0) C[m * C_stride + C_column + n] = bfloat(total);
+}
+
+kernel void experimental_projection_w8abf16_bf16(
+    device const bfloat *A         [[buffer(0)]],
+    device const char   *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n = output.x;
+    uint m = output.y;
+    if (m >= M || n >= N) return;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float partial = 0.0f;
+    for (uint k = uint(lane); k < K; k += 32u) {
+        int q = int(W[n * K + k]);
+        float scale = float(scales[n * groups_per_row + (k >> 5u)]);
+        partial += float(A[m * K + k]) * (float(q) * scale);
+    }
+    float total = simd_sum(partial);
+    if (lane == 0) C[m * C_stride + C_column + n] = bfloat(total);
+}
+
+// Four-output native-BF16 research variants. One SIMD group owns four
+// adjacent output channels and reuses every activation load across all four
+// dot products. Output tails remain explicit; no padded weight row is read.
+kernel void experimental_projection_w4abf16_bf16_n4(
+    device const bfloat *A         [[buffer(0)]],
+    device const uchar  *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n0 = output.x * 4u;
+    uint m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint packed_row_bytes = (K + 1u) >> 1u;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float4 partial = float4(0.0f);
+    for (uint k = uint(lane); k < K; k += 32u) {
+        float activation = float(A[m * K + k]);
+        for (uint column = 0u; column < 4u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                uchar packed = W[n * packed_row_bytes + (k >> 1u)];
+                int q = int((k & 1u) == 0u ? (packed & 0x0fu) : (packed >> 4u));
+                q = q >= 8 ? q - 16 : q;
+                float scale = float(scales[n * groups_per_row + (k >> 5u)]);
+                partial[column] += activation * (float(q) * scale);
+            }
+        }
+    }
+    float4 total = float4(
+        simd_sum(partial.x), simd_sum(partial.y),
+        simd_sum(partial.z), simd_sum(partial.w));
+    if (lane == 0) {
+        for (uint column = 0u; column < 4u; ++column) {
+            uint n = n0 + column;
+            if (n < N) C[m * C_stride + C_column + n] = bfloat(total[column]);
+        }
+    }
+}
+
+kernel void experimental_projection_w8abf16_bf16_n4(
+    device const bfloat *A         [[buffer(0)]],
+    device const char   *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n0 = output.x * 4u;
+    uint m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float4 partial = float4(0.0f);
+    for (uint k = uint(lane); k < K; k += 32u) {
+        float activation = float(A[m * K + k]);
+        for (uint column = 0u; column < 4u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                int q = int(W[n * K + k]);
+                float scale = float(scales[n * groups_per_row + (k >> 5u)]);
+                partial[column] += activation * (float(q) * scale);
+            }
+        }
+    }
+    float4 total = float4(
+        simd_sum(partial.x), simd_sum(partial.y),
+        simd_sum(partial.z), simd_sum(partial.w));
+    if (lane == 0) {
+        for (uint column = 0u; column < 4u; ++column) {
+            uint n = n0 + column;
+            if (n < N) C[m * C_stride + C_column + n] = bfloat(total[column]);
+        }
+    }
+}
+
+// Eight-output variants trade twice the accumulator footprint for additional
+// activation reuse. They are a separate research schedule, not an alias or an
+// automatic replacement for N4.
+kernel void experimental_projection_w4abf16_bf16_n8(
+    device const bfloat *A         [[buffer(0)]],
+    device const uchar  *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n0 = output.x * 8u;
+    uint m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint packed_row_bytes = (K + 1u) >> 1u;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float4 partial_lo = float4(0.0f);
+    float4 partial_hi = float4(0.0f);
+    for (uint k = uint(lane); k < K; k += 32u) {
+        float activation = float(A[m * K + k]);
+        for (uint column = 0u; column < 8u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                uchar packed = W[n * packed_row_bytes + (k >> 1u)];
+                int q = int((k & 1u) == 0u ? (packed & 0x0fu) : (packed >> 4u));
+                q = q >= 8 ? q - 16 : q;
+                float term = activation * (float(q) * float(scales[n * groups_per_row + (k >> 5u)]));
+                if (column < 4u) partial_lo[column] += term;
+                else partial_hi[column - 4u] += term;
+            }
+        }
+    }
+    float4 total_lo = float4(
+        simd_sum(partial_lo.x), simd_sum(partial_lo.y),
+        simd_sum(partial_lo.z), simd_sum(partial_lo.w));
+    float4 total_hi = float4(
+        simd_sum(partial_hi.x), simd_sum(partial_hi.y),
+        simd_sum(partial_hi.z), simd_sum(partial_hi.w));
+    if (lane == 0) {
+        for (uint column = 0u; column < 8u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                float value = column < 4u ? total_lo[column] : total_hi[column - 4u];
+                C[m * C_stride + C_column + n] = bfloat(value);
+            }
+        }
+    }
+}
+
+kernel void experimental_projection_w8abf16_bf16_n8(
+    device const bfloat *A         [[buffer(0)]],
+    device const char   *W         [[buffer(1)]],
+    device const half   *scales    [[buffer(2)]],
+    device bfloat       *C         [[buffer(3)]],
+    constant uint       &M         [[buffer(4)]],
+    constant uint       &N         [[buffer(5)]],
+    constant uint       &K         [[buffer(6)]],
+    constant uint       &C_stride  [[buffer(7)]],
+    constant uint       &C_column  [[buffer(8)]],
+    uint2 output                    [[threadgroup_position_in_grid]],
+    ushort lane                     [[thread_index_in_simdgroup]]
+) {
+    uint n0 = output.x * 8u;
+    uint m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint groups_per_row = (K + 31u) >> 5u;
+    float4 partial_lo = float4(0.0f);
+    float4 partial_hi = float4(0.0f);
+    for (uint k = uint(lane); k < K; k += 32u) {
+        float activation = float(A[m * K + k]);
+        for (uint column = 0u; column < 8u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                float term = activation * (float(W[n * K + k]) * float(scales[n * groups_per_row + (k >> 5u)]));
+                if (column < 4u) partial_lo[column] += term;
+                else partial_hi[column - 4u] += term;
+            }
+        }
+    }
+    float4 total_lo = float4(
+        simd_sum(partial_lo.x), simd_sum(partial_lo.y),
+        simd_sum(partial_lo.z), simd_sum(partial_lo.w));
+    float4 total_hi = float4(
+        simd_sum(partial_hi.x), simd_sum(partial_hi.y),
+        simd_sum(partial_hi.z), simd_sum(partial_hi.w));
+    if (lane == 0) {
+        for (uint column = 0u; column < 8u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                float value = column < 4u ? total_lo[column] : total_hi[column - 4u];
+                C[m * C_stride + C_column + n] = bfloat(value);
+            }
+        }
+    }
+}
+
+// W4 next-round schedule: each lane consumes both values in one packed byte.
+kernel void experimental_projection_w4abf16_bf16_n4_packed2(
+    device const bfloat *A [[buffer(0)]], device const uchar *W [[buffer(1)]],
+    device const half *scales [[buffer(2)]], device bfloat *C [[buffer(3)]],
+    constant uint &M [[buffer(4)]], constant uint &N [[buffer(5)]],
+    constant uint &K [[buffer(6)]], constant uint &C_stride [[buffer(7)]],
+    constant uint &C_column [[buffer(8)]],
+    uint2 output [[threadgroup_position_in_grid]],
+    ushort lane [[thread_index_in_simdgroup]]) {
+    uint n0 = output.x * 4u, m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint row_bytes = (K + 1u) >> 1u, groups = (K + 31u) >> 5u;
+    float4 even = 0.0f, odd = 0.0f;
+    for (uint k0 = uint(lane) * 2u; k0 < K; k0 += 64u) {
+        float a0 = float(A[m * K + k0]);
+        bool has_k1 = k0 + 1u < K;
+        float a1 = has_k1 ? float(A[m * K + k0 + 1u]) : 0.0f;
+        for (uint column = 0u; column < 4u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                uchar packed = W[n * row_bytes + (k0 >> 1u)];
+                int q0 = int(packed & 0x0fu); q0 = q0 >= 8 ? q0 - 16 : q0;
+                int q1 = int(packed >> 4u); q1 = q1 >= 8 ? q1 - 16 : q1;
+                float scale = float(scales[n * groups + (k0 >> 5u)]);
+                even[column] += a0 * (float(q0) * scale);
+                if (has_k1) odd[column] += a1 * (float(q1) * scale);
+            }
+        }
+    }
+    float4 total;
+    for (uint column = 0u; column < 4u; ++column)
+        total[column] = simd_sum(even[column]) + simd_sum(odd[column]);
+    if (lane == 0) for (uint column = 0u; column < 4u; ++column) {
+        uint n = n0 + column;
+        if (n < N) C[m * C_stride + C_column + n] = bfloat(total[column]);
+    }
+}
+
+// W8 next-round schedule: four adjacent K values per lane, with one activation
+// vector reused across eight output rows. The scalar tail keeps arbitrary K legal.
+kernel void experimental_projection_w8abf16_bf16_n8_k4(
+    device const bfloat *A [[buffer(0)]], device const char *W [[buffer(1)]],
+    device const half *scales [[buffer(2)]], device bfloat *C [[buffer(3)]],
+    constant uint &M [[buffer(4)]], constant uint &N [[buffer(5)]],
+    constant uint &K [[buffer(6)]], constant uint &C_stride [[buffer(7)]],
+    constant uint &C_column [[buffer(8)]],
+    uint2 output [[threadgroup_position_in_grid]],
+    ushort lane [[thread_index_in_simdgroup]]) {
+    uint n0 = output.x * 8u, m = output.y;
+    if (m >= M || n0 >= N) return;
+    uint groups = (K + 31u) >> 5u;
+    float4 lo = 0.0f, hi = 0.0f;
+    for (uint k0 = uint(lane) * 4u; k0 < K; k0 += 128u) {
+        uint count = min(4u, K - k0);
+        float4 av = 0.0f;
+        for (uint j = 0u; j < count; ++j) av[j] = float(A[m * K + k0 + j]);
+        for (uint column = 0u; column < 8u; ++column) {
+            uint n = n0 + column;
+            if (n < N) {
+                float sum = 0.0f;
+                for (uint j = 0u; j < count; ++j) {
+                    float scale = float(scales[n * groups + ((k0 + j) >> 5u)]);
+                    sum += av[j] * (float(W[n * K + k0 + j]) * scale);
+                }
+                if (column < 4u) lo[column] += sum; else hi[column - 4u] += sum;
+            }
+        }
+    }
+    float4 total_lo, total_hi;
+    for (uint column = 0u; column < 4u; ++column) {
+        total_lo[column] = simd_sum(lo[column]);
+        total_hi[column] = simd_sum(hi[column]);
+    }
+    if (lane == 0) for (uint column = 0u; column < 8u; ++column) {
+        uint n = n0 + column;
+        if (n < N) C[m * C_stride + C_column + n] = bfloat(column < 4u ? total_lo[column] : total_hi[column - 4u]);
     }
 }
 
@@ -2592,6 +2956,10 @@ pub fn kernel_source_with_options(
     }
     let mut source = base.into_owned();
     source.push('\n');
+    if options.research.explicit_storage_abi() {
+        source.push_str(candidate);
+        return Cow::Owned(source);
+    }
     match float_type {
         MetalFloatType::F16 => source.push_str(candidate),
         MetalFloatType::Bf16 => source.push_str(
@@ -2753,6 +3121,7 @@ pub const KERNEL_COUNT: usize = KERNEL_NAMES.len();
 pub const KERNEL_NAMES: &[&str] = &[
     "rmsnorm_f16",
     "rmsnorm_headwise_f16",
+    "rmsnorm_headwise_unit_f16",
     "gemm_f16",
     "gemm_f16_tiled16",
     "gemm_f16_vec8",
@@ -2764,6 +3133,14 @@ pub const KERNEL_NAMES: &[&str] = &[
     "gemm_f16_simdgroup8x8",
     "projection_w4a16_f16",
     "projection_w8a16_f16",
+    "experimental_projection_w4abf16_bf16",
+    "experimental_projection_w8abf16_bf16",
+    "experimental_projection_w4abf16_bf16_n4",
+    "experimental_projection_w8abf16_bf16_n4",
+    "experimental_projection_w4abf16_bf16_n8",
+    "experimental_projection_w8abf16_bf16_n8",
+    "experimental_projection_w4abf16_bf16_n4_packed2",
+    "experimental_projection_w8abf16_bf16_n8_k4",
     "gemm_rmsnorm_f16",
     "gemm_headwise_rmsnorm_f16",
     "gemm_headwise_rmsnorm_unit_f16",
@@ -6150,7 +6527,7 @@ mod tests {
         let source = bfloat_kernel_source(false);
         let start = source.find("kernel void projection_w4a16_f16").unwrap();
         let end = source[start..]
-            .find("constant uint TILE_M")
+            .find("kernel void experimental_projection_w4abf16_bf16")
             .map(|relative| start + relative)
             .unwrap();
         let low_bit = &source[start..end];
@@ -6158,6 +6535,29 @@ mod tests {
         assert!(low_bit.contains("device const half  *scales"));
         assert!(low_bit.contains("device half        *C"));
         assert!(!low_bit.contains("bfloat"));
+    }
+
+    #[test]
+    fn experimental_low_bit_bf16_abi_is_explicit_and_keeps_f16_scales() {
+        let source = bfloat_kernel_source(false);
+        for name in [
+            "experimental_projection_w4abf16_bf16",
+            "experimental_projection_w8abf16_bf16",
+        ] {
+            let start = source
+                .find(&format!("kernel void {name}"))
+                .expect("experimental BF16 kernel is present");
+            let tail = &source[start..];
+            let end = tail[1..]
+                .find("kernel void ")
+                .map_or(tail.len(), |relative| relative + 1);
+            let kernel = &tail[..end];
+            assert!(kernel.contains("device const bfloat *A"));
+            assert!(kernel.contains("device const half   *scales"));
+            assert!(kernel.contains("device bfloat       *C"));
+            assert!(kernel.contains("float partial = 0.0f"));
+            assert!(kernel.contains("float total = simd_sum(partial)"));
+        }
     }
 
     #[test]

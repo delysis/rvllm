@@ -1,0 +1,78 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "mlx-gemma4-q8-pp2048-g64-20260924-v3",
+  "purpose": "timing",
+  "after": [
+    "mlx-gemma4-q4-pp2048-g64-20260924-v3"
+  ],
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600,
+  "stable_seconds": 5,
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": true,
+    "pmset_power_mode": 1,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-bench",
+      "llama-completion",
+      "llama-server",
+      "rvllm-server",
+      "rvllm_disaggregated_infer"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-gemma4-12b-affine8-g64-20260924/config.json",
+      "sha256": "2b419be9d2f003d34a38f32efe88bc7dc7435d5735f39dbbd53635af1953b29c"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-gemma4-12b-affine8-g64-20260924/model.safetensors.index.json",
+      "sha256": "ce4b07209d9468b021934541e3ccd5979d2e34675ab6740c8edfbdf5137d4d98"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/benchmark.py",
+      "sha256": "0ef83adbe09c75873fd69435cdeef559656a85f4dae5d607927931edba1d16b3"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/models/gemma4.py",
+      "sha256": "7301367b6ffcfb125f036186650c6f56cb55be6d1e0893edae8308d27049eb47"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/utils.py",
+      "sha256": "0b62f9990ef65d6346ee5ceaccbbd50b3e973bcf9aba91fd0df4c8fc8596f473"
+    }
+  ],
+  "command": {
+    "executable": {
+      "path": "/Users/george/christian_mystics/venv/bin/python",
+      "sha256": "695fc18cdb9a699c6b1ea88ce4027854782ed704eb34cc3200e6f8380155b6a8"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "args": [
+      "-m",
+      "mlx_lm.benchmark",
+      "--model",
+      "/Users/george/.cache/rvllm-mlx-gemma4-12b-affine8-g64-20260924",
+      "--prompt-tokens",
+      "2048",
+      "--generation-tokens",
+      "64",
+      "--batch-size",
+      "1",
+      "--num-trials",
+      "7"
+    ],
+    "env": {
+      "MLX_METAL_PREWARM": "1",
+      "PYTHONPATH": "/Users/george/.cache/rvllm-mlx-lm-87b7b583"
+    }
+  },
+  "validator": null,
+  "kernel_game_submission": null
+}

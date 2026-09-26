@@ -1,0 +1,19 @@
+{
+  "schema": "rvllm.attention_cross_process_evidence_join.v1",
+  "status": "paired_separate_harnesses_not_abba",
+  "comparison_contract": "Join only by exact live length and BF16 decode attention label. MLX is a separately synchronized Python/MLX process and is not an arm in the rvLLM referee. Ratios derived from this file are engineering estimates, never same-harness promotion evidence.",
+  "rvllm_workload": "Q1, one KV head, sixteen query heads, D512, BF16 paged cache, complete partial-plus-merge operator call",
+  "mlx_source": {
+    "path": "reports/gemma4-mlx-long-context-queue-20260924-v6/stage-summary.json",
+    "sha256": "bedb6bad503df4f4ec56f341a623b90aaeae509406c60eff14edac89d5ff21ec",
+    "schema": "rvllm.mlx_gemma4_stage_queue_summary.v1",
+    "field": "grouped[16][length].decode.attention_core_sdpa.full_attention.mean_ms"
+  },
+  "mlx_bf16_decode_full_attention": [
+    { "live_keys": 256, "mean_ms": 0.324558750144206, "iterations": 100, "job_id": "mlx-gemma4-bf16-stage-pp256-20260924-v1" },
+    { "live_keys": 512, "mean_ms": 0.24049833009485155, "iterations": 100, "job_id": "mlx-gemma4-bf16-stage-pp512-20260924-v1" },
+    { "live_keys": 1024, "mean_ms": 40.04813958017621, "iterations": 100, "job_id": "mlx-gemma4-bf16-stage-pp1024-20260924-v1", "warning": "retained interference outlier; not suitable as the sole comparison point" },
+    { "live_keys": 2048, "mean_ms": 1.489121659542434, "iterations": 100, "job_id": "mlx-gemma4-bf16-stage-pp2048-20260924-v1" }
+  ],
+  "rvllm_results": null
+}

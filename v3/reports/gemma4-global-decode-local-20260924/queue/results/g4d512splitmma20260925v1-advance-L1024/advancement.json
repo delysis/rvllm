@@ -1,0 +1,33 @@
+{
+  "campaign": "g4d512splitmma20260925v1",
+  "campaign_sha256": "108e8abfb07e4f83b02d98db4a2c45cffa0933e22cd688f2757607f79e8b6ee9",
+  "completed_length": 1024,
+  "expected_candidates": [
+    "metal-global-d512-split-mma_r8k32s256t128"
+  ],
+  "next_length": 2048,
+  "promotion": false,
+  "rule": "fastest two plus candidates within 10 percent of second-fastest",
+  "schema": "rvllm.global-decode.advancement.v1",
+  "scores": [
+    {
+      "candidate": "metal-global-d512-split-mma_r8k32s256t128",
+      "candidate_mean_ms_per_dispatch": 2.2122772915754467,
+      "control_drift_passed": true,
+      "merge_mean_ms_per_operation": 0.11043208325281739,
+      "native_receipt": {
+        "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4d512splitmma20260925v1-split-r8k32s256t128-mma-abba-L1024/native/abba.json",
+        "sha256": "96dbd54596ddcb8fa0b1c42c2f4b0f37bc03a40ffacb2f3fd9a89f168e8b96d8"
+      },
+      "partial_mean_ms_per_operation": 2.1018452083226293,
+      "queue_report": {
+        "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4d512splitmma20260925v1-split-r8k32s256t128-mma-abba-L1024/report.json",
+        "sha256": "a841cd0573276793e12c59cdab44ee93d65429c97c99005aba01429887f05bbc"
+      },
+      "total_mean_ms_per_operation": 2.2122772915754467
+    }
+  ],
+  "selected_candidates": [
+    "metal-global-d512-split-mma_r8k32s256t128"
+  ]
+}

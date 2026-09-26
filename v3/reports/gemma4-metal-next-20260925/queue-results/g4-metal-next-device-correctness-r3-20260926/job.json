@@ -1,0 +1,65 @@
+{
+  "after": [
+    "g4-metal-next-device-correctness-r2-20260926"
+  ],
+  "command": {
+    "args": [
+      "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-metal-next-20260925/compile/gemma4-metal-next.metallib"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/rvllm-metal-next-oracle",
+      "sha256": "090e74dc4768dc6e933599dbc01b93d8675142f7e39149d4dac807e960394cdb"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "python"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-metal-next-device-correctness-r3-20260926",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-metal-next-20260925/compile/gemma4-metal-next.metallib",
+      "sha256": "d6d42dec984fe8bc37075520bad0e1218d74b8e04059dc4336e442e71f73f743"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-metal-next-20260925/source/gemma4_qmv_g64.metal",
+      "sha256": "4a303839c1ff3367c31499e041abadf20fd500442f2dd88d211010b4b10b625c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-metal-next-20260925/source/gemma4_ffn_decode_fused.metal",
+      "sha256": "c30a109a5969632adf60744579f7ceb52294d961c360946e2a5e7930091a5bde"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-metal-next-20260925/source/gemma4_global_short_decode.metal",
+      "sha256": "32c3d3afcacf36b377e81f454320c717ff95c21fc1fa89531187b753655320c0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-metal-next-20260925/ADJUDICATION.md",
+      "sha256": "14aaac0764e5bed2e9d20cf1b2f686bbf4406ad5f3a5a20c0bfb5b35530fbdb3"
+    }
+  ],
+  "kernel_game_submission": null,
+  "max_run_seconds": 600,
+  "max_wait_seconds": 86400,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0,
+  "validator": null
+}

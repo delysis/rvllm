@@ -1,0 +1,155 @@
+{
+  "air": {
+    "bytes": 6784,
+    "path": "reports/gemma4-metal-next-20260925/evidence/qmv/artifact.air",
+    "sha256": "8d0bafb9076a8672875608e35c67af89f71d4c844600e6dc61fb7985d43327bb"
+  },
+  "claims": {
+    "low_bit_unpack_machine_arithmetic": {
+      "reason": "not exposed by the public Metal compiler or MTLComputePipelineState API; raw compiler artifacts are not interpreted as a stable semantic ISA contract",
+      "status": "unverified"
+    },
+    "occupancy": {
+      "reason": "not exposed by the public Metal compiler or MTLComputePipelineState API; raw compiler artifacts are not interpreted as a stable semantic ISA contract",
+      "status": "unavailable"
+    },
+    "register_count": {
+      "reason": "not exposed by the public Metal compiler or MTLComputePipelineState API; raw compiler artifacts are not interpreted as a stable semantic ISA contract",
+      "status": "unavailable"
+    },
+    "register_residency": {
+      "reason": "not exposed by the public Metal compiler or MTLComputePipelineState API; raw compiler artifacts are not interpreted as a stable semantic ISA contract",
+      "status": "unavailable"
+    },
+    "simd_matrix_machine_lowering": {
+      "reason": "not exposed by the public Metal compiler or MTLComputePipelineState API; raw compiler artifacts are not interpreted as a stable semantic ISA contract",
+      "status": "unverified"
+    }
+  },
+  "collector": {
+    "bytes": 630112,
+    "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/release/rvllm-metal-artifact-evidence",
+    "sha256": "28befae0c17ffb5282c847e0177ef1052a270b19d3725eab67801f72324eaac2"
+  },
+  "compiler_artifacts": {
+    "build_tables": {
+      "artifact": {
+        "bytes": 67,
+        "path": "reports/gemma4-metal-next-20260925/evidence/qmv/metal-objdump-build-tables.txt",
+        "sha256": "f16128b1e39eda522814e84deed3c4c0301e8b93c077d467d762e68f7705fe66"
+      },
+      "exit_code": 0,
+      "status": "captured"
+    },
+    "disassembly": {
+      "artifact": {
+        "bytes": 26715,
+        "path": "reports/gemma4-metal-next-20260925/evidence/qmv/metal-objdump-disassembly.txt",
+        "sha256": "b6f4369ccf62fe9f89128d080a0ef947d065980918631d3122da96522881d982"
+      },
+      "exit_code": 0,
+      "status": "captured"
+    },
+    "interpretation": "raw public-tool output only; availability does not establish a particular executed machine lowering"
+  },
+  "device": {
+    "identity_sha256": "fa5cc938114a5d7928ba0a35cb56a96e3ada82722170724dbe2647a34c9c3600",
+    "public_properties": {
+      "gpu_family": "Apple9",
+      "has_unified_memory": true,
+      "max_threadgroup_memory_bytes": 32768,
+      "name": "Apple M4 Max",
+      "recommended_max_working_set_bytes": 103079215104,
+      "registry_id": 4294968927
+    }
+  },
+  "metallib": {
+    "bytes": 11244,
+    "path": "reports/gemma4-metal-next-20260925/evidence/qmv/artifact.metallib",
+    "sha256": "4bf2018431c3f07619d1a0021dee44cbdc2140c2129a3fa83a3c3db94723fcbf"
+  },
+  "pipeline_resources": [
+    {
+      "kernel": "gemma4_qmv_q4_g64_r8_sg2",
+      "max_total_threads_per_threadgroup": 1024,
+      "provenance": "public MTLComputePipelineState getters on the sealed metallib",
+      "static_threadgroup_memory_bytes": 0,
+      "thread_execution_width": 32
+    },
+    {
+      "kernel": "gemma4_qmv_q8_g64_r8_sg2",
+      "max_total_threads_per_threadgroup": 1024,
+      "provenance": "public MTLComputePipelineState getters on the sealed metallib",
+      "static_threadgroup_memory_bytes": 0,
+      "thread_execution_width": 32
+    }
+  ],
+  "schema": "rvllm.metal_artifact_evidence.v1",
+  "scope": "rvLLM artifact evidence only; contains no MLX trace or performance claim",
+  "source": {
+    "bytes": 5531,
+    "path": "reports/gemma4-metal-next-20260925/source/gemma4_qmv_g64.metal",
+    "sha256": "4a303839c1ff3367c31499e041abadf20fd500442f2dd88d211010b4b10b625c"
+  },
+  "status": "captured",
+  "toolchain": {
+    "compile_argv": [
+      "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metal",
+      "-std=metal3.1",
+      "-c",
+      "reports/gemma4-metal-next-20260925/source/gemma4_qmv_g64.metal",
+      "-o",
+      "reports/gemma4-metal-next-20260925/evidence/qmv/artifact.air"
+    ],
+    "compile_capture": {
+      "artifact": {
+        "bytes": 0,
+        "path": "reports/gemma4-metal-next-20260925/evidence/qmv/metal-compile.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "exit_code": 0,
+      "status": "captured"
+    },
+    "link_argv": [
+      "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metallib",
+      "reports/gemma4-metal-next-20260925/evidence/qmv/artifact.air",
+      "-o",
+      "reports/gemma4-metal-next-20260925/evidence/qmv/artifact.metallib"
+    ],
+    "link_capture": {
+      "artifact": {
+        "bytes": 0,
+        "path": "reports/gemma4-metal-next-20260925/evidence/qmv/metallib-link.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "exit_code": 0,
+      "status": "captured"
+    },
+    "metal": {
+      "identity": {
+        "bytes": 238624,
+        "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metal",
+        "sha256": "3c7420a3853873c8bdfa6b532a71e7ed3dc3af4f46c1d215eef4b78d419ad392"
+      },
+      "version": "Apple metal version 32023.864 (metalfe-32023.864)\nTarget: air64-apple-darwin24.6.0\nThread model: posix\nInstalledDir: /private/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/metal/current/bin"
+    },
+    "metal_objdump": {
+      "identity": {
+        "bytes": 238640,
+        "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metal-objdump",
+        "sha256": "25622ddce41b4dc7c6a3250322a1cbc07ca9b41707bda6727e385e704c85562d"
+      },
+      "version": "Apple LLVM version 32023.864\n  Optimized build.\n  Default target: x86_64-apple-darwin24.6.0\n  Host CPU: apple-m1\n\n  Registered Targets:\n    agx1 - AGX1\n    agx2 - AGX2\n    agx3 - AGX3\n  Virtual Targets:\n    air32 - 32-bit AIR\n    air64 - 64-bit AIR"
+    },
+    "metallib": {
+      "identity": {
+        "bytes": 238640,
+        "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metallib",
+        "sha256": "92a9f7c97e4a54c5889f32c03c0ce28fc4743e18dad26ec0a0c9bde132e1716b"
+      },
+      "version": "AIR-LLD 32023.864 (metalfe-32023.864) (compatible with legacy metallib linker)"
+    },
+    "sdk_path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+    "sdk_version": "26.2"
+  }
+}

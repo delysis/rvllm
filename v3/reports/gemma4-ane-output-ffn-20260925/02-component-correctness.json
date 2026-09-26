@@ -1,0 +1,17 @@
+{
+  "id": "gemma4-ane-output-ffn-02-component-correctness-20260925",
+  "stage": "blocked_pending_compile_receipt",
+  "default_off": true,
+  "reason": "No evaluation API exists until the compile receipt fixes accepted MIL and a bounded device oracle can preserve intermediate RMSNorm/residual evidence.",
+  "required_future_contract": {
+    "tokens": 16,
+    "same_attention_route": true,
+    "external_inputs": 1,
+    "external_outputs": 1,
+    "cache_policy": "strict_cached_zero_compile",
+    "required_intermediates": ["projected_attention", "post_attention_norm", "residual_after_attention", "pre_ffn_norm", "raw_ffn_branch"],
+    "comparison": "bit_exact_or_fail"
+  },
+  "compile_budget": 0,
+  "fail_closed": true
+}

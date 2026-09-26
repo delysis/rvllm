@@ -1,0 +1,75 @@
+{
+  "cases": [
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-qmv-w8-g32-r8-sg2-oracle/native/w8-M1-N3840-K4096.bf16",
+      "bf16_sha256": "ce37f134d7a67b2a2e328c41b383dc2d922205c97978b170a50a3500ef36f5a9",
+      "exact_dispatch_accounting": true,
+      "guards_untouched": true,
+      "host_refusals_without_dispatch": 4,
+      "incumbent_max_fp64_abs_error": 0.0,
+      "k": 4096,
+      "label": "w8-M1-N3840-K4096",
+      "max_fp64_abs_error": 0.0,
+      "persistent_arena_unchanged": true,
+      "predeclared_bound": "0.015625*abs(reference)+1e-5",
+      "reference": "independent scalar FP64 with incumbent BF16 boundaries",
+      "repeated_bit_exact": true,
+      "repeats": 3,
+      "shader_guarded_encoded_dispatches": 3
+    },
+    {
+      "bf16_file": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-next-live-01-qmv-w8-g32-r8-sg2-oracle/native/w8-M1-N3840-K8192.bf16",
+      "bf16_sha256": "69f910c1444642abbddc84ac24882f97c5ae000689864eec3fd883d489681386",
+      "exact_dispatch_accounting": true,
+      "guards_untouched": true,
+      "host_refusals_without_dispatch": 4,
+      "incumbent_max_fp64_abs_error": 0.0,
+      "k": 8192,
+      "label": "w8-M1-N3840-K8192",
+      "max_fp64_abs_error": 0.0,
+      "persistent_arena_unchanged": true,
+      "predeclared_bound": "0.015625*abs(reference)+1e-5",
+      "reference": "independent scalar FP64 with incumbent BF16 boundaries",
+      "repeated_bit_exact": true,
+      "repeats": 3,
+      "shader_guarded_encoded_dispatches": 3
+    }
+  ],
+  "checkpoint_qualified": false,
+  "identity": {
+    "build_receipt_sha256": "479991bb160ae7378ae1e1c92d15f439a3f25e9d256c28eb21c9f18e2d825160",
+    "candidate": "metal-qmv-w8-g32-r8-sg2",
+    "core_sha256": "50ee27f859fa4d17e29db18c726cae60c1906a94e434507a0a27743254738311",
+    "device_name": "Apple M4 Max",
+    "gpu_family": "Apple9",
+    "grid": [
+      240,
+      1,
+      1
+    ],
+    "kernel": "research_qmv_w8_g32_r8_sg2",
+    "kernels": [
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_qmv_w8_g32_r8_sg2",
+        "source_threadgroup_bytes": 0,
+        "threads": 64
+      }
+    ],
+    "keys": 1,
+    "metallib_sha256": "de4a7242b90c1432c0e5c4d303a980188bff89c04dd12e89c2b09f27be04953a",
+    "oracle_library": true,
+    "panel": 32,
+    "rows": 16,
+    "scratch_bytes": 0,
+    "simd_matrix": false,
+    "source_sha256": "50ee27f859fa4d17e29db18c726cae60c1906a94e434507a0a27743254738311",
+    "test_executable_sha256": "f6a7aa9a91b5eda7b04bd6c4ba54da26a4a1aeaa8ec7149eaa2adc25d3a993fa",
+    "threads": 64
+  },
+  "promotion": false,
+  "schema": "rvllm.decode-round.oracle.v1",
+  "status": "passed"
+}

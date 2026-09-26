@@ -1,0 +1,56 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "gemma4-ane-dynamic-qkv-01-provision-v2-20260925",
+  "after": [],
+  "purpose": "preparation",
+  "command": {
+    "cwd": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/target/release/rvllm-runtime-tests-dynamic-qkv-v2",
+      "sha256": "23ce49d33106ad7fea1dba47031606076c37cf250270d4c3e7a43b3236f0f52a"
+    },
+    "args": [
+      "gemma_ane_decode::tests::hardware_layer0_fused_attention_output_full_route_provision",
+      "--exact",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RVLLM_ANE_DIAGNOSTIC_JOURNAL": "{output}/ane-driver-journal.jsonl",
+      "RVLLM_ANE_FUSED_FULL_ROUTE_PROVISION_PART": "dynamic-qkv",
+      "RVLLM_ANE_FUSED_FULL_ROUTE_PROVISION_RECEIPT": "{output}/provision-receipt.jsonl",
+      "RVLLM_GEMMA4_MODEL_DIR": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    }
+  ],
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3",
+    "minimum_free_bytes": 17179869184,
+    "power_source": "ac",
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_disaggregated_infer"
+    ],
+    "quiet_process_names": [],
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null
+  },
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 900,
+  "stable_seconds": 0,
+  "validator": null,
+  "kernel_game_submission": null
+}

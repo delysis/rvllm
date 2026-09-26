@@ -1,0 +1,18 @@
+{
+  "schema": "rvllm.attention_matched_summary.v1",
+  "candidate": "atlas-coop-key-r8-k8-p64-t128-s32",
+  "control": "metal-global-d512-split-mma_r8k32s256t128",
+  "scope": "operator_only_complete_partial_plus_merge",
+  "historical_runner_sha256": "17040e8ad1fae2678c7d2ef9f987713117121f8f406db270d0addce8a73a4467",
+  "generated_metal_source_sha256": "072efb760d38b88756981d122b0456832639c668ff48454a047f06b38cab56b1",
+  "later_referee_strengthening_exercised_by_these_receipts": false,
+  "samples_per_length": 36,
+  "dispatches_per_arm_per_sample": 3,
+  "results": [
+    { "live_keys": 256, "candidate_ms": 0.704146, "control_ms": 3.4266665, "control_over_candidate": 4.866414777617142, "baseline_drift": 0.11772533805212193, "drift_passed": false, "score_sha256": "91e81cbeefb1113277c2d3b3583a4ddabe4a415ae8a2c4ff1ff96315af96b9e6", "oracle_sha256": "fc9611693b52863a24e9ac8caf3bf6963da3baff0ccc09f83fc9122ef2af4467" },
+    { "live_keys": 512, "candidate_ms": 0.516625, "control_ms": 2.0461875, "control_over_candidate": 3.9606823130897655, "baseline_drift": 0.05196115525286915, "drift_passed": false, "score_sha256": "a15677102e491bb65a8d064a52523ab5a950961cc10b4071ac4a12ac6eee984a", "oracle_sha256": "9bdaffe6abb6f2434e7af7ac46f8466e8edae4e42ac824fa9f3c77aae898bd42" },
+    { "live_keys": 1024, "candidate_ms": 0.7482915, "control_ms": 1.829646, "control_over_candidate": 2.4450979330915827, "baseline_drift": 0.0033987721059793863, "drift_passed": true, "score_sha256": "60cfad1f539bac11d0bde561a69bab8824b314c79255912887714e373be5db73", "oracle_sha256": "9b29d6e695e9602dbf9c5a68ef126451b87f7717f270085be399614e4b019c49" },
+    { "live_keys": 2048, "candidate_ms": 1.296979, "control_ms": 1.948479, "control_over_candidate": 1.5023211632570765, "baseline_drift": 0.06474059472643456, "drift_passed": false, "score_sha256": "d89d3b003647ed9357891e66a4aeb28a2d8d5639537ed4dd66484a592267f639", "oracle_sha256": "fb64d2b7ab06d602a06872b1c77c0ebcfa6b94597102e22708362beffe1e72ca" }
+  ],
+  "qualification": "one admitted matched timing at L1024; three correctness-passed timing observations retained as drift-inconclusive; no promotion or full-route claim"
+}

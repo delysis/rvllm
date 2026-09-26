@@ -235,6 +235,174 @@
           "source_shared_bytes": 32
         }
       ]
+    },
+    {
+      "name": "metal-load4-m16n32k64",
+      "kernels": [
+        "research_gemm_load4_m16n32k64",
+        "research_qkv_load4_m16n32k64"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/load4_m16n32k64.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "research_gemm_load4_m16n32k64",
+          "threads": 64,
+          "source_shared_bytes": 6144
+        },
+        {
+          "kernel": "research_qkv_load4_m16n32k64",
+          "threads": 64,
+          "source_shared_bytes": 6144
+        }
+      ]
+    },
+    {
+      "name": "metal-load4-m16n64k64",
+      "kernels": [
+        "research_gemm_load4_m16n64k64",
+        "research_qkv_load4_m16n64k64"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/load4_m16n64k64.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "research_gemm_load4_m16n64k64",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        },
+        {
+          "kernel": "research_qkv_load4_m16n64k64",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        }
+      ]
+    },
+    {
+      "name": "metal-load4-m32n32k64",
+      "kernels": [
+        "research_gemm_load4_m32n32k64",
+        "research_qkv_load4_m32n32k64"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/load4_m32n32k64.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "research_gemm_load4_m32n32k64",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        },
+        {
+          "kernel": "research_qkv_load4_m32n32k64",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        }
+      ]
+    },
+    {
+      "name": "metal-load4-m32n64k32",
+      "kernels": [
+        "research_gemm_load4_m32n64k32",
+        "research_qkv_load4_m32n64k32"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/load4_m32n64k32.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "research_gemm_load4_m32n64k32",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        },
+        {
+          "kernel": "research_qkv_load4_m32n64k32",
+          "threads": 128,
+          "source_shared_bytes": 8192
+        }
+      ]
+    },
+    {
+      "name": "metal-load4-m32n64k64",
+      "kernels": [
+        "research_gemm_load4_m32n64k64",
+        "research_qkv_load4_m32n64k64"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/load4_m32n64k64.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "research_gemm_load4_m32n64k64",
+          "threads": 128,
+          "source_shared_bytes": 12288
+        },
+        {
+          "kernel": "research_qkv_load4_m32n64k64",
+          "threads": 128,
+          "source_shared_bytes": 12288
+        }
+      ]
+    },
+    {
+      "name": "metal-load4-m32n64k128",
+      "kernels": [
+        "research_gemm_load4_m32n64k128",
+        "research_qkv_load4_m32n64k128"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/load4_m32n64k128.metal",
+      "min_tokens": 6,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "research_gemm_load4_m32n64k128",
+          "threads": 128,
+          "source_shared_bytes": 24576
+        },
+        {
+          "kernel": "research_qkv_load4_m32n64k128",
+          "threads": 128,
+          "source_shared_bytes": 24576
+        }
+      ]
+    },
+    {
+      "name": "metal-load4-m64n64k64",
+      "kernels": [
+        "research_gemm_load4_m64n64k64",
+        "research_qkv_load4_m64n64k64"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/load4_m64n64k64.metal",
+      "min_tokens": 64,
+      "max_tokens": 1024,
+      "window_independent": true,
+      "numerical_contract": "layout-only-bitwise-fp32-gate",
+      "budgets": [
+        {
+          "kernel": "research_gemm_load4_m64n64k64",
+          "threads": 128,
+          "source_shared_bytes": 16384
+        },
+        {
+          "kernel": "research_qkv_load4_m64n64k64",
+          "threads": 128,
+          "source_shared_bytes": 16384
+        }
+      ]
     }
   ]
 }

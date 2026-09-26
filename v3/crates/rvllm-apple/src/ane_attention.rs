@@ -7,8 +7,10 @@
 //! private API call. See reports/ane-panic-20260914.md for the evidence boundary.
 
 use crate::ane_attention_layout::PackedAttentionLayout;
+use crate::ane_linear::fp16_linear_weight_blob;
 use half::f16;
 use rvllm_apple_ane_sys::{AneInMemoryKernel, AneInMemoryProgram, AneProgramCachePolicy};
+use sha2::{Digest, Sha256};
 
 // No runtime override: a new shape requires an explicit qualification change.
 fn qualified_layout(layout: PackedAttentionLayout) -> bool {
@@ -29,6 +31,202 @@ fn qualified_layout(layout: PackedAttentionLayout) -> bool {
 pub struct AneAttentionProgram {
     layout: PackedAttentionLayout,
     program: AneInMemoryProgram,
+}
+
+/// Default-off program owner for one layer's fused attention and output
+/// projection. Production routing remains unchanged until the component and
+/// full-route gates qualify this exact graph.
+pub struct AneAttentionOutputCompile {
+    layout: PackedAttentionLayout,
+    output_channels: usize,
+    program: AneInMemoryProgram,
+}
+
+pub struct AneAttentionOutput {
+    kernel: AneInMemoryKernel,
+    layout: PackedAttentionLayout,
+    tokens_seen: usize,
+    query: Vec<u8>,
+    key: Vec<u8>,
+    value: Vec<u8>,
+    mask: Vec<u8>,
+    output_channels: usize,
+    output: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AneAttentionOutputIdentity {
+    pub mil_sha256: String,
+    pub weight_blob_sha256: String,
+    pub input_bytes: usize,
+    pub output_bytes: usize,
+}
+
+impl AneAttentionOutputCompile {
+    pub fn source_identity(
+        layout: PackedAttentionLayout,
+        output_weights: &[f16],
+        output_channels: usize,
+    ) -> Result<AneAttentionOutputIdentity, String> {
+        validate_fused_shape(layout, output_weights, output_channels)?;
+        let blob = fp16_linear_weight_blob(output_weights)?;
+        let mil = layout.mil_with_output_projection(output_channels, 64)?;
+        Ok(AneAttentionOutputIdentity {
+            mil_sha256: hex_sha256(mil.as_bytes()),
+            weight_blob_sha256: hex_sha256(&blob),
+            input_bytes: layout.input_bytes(),
+            output_bytes: layout.projected_output_bytes(output_channels)?,
+        })
+    }
+
+    pub fn compile_layer(
+        layout: PackedAttentionLayout,
+        output_weights: &[f16],
+        output_channels: usize,
+        policy: AneProgramCachePolicy,
+    ) -> Result<Self, String> {
+        validate_fused_shape(layout, output_weights, output_channels)?;
+        let blob = fp16_linear_weight_blob(output_weights)?;
+        let mil = layout.mil_with_output_projection(output_channels, 64)?;
+        let program = AneInMemoryProgram::compile_with_cache_policy(
+            &mil,
+            &blob,
+            layout.input_bytes(),
+            layout.projected_output_bytes(output_channels)?,
+            policy,
+        )?;
+        Ok(Self {
+            layout,
+            output_channels,
+            program,
+        })
+    }
+
+    pub fn create_request(&self) -> Result<AneAttentionOutput, String> {
+        let mut kernel = self.program.create_request()?;
+        kernel.write_input(&self.layout.import_cache(&[], &[], 0)?)?;
+        Ok(AneAttentionOutput {
+            kernel,
+            layout: self.layout,
+            tokens_seen: 0,
+            query: vec![0; self.layout.query_width() * 2],
+            key: vec![0; self.layout.kv_width() * 2],
+            value: vec![0; self.layout.kv_width() * 2],
+            mask: vec![0; self.layout.capacity() * 2],
+            output_channels: self.output_channels,
+            output: vec![0; self.layout.projected_output_bytes(self.output_channels)?],
+        })
+    }
+}
+
+impl AneAttentionOutput {
+    /// Evaluate one completely packed attention surface. The sole logical
+    /// output column is decoded from ANE's 64-byte channel rows.
+    pub fn evaluate_packed(&mut self, input: &[u8], output: &mut [f16]) -> Result<(), String> {
+        if input.len() != self.layout.input_bytes() || output.len() != self.output_channels {
+            return Err("fused attention/output projection I/O shape mismatch".into());
+        }
+        self.kernel.write_input(input)?;
+        self.kernel.evaluate()?;
+        self.kernel.read_output(&mut self.output)?;
+        for (channel, value) in output.iter_mut().enumerate() {
+            let offset = channel * 64;
+            *value = f16::from_le_bytes([self.output[offset], self.output[offset + 1]]);
+        }
+        Ok(())
+    }
+
+    pub fn import_cache(
+        &mut self,
+        keys: &[f16],
+        values: &[f16],
+        tokens: usize,
+    ) -> Result<(), String> {
+        let packed = self.layout.import_cache(keys, values, tokens)?;
+        self.kernel.write_input(&packed)?;
+        self.tokens_seen = tokens;
+        Ok(())
+    }
+
+    /// Append one position through the same persistent packed surface used by
+    /// the qualified attention request, but return the fused projection.
+    pub fn decode(
+        &mut self,
+        query: &[f16],
+        key: &[f16],
+        value: &[f16],
+        output: &mut [f16],
+    ) -> Result<(), String> {
+        if key.len() != self.layout.kv_width()
+            || value.len() != key.len()
+            || output.len() != self.output_channels
+        {
+            return Err("fused attention/output projection decode shape mismatch".into());
+        }
+        let position = self.tokens_seen;
+        let next_tokens = position.checked_add(1).ok_or("ANE token count overflow")?;
+        let key_offset = self
+            .layout
+            .key_offset(position)
+            .ok_or("ANE attention capacity exceeded")?;
+        let value_offset = self
+            .layout
+            .value_offset(position)
+            .ok_or("ANE attention capacity exceeded")?;
+        self.layout.encode_query(query, &mut self.query)?;
+        self.layout.encode_mask(next_tokens, &mut self.mask)?;
+        encode(key, &mut self.key);
+        encode(value, &mut self.value);
+        let stride = self.layout.row_bytes();
+        self.kernel
+            .write_tensor_strided(0, 0, stride, self.layout.groups() * 2, &self.query)?;
+        self.kernel
+            .write_tensor_strided(0, key_offset, stride, 2, &self.key)?;
+        self.kernel
+            .write_tensor_strided(0, value_offset, stride, 2, &self.value)?;
+        self.kernel.write_tensor_strided(
+            0,
+            self.layout.mask_offset(),
+            self.mask.len(),
+            self.mask.len(),
+            &self.mask,
+        )?;
+        self.kernel.evaluate()?;
+        self.kernel.read_output(&mut self.output)?;
+        for (channel, output) in output.iter_mut().enumerate() {
+            let offset = channel * 64;
+            *output = f16::from_le_bytes([self.output[offset], self.output[offset + 1]]);
+        }
+        self.tokens_seen = next_tokens;
+        Ok(())
+    }
+
+    pub fn tokens_seen(&self) -> usize {
+        self.tokens_seen
+    }
+}
+
+fn validate_fused_shape(
+    layout: PackedAttentionLayout,
+    output_weights: &[f16],
+    output_channels: usize,
+) -> Result<(), String> {
+    if !qualified_layout(layout)
+        || output_weights.len() != output_channels.saturating_mul(layout.query_width())
+    {
+        return Err(
+            "fused attention output projection shape is outside the qualified single-I/O boundary"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub struct AneAttention {

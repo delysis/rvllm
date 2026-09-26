@@ -1,0 +1,138 @@
+{
+  "baseline_evaluations_per_token": 2,
+  "baseline_median_ms_per_token": 19.88244465625,
+  "baseline_range_drift_fraction": 0.41718127178384634,
+  "cache_identity": {
+    "input_bytes": 8523840,
+    "mil_sha256": "cbc3acbf8ac20506c3592997b76aa0f0695d39a598bd93ae15326988a8840317",
+    "output_bytes": 245760,
+    "weight_blob_sha256": "68a3a71d77dba7eeefe425c56cc93695f718ddf3530150395a19c5bae859b160"
+  },
+  "claim": "Layer-0 component timing only. Both arms use persistent KV surfaces and incremental newest-Q/K/V/mask writes. Baseline includes attention evaluation/read plus output-projection write/evaluation/read; fused includes one evaluation/read. No full-route or promotion claim.",
+  "compiler_calls_after_timing": 0,
+  "compiler_calls_during_timing": 0,
+  "fused_evaluations_per_token": 1,
+  "fused_median_ms_per_token": 10.1533232421875,
+  "fused_range_drift_fraction": 0.06893492515119282,
+  "layer": 0,
+  "maximum_warmup_output_difference": 0.0,
+  "measured_tokens_per_arm": 384,
+  "median_baseline_over_fused": 1.9582203956274709,
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "observations": [
+    {
+      "arm": "fused",
+      "block": 0,
+      "elapsed_ms": 624.938417,
+      "index": 0,
+      "milliseconds_per_token": 9.764662765625,
+      "order": "BAAB",
+      "repetitions": 64
+    },
+    {
+      "arm": "baseline",
+      "block": 0,
+      "elapsed_ms": 1251.9066249999998,
+      "index": 1,
+      "milliseconds_per_token": 19.561041015624998,
+      "order": "BAAB",
+      "repetitions": 64
+    },
+    {
+      "arm": "baseline",
+      "block": 0,
+      "elapsed_ms": 1249.049958,
+      "index": 2,
+      "milliseconds_per_token": 19.51640559375,
+      "order": "BAAB",
+      "repetitions": 64
+    },
+    {
+      "arm": "fused",
+      "block": 0,
+      "elapsed_ms": 654.672167,
+      "index": 3,
+      "milliseconds_per_token": 10.229252609375,
+      "order": "BAAB",
+      "repetitions": 64
+    },
+    {
+      "arm": "baseline",
+      "block": 1,
+      "elapsed_ms": 1770.1302079999998,
+      "index": 4,
+      "milliseconds_per_token": 27.658284499999997,
+      "order": "ABBA",
+      "repetitions": 64
+    },
+    {
+      "arm": "fused",
+      "block": 1,
+      "elapsed_ms": 661.223167,
+      "index": 5,
+      "milliseconds_per_token": 10.331611984375,
+      "order": "ABBA",
+      "repetitions": 64
+    },
+    {
+      "arm": "fused",
+      "block": 1,
+      "elapsed_ms": 668.0184999999999,
+      "index": 6,
+      "milliseconds_per_token": 10.437789062499998,
+      "order": "ABBA",
+      "repetitions": 64
+    },
+    {
+      "arm": "baseline",
+      "block": 1,
+      "elapsed_ms": 1399.703291,
+      "index": 7,
+      "milliseconds_per_token": 21.870363921875,
+      "order": "ABBA",
+      "repetitions": 64
+    },
+    {
+      "arm": "fused",
+      "block": 2,
+      "elapsed_ms": 644.953208,
+      "index": 8,
+      "milliseconds_per_token": 10.077393875,
+      "order": "BAAB",
+      "repetitions": 64
+    },
+    {
+      "arm": "baseline",
+      "block": 2,
+      "elapsed_ms": 1273.9681659999999,
+      "index": 9,
+      "milliseconds_per_token": 19.905752593749998,
+      "order": "BAAB",
+      "repetitions": 64
+    },
+    {
+      "arm": "baseline",
+      "block": 2,
+      "elapsed_ms": 1270.98475,
+      "index": 10,
+      "milliseconds_per_token": 19.85913671875,
+      "order": "BAAB",
+      "repetitions": 64
+    },
+    {
+      "arm": "fused",
+      "block": 2,
+      "elapsed_ms": 644.864,
+      "index": 11,
+      "milliseconds_per_token": 10.076,
+      "order": "BAAB",
+      "repetitions": 64
+    }
+  ],
+  "schema": "rvllm.ane_fused_attention_output_abba_timing.v1",
+  "sequence": "BAAB/ABBA/BAAB",
+  "setup_compiler_call_limit": 3,
+  "setup_compiler_calls": 0,
+  "status": "measured",
+  "warmup_tokens_per_arm": 8
+}

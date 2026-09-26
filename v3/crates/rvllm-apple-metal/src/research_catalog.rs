@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 11] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 46] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -28,12 +28,335 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 11] = [
     MetalResearchCandidate::LongMma32x64,
     MetalResearchCandidate::Mma32Load4,
     MetalResearchCandidate::RmsnormSimd256,
+    MetalResearchCandidate::Load4M16N32K64,
+    MetalResearchCandidate::Load4M16N64K64,
+    MetalResearchCandidate::Load4M32N32K64,
+    MetalResearchCandidate::Load4M32N64K32,
+    MetalResearchCandidate::Load4M32N64K64,
+    MetalResearchCandidate::Load4M32N64K128,
+    MetalResearchCandidate::Load4M64N64K64,
+    MetalResearchCandidate::GlobalD512R8P64T64,
+    MetalResearchCandidate::GlobalD512R8P64T128,
+    MetalResearchCandidate::GlobalD512R8P128T64,
+    MetalResearchCandidate::GlobalD512R8P128T128,
+    MetalResearchCandidate::GlobalD512R16P64T64,
+    MetalResearchCandidate::GlobalD512R16P64T128,
+    MetalResearchCandidate::GlobalD512R16P128T64,
+    MetalResearchCandidate::GlobalD512R16P128T128,
+    MetalResearchCandidate::GlobalD512R1P128T32,
+    MetalResearchCandidate::GlobalD512SplitR8S256T128,
+    MetalResearchCandidate::GlobalD512SplitMmaR8K32S256T128,
+    MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32,
+    MetalResearchCandidate::GlobalD512AtlasR16K16P64T128,
+    MetalResearchCandidate::GlobalD512AtlasR16K32P64T128,
+    MetalResearchCandidate::GlobalD512AtlasTileR16K16P64T128,
+    MetalResearchCandidate::GlobalD512AtlasTileR16K32P64T128,
+    MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T128,
+    MetalResearchCandidate::GlobalD512AtlasMmaR16K32P64T128,
+    MetalResearchCandidate::GlobalD512AtlasMmaR16K16P128T128,
+    MetalResearchCandidate::GlobalD512AtlasMmaR8K32P64T128,
+    MetalResearchCandidate::GlobalD512AtlasMmaR16K16P64T64,
+    MetalResearchCandidate::GlobalD512AtlasMmaR16K64P64T128,
+    MetalResearchCandidate::FfnBf16R4Sg2,
+    MetalResearchCandidate::QmvW4G32R8Sg2,
+    MetalResearchCandidate::QmvW8G32R8Sg2,
+    MetalResearchCandidate::GlobalD512ShortR4T128,
+    MetalResearchCandidate::QmvW4G32R4Sg8K8,
+    MetalResearchCandidate::QmvW8G32R4Sg8K8,
 ];
+
+// Compile exactly one specialization pair with the shared implementation.
+// The delivery source manifest also hashes load4_tiled_common.metal.
+macro_rules! load4_tile_spec {
+    ($suffix:literal, $gemm:ident, $qkv:ident, $min:literal) => {
+        CandidateSpec {
+            name: concat!("metal-load4-", $suffix),
+            kernels: &[ResearchKernel::$gemm, ResearchKernel::$qkv],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/load4_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: $min,
+            max_tokens: 1024,
+            window_independent: true,
+            numerical_contract: "layout-only-bitwise-fp32-gate",
+            source: concat!(
+                include_str!("research_shaders/load4_tiled_common.metal"),
+                include_str!(concat!("research_shaders/load4_", $suffix, ".metal"))
+            ),
+        }
+    };
+}
+
+// One named entry point per opt-in family member; common source is included
+// in the generated-MSL receipt, not loaded or concatenated during encoding.
+macro_rules! global_decode_spec {
+    ($suffix:literal, $kernel:ident) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-", $suffix),
+            kernels: &[ResearchKernel::$kernel],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: "bf16-fp32-fixed64-tree-online-once-rounded",
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
+
+macro_rules! global_split_decode_spec {
+    ($suffix:literal, $partial:ident, $merge:ident) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-split-", $suffix),
+            kernels: &[ResearchKernel::$partial, ResearchKernel::$merge],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_split_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: "bf16-fp32-split-sufficient-stat-once-rounded",
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!("research_shaders/global_decode_split_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_split_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
+
+macro_rules! global_split_matrix_decode_spec {
+    ($suffix:literal, $partial:ident, $merge:ident) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-split-", $suffix),
+            kernels: &[ResearchKernel::$partial, ResearchKernel::$merge],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_split_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: "bf16-fp32-simd-matrix-split-sufficient-stat-once-rounded",
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!("research_shaders/global_decode_split_common.metal"),
+                include_str!("research_shaders/global_decode_split_matrix_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_split_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
+
+macro_rules! atlas_global_decode_spec {
+    ($suffix:literal, $kernel:ident, $contract:literal) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-", $suffix),
+            kernels: &[ResearchKernel::$kernel],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: $contract,
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
+
+macro_rules! atlas_matrix_decode_spec {
+    ($suffix:literal, $kernel:ident) => {
+        CandidateSpec {
+            name: concat!("metal-global-d512-", $suffix),
+            kernels: &[ResearchKernel::$kernel],
+            source_file: Some(concat!(
+                "crates/rvllm-apple-metal/src/research_shaders/global_decode_",
+                $suffix,
+                ".metal"
+            )),
+            min_tokens: 1,
+            max_tokens: 1,
+            window_independent: false,
+            numerical_contract: "bf16-fp32-simd-matrix-per-tile-once-rounded",
+            source: concat!(
+                include_str!("research_shaders/global_decode_common.metal"),
+                include_str!("research_shaders/global_decode_matrix_common.metal"),
+                include_str!(concat!(
+                    "research_shaders/global_decode_",
+                    $suffix,
+                    ".metal"
+                ))
+            ),
+        }
+    };
+}
 
 impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
         match self {
+            Self::FfnBf16R4Sg2 => CandidateSpec {
+                name: "metal-ffn-bf16-r4-sg2", kernels: &[ResearchKernel::FfnBf16R4Sg2],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/ffn_bf16_r4_sg2.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "bf16-projection-boundary-gelu-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/ffn_bf16_r4_sg2.metal")),
+            },
+            Self::QmvW4G32R8Sg2 => CandidateSpec {
+                name: "metal-qmv-w4-g32-r8-sg2", kernels: &[ResearchKernel::QmvW4G32R8Sg2],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/qmv_w4_g32_r8_sg2.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/qmv_g32_r8_sg2_common.metal"),
+                    include_str!("research_shaders/qmv_w4_g32_r8_sg2.metal")),
+            },
+            Self::QmvW8G32R8Sg2 => CandidateSpec {
+                name: "metal-qmv-w8-g32-r8-sg2", kernels: &[ResearchKernel::QmvW8G32R8Sg2],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/qmv_w8_g32_r8_sg2.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/qmv_g32_r8_sg2_common.metal"),
+                    include_str!("research_shaders/qmv_w8_g32_r8_sg2.metal")),
+            },
+            Self::QmvW4G32R4Sg8K8 => CandidateSpec {
+                name: "metal-qmv-w4-g32-r4-sg8-k8", kernels: &[ResearchKernel::QmvW4G32R4Sg8K8],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/qmv_w4_g32_r4_sg8_k8.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/qmv_w4_g32_r4_sg8_k8.metal")),
+            },
+            Self::QmvW8G32R4Sg8K8 => CandidateSpec {
+                name: "metal-qmv-w8-g32-r4-sg8-k8", kernels: &[ResearchKernel::QmvW8G32R4Sg8K8],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/qmv_w8_g32_r4_sg8_k8.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/qmv_w8_g32_r4_sg8_k8.metal")),
+            },
+            Self::GlobalD512ShortR4T128 => CandidateSpec {
+                name: "metal-global-d512-short-r4t128", kernels: &[ResearchKernel::GlobalD512ShortR4T128],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/global_decode_short_r4t128.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "bf16-paged-fp32-online-unsplit-rne",
+                source: concat!(include_str!("research_shaders/global_decode_common.metal"),
+                    include_str!("research_shaders/global_decode_short_r4t128.metal")),
+            },
+            Self::GlobalD512R8P64T64 => global_decode_spec!("r8p64t64", GlobalD512R8P64T64),
+            Self::GlobalD512R8P64T128 => global_decode_spec!("r8p64t128", GlobalD512R8P64T128),
+            Self::GlobalD512R8P128T64 => global_decode_spec!("r8p128t64", GlobalD512R8P128T64),
+            Self::GlobalD512R8P128T128 => global_decode_spec!("r8p128t128", GlobalD512R8P128T128),
+            Self::GlobalD512R16P64T64 => global_decode_spec!("r16p64t64", GlobalD512R16P64T64),
+            Self::GlobalD512R16P64T128 => global_decode_spec!("r16p64t128", GlobalD512R16P64T128),
+            Self::GlobalD512R16P128T64 => global_decode_spec!("r16p128t64", GlobalD512R16P128T64),
+            Self::GlobalD512R16P128T128 => {
+                global_decode_spec!("r16p128t128", GlobalD512R16P128T128)
+            }
+            Self::GlobalD512R1P128T32 => {
+                global_decode_spec!("r1p128t32", GlobalD512R1P128T32)
+            }
+            Self::GlobalD512SplitR8S256T128 => global_split_decode_spec!(
+                "r8s256t128",
+                GlobalD512SplitR8S256T128Partial,
+                GlobalD512SplitR8S256T128Merge
+            ),
+            Self::GlobalD512SplitMmaR8K32S256T128 => global_split_matrix_decode_spec!(
+                "mma_r8k32s256t128",
+                GlobalD512SplitMmaR8K32S256T128Partial,
+                GlobalD512SplitMmaR8K32S256T128Merge
+            ),
+            Self::GlobalD512SplitCoopKeyR8K8P64T128S32 => global_split_decode_spec!(
+                "coopkey_r8k8p64t128s32",
+                GlobalD512SplitCoopKeyR8K8P64T128S32Partial,
+                GlobalD512SplitCoopKeyR8K8P64T128S32Merge
+            ),
+            Self::GlobalD512AtlasR16K16P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_r16k16p64t128",
+                    GlobalD512AtlasR16K16P64T128,
+                    "bf16-fp32-fixed64-tree-online-k16-once-rounded"
+                )
+            }
+            Self::GlobalD512AtlasR16K32P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_r16k32p64t128",
+                    GlobalD512AtlasR16K32P64T128,
+                    "bf16-fp32-fixed64-tree-online-k32-once-rounded"
+                )
+            }
+            Self::GlobalD512AtlasTileR16K16P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_tile_r16k16p64t128",
+                    GlobalD512AtlasTileR16K16P64T128,
+                    "bf16-fp32-fixed64-tree-per-tile-k16-once-rounded"
+                )
+            }
+            Self::GlobalD512AtlasTileR16K32P64T128 => {
+                atlas_global_decode_spec!(
+                    "atlas_tile_r16k32p64t128",
+                    GlobalD512AtlasTileR16K32P64T128,
+                    "bf16-fp32-fixed64-tree-per-tile-k32-once-rounded"
+                )
+            }
+            Self::GlobalD512AtlasMmaR16K16P64T128 => atlas_matrix_decode_spec!(
+                "atlas_mma_r16k16p64t128",
+                GlobalD512AtlasMmaR16K16P64T128
+            ),
+            Self::GlobalD512AtlasMmaR16K32P64T128 => atlas_matrix_decode_spec!(
+                "atlas_mma_r16k32p64t128",
+                GlobalD512AtlasMmaR16K32P64T128
+            ),
+            Self::GlobalD512AtlasMmaR16K16P128T128 => atlas_matrix_decode_spec!(
+                "atlas_mma_r16k16p128t128",
+                GlobalD512AtlasMmaR16K16P128T128
+            ),
+            Self::GlobalD512AtlasMmaR8K32P64T128 => {
+                atlas_matrix_decode_spec!("atlas_mma_r8k32p64t128", GlobalD512AtlasMmaR8K32P64T128)
+            }
+            Self::GlobalD512AtlasMmaR16K16P64T64 => {
+                atlas_matrix_decode_spec!("atlas_mma_r16k16p64t64", GlobalD512AtlasMmaR16K16P64T64)
+            }
+            Self::GlobalD512AtlasMmaR16K64P64T128 => atlas_matrix_decode_spec!(
+                "atlas_mma_r16k64p64t128",
+                GlobalD512AtlasMmaR16K64P64T128
+            ),
             Self::Off => CandidateSpec {
                 name: "off",
                 kernels: &[],
@@ -156,6 +479,27 @@ impl MetalResearchCandidate {
                 numerical_contract: "reduction-order-change",
                 source: include_str!("research_shaders/rmsnorm_simd256.metal"),
             },
+            Self::Load4M16N32K64 => {
+                load4_tile_spec!("m16n32k64", Tile16x32K64Gemm, Tile16x32K64Qkv, 6)
+            }
+            Self::Load4M16N64K64 => {
+                load4_tile_spec!("m16n64k64", Tile16x64K64Gemm, Tile16x64K64Qkv, 6)
+            }
+            Self::Load4M32N32K64 => {
+                load4_tile_spec!("m32n32k64", Tile32x32K64Gemm, Tile32x32K64Qkv, 6)
+            }
+            Self::Load4M32N64K32 => {
+                load4_tile_spec!("m32n64k32", Tile32x64K32Gemm, Tile32x64K32Qkv, 6)
+            }
+            Self::Load4M32N64K64 => {
+                load4_tile_spec!("m32n64k64", Tile32x64K64Gemm, Tile32x64K64Qkv, 6)
+            }
+            Self::Load4M32N64K128 => {
+                load4_tile_spec!("m32n64k128", Tile32x64K128Gemm, Tile32x64K128Qkv, 6)
+            }
+            Self::Load4M64N64K64 => {
+                load4_tile_spec!("m64n64k64", Tile64x64K64Gemm, Tile64x64K64Qkv, 64)
+            }
         }
     }
 }
@@ -184,7 +528,7 @@ pub fn catalog_json() -> serde_json::Value {
         })
         .collect();
     serde_json::json!({"schema": "rvllm.metal.research-catalog.v1",
-        "dispatch_schema": "rvllm.metal.research-dispatch.v3",
+        "dispatch_schema": crate::research_evidence::RESEARCH_DISPATCH_SCHEMA,
         "default": "off", "device_qualified": false, "candidates": candidates})
 }
 
@@ -234,7 +578,49 @@ mod tests {
     fn reviewed_catalog_matches_runtime_and_every_exported_entry() {
         let reviewed: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
-        assert_eq!(reviewed, catalog_json());
+        let mut legacy = catalog_json();
+        let all = legacy["candidates"].as_array_mut().unwrap();
+        assert_eq!(all.len(), 46);
+        let donor_schedules = all.split_off(44);
+        assert_eq!(
+            donor_schedules
+                .iter()
+                .map(|candidate| candidate["name"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["metal-qmv-w4-g32-r4-sg8-k8", "metal-qmv-w8-g32-r4-sg8-k8"]
+        );
+        let next_round = all.split_off(40);
+        assert_eq!(next_round.len(), 4);
+        let additions = all.split_off(18);
+        let reviewed_global: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
+        assert_eq!(reviewed_global["candidates"], serde_json::json!(additions));
+        // Archived prefix retains its historical schema; new slots are v4.
+        legacy["dispatch_schema"] = serde_json::json!("rvllm.metal.research-dispatch.v3");
+        assert_eq!(reviewed, legacy);
+        // The additive family must have all source-defined specializations.
+        assert_eq!(
+            ALL_CANDIDATES[18..27].len() + ALL_CANDIDATES[30..40].len(),
+            crate::attention_global_decode::DECODE_TILES.len()
+        );
+        for (candidate, tile) in ALL_CANDIDATES[18..27]
+            .iter()
+            .chain(ALL_CANDIDATES[30..40].iter())
+            .zip(crate::attention_global_decode::DECODE_TILES)
+        {
+            assert_eq!(candidate.global_decode_tile(), Some(tile));
+            assert_eq!(candidate.kernels().len(), 1);
+            assert_eq!(
+                candidate.kernels()[0].limits(),
+                (tile.threads as usize, tile.threadgroup_bytes())
+            );
+        }
+        let split = MetalResearchCandidate::GlobalD512SplitR8S256T128;
+        assert_eq!(
+            split.split_global_decode_tile(),
+            Some(crate::attention_global_decode::SPLIT_R8S256T128)
+        );
+        assert_eq!(split.kernels().len(), 2);
         for candidate in ALL_CANDIDATES {
             for dtype in [MetalFloatType::Bf16, MetalFloatType::F16] {
                 let source = crate::kernels::kernel_source_with_options(
@@ -278,6 +664,27 @@ mod tests {
         for candidate in ALL_CANDIDATES {
             let good = Gemma12bResearchShape {
                 tokens: candidate.spec().min_tokens,
+                kv_heads: if candidate.global_decode_tile().is_some()
+                    || candidate.split_global_decode_tile().is_some()
+                {
+                    1
+                } else {
+                    8
+                },
+                head_dim: if candidate.global_decode_tile().is_some()
+                    || candidate.split_global_decode_tile().is_some()
+                {
+                    512
+                } else {
+                    256
+                },
+                attention_window: if candidate.global_decode_tile().is_some()
+                    || candidate.split_global_decode_tile().is_some()
+                {
+                    0
+                } else {
+                    1024
+                },
                 ..good
             };
             assert_eq!(
