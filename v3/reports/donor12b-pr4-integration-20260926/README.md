@@ -170,8 +170,8 @@ conditions were eligible. Synthetic SG8 W8-down oracles at M1 and M6, exact
 3840×15360, passed along with the other 21 native cases (23/23 overall), so
 they do not substitute for a real-weight quality gate. Exact BF16 token
 agreement is not itself a generally valid requirement for a quantized
-checkpoint; the surprising semantic regression is a diagnostic warning,
-not a measured perplexity or logit-quality result.
+checkpoint; the changed continuation is a diagnostic warning, not a measured
+perplexity or checkpoint-quality result.
 
 An ignored real-checkpoint layer-zero diagnostic then ran both routes under
 the same test executable (`364c15f249d4b73af09c91f21cb6a4825e7f88ef1daa920fa13354b2b4e8b63d`),
@@ -194,13 +194,46 @@ at preparation, before inference: the incumbent generic low-bit route only
 admits F16 activations, whereas this package authentically declares BF16.
 Queue job 18 is failed/quarantined with its error retained. It supplies no
 numeric comparison, and the fail-closed guard was not weakened. A separately
-sealed SG4 donor-library package is being prepared to compare two BF16-capable
-implementations on the same quantized tensor.
+sealed SG4 donor-library package was then built and reopened, with manifest
+SHA-256 `ee05c311c551e4bb0d83e80f166afe9d5ebcdc84f862729f4656ae15eace298d`.
+Its native BF16 shard and W8 packed/scales hashes match the SG8 package
+exactly; only the package identity and macOS BF16 metallib differ. SG4's
+independent metallib SHA-256 is
+`94372f6c3af50e537d30758fc0d6742363174718dc3cd541a7f2aa61ee7298b0`.
+The SG4 package returned the **same** `[496, 45518]` continuation as SG8,
+with actual `research_donor12b_sg4_batch_w8: 1` and
+`research_donor12b_sg4_w8: 2` dispatches, and zero inference-time compiles.
+Its queue job succeeded with observed conditions eligible. This reduces the
+likelihood of an SG8-only arithmetic defect, but cannot distinguish a shared
+low-bit defect from a quantized-checkpoint effect.
+
+A separate read-only host scan mapped the entire 3840×15360 layer-zero BF16
+down matrix and its W8 bytes/scales, converted BF16 source bits to FP32,
+dequantized every group-32 signed W8 code using the stored FP16 scale, and
+computed FP64 sums of squared error in 32-row chunks. Across all 58,982,400
+weights, the dequantized-weight RMSE was `6.71804e-5`, RMS-relative error
+`0.00673189`, and maximum absolute weight error `0.000805855`. This is a
+host diagnostic of the stored representation, not a Metal arithmetic or
+model-quality oracle. The numerical summary was not emitted by the serial
+referee and should be independently reproduced before promotion.
+
+The queue also ran matched single-prompt first-token top-10 diagnostics on
+the exact same executable and SG8 library. Native BF16 ranked token 9079
+(`Paris`) first at logit `20.75`, ahead of token 496 at `18.875`. With the
+one-W8 sidecar, both tokens were reported at `20.375`; the sampler chose
+token 496 on this tie. Thus the two-token textual divergence is **not**
+evidence by itself of a grossly broken output distribution. It is a
+material logit shift for this prompt (token 496 +1.5, token 9079 -0.375),
+and a checkpoint-wide quality gate remains missing. The output logits are
+diagnostic values at the route's storage/rounding boundary, not FP64 teacher
+logits. Both top-logit queue jobs passed with observed conditions eligible.
 
 Raw records: `sg8-bf16-package-one-w8.json`,
-`sg8-bf16-same-binary-control.json`, `sg8-w8down-oracle/donor12b-oracle.json`,
+`sg8-bf16-same-binary-control.json`, `sg4-bf16-package-one-w8.json`,
+`sg8-w8down-oracle/donor12b-oracle.json`,
 `sg8-bf16-one-w8-layer0-trace/{source,one-w8-package}-layer0.json`, and
-corresponding `queue-results/g4-donor12b-pr4-{14,15,16,17,18}-*/` directories.
+corresponding `queue-results/g4-donor12b-pr4-{14,15,16,17,18,19,20,21}-*/`
+directories. The top-logit JSON is in each job's `trial.stdout`.
 **Do not promote W8 from this result.** A package-sidecar load defect,
 real-activation numerical discrepancy, or checkpoint sensitivity remains to
 be distinguished; the present evidence does not choose among them.
@@ -208,15 +241,51 @@ be distinguished; the present evidence does not choose among them.
 ## Hosted CI repair on the integration branch
 
 PR #4's starting checkpoint had host-side fixtures pinned to its old
-11-candidate/17-entry catalog despite containing 18 catalog candidates and
-31 exported entries. The stacked branch updated those exact reviewed
-cardinalities and the corresponding export-arm counts; the catalog validator
-still rejects omitted, reordered or duplicated candidates. It also gates
-the macOS-only artifact-inspection entry point so Linux workspace builds fail
-closed with an explicit unsupported-platform error instead of trying to import
-Metal APIs. Locally, all 118 Python host checks, the macOS workspace check,
-and both artifact-inspection binary unit tests passed. A new hosted CI run
-is required for this repair commit; the preceding PR run remains failed.
+11-candidate/17-entry catalog despite containing 18 candidates and 31
+exported entries. The initial stacked repair updated those counts and gated
+the macOS-only artifact-inspection entry point so Linux workspace builds
+fail closed. A later hosted run exposed two further stale host contracts in
+sequence: the exact Metal-projection test-name list omitted four existing
+load4 tests; after that correction, the host catalog still described the
+archived 18-candidate/v3 prefix while the runtime actually exported 48
+candidates, 86 entry points, and dispatch schema v5. Neither failure is a
+device or kernel numerical failure. The current repair seals the complete
+48-candidate runtime catalog in the reviewed JSON, retains exact order,
+source, resource, numerical-contract, and duplicate checks, and extends
+source export to all 96 candidate/dtype arms. The Rust catalog test
+checks the entire golden and independently retains the 22-candidate global
+family check. Local focused Python catalog/CI tests passed (13/13); the
+complete local host runner then passed 70 Rust tests and all 96
+candidate/dtype source exports. This is a host/source-export gate, not Metal
+compilation or device qualification. A new hosted CI run is still required
+before calling the repair closed.
+
+## SG8 promotion decision in progress
+
+The BF16 route speed result is distinct from the one-projection W8 package
+quality diagnostic. It is large enough that holding SG8 default-off now
+requires a specific, bounded check rather than general caution. Jobs 22–25
+are an interleaved **SG8 → selector-off → selector-off → SG8** full-route
+comparison at 256 prompt tokens plus two decode tokens, on the same binary,
+checkpoint, prompt, metallib and direct backend. Each arm has an independent
+queue receipt, records conditions without waiting for thermal stability, and
+must confirm the same generated token IDs, actual candidate dispatch, and
+zero inference compiles. Job 26 then probes one real W4 layer-0 down sidecar;
+that does not gate the separate native-BF16 SG8 decision. The promotion
+disposition will use all four timing samples, including any reversal or
+condition change, rather than selecting favorable arms.
+
+For orientation only, the first SG8 BF16 two-token decode observations imply
+13.96, 12.83, 11.62, and 10.00 tokens/s at 256–2048 contexts. The retained
+MLX-LM BF16 baseline reports 6.331, 6.139, 6.276, and 6.224 sustained
+tokens/s at those contexts. Thus SG8 is *provisionally* 2.21×, 2.09×, 1.85×,
+and 1.61× the older MLX decode throughput, but **not** a matched MLX win:
+rvLLM measured two generated tokens in single runs; MLX measured 64 tokens
+over seven trials, and the runs were not interleaved. Conversely, SG8 prefill
+remains roughly 8.00×, 11.10×, 12.08×, and 14.27× slower than the retained
+MLX prompt-throughput observations; the donor SG8 decode kernels are not a
+prefill solution. The exact original MLX/rvLLM comparison and limitations are
+in `../gemma4-rvllm-good-enough-matrix-20260924/README.md`.
 
 Remaining gates: real-weight W4/W8 sidecar correctness, per-layer
 and KV comparison, dedicated long-context attention correctness/timing,

@@ -602,28 +602,25 @@ mod tests {
     fn reviewed_catalog_matches_runtime_and_every_exported_entry() {
         let reviewed: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
-        let mut legacy = catalog_json();
-        let all = legacy["candidates"].as_array_mut().unwrap();
+        let runtime = catalog_json();
+        assert_eq!(reviewed, runtime);
+        let all = runtime["candidates"].as_array().unwrap();
         assert_eq!(all.len(), 48);
-        let donor = all.split_off(46);
-        assert_eq!(donor.len(), 2);
-        let donor_schedules = all.split_off(44);
+        assert_eq!(all[46..].len(), 2);
         assert_eq!(
-            donor_schedules
+            all[44..46]
                 .iter()
                 .map(|candidate| candidate["name"].as_str().unwrap())
                 .collect::<Vec<_>>(),
             ["metal-qmv-w4-g32-r4-sg8-k8", "metal-qmv-w8-g32-r4-sg8-k8"]
         );
-        let next_round = all.split_off(40);
-        assert_eq!(next_round.len(), 4);
-        let additions = all.split_off(18);
+        assert_eq!(all[40..44].len(), 4);
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
-        assert_eq!(reviewed_global["candidates"], serde_json::json!(additions));
-        // Archived prefix retains its historical schema; new donor slots are v5.
-        legacy["dispatch_schema"] = serde_json::json!("rvllm.metal.research-dispatch.v3");
-        assert_eq!(reviewed, legacy);
+        assert_eq!(
+            reviewed_global["candidates"],
+            serde_json::json!(&all[18..40])
+        );
         // The additive family must have all source-defined specializations.
         assert_eq!(
             ALL_CANDIDATES[18..27].len() + ALL_CANDIDATES[30..40].len(),
