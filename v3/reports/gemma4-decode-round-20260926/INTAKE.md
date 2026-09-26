@@ -79,3 +79,23 @@ bounded capacity, but remain operator-only comparisons against rvLLM.
 4. Compare qualified routes against the same-operation MLX captures before any
    production-default change.
 5. Do not infer ANE qualification from any Metal result in this report.
+
+## Independent low-bit confirmation
+
+Fresh campaign `g4-next-confirm-02` rebuilt both low-bit candidates, reran their
+native oracles, and collected new ABBA/BAAB samples under new immutable job IDs.
+It did not replay, overwrite, or selectively discard the first campaign.
+
+| Candidate / cell | Baseline ms | Candidate ms | Ratio | Drift | Status |
+|---|---:|---:|---:|---:|---|
+| W4 down QMV, K=15360 | 0.2455 | 0.1859 | 1.321x | 38.61% | repeated speed signal, drift-inconclusive |
+| W8 output QMV, K=8192 | 0.1565 | 0.1396 | 1.122x | 3.20% | passed independent screen |
+| W8 output QMV, K=4096 | 0.0768 | 0.0798 | 0.962x | 117.22% | reject/inconclusive; order-sensitive |
+
+For W8 K=8192, the paired-block median ratio is 1.120x with bootstrap
+diagnostic interval `[1.115, 1.128]`; ABBA and BAAB strata agree. This is now a
+prospective operator winner, still pending real-weight/full-route and external
+framework comparison. W4 reproduces the approximate 1.3x advantage, but the
+incumbent control is too unstable in both campaigns to qualify the result. Its
+next experiment should change the sampling design or diagnose that control,
+not repeat the same campaign until a favorable drift result appears.
