@@ -249,6 +249,25 @@ reported total package-route preparation counters of one library compile and
 70 pipeline-state compiles; these are not a zero-compile package receipt.
 Neither W4 nor W8 is promoted from a two-token probe.
 
+The queue later extended the same one-layer W4 package and same-binary SG8
+native-BF16 source control to a requested 64-token continuation of the same
+short prompt (jobs 42–43). Both exited successfully with eligible observed
+conditions and stopped at EOS after **23 generated tokens**; all 23 token IDs
+matched, as did the prompt-token IDs. The package route recorded one
+`research_donor12b_sg8_batch_w4` prefill dispatch and 23
+`research_donor12b_sg8_w4` decode dispatches. Its native projection count was
+24 lower than the source route's, consistent with replacing that one down
+projection at each of those 24 sites. The final re-finalized top logit was
+token 106 at 27.25 in both routes; lower-ranked logits differed. Reported
+preparation totals were one library and 70 pipeline compiles in each process,
+not a zero-compile package or actual Metal API-call proof. Single-process
+decode rates were 15.708 tok/s for source and 13.823 tok/s for W4; these are
+**not** a qualified speed comparison. This is stronger continuation evidence
+for one W4 projection but remains one prompt, one layer, and a shared SG8
+route—not a checkpoint-wide NLL/logit-quality gate or W4 promotion. The
+manifests and complete queue outputs/conditions are in
+`queue-results/g4-donor12b-pr4-{42,43}-*/`.
+
 ## Hosted CI repair on the integration branch
 
 PR #4's starting checkpoint had host-side fixtures pinned to its old
