@@ -307,7 +307,16 @@ first **63** positions and differ at the final position: SG8 `236761`,
 selector-off `236770`. This is a precise, newly observed numerical boundary,
 not a generic reason to shelve a faster implementation. Jobs 29–30 repeat
 the 64-token comparison in reverse order to determine whether that position
-is reproducible. Until the discrepancy is understood or bounded by a
+is reproducible. Those jobs subsequently returned the same 63-token prefix
+and the same final split: selector-off `236770`, SG8 `236761`. Selector-off
+reported 46.969 s / 1.363 tok/s with eligible observed conditions; SG8
+reported 10.322 s / 6.200 tok/s, but its condition stratum was ineligible
+because power-mode observation was intermittently unavailable. Both jobs
+exited successfully. Thus the numerical difference is repeatable in two
+independent processes per arm; the second timing pair remains diagnostic,
+not a qualified promotion ratio. Its raw manifests, outputs, condition
+samples, and queue reports are in `queue-results/g4-donor12b-pr4-{29,30}-*/`.
+Until the discrepancy is understood or bounded by a
 checkpoint-quality criterion, SG8 remains the BF16 performance leader but
 not the production default. W4/W8 package quality is evaluated separately
 and cannot veto a native-BF16 speed result.
