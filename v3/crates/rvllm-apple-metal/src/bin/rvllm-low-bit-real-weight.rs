@@ -42,8 +42,12 @@ mod macos {
         N4,
         N8,
         Vector,
+        MlxQmv,
+        Core8Qmv,
         Adaptive,
         N4VsN8,
+        N4VsMlxQmv,
+        N4VsCore8Qmv,
     }
 
     impl CandidateSchedule {
@@ -53,10 +57,14 @@ mod macos {
                 "n4" => Ok(Self::N4),
                 "n8" => Ok(Self::N8),
                 "vector" => Ok(Self::Vector),
+                "mlx-qmv" => Ok(Self::MlxQmv),
+                "core8-qmv" => Ok(Self::Core8Qmv),
                 "adaptive" => Ok(Self::Adaptive),
                 "n4-vs-n8" => Ok(Self::N4VsN8),
+                "n4-vs-mlx-qmv" => Ok(Self::N4VsMlxQmv),
+                "n4-vs-core8-qmv" => Ok(Self::N4VsCore8Qmv),
                 _ => Err(
-                    "--candidate must be scalar, n4, n8, vector, adaptive, or n4-vs-n8".to_owned(),
+                    "--candidate must be scalar, n4, n8, vector, mlx-qmv, core8-qmv, adaptive, n4-vs-n8, n4-vs-mlx-qmv, or n4-vs-core8-qmv".to_owned(),
                 ),
             }
         }
@@ -67,9 +75,17 @@ mod macos {
                 Self::N4 => "n4",
                 Self::N8 => "n8",
                 Self::Vector => "vector",
+                Self::MlxQmv => "mlx-qmv",
+                Self::Core8Qmv => "core8-qmv",
                 Self::Adaptive => "adaptive",
                 Self::N4VsN8 => "n4-vs-n8",
+                Self::N4VsMlxQmv => "n4-vs-mlx-qmv",
+                Self::N4VsCore8Qmv => "n4-vs-core8-qmv",
             }
+        }
+
+        const fn is_direct(self) -> bool {
+            matches!(self, Self::N4VsN8 | Self::N4VsMlxQmv | Self::N4VsCore8Qmv)
         }
     }
 
@@ -109,7 +125,7 @@ mod macos {
     pub(super) fn usage() -> &'static str {
         "usage: rvllm-low-bit-real-weight --model-dir DIR --tensor NAME \
          [--m 1,4] [--format w4a16|w8a16|both] [--samples 5] \
-         [--candidate scalar|n4|n8|vector|adaptive|n4-vs-n8] [--order abba|baab]"
+         [--candidate scalar|n4|n8|vector|mlx-qmv|core8-qmv|adaptive|n4-vs-n8|n4-vs-mlx-qmv|n4-vs-core8-qmv] [--order abba|baab]"
     }
 
     fn parse_args() -> Result<Args, String> {
@@ -576,8 +592,30 @@ mod macos {
                 n,
                 0,
             ),
+            CandidateSchedule::MlxQmv => projection.encode_strided_bf16_mlx_qmv(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
+            CandidateSchedule::Core8Qmv => projection.encode_strided_bf16_core8_qmv(
+                command,
+                pipelines,
+                buffer,
+                input_offset,
+                output_offset,
+                m,
+                n,
+                0,
+            ),
             CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
-            CandidateSchedule::N4VsN8 => {
+            CandidateSchedule::N4VsN8
+            | CandidateSchedule::N4VsMlxQmv
+            | CandidateSchedule::N4VsCore8Qmv => {
                 return Err("direct comparison is not a kernel schedule".to_owned())
             }
         };
@@ -798,6 +836,266 @@ mod macos {
                 "n4_kernel":projection.experimental_bf16_n4_kernel_name(),"n8_kernel":projection.experimental_bf16_n8_kernel_name(),
                 "activation_dtype":"BF16","output_dtype":"BF16","scale_dtype":"F16","accumulation_dtype":"F32",
                 "n4_ms":n4_ms,"n8_ms":n8_ms,"n4_median_ms":n4_median,"n8_median_ms":n8_median,"n4_over_n8_speedup":n8_median/n4_median,"n8_over_n4_speedup":n4_median/n8_median}
+        }))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_n4_vs_qmv_shape(
+        ctx: &MetalContext,
+        pipelines: &PipelineCache,
+        role: AppleLowBitTensorRole,
+        format: AppleLowBitWeightFormat,
+        source_f32: &[f32],
+        m: usize,
+        n: usize,
+        k: usize,
+        samples: usize,
+        order: DirectOrder,
+        challenger: CandidateSchedule,
+    ) -> Result<Value, String> {
+        if m != 1 {
+            return Err("direct N4-vs-QMV qualification is decode-only (M=1)".to_owned());
+        }
+        if !matches!(challenger, CandidateSchedule::MlxQmv | CandidateSchedule::Core8Qmv) {
+            return Err("direct QMV challenger must be mlx-qmv or core8-qmv".to_owned());
+        }
+
+        let packed = quantize_apple_low_bit_reference(format, n, k, source_f32)
+            .map_err(|e| e.to_string())?;
+        let input_values = activations(m, k);
+        let expected = low_bit_reference_bf16(&packed, &input_values, m)?;
+        let output_count = m.checked_mul(n).ok_or("output overflow")?;
+        let mut arena = MetalBufferArena::new(
+            ctx.device(),
+            input_values.len() * 2
+                + packed.packed_values().len()
+                + packed.scales().len() * 2
+                + output_count * 4
+                + 4096,
+        )
+        .map_err(|e| e.to_string())?;
+        let input = arena
+            .region("direct_qmv_input", input_values.len() * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let values = arena
+            .region("direct_qmv_values", packed.packed_values().len(), 16)
+            .map_err(|e| e.to_string())?;
+        let scales = arena
+            .region("direct_qmv_scales", packed.scales().len() * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let n4_out = arena
+            .region("direct_qmv_n4_output", output_count * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let challenger_out = arena
+            .region("direct_qmv_challenger_output", output_count * 2, 16)
+            .map_err(|e| e.to_string())?;
+        let guard = arena
+            .region("direct_qmv_guard", 64, 16)
+            .map_err(|e| e.to_string())?;
+        unsafe {
+            write_bf16(&arena, &input, &input_values);
+            arena
+                .write_region(&values, packed.packed_values())
+                .map_err(|e| e.to_string())?;
+            write_f16(&arena, &scales, packed.scales());
+            write_bf16(&arena, &guard, &vec![bf16::from_bits(SENTINEL); 32]);
+        }
+
+        let projection = MetalLowBitProjectionOffsets::new_for_role(
+            role,
+            format,
+            n,
+            k,
+            values.offset,
+            values.size,
+            scales.offset,
+            scales.size,
+        )
+        .map_err(|e| e.to_string())?;
+        let buffer = arena.buffer_retained();
+
+        let before = pipelines.low_bit_dispatch_snapshot();
+        let mut n4_bits: Option<Vec<u16>> = None;
+        let mut challenger_bits: Option<Vec<u16>> = None;
+        let mut n4_accuracy = None;
+        let mut challenger_accuracy = None;
+        for (schedule, output) in [
+            (CandidateSchedule::N4, &n4_out),
+            (challenger, &challenger_out),
+        ] {
+            let mut first_bits: Option<Vec<u16>> = None;
+            for _ in 0..2 {
+                unsafe {
+                    write_bf16(
+                        &arena,
+                        output,
+                        &vec![bf16::from_bits(SENTINEL); output_count],
+                    );
+                }
+                submit(ctx, |command| {
+                    encode_candidate(
+                        schedule,
+                        projection,
+                        command,
+                        pipelines,
+                        buffer,
+                        input.offset,
+                        output.offset,
+                        m,
+                        n,
+                    )
+                })?;
+                let actual = unsafe { read_bf16(&arena, output, output_count) };
+                let got_accuracy = accuracy(&actual, &expected)?;
+                let bits: Vec<u16> = actual.iter().map(|v| v.to_bits()).collect();
+                if first_bits.as_ref().is_some_and(|first| first != &bits) {
+                    return Err(format!(
+                        "{} output is not bitwise repeatable",
+                        schedule.name()
+                    ));
+                }
+                first_bits = Some(bits.clone());
+                if schedule == CandidateSchedule::N4 {
+                    n4_accuracy = Some(got_accuracy);
+                    n4_bits = Some(bits);
+                } else {
+                    challenger_accuracy = Some(got_accuracy);
+                    challenger_bits = Some(bits);
+                }
+            }
+        }
+        let mut exact = [0; AppleLowBitTensorRole::COUNT];
+        exact[role.index()] = 4;
+        pipelines
+            .low_bit_dispatch_snapshot()
+            .checked_since(before)
+            .map_err(str::to_owned)?
+            .verify_exact(format, exact)
+            .map_err(str::to_owned)?;
+
+        for (schedule, output) in [
+            (CandidateSchedule::N4, &n4_out),
+            (challenger, &challenger_out),
+        ] {
+            submit(ctx, |command| {
+                encode_candidate(
+                    schedule,
+                    projection,
+                    command,
+                    pipelines,
+                    buffer,
+                    input.offset,
+                    output.offset,
+                    m,
+                    n,
+                )
+            })?;
+        }
+
+        let timing_before = pipelines.low_bit_dispatch_snapshot();
+        let mut n4_ms = Vec::with_capacity(samples * 2);
+        let mut challenger_ms = Vec::with_capacity(samples * 2);
+        for _ in 0..samples {
+            let sequence = match order {
+                DirectOrder::Abba => [
+                    CandidateSchedule::N4,
+                    challenger,
+                    challenger,
+                    CandidateSchedule::N4,
+                ],
+                DirectOrder::Baab => [
+                    challenger,
+                    CandidateSchedule::N4,
+                    CandidateSchedule::N4,
+                    challenger,
+                ],
+            };
+            for schedule in sequence {
+                let output = if schedule == CandidateSchedule::N4 {
+                    &n4_out
+                } else {
+                    &challenger_out
+                };
+                let elapsed = submit(ctx, |command| {
+                    encode_candidate(
+                        schedule,
+                        projection,
+                        command,
+                        pipelines,
+                        buffer,
+                        input.offset,
+                        output.offset,
+                        m,
+                        n,
+                    )
+                })?;
+                if schedule == CandidateSchedule::N4 {
+                    n4_ms.push(elapsed);
+                } else {
+                    challenger_ms.push(elapsed);
+                }
+            }
+        }
+        let mut timing_exact = [0; AppleLowBitTensorRole::COUNT];
+        timing_exact[role.index()] = (samples * 4) as u64;
+        pipelines
+            .low_bit_dispatch_snapshot()
+            .checked_since(timing_before)
+            .map_err(str::to_owned)?
+            .verify_exact(format, timing_exact)
+            .map_err(str::to_owned)?;
+
+        if unsafe { read_bf16(&arena, &guard, 32) }
+            .iter()
+            .any(|v| v.to_bits() != SENTINEL)
+        {
+            return Err("direct QMV output guard changed".to_owned());
+        }
+
+        let n4_median = median(&n4_ms);
+        let challenger_median = median(&challenger_ms);
+        let challenger_kernel = match challenger {
+            CandidateSchedule::MlxQmv => projection.experimental_bf16_mlx_qmv_kernel_name(),
+            CandidateSchedule::Core8Qmv => {
+                projection.experimental_bf16_core8_qmv_kernel_name()
+            }
+            _ => unreachable!("challenger checked above"),
+        };
+        let cross_equal = n4_bits == challenger_bits;
+
+        Ok(json!({
+            "m":m,"n":n,"k":k,
+            "n4_accuracy":n4_accuracy.ok_or("missing N4 accuracy")?,
+            "challenger_accuracy":challenger_accuracy.ok_or("missing challenger accuracy")?,
+            "guard_unchanged":true,
+            "repeatable_output_bits":true,
+            "cross_schedule_output_bits_equal":cross_equal,
+            "cross_schedule_bit_equality_required":false,
+            "identity":{
+                "packed_values_sha256":sha256(packed.packed_values()),
+                "scales_f16le_sha256":sha256(&f16_bytes(packed.scales())),
+                "activations_bf16le_sha256":sha256(&bf16_bytes(&input_values)),
+                "cpu_low_bit_reference_bf16le_sha256":sha256(&bf16_bytes(&expected))
+            },
+            "dispatch":{
+                "format":format.name(),"role":role.report_name(),
+                "exact_correctness_dispatches_verified":4,
+                "exact_timing_dispatch_count_verified":true,
+                "timing_dispatches_per_schedule":samples * 2
+            },
+            "timing":{
+                "method":format!("{} wall-clock commit-to-completion",order.name()),
+                "blocks":samples,"samples_per_arm":samples * 2,
+                "n4_kernel":projection.experimental_bf16_n4_kernel_name(),
+                "challenger_schedule":challenger.name(),
+                "challenger_kernel":challenger_kernel,
+                "activation_dtype":"BF16","output_dtype":"BF16","scale_dtype":"F16",
+                "accumulation_dtype":"F32",
+                "n4_ms":n4_ms,"challenger_ms":challenger_ms,
+                "n4_median_ms":n4_median,"challenger_median_ms":challenger_median,
+                "n4_over_challenger_speedup":challenger_median/n4_median,
+                "challenger_over_n4_speedup":n4_median/challenger_median
+            }
         }))
     }
 
@@ -1088,8 +1386,16 @@ mod macos {
                     CandidateSchedule::N4 => projection.experimental_bf16_n4_kernel_name(),
                     CandidateSchedule::N8 => projection.experimental_bf16_n8_kernel_name(),
                     CandidateSchedule::Vector => projection.experimental_bf16_vector_kernel_name(),
+                    CandidateSchedule::MlxQmv => projection.experimental_bf16_mlx_qmv_kernel_name(),
+                    CandidateSchedule::Core8Qmv => {
+                        projection.experimental_bf16_core8_qmv_kernel_name()
+                    }
                     CandidateSchedule::Adaptive => unreachable!("adaptive schedule must resolve"),
-                    CandidateSchedule::N4VsN8 => unreachable!("direct mode has a separate referee"),
+                    CandidateSchedule::N4VsN8
+                    | CandidateSchedule::N4VsMlxQmv
+                    | CandidateSchedule::N4VsCore8Qmv => {
+                        unreachable!("direct mode has a separate referee")
+                    }
                 },
                 "activation_dtype": "BF16", "output_dtype": "BF16", "scale_dtype": "F16", "accumulation_dtype": "F32",
                 "native_ms": native_ms, "candidate_ms": low_ms,
@@ -1119,7 +1425,17 @@ mod macos {
             return Err("tensor payload disagrees with shape".to_owned());
         }
         let mut ctx = MetalContext::new().map_err(|e| e.to_string())?;
-        let generated_msl = kernel_source_for_float_type(MetalFloatType::Bf16);
+        let mut generated_msl = kernel_source_for_float_type(MetalFloatType::Bf16).into_owned();
+        if matches!(
+            args.candidate,
+            CandidateSchedule::MlxQmv
+                | CandidateSchedule::Core8Qmv
+                | CandidateSchedule::N4VsMlxQmv
+                | CandidateSchedule::N4VsCore8Qmv
+        ) {
+            generated_msl.push('\n');
+            generated_msl.push_str(include_str!("../research_shaders/low_bit_qmv_mlx.metal"));
+        }
         ctx.compile_library(&generated_msl)
             .map_err(|e| e.to_string())?;
         let mut pipelines = PipelineCache::new();
@@ -1144,6 +1460,16 @@ mod macos {
                 "experimental_projection_w8abf16_bf16_n8_k4",
             ]
             .as_slice(),
+            CandidateSchedule::MlxQmv => [
+                "research_projection_w4abf16_bf16_qmv_mlx",
+                "research_projection_w8abf16_bf16_qmv_mlx",
+            ]
+            .as_slice(),
+            CandidateSchedule::Core8Qmv => [
+                "research_projection_w4abf16_bf16_qmv_core8",
+                "research_projection_w8abf16_bf16_qmv_core8",
+            ]
+            .as_slice(),
             CandidateSchedule::Adaptive => [
                 "experimental_projection_w4abf16_bf16_n4",
                 "experimental_projection_w8abf16_bf16_n4",
@@ -1160,8 +1486,22 @@ mod macos {
                 "experimental_projection_w8abf16_bf16_n8",
             ]
             .as_slice(),
+            CandidateSchedule::N4VsMlxQmv => [
+                "experimental_projection_w4abf16_bf16_n4",
+                "experimental_projection_w8abf16_bf16_n4",
+                "research_projection_w4abf16_bf16_qmv_mlx",
+                "research_projection_w8abf16_bf16_qmv_mlx",
+            ]
+            .as_slice(),
+            CandidateSchedule::N4VsCore8Qmv => [
+                "experimental_projection_w4abf16_bf16_n4",
+                "experimental_projection_w8abf16_bf16_n4",
+                "research_projection_w4abf16_bf16_qmv_core8",
+                "research_projection_w8abf16_bf16_qmv_core8",
+            ]
+            .as_slice(),
         };
-        if args.candidate != CandidateSchedule::N4VsN8 {
+        if !args.candidate.is_direct() {
             pipelines
                 .compile(&ctx, "gemm_f16_vec8")
                 .map_err(|e| e.to_string())?;
@@ -1172,8 +1512,8 @@ mod macos {
         let mut cases = Vec::new();
         for &format in &args.formats {
             for &m in &args.ms {
-                cases.push(if args.candidate == CandidateSchedule::N4VsN8 {
-                    run_direct_shape(
+                cases.push(match args.candidate {
+                    CandidateSchedule::N4VsN8 => run_direct_shape(
                         &ctx,
                         &pipelines,
                         role,
@@ -1184,9 +1524,34 @@ mod macos {
                         k,
                         args.samples,
                         args.order,
-                    )?
-                } else {
-                    run_shape(
+                    )?,
+                    CandidateSchedule::N4VsMlxQmv => run_n4_vs_qmv_shape(
+                        &ctx,
+                        &pipelines,
+                        role,
+                        format,
+                        &source_f32,
+                        m,
+                        n,
+                        k,
+                        args.samples,
+                        args.order,
+                        CandidateSchedule::MlxQmv,
+                    )?,
+                    CandidateSchedule::N4VsCore8Qmv => run_n4_vs_qmv_shape(
+                        &ctx,
+                        &pipelines,
+                        role,
+                        format,
+                        &source_f32,
+                        m,
+                        n,
+                        k,
+                        args.samples,
+                        args.order,
+                        CandidateSchedule::Core8Qmv,
+                    )?,
+                    _ => run_shape(
                         &ctx,
                         &pipelines,
                         role,
@@ -1199,7 +1564,7 @@ mod macos {
                         args.samples,
                         args.candidate,
                         args.order,
-                    )?
+                    )?,
                 });
             }
         }
@@ -1216,7 +1581,13 @@ mod macos {
             "generated_msl_sha256": sha256(generated_msl.as_bytes()), "executable_sha256": hash_file(&executable)?,
             "direct_order": Some(args.order.name()),
             "conditions_policy": "observed externally; never a wait gate",
-            "compile_counts": {"metal_libraries": 1, "pipeline_states": match args.candidate { CandidateSchedule::N4VsN8 => 4, CandidateSchedule::Adaptive => 7, _ => 3 }}, "cases": cases
+            "compile_counts": {"metal_libraries": 1, "pipeline_states": match args.candidate {
+                CandidateSchedule::N4VsN8
+                | CandidateSchedule::N4VsMlxQmv
+                | CandidateSchedule::N4VsCore8Qmv => 4,
+                CandidateSchedule::Adaptive => 7,
+                _ => 3
+            }}, "cases": cases
         });
         println!(
             "{}",
@@ -1271,6 +1642,22 @@ mod macos {
             assert_eq!(
                 CandidateSchedule::parse("vector").unwrap(),
                 CandidateSchedule::Vector
+            );
+            assert_eq!(
+                CandidateSchedule::parse("mlx-qmv").unwrap(),
+                CandidateSchedule::MlxQmv
+            );
+            assert_eq!(
+                CandidateSchedule::parse("core8-qmv").unwrap(),
+                CandidateSchedule::Core8Qmv
+            );
+            assert_eq!(
+                CandidateSchedule::parse("n4-vs-mlx-qmv").unwrap(),
+                CandidateSchedule::N4VsMlxQmv
+            );
+            assert_eq!(
+                CandidateSchedule::parse("n4-vs-core8-qmv").unwrap(),
+                CandidateSchedule::N4VsCore8Qmv
             );
             assert_eq!(
                 CandidateSchedule::parse("adaptive").unwrap(),

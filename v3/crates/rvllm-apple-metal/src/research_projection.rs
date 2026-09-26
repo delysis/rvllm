@@ -74,6 +74,35 @@ pub struct ProjectionRequest {
 impl ProjectionRequest {
     pub fn plan(self) -> Result<ProjectionPlan, FallbackReason> {
         use MetalResearchCandidate::*;
+
+        // Decode GEMV has a deliberately narrower contract than the prefill
+        // families below. It exists to reproduce the high-performing MLX
+        // geometry on the exact Gemma 4 12B dense projection shapes without
+        // changing any production selector.
+        if self.candidate == DecodeGemvMlx16 {
+            if !self.native_bf16 {
+                return Err(FallbackReason::StoragePrecision);
+            }
+            if self.alpha != 1.0 || self.beta != 0.0 {
+                return Err(FallbackReason::ProjectionScale);
+            }
+            let [m, n, k] = self.shape;
+            if self.output_f32 || !decode_gemv_mlx16_shape(m, n, k) {
+                return Err(FallbackReason::Shape);
+            }
+            if !projection_buffers_fit(self.offsets, self.shape, 2, self.arena_bytes) {
+                return Err(FallbackReason::BufferOrAlias);
+            }
+            let [kernel] = self.candidate.kernels() else {
+                return Err(FallbackReason::NotThisOperation);
+            };
+            return Ok(ProjectionPlan {
+                kernel: *kernel,
+                tile_m: 1,
+                tile_n: 16,
+            });
+        }
+
         let (tile_m, tile_n) =
             projection_tile(self.candidate).ok_or(FallbackReason::NotThisOperation)?;
         let [gemm, qkv] = self.candidate.kernels() else {
@@ -122,9 +151,22 @@ impl ProjectionRequest {
 
 /// Intrinsic output tile, not runtime shape admission. Component oracles use
 /// this geometry with their own explicitly guarded synthetic tail fixtures.
+pub const fn decode_gemv_mlx16_shape(m: u32, n: u32, k: u32) -> bool {
+    m == 1
+        && n % 16 == 0
+        && k % 128 == 0
+        && matches!(
+            (n, k),
+            (8192 | 9216, 3840)
+                | (30720, 3840)
+                | (3840, 4096 | 8192 | 15360)
+        )
+}
+
 pub fn projection_tile(candidate: MetalResearchCandidate) -> Option<(usize, usize)> {
     use MetalResearchCandidate::*;
     match candidate {
+        DecodeGemvMlx16 => Some((1, 16)),
         ShortMma16x64 => Some((16, 64)),
         LongMma32x64 => Some((32, 64)),
         Mma32Prefetch | Mma32F32 | Mma32Load4 => Some((32, 32)),
@@ -322,7 +364,10 @@ mod tests {
     fn every_projection_requires_identity_precision_scale_and_nonaliasing() {
         for candidate in crate::research_catalog::ALL_CANDIDATES
             .into_iter()
-            .filter(|&c| projection_tile(c).is_some())
+            .filter(|&c| {
+                projection_tile(c).is_some()
+                    && c != MetalResearchCandidate::DecodeGemvMlx16
+            })
         {
             let good = request(candidate, 64, 8192, 3840, true);
             let plan = good.plan().unwrap();
@@ -378,6 +423,105 @@ mod tests {
             .plan()
             .is_err());
         }
+    }
+
+    #[test]
+    fn decode_gemv_mlx16_admits_only_exact_m1_gemma12b_dense_roles() {
+        use MetalResearchCandidate::DecodeGemvMlx16;
+
+        for (n, k) in [
+            (8192, 3840),
+            (9216, 3840),
+            (30720, 3840),
+            (3840, 4096),
+            (3840, 8192),
+            (3840, 15360),
+        ] {
+            assert!(decode_gemv_mlx16_shape(1, n, k));
+            let good = request(DecodeGemvMlx16, 1, n, k, false);
+            let plan = good.plan().unwrap();
+            assert_eq!(plan.kernel, ResearchKernel::DecodeGemvMlx16);
+            assert_eq!((plan.tile_m, plan.tile_n), (1, 16));
+
+            // M=1 is the decode-phase identity; admission is independent of
+            // the prefill-only boolean used by the older projection family.
+            assert!(ProjectionRequest {
+                full_prefill: false,
+                ..good
+            }
+            .plan()
+            .is_ok());
+            assert_eq!(
+                ProjectionRequest {
+                    native_bf16: false,
+                    ..good
+                }
+                .plan(),
+                Err(FallbackReason::StoragePrecision)
+            );
+            assert_eq!(
+                ProjectionRequest {
+                    output_f32: true,
+                    ..good
+                }
+                .plan(),
+                Err(FallbackReason::Shape)
+            );
+            assert_eq!(
+                ProjectionRequest { alpha: 0.5, ..good }.plan(),
+                Err(FallbackReason::ProjectionScale)
+            );
+            assert_eq!(
+                ProjectionRequest { beta: 1.0, ..good }.plan(),
+                Err(FallbackReason::ProjectionScale)
+            );
+            assert_eq!(
+                ProjectionRequest {
+                    arena_bytes: good.arena_bytes - 1,
+                    ..good
+                }
+                .plan(),
+                Err(FallbackReason::BufferOrAlias)
+            );
+        }
+
+        for (m, n, k) in [
+            (0, 8192, 3840),
+            (2, 8192, 3840),
+            (1, 8191, 3840),
+            (1, 8192, 3839),
+            (1, 3840, 3840),
+            (1, 30720, 4096),
+        ] {
+            assert!(!decode_gemv_mlx16_shape(m, n, k));
+            assert_eq!(
+                request(DecodeGemvMlx16, m, n, k, false).plan(),
+                Err(FallbackReason::Shape)
+            );
+        }
+    }
+
+    #[test]
+    fn decode_gemv_mlx16_export_is_simd_only_and_native_bf16() {
+        let source = crate::kernels::kernel_source_with_options(
+            crate::MetalFloatType::Bf16,
+            crate::MetalKernelOptions {
+                research: MetalResearchCandidate::DecodeGemvMlx16,
+                ..crate::MetalKernelOptions::default()
+            },
+        );
+        assert!(source.contains("kernel void research_decode_gemv_mlx16"));
+        assert!(source.contains("ushort simdgroup"));
+        assert!(source.contains("simd_sum(acc0)"));
+        assert!(source.contains("device const bfloat *A"));
+        assert!(source.contains("device const bfloat *B"));
+        assert!(source.contains("device bfloat       *C"));
+        let extra = source
+            .split("// MLX-shaped Gemma 4 decode GEMV research kernel.")
+            .nth(1)
+            .unwrap();
+        assert!(!extra.contains("threadgroup float"));
+        assert!(!extra.contains("threadgroup_barrier"));
     }
 
     #[test]

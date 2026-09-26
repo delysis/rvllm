@@ -59,6 +59,58 @@ fn research_layer_eligible(
         .supports(candidate)
 }
 
+/// Decode-only Gate||Up fusion. Unlike the older rounded-gate prefill
+/// candidate, this is deliberately M=1 and does not materialize gate_up_out.
+/// Tracing disables it because the trace contract requires that intermediate.
+#[allow(clippy::too_many_arguments)]
+fn supports_research_decode_gateup(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+    phase: MetalPhase,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+    tracing_enabled: bool,
+    arena_bytes: usize,
+) -> bool {
+    let candidate = crate::MetalResearchCandidate::DecodeGateupMlx16;
+    pipelines.kernel_options().research == candidate
+        && !pipelines.kernel_options().quantized_bf16_accumulation
+        && pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+        && matches!(phase, MetalPhase::Decode)
+        && !tracing_enabled
+        && (crate::research::Gemma12bResearchShape {
+            tokens: dims.num_tokens,
+            hidden: dims.hidden,
+            intermediate: dims.intermediate,
+            layers: dims.num_layers,
+            heads: dims.num_heads,
+            kv_heads: dims.num_kv_heads,
+            head_dim: dims.head_dim,
+            attention_window: dims.attention_window,
+            moe_experts: dims.moe_num_experts,
+            moe_top_k: dims.moe_top_k,
+            moe_intermediate: dims.moe_intermediate,
+            ple: dims.ple_dim,
+        })
+        .supports(candidate)
+        && pipelines
+            .research_pso("research_decode_gateup_mlx16", 128, 0)
+            .is_some()
+        && crate::research::rounded_gate_buffers_fit(
+            [
+                scratch.normed_hidden,
+                weights.gate_up_offset,
+                scratch.gate_up_out,
+                scratch.activated,
+            ],
+            dims.num_tokens,
+            dims.hidden,
+            dims.intermediate,
+            arena_bytes,
+            false,
+        )
+}
+
 /// The same decision drives execution and diagnostic encoder accounting.
 /// No savings are attributed to a missing PSO, unsupported layer or aliasing
 /// scratch plan. This is a dispatch predicate, not a hardware acceptance flag.
@@ -2283,7 +2335,26 @@ pub unsafe fn metal_encode_forward_layer(
         && weights.per_layer_projection_offset.is_some()
         && weights.post_per_layer_input_norm_offset.is_some();
     let mut layer_scale_fused = false;
-    let rounded_gate = low_bit_gate_up.is_none()
+    let decode_gateup = low_bit_gate_up.is_none()
+        && supports_research_decode_gateup(
+            pipelines,
+            dims,
+            phase,
+            weights,
+            scratch,
+            trace.is_some(),
+            buf.length(),
+        )
+        && try_encode_research_decode_gateup(
+            cmd_buf,
+            pipelines,
+            buf,
+            dims,
+            weights,
+            scratch,
+        )?;
+    let rounded_gate = !decode_gateup
+        && low_bit_gate_up.is_none()
         && supports_research_rounded_gate(
             pipelines,
             dims,
@@ -2325,7 +2396,7 @@ pub unsafe fn metal_encode_forward_layer(
             two_inter,
             dims.intermediate,
         )?;
-    } else if !rounded_gate {
+    } else if !rounded_gate && !decode_gateup {
         encode_gemm_with_output(
             &cmd_buf,
             pipelines,
@@ -2354,7 +2425,7 @@ pub unsafe fn metal_encode_forward_layer(
         )?;
     }
 
-    if !rounded_gate {
+    if !rounded_gate && !decode_gateup {
         encode_gelu_mul(
             &cmd_buf,
             pipelines,
@@ -6380,6 +6451,83 @@ unsafe fn encode_gemm_with_output(
         pipelines.record_research_dispatch(plan.kernel);
     }
     Ok(())
+}
+
+/// Decode-only single-encoder Gate||Up projection + activation.
+unsafe fn try_encode_research_decode_gateup(
+    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
+    pipelines: &PipelineCache,
+    buf: &ProtocolObject<dyn MTLBuffer>,
+    dims: &MetalLayerDims,
+    weights: &MetalLayerWeights,
+    scratch: &MetalScratch,
+) -> Result<bool> {
+    let Some(pso) = pipelines.research_pso("research_decode_gateup_mlx16", 128, 0) else {
+        return Ok(false);
+    };
+    if !crate::research::rounded_gate_buffers_fit(
+        [
+            scratch.normed_hidden,
+            weights.gate_up_offset,
+            scratch.gate_up_out,
+            scratch.activated,
+        ],
+        dims.num_tokens,
+        dims.hidden,
+        dims.intermediate,
+        buf.length(),
+        false,
+    ) {
+        return Ok(false);
+    }
+    let encoder = cmd_buf.computeCommandEncoder().ok_or_else(|| {
+        rvllm_core::RvllmError::apple(
+            rvllm_core::AppleError::MetalUnavailable,
+            rvllm_core::AppleCtx {
+                backend: "metal",
+                op: "research_decode_gateup_mlx16",
+                device: "apple-silicon",
+            },
+        )
+    })?;
+    encoder.setLabel(Some(&objc2_foundation::NSString::from_str(
+        "metal-decode-gateup-mlx16",
+    )));
+    encoder.setComputePipelineState(pso);
+    for (index, offset) in [
+        scratch.normed_hidden,
+        weights.gate_up_offset,
+        scratch.activated,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        encoder.setBuffer_offset_atIndex(Some(buf), offset, index);
+    }
+    for (index, value) in [dims.hidden, dims.intermediate].iter().enumerate() {
+        encoder.setBytes_length_atIndex(std::ptr::NonNull::from(value).cast(), 4, index + 3);
+    }
+    encoder.dispatchThreadgroups_threadsPerThreadgroup(
+        MTLSize {
+            width: (dims.intermediate as usize).div_ceil(16),
+            height: 1,
+            depth: 1,
+        },
+        MTLSize {
+            width: 128,
+            height: 1,
+            depth: 1,
+        },
+    );
+    encoder.endEncoding();
+    pipelines.record_research_dispatch(
+        crate::research_evidence::ResearchKernel::DecodeGateupMlx16,
+    );
+    tracing::debug!(
+        candidate = "metal-decode-gateup-mlx16",
+        "Research dispatch"
+    );
+    Ok(true)
 }
 
 /// One encoder replaces the gate/up GEMM and activation encoder, without

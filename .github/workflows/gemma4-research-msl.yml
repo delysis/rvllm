@@ -1,0 +1,88 @@
+name: Gemma 4 research MSL qualification
+
+on:
+  pull_request:
+    paths:
+      - 'v3/crates/rvllm-apple-metal/**'
+      - '.github/workflows/gemma4-research-msl.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  research-msl:
+    name: Compile research MSL on macOS
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: v3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v3
+          key: gemma4-research-msl
+      - name: Record identity
+        run: |
+          mkdir -p "$RUNNER_TEMP/gemma4-research-msl"
+          {
+            git rev-parse HEAD
+            rustc -Vv
+            cargo -V
+            xcodebuild -version
+            uname -a
+          } > "$RUNNER_TEMP/gemma4-research-msl/identity.txt"
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+      - name: Build research referee and run Metal library tests
+        run: |
+          cargo check --offline --locked -p rvllm-apple-metal             --features low-bit-real-weight-research             --bin rvllm-low-bit-real-weight             2>&1 | tee "$RUNNER_TEMP/gemma4-research-msl/cargo-check.log"
+          cargo test --offline --locked -p rvllm-apple-metal --lib             2>&1 | tee "$RUNNER_TEMP/gemma4-research-msl/lib-tests.log"
+      - name: Export exact generated BF16 sources
+        run: |
+          scratch="$RUNNER_TEMP/gemma4-research-msl"
+          cargo run --quiet --offline --locked -p rvllm-apple-metal             --bin rvllm-metal-research-source --             bf16 metal-decode-gemv-mlx16 > "$scratch/decode-gemv.metal"
+          cargo run --quiet --offline --locked -p rvllm-apple-metal             --bin rvllm-metal-research-source --             bf16 metal-decode-gateup-mlx16 > "$scratch/decode-gateup.metal"
+          cargo run --quiet --offline --locked -p rvllm-apple-metal             --bin rvllm-metal-research-source --             bf16 off > "$scratch/low-bit-qmv.metal"
+          printf '\n' >> "$scratch/low-bit-qmv.metal"
+          cat crates/rvllm-apple-metal/src/research_shaders/low_bit_qmv_mlx.metal             >> "$scratch/low-bit-qmv.metal"
+          shasum -a 256 "$scratch"/*.metal > "$scratch/source.sha256"
+          grep -qF 'kernel void research_decode_gemv_mlx16' "$scratch/decode-gemv.metal"
+          grep -qF 'kernel void research_decode_gateup_mlx16' "$scratch/decode-gateup.metal"
+          grep -qF 'kernel void research_projection_w4abf16_bf16_qmv_mlx' "$scratch/low-bit-qmv.metal"
+          grep -qF 'kernel void research_projection_w4abf16_bf16_qmv_core8' "$scratch/low-bit-qmv.metal"
+          grep -qF 'kernel void research_projection_w8abf16_bf16_qmv_mlx' "$scratch/low-bit-qmv.metal"
+          grep -qF 'kernel void research_projection_w8abf16_bf16_qmv_core8' "$scratch/low-bit-qmv.metal"
+      - name: Compile exact research sources with Apple Metal compiler
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/gemma4-research-msl"
+          if xcrun --toolchain Metal --find metal >/dev/null 2>&1; then
+            metal() { xcrun --toolchain Metal "$@"; }
+          else
+            metal() { xcrun "$@"; }
+          fi
+          for stem in decode-gemv decode-gateup low-bit-qmv; do
+            metal -sdk macosx metal -std=metal3.1 -c "$scratch/$stem.metal"               -o "$scratch/$stem.air"               2>&1 | tee "$scratch/$stem-metal.log"
+            metal -sdk macosx metallib "$scratch/$stem.air"               -o "$scratch/$stem.metallib"               2>&1 | tee "$scratch/$stem-metallib.log"
+          done
+          shasum -a 256 "$scratch"/*.air "$scratch"/*.metallib             > "$scratch/compiled.sha256"
+      - name: Preserve exact receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemma4-research-msl-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gemma4-research-msl
+          if-no-files-found: error
+          retention-days: 14
