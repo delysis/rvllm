@@ -88,7 +88,7 @@ class CandidateCiTests(unittest.TestCase):
             output = root / "output"
             with patch.object(ci.subprocess, "run", side_effect=fake_run):
                 ci.run_checks(workspace, output)
-            self.assertEqual(len([c for c in commands if c[:2] == ["cargo", "run"]]), 23)
+            self.assertEqual(len([c for c in commands if c[:2] == ["cargo", "run"]]), 37)
             self.assertEqual(len([c for c in commands if c[:2] == ["cargo", "test"]]), len(self.suites))
             self.assertTrue(all("rvllm_disaggregated_infer" not in c for c in commands))
             self.assertTrue(all(c[0] not in ["xcrun", "pmset"] for c in commands))
@@ -96,7 +96,7 @@ class CandidateCiTests(unittest.TestCase):
             self.assertEqual(receipt["status"], "host-tests-and-source-export-only")
             self.assertFalse(receipt["metal_compiled"])
             self.assertFalse(receipt["device_qualified"])
-            self.assertEqual(len(list(output.glob("*-export.stdout"))), 22)
+            self.assertEqual(len(list(output.glob("*-export.stdout"))), 36)
             self.assertTrue((output / "source-sha256.json").exists())
             with patch.object(ci.subprocess, "run") as no_process:
                 with self.assertRaises(FileExistsError):

@@ -7,9 +7,9 @@ class CatalogTests(unittest.TestCase):
     def setUp(self):self.value=json.loads((TOOLS/'gemma4_metal_catalog.json').read_text())
     def test_complete_catalog_and_entrypoint_map(self):
         got=catalog.validate(self.value)
-        self.assertEqual(len(got['candidates']),11)
-        self.assertEqual(len(catalog.exports(got)),11)
-        self.assertEqual(len(catalog.sources(got)),10)
+        self.assertEqual(len(got['candidates']),18)
+        self.assertEqual(len(catalog.exports(got)),18)
+        self.assertEqual(len(catalog.sources(got)),18)
         self.assertEqual(catalog.exports(got)['metal-mma32-load4'],('wave2_gemm_mma32_load4','wave2_qkv_mma32_load4'))
     def test_duplicate_names_missing_families_and_unknown_fields_are_rejected(self):
         for change in [lambda v:v['candidates'].pop(),lambda v:v['candidates'].append(v['candidates'][1]),

@@ -31,7 +31,7 @@ class WideSourceTests(unittest.TestCase):
             'research_rounded_gate32', 'research_gqa_kv8_d256', 'research_gqa_kv8_d512',
             'research_gemm_mma32_prefetch', 'research_qkv_mma32_prefetch',
             'research_attn_q4_d256', 'research_attn_q4_d512', 'research_rms_simd32'])
-        self.assertIn('RESEARCH_KERNEL_COUNT: usize = 17;', ledger)
+        self.assertIn(f'RESEARCH_KERNEL_COUNT: usize = {len(entries)};', ledger)
         layer = source(M+'layer_forward.rs')
         for marker in ['pipelines.record_research_dispatch(plan.kernel)', 'ResearchKernel::Temporal256']:
             for found in re.finditer(re.escape(marker), layer):
