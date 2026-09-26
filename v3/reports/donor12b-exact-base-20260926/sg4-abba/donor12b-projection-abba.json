@@ -1,0 +1,2215 @@
+{
+  "full_model_speedup": false,
+  "identity": {
+    "build_receipt_sha256": "8c4f3ce0083a7a5b628b924a1d0e8ff734d59ea7d44b0f339239c80d91cef8e5",
+    "candidate": "metal-donor12b-sg4",
+    "core_sha256": "c9ee195a84710489e662f7fedd9996154359493b92290ac51faca471b46ec219",
+    "device_name": "Apple M4 Max",
+    "gpu_family": "Apple9",
+    "grid": null,
+    "kernel": "research_donor12b_sg4_w4",
+    "kernels": [
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_batch_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_batch_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_gate_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_gate_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_qkv_w4",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_qkv_w8",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_native_gate",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 0,
+        "name": "research_donor12b_sg4_native_projection",
+        "source_threadgroup_bytes": 0,
+        "threads": 128
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 8256,
+        "name": "research_donor12b_sg4_local_attention",
+        "source_threadgroup_bytes": 8256,
+        "threads": 256
+      },
+      {
+        "actual_execution_width": 32,
+        "actual_max_threads": 1024,
+        "actual_static_threadgroup_bytes": 8224,
+        "name": "research_donor12b_sg4_global_attention",
+        "source_threadgroup_bytes": 8224,
+        "threads": 128
+      }
+    ],
+    "keys": 0,
+    "metallib_sha256": "94372f6c3af50e537d30758fc0d6742363174718dc3cd541a7f2aa61ee7298b0",
+    "oracle_library": false,
+    "panel": 8,
+    "rows": 4,
+    "scratch_bytes": 0,
+    "simd_matrix": false,
+    "source_sha256": "c9ee195a84710489e662f7fedd9996154359493b92290ac51faca471b46ec219",
+    "test_executable_sha256": "f33ed1371cffef919f9b41cc989dfd79701f2012e61dcf5de708374ea10c39c4",
+    "threads": 128
+  },
+  "production_promotion": false,
+  "trials": [
+    {
+      "admitted_operator_speedup": 2.1068224186354154,
+      "automatic_promotion": false,
+      "candidate": "research_donor12b_sg4_w4",
+      "candidate_median_ns": 112335.93977522105,
+      "case": "w4-down",
+      "drift_candidate": 0.004874645832237359,
+      "drift_incumbent": 0.0029648094227166777,
+      "five_percent_stability_gate": true,
+      "incumbent": "experimental_projection_w4abf16_bf16_n4",
+      "incumbent_median_ns": 236671.87633691356,
+      "oracle": {
+        "all_outputs_checked_finite": true,
+        "case": "w4-down-oracle",
+        "expected_gpu_no_write": false,
+        "grid": [
+          240,
+          1,
+          1
+        ],
+        "kernel": "research_donor12b_sg4_w4",
+        "max_sampled_absolute_error": 0.00048828125,
+        "output_fp32": false,
+        "output_stride": 3848,
+        "repeat_count": 3,
+        "sampled_fp64_outputs": 6,
+        "shape": [
+          1,
+          3840
+        ],
+        "status": "passed",
+        "threads": [
+          128,
+          1,
+          1
+        ]
+      },
+      "order_sensitivity_candidate": 0.0005795910626714857,
+      "order_sensitivity_incumbent": 0.0016160842603658476,
+      "samples": [
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 112651.03967161849,
+          "position": 0
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 235593.7467655167,
+          "position": 1
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 234677.0852454938,
+          "position": 2
+        },
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 112296.8751587905,
+          "position": 3
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 235057.29041062295,
+          "position": 0
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 112078.12349312007,
+          "position": 1
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 111994.79195056483,
+          "position": 2
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 239500.00468175858,
+          "position": 3
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 112171.87420697883,
+          "position": 0
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 235317.7114855498,
+          "position": 1
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 238802.08027549088,
+          "position": 2
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 112895.83198959008,
+          "position": 3
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 236484.37490919605,
+          "position": 0
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 112463.53824390098,
+          "position": 1
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 113239.58460707217,
+          "position": 2
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 240812.5001238659,
+          "position": 3
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 111890.62206540257,
+          "position": 0
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 239682.28924786672,
+          "position": 1
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 238255.21202525124,
+          "position": 2
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 112390.61859669164,
+          "position": 3
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 236369.78585273027,
+          "position": 0
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 112791.66938038543,
+          "position": 1
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 112916.66305623949,
+          "position": 2
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 237281.25233901665,
+          "position": 3
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 113630.20894350484,
+          "position": 0
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 238994.79128886014,
+          "position": 1
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 235546.87504656613,
+          "position": 2
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 111765.6211135909,
+          "position": 3
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 239421.87544889748,
+          "position": 0
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 113473.95775374025,
+          "position": 1
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 113031.25211270526,
+          "position": 2
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 236812.49876972288,
+          "position": 3
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 114260.41601225734,
+          "position": 0
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 241911.46076191217,
+          "position": 1
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 237229.1637584567,
+          "position": 2
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 113906.25149942935,
+          "position": 3
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 237083.33173999563,
+          "position": 0
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 113156.24578855932,
+          "position": 1
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 111739.58046128973,
+          "position": 2
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 235687.49747937545,
+          "position": 3
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 113239.58460707217,
+          "position": 0
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 236015.6286158599,
+          "position": 1
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 236453.12467124313,
+          "position": 2
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 112234.37468288466,
+          "position": 3
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 238145.83255443722,
+          "position": 0
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 112078.12349312007,
+          "position": 1
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 111937.50106031075,
+          "position": 2
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 236937.49972153455,
+          "position": 3
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 112401.04504395276,
+          "position": 0
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 239406.25396789983,
+          "position": 1
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 236130.21039636806,
+          "position": 2
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 112109.3810070306,
+          "position": 3
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 235234.37266703695,
+          "position": 0
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 112567.70812906325,
+          "position": 1
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 111614.58678543568,
+          "position": 2
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 236041.66926816106,
+          "position": 3
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 111859.37182744965,
+          "position": 0
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 234937.49904446304,
+          "position": 1
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 237994.7909503244,
+          "position": 2
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 112104.16414542124,
+          "position": 3
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 237812.49910825863,
+          "position": 0
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 111708.33022333682,
+          "position": 1
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 111890.62934136018,
+          "position": 2
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 234723.95696444437,
+          "position": 3
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 112307.29433009401,
+          "position": 0
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 240864.58870442584,
+          "position": 1
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 235796.87695018947,
+          "position": 2
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 112281.24640183523,
+          "position": 3
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 235645.83534607664,
+          "position": 0
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 113005.2114604041,
+          "position": 1
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 112067.70432181656,
+          "position": 2
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 242536.4582450129,
+          "position": 3
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 112364.58522034809,
+          "position": 0
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 235552.07735626027,
+          "position": 1
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 236531.25390410423,
+          "position": 2
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 112812.50044703484,
+          "position": 3
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 239375.0037299469,
+          "position": 0
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 112036.46135982126,
+          "position": 1
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 112687.49949522316,
+          "position": 2
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 236453.12467124313,
+          "position": 3
+        }
+      ],
+      "scope": "same-weight-hot-cache-operator-only"
+    },
+    {
+      "admitted_operator_speedup": 2.4865768179086776,
+      "automatic_promotion": false,
+      "candidate": "research_donor12b_sg4_w8",
+      "candidate_median_ns": 59947.917179670185,
+      "case": "w8-global-o",
+      "drift_candidate": 0.0013889193751281685,
+      "drift_incumbent": 0.003816744270659458,
+      "five_percent_stability_gate": true,
+      "incumbent": "experimental_projection_w8abf16_bf16_n4",
+      "incumbent_median_ns": 149065.10114087723,
+      "oracle": {
+        "all_outputs_checked_finite": true,
+        "case": "w8-global-o-oracle",
+        "expected_gpu_no_write": false,
+        "grid": [
+          240,
+          1,
+          1
+        ],
+        "kernel": "research_donor12b_sg4_w8",
+        "max_sampled_absolute_error": 0.00390625,
+        "output_fp32": false,
+        "output_stride": 3848,
+        "repeat_count": 3,
+        "sampled_fp64_outputs": 6,
+        "shape": [
+          1,
+          3840
+        ],
+        "status": "passed",
+        "threads": [
+          128,
+          1,
+          1
+        ]
+      },
+      "order_sensitivity_candidate": 0.0027735653006536187,
+      "order_sensitivity_incumbent": 0.008952285157905294,
+      "samples": [
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 59375.00100117177,
+          "position": 0
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 151052.08149179816,
+          "position": 1
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 145531.2522011809,
+          "position": 2
+        },
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 59104.16803089902,
+          "position": 3
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 149177.08176653832,
+          "position": 0
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 60026.03913657367,
+          "position": 1
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 61656.25381981954,
+          "position": 2
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 151807.28951236233,
+          "position": 3
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 61250.00072643161,
+          "position": 0
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 148510.42215013877,
+          "position": 1
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 148125.00012340024,
+          "position": 2
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 59927.08611302078,
+          "position": 3
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 149671.87598813325,
+          "position": 0
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 59734.375099651515,
+          "position": 1
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 61031.24906076118,
+          "position": 2
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 158463.54654058814,
+          "position": 3
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 60229.16204528883,
+          "position": 0
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 148052.0877521485,
+          "position": 1
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 155098.96184084937,
+          "position": 2
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 62046.87088029459,
+          "position": 3
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 153015.622345265,
+          "position": 0
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 62260.420236270875,
+          "position": 1
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 62968.74926192686,
+          "position": 2
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 152552.078361623,
+          "position": 3
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 64140.62227122486,
+          "position": 0
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 153848.95959869027,
+          "position": 1
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 153453.12567660585,
+          "position": 2
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 59968.74824631959,
+          "position": 3
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 145984.3697375618,
+          "position": 0
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 58635.41446160525,
+          "position": 1
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 59656.245866790414,
+          "position": 2
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 148723.95695419982,
+          "position": 3
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 59468.75171503052,
+          "position": 0
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 147656.2538300641,
+          "position": 1
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 146750.0042053871,
+          "position": 2
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 59744.78699499741,
+          "position": 3
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 148135.41929470375,
+          "position": 0
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 59640.62438579276,
+          "position": 1
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 60718.746681232005,
+          "position": 2
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 150453.12466099858,
+          "position": 3
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 59906.24777041376,
+          "position": 0
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 147437.50216439366,
+          "position": 1
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 147307.29162693024,
+          "position": 2
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 59369.79141552001,
+          "position": 3
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 146994.78924740106,
+          "position": 0
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 59796.87557555735,
+          "position": 1
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 60156.25694999471,
+          "position": 2
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 146098.95879402757,
+          "position": 3
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 60463.54246791452,
+          "position": 0
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 153499.99739555642,
+          "position": 1
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 147828.12650082633,
+          "position": 2
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 58718.74600416049,
+          "position": 3
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 149947.91126810014,
+          "position": 0
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 60302.08169249818,
+          "position": 1
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 60354.1629971005,
+          "position": 2
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 147562.50311620533,
+          "position": 3
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 60250.00038789585,
+          "position": 0
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 153369.7941340506,
+          "position": 1
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 148427.0833316259,
+          "position": 2
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 58932.28808417916,
+          "position": 3
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 146984.37007609755,
+          "position": 0
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 59593.75266684219,
+          "position": 1
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 60546.874010469764,
+          "position": 2
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 148755.20719215274,
+          "position": 3
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 60312.50086380169,
+          "position": 0
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 149781.24818298966,
+          "position": 1
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 147630.2059018053,
+          "position": 2
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 60661.455790977925,
+          "position": 3
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 152338.53628160432,
+          "position": 0
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 59692.70569039509,
+          "position": 1
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 60661.455790977925,
+          "position": 2
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 153442.70650530234,
+          "position": 3
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 59921.87652736902,
+          "position": 0
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 148953.12051521614,
+          "position": 1
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 152473.96368067712,
+          "position": 2
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 59734.375099651515,
+          "position": 3
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 156739.58114348352,
+          "position": 0
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 59624.995628837496,
+          "position": 1
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 59140.62785450369,
+          "position": 2
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 153906.25048894435,
+          "position": 3
+        }
+      ],
+      "scope": "same-weight-hot-cache-operator-only"
+    },
+    {
+      "admitted_operator_speedup": null,
+      "automatic_promotion": false,
+      "candidate": "research_donor12b_sg4_w8",
+      "candidate_median_ns": 33648.44087627716,
+      "case": "w8-local-o",
+      "drift_candidate": 0.30901814371504394,
+      "drift_incumbent": 0.23957468794757528,
+      "five_percent_stability_gate": false,
+      "incumbent": "experimental_projection_w8abf16_bf16_n4",
+      "incumbent_median_ns": 72218.74693641439,
+      "oracle": {
+        "all_outputs_checked_finite": true,
+        "case": "w8-local-o-oracle",
+        "expected_gpu_no_write": false,
+        "grid": [
+          240,
+          1,
+          1
+        ],
+        "kernel": "research_donor12b_sg4_w8",
+        "max_sampled_absolute_error": 0.0069580078125,
+        "output_fp32": false,
+        "output_stride": 3848,
+        "repeat_count": 3,
+        "sampled_fp64_outputs": 6,
+        "shape": [
+          1,
+          3840
+        ],
+        "status": "passed",
+        "threads": [
+          128,
+          1,
+          1
+        ]
+      },
+      "order_sensitivity_candidate": 0.023340927058151082,
+      "order_sensitivity_incumbent": 0.03668278383563267,
+      "samples": [
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 132901.04834595695,
+          "position": 0
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 256796.86950752512,
+          "position": 1
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 255489.58365106955,
+          "position": 2
+        },
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 132828.12142279,
+          "position": 3
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 255567.70560797304,
+          "position": 0
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 131984.37227401882,
+          "position": 1
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 131942.71014072,
+          "position": 2
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 252906.2476241961,
+          "position": 3
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 131864.5809078589,
+          "position": 0
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 257453.1245045364,
+          "position": 1
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 103281.25063097104,
+          "position": 2
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 43307.2927989997,
+          "position": 3
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 99531.25118045136,
+          "position": 0
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 43682.2883784771,
+          "position": 1
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 49244.78707835078,
+          "position": 2
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 86635.4166646488,
+          "position": 3
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 48906.251322478056,
+          "position": 0
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 98333.33024289459,
+          "position": 1
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 87656.24806983396,
+          "position": 2
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 48781.250370666385,
+          "position": 3
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 98677.0901363343,
+          "position": 0
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 56874.99651685357,
+          "position": 1
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 49249.99666400254,
+          "position": 2
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 93453.12719233334,
+          "position": 3
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 43312.50238465145,
+          "position": 0
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 81718.75379048288,
+          "position": 1
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 88770.83018887788,
+          "position": 2
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 43026.04065742344,
+          "position": 3
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 80635.41463343427,
+          "position": 0
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 39062.499126885086,
+          "position": 1
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 35588.54223228991,
+          "position": 2
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 72406.2483641319,
+          "position": 3
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 33171.869290526956,
+          "position": 0
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 72218.74693641439,
+          "position": 1
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 79760.41524671018,
+          "position": 2
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 33864.5841111429,
+          "position": 3
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 71890.63035184518,
+          "position": 0
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 33364.58030389622,
+          "position": 1
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 34499.99348958954,
+          "position": 2
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 68625.00595161691,
+          "position": 3
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 32687.50151619315,
+          "position": 0
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 69411.45693417639,
+          "position": 1
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 75453.12837464735,
+          "position": 2
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 31703.122658655047,
+          "position": 3
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 71249.99683583155,
+          "position": 0
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 33494.790841359645,
+          "position": 1
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 32359.37765566632,
+          "position": 2
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 71859.38011389226,
+          "position": 3
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 33515.62918396667,
+          "position": 0
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 67807.2901791893,
+          "position": 1
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 69630.20859984681,
+          "position": 2
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 31875.002605374902,
+          "position": 3
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 71651.04034356773,
+          "position": 0
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 31640.629458706826,
+          "position": 1
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 30109.375074971467,
+          "position": 2
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 70140.62430243939,
+          "position": 3
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 31890.63136233017,
+          "position": 0
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 68177.08344897255,
+          "position": 1
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 66645.83634119481,
+          "position": 2
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 31442.70885968581,
+          "position": 3
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 72218.74693641439,
+          "position": 0
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 35718.75276975334,
+          "position": 1
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 29619.790439028293,
+          "position": 2
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 67854.16917409748,
+          "position": 3
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 31119.78730885312,
+          "position": 0
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 68369.79446234182,
+          "position": 1
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 64567.706431262195,
+          "position": 2
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 31515.628506895155,
+          "position": 3
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 69505.20764803514,
+          "position": 0
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 31072.91558990255,
+          "position": 1
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 32265.626941807568,
+          "position": 2
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 67135.42097713798,
+          "position": 3
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 32302.08676541224,
+          "position": 0
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 69156.2527208589,
+          "position": 1
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 73770.83238679916,
+          "position": 2
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 31999.99628122896,
+          "position": 3
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 67109.3730488792,
+          "position": 0
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 33781.25256858766,
+          "position": 1
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 33390.628232154995,
+          "position": 2
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 67489.58548996598,
+          "position": 3
+        }
+      ],
+      "scope": "same-weight-hot-cache-operator-only"
+    },
+    {
+      "admitted_operator_speedup": 2.8281223865620464,
+      "automatic_promotion": false,
+      "candidate": "research_donor12b_sg4_batch_w8",
+      "candidate_median_ns": 110861.97991971858,
+      "case": "w8-local-o-prefill9",
+      "drift_candidate": 0.001009038433906786,
+      "drift_incumbent": 0.006501529311956342,
+      "five_percent_stability_gate": true,
+      "incumbent": "experimental_projection_w8abf16_bf16_n4",
+      "incumbent_median_ns": 313531.2472295482,
+      "oracle": {
+        "all_outputs_checked_finite": true,
+        "case": "w8-local-o-prefill9-oracle",
+        "expected_gpu_no_write": false,
+        "grid": [
+          480,
+          2,
+          1
+        ],
+        "kernel": "research_donor12b_sg4_batch_w8",
+        "max_sampled_absolute_error": 0.0152587890625,
+        "output_fp32": false,
+        "output_stride": 3848,
+        "repeat_count": 3,
+        "sampled_fp64_outputs": 54,
+        "shape": [
+          9,
+          3840
+        ],
+        "status": "passed",
+        "threads": [
+          128,
+          1,
+          1
+        ]
+      },
+      "order_sensitivity_candidate": 0.001009038433906786,
+      "order_sensitivity_incumbent": 0.0009133737179693821,
+      "samples": [
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 140578.1222274527,
+          "position": 0
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 386494.79392915964,
+          "position": 1
+        },
+        {
+          "block": 0,
+          "candidate": false,
+          "ns_per_operator": 356979.166099336,
+          "position": 2
+        },
+        {
+          "block": 0,
+          "candidate": true,
+          "ns_per_operator": 116119.79425651953,
+          "position": 3
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 323276.04276360944,
+          "position": 0
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 121062.49778298661,
+          "position": 1
+        },
+        {
+          "block": 1,
+          "candidate": true,
+          "ns_per_operator": 112265.62492083758,
+          "position": 2
+        },
+        {
+          "block": 1,
+          "candidate": false,
+          "ns_per_operator": 311921.87452688813,
+          "position": 3
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 110734.37053710222,
+          "position": 0
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 315078.1194563024,
+          "position": 1
+        },
+        {
+          "block": 2,
+          "candidate": false,
+          "ns_per_operator": 314062.49763676897,
+          "position": 2
+        },
+        {
+          "block": 2,
+          "candidate": true,
+          "ns_per_operator": 111213.5432776995,
+          "position": 3
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 317796.875606291,
+          "position": 0
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 114515.62750153244,
+          "position": 1
+        },
+        {
+          "block": 3,
+          "candidate": true,
+          "ns_per_operator": 110354.17264793068,
+          "position": 2
+        },
+        {
+          "block": 3,
+          "candidate": false,
+          "ns_per_operator": 311791.6639894247,
+          "position": 3
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 119328.1204905361,
+          "position": 0
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 311583.3387710154,
+          "position": 1
+        },
+        {
+          "block": 4,
+          "candidate": false,
+          "ns_per_operator": 317098.9584759809,
+          "position": 2
+        },
+        {
+          "block": 4,
+          "candidate": true,
+          "ns_per_operator": 119515.62919421121,
+          "position": 3
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 311932.29369819164,
+          "position": 0
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 108515.6254703179,
+          "position": 1
+        },
+        {
+          "block": 5,
+          "candidate": true,
+          "ns_per_operator": 109140.62295341864,
+          "position": 2
+        },
+        {
+          "block": 5,
+          "candidate": false,
+          "ns_per_operator": 310656.2508037314,
+          "position": 3
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 108635.41683647782,
+          "position": 0
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 313218.7484879978,
+          "position": 1
+        },
+        {
+          "block": 6,
+          "candidate": false,
+          "ns_per_operator": 323640.62644774094,
+          "position": 2
+        },
+        {
+          "block": 6,
+          "candidate": true,
+          "ns_per_operator": 109093.75123446807,
+          "position": 3
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 311171.8760919757,
+          "position": 0
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 118947.91532540694,
+          "position": 1
+        },
+        {
+          "block": 7,
+          "candidate": true,
+          "ns_per_operator": 108864.58039749414,
+          "position": 2
+        },
+        {
+          "block": 7,
+          "candidate": false,
+          "ns_per_operator": 311979.1654171422,
+          "position": 3
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 119906.24625468627,
+          "position": 0
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 311296.8770437874,
+          "position": 1
+        },
+        {
+          "block": 8,
+          "candidate": false,
+          "ns_per_operator": 311234.37656788155,
+          "position": 2
+        },
+        {
+          "block": 8,
+          "candidate": true,
+          "ns_per_operator": 108703.1268980354,
+          "position": 3
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 310901.04312170297,
+          "position": 0
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 108437.4962374568,
+          "position": 1
+        },
+        {
+          "block": 9,
+          "candidate": true,
+          "ns_per_operator": 109218.75218627974,
+          "position": 2
+        },
+        {
+          "block": 9,
+          "candidate": false,
+          "ns_per_operator": 311994.7941740975,
+          "position": 3
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 108927.08087339997,
+          "position": 0
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 312046.8682027422,
+          "position": 1
+        },
+        {
+          "block": 10,
+          "candidate": false,
+          "ns_per_operator": 310869.79288375005,
+          "position": 2
+        },
+        {
+          "block": 10,
+          "candidate": true,
+          "ns_per_operator": 109005.21010626107,
+          "position": 3
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 311692.7109658718,
+          "position": 0
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 109229.16408162564,
+          "position": 1
+        },
+        {
+          "block": 11,
+          "candidate": true,
+          "ns_per_operator": 108947.919216007,
+          "position": 2
+        },
+        {
+          "block": 11,
+          "candidate": false,
+          "ns_per_operator": 312994.79451263323,
+          "position": 3
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 108890.62832575291,
+          "position": 0
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 313135.40966948494,
+          "position": 1
+        },
+        {
+          "block": 12,
+          "candidate": false,
+          "ns_per_operator": 311390.62048168853,
+          "position": 2
+        },
+        {
+          "block": 12,
+          "candidate": true,
+          "ns_per_operator": 110604.16727559641,
+          "position": 3
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 317651.0363118723,
+          "position": 0
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 119562.50091316178,
+          "position": 1
+        },
+        {
+          "block": 13,
+          "candidate": true,
+          "ns_per_operator": 112270.83450648934,
+          "position": 2
+        },
+        {
+          "block": 13,
+          "candidate": false,
+          "ns_per_operator": 313677.08288598806,
+          "position": 3
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 110062.50133505091,
+          "position": 0
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 313859.3747280538,
+          "position": 1
+        },
+        {
+          "block": 14,
+          "candidate": false,
+          "ns_per_operator": 312531.2505289912,
+          "position": 2
+        },
+        {
+          "block": 14,
+          "candidate": true,
+          "ns_per_operator": 112130.2047977224,
+          "position": 3
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 324328.1244067475,
+          "position": 0
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 111083.33274023607,
+          "position": 1
+        },
+        {
+          "block": 15,
+          "candidate": true,
+          "ns_per_operator": 112177.08379263058,
+          "position": 2
+        },
+        {
+          "block": 15,
+          "candidate": false,
+          "ns_per_operator": 319921.8772351742,
+          "position": 3
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 120338.54000037536,
+          "position": 0
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 313385.4115731083,
+          "position": 1
+        },
+        {
+          "block": 16,
+          "candidate": false,
+          "ns_per_operator": 314197.91775988415,
+          "position": 2
+        },
+        {
+          "block": 16,
+          "candidate": true,
+          "ns_per_operator": 111765.6211135909,
+          "position": 3
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 323984.3717892654,
+          "position": 0
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 111062.49439762905,
+          "position": 1
+        },
+        {
+          "block": 17,
+          "candidate": true,
+          "ns_per_operator": 110973.95326942205,
+          "position": 2
+        },
+        {
+          "block": 17,
+          "candidate": false,
+          "ns_per_operator": 315437.50083073974,
+          "position": 3
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 110130.2113966085,
+          "position": 0
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 320890.627335757,
+          "position": 1
+        },
+        {
+          "block": 18,
+          "candidate": false,
+          "ns_per_operator": 324906.2501708977,
+          "position": 2
+        },
+        {
+          "block": 18,
+          "candidate": true,
+          "ns_per_operator": 112744.79038547724,
+          "position": 3
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 326421.8757976778,
+          "position": 0
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 110750.0065700151,
+          "position": 1
+        },
+        {
+          "block": 19,
+          "candidate": true,
+          "ns_per_operator": 109526.04498015717,
+          "position": 2
+        },
+        {
+          "block": 19,
+          "candidate": false,
+          "ns_per_operator": 314656.2521578744,
+          "position": 3
+        }
+      ],
+      "scope": "same-weight-hot-cache-operator-only"
+    }
+  ]
+}

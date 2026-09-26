@@ -1,0 +1,30 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "g4-donor12b-exact-base-01-sg4-oracle",
+  "purpose": "correctness",
+  "after": [],
+  "command": {
+    "executable": {"path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/f33ed1371cffef919f9b41cc989dfd79701f2012e61dcf5de708374ea10c39c4-donor12b-test", "sha256": "f33ed1371cffef919f9b41cc989dfd79701f2012e61dcf5de708374ea10c39c4"},
+    "args": ["donor12b_device_tests::native_donor12b_operator_oracle", "--ignored", "--exact", "--nocapture"],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3",
+    "env": {
+      "RVLLM_METAL_GLOBAL_DECODE_CANDIDATE": "metal-donor12b-sg4",
+      "RVLLM_METAL_GLOBAL_DECODE_SOURCE": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/reports/donor12b-exact-base-20260926/metal-donor12b-sg4-build/core.metal",
+      "RVLLM_METAL_GLOBAL_DECODE_METALLIB": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/reports/donor12b-exact-base-20260926/metal-donor12b-sg4-build/core.metallib",
+      "RVLLM_METAL_GLOBAL_DECODE_BUILD_RECEIPT": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/reports/donor12b-exact-base-20260926/metal-donor12b-sg4-build/build.json",
+      "RVLLM_METAL_GLOBAL_DECODE_REPORT_DIR": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/reports/donor12b-exact-base-20260926/sg4-oracle"
+    }
+  },
+  "validator": null,
+  "inputs": [
+    {"path": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/Cargo.lock", "sha256": "0be254102e4ebb8cd70434ef54619493b44709dcfc1748a25fcdd3ae183ae7de"},
+    {"path": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/reports/donor12b-exact-base-20260926/metal-donor12b-sg4-build/core.metal", "sha256": "c9ee195a84710489e662f7fedd9996154359493b92290ac51faca471b46ec219"},
+    {"path": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/reports/donor12b-exact-base-20260926/metal-donor12b-sg4-build/core.metallib", "sha256": "94372f6c3af50e537d30758fc0d6742363174718dc3cd541a7f2aa61ee7298b0"},
+    {"path": "/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3/reports/donor12b-exact-base-20260926/metal-donor12b-sg4-build/build.json", "sha256": "8c4f3ce0083a7a5b628b924a1d0e8ff734d59ea7d44b0f339239c80d91cef8e5"}
+  ],
+  "kernel_game_submission": null,
+  "conditions": {"power_source":"ac","low_power_mode":null,"pmset_power_mode":null,"thermal_state":null,"minimum_free_bytes":17179869184,"disk_path":"/Users/george/.codex/worktrees/rvllm-donor12b-validation-20260926/v3","quiet_process_names":[],"observe_process_names":["cargo","rustc","metal","metallib","llama-server","ollama","rvllm_disaggregated_infer"],"idle_llama_servers":[]},
+  "stable_seconds": 0,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600
+}
