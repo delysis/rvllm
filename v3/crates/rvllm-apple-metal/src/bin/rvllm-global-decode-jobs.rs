@@ -67,6 +67,37 @@ fn hash(path: &Path) -> Result<String> {
 fn pin(path: &Path) -> Result<Value> {
     Ok(json!({"path":path,"sha256":hash(path)?}))
 }
+/// Snapshot a build output before publishing a job that depends on its bytes.
+/// Content-addressed names let independent campaigns share identical binaries
+/// without ever replacing a file that an older manifest has pinned.
+fn snapshot_executable(source: &Path, queue: &Path, role: &str) -> Result<PathBuf> {
+    let source_hash = hash(source)?;
+    let directory = queue.join("executables");
+    std::fs::create_dir_all(&directory)?;
+    let destination = directory.join(format!("{source_hash}-{role}"));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)
+    {
+        Ok(mut output) => {
+            let mut input = std::fs::File::open(source)?;
+            std::io::copy(&mut input, &mut output)?;
+            output.sync_all()?;
+            std::fs::set_permissions(&destination, std::fs::metadata(source)?.permissions())?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.into()),
+    }
+    if hash(source)? != source_hash || hash(&destination)? != source_hash {
+        return Err(format!(
+            "executable snapshot changed or is incomplete: {}",
+            destination.display()
+        )
+        .into());
+    }
+    Ok(destination)
+}
 fn candidates() -> Vec<MetalResearchCandidate> {
     rvllm_apple_metal::research_catalog::ALL_CANDIDATES
         .iter()
@@ -343,6 +374,10 @@ fn prepare(
         .parent()
         .ok_or("generator has no parent directory")?
         .join("rvllm-retain-abba");
+    let generator_snapshot = snapshot_executable(&executable, queue, "generator")?;
+    let test_snapshot = snapshot_executable(test, queue, "test")?;
+    let runner_snapshot = snapshot_executable(&queue_runner, queue, "submitter")?;
+    let retainer_snapshot = snapshot_executable(&retainer, queue, "retainer")?;
     let exploratory = policy["low_power_mode"].is_null()
         || policy["pmset_power_mode"].is_null()
         || policy["thermal_state"].is_null();
@@ -360,9 +395,9 @@ fn prepare(
     let names = family.iter().map(|c| c.name()).collect::<Vec<_>>();
     let config = json!({"schema":"rvllm.global-decode.campaign.v1","campaign":campaign,
         "candidate_names":names,
-        "queue":queue,"test_executable":pin(test)?,"job_generator":pin(&executable)?,
-        "queue_runner":pin(&queue_runner)?,
-        "abba_retainer":pin(&retainer)?,"exploratory":exploratory,
+        "queue":queue,"test_executable":pin(&test_snapshot)?,"job_generator":pin(&generator_snapshot)?,
+        "queue_runner":pin(&runner_snapshot)?,
+        "abba_retainer":pin(&retainer_snapshot)?,"exploratory":exploratory,
         "conditions":policy,"conditions_input":pin(conditions)?,
         "screen_length":256,"advancement_lengths":[512,1024,2048],
         "deferred_confirmation_lengths":[4096],
@@ -401,7 +436,7 @@ fn prepare(
                 root,
                 &job_id,
                 "preparation",
-                &executable,
+                &generator_snapshot,
                 vec![
                     "compile".into(),
                     path.to_string_lossy().into_owned(),
@@ -1244,6 +1279,21 @@ mod tests {
         assert!(json_new_or_identical(&path, &json!({"selected":["b"]})).is_err());
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn executable_snapshot_is_content_addressed_and_never_repaired_in_place() {
+        let directory = temp_directory("executables");
+        let executable = std::env::current_exe().unwrap();
+        let first = snapshot_executable(&executable, &directory, "test").unwrap();
+        assert_eq!(hash(&first).unwrap(), hash(&executable).unwrap());
+        assert_eq!(
+            snapshot_executable(&executable, &directory, "test").unwrap(),
+            first
+        );
+        std::fs::write(&first, b"corrupted snapshot").unwrap();
+        assert!(snapshot_executable(&executable, &directory, "test").is_err());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
