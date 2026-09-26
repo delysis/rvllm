@@ -41,7 +41,7 @@ does not establish a model-level speedup, quality, or even that the candidate
 dispatches on an authenticated model package. `production_promotion` and
 `automatic_promotion` remain false in the native reports.
 
-The four queue manifests, compiled library/build receipts, raw numerical
+The initial four queue manifests, compiled library/build receipts, raw numerical
 outputs, ABBA samples, and queue conditions/stdout/stderr are preserved here.
 SG8/SG4 ABBA receipt SHA-256:
 `29fb06ccef0be9a9aa597d7fb679a9b15b45c91148e38990ef459d401fcdab6c` /
@@ -84,11 +84,67 @@ case is 4096 tokens, beyond the agreed screen. It was deliberately interrupted
 after its 256/512/1024 cases, and the **queue job is failed/quarantined**.
 `sg8-bf16-contexts.json` happens to say `status: pass` for the three completed
 cases; that does **not** make the five-case job successful or supply a 2048
-result. The bounded wrapper and new jobs 11–13 select only the first four
-cases; they are queued separately. The old dependent jobs 09–10 are obsolete
-and must not be counted or replayed as successful evidence.
+result. The bounded wrapper and new jobs 11–13 selected only the first four
+cases; their completed receipts are below. The old dependent jobs 09–10 are
+obsolete and must not be counted or replayed as successful evidence.
+
+## Bounded 256–2048-token BF16 route screen
+
+The existing serial queue completed SG8, SG4, then selector-off on the same
+real BF16 checkpoint and the same four prompts, with two generated tokens per
+case. All twelve cases reported `pass`, returned `[236770, 236770]`, and
+reported zero library and pipeline compilations during inference. All three
+queue jobs exited successfully and their sampled condition strata were marked
+eligible; conditions were observed, not used as a stability gate. Candidate
+dispatch counts **per case** were global attention 16, local attention 80,
+native gate 96, and native projection 288. Selector-off had no research
+dispatches. The selected kernels therefore demonstrably ran during decode.
+At these longer prompts, the 288 projection count corresponds to the two
+decode steps, not a demonstrated candidate prefill route; prefill timings are
+included to expose route/host behavior, not to credit these kernels with
+prefill improvement.
+
+| Prompt tokens | Prefill off / SG8 / SG4 ms | Two-token decode off / SG8 / SG4 ms | Exploratory decode off ÷ SG8 / SG4 |
+| ---: | ---: | ---: | ---: |
+| 256 | 17015.95 / 15893.98 / 16412.32 | 736.90 / 143.25 / 154.22 | 5.14× / 4.78× |
+| 512 | 30086.03 / 30124.86 / 28924.09 | 1106.70 / 155.90 / 174.03 | 7.10× / 6.36× |
+| 1024 | 59034.94 / 59168.43 / 58419.07 | 1806.95 / 172.11 / 211.58 | 10.50× / 8.54× |
+| 2048 | 131086.00 / 131872.80 / 126566.53 | 2964.45 / 200.10 / 258.49 | 14.82× / 11.47× |
+
+These are one run per arm in serial **SG8 → SG4 → off** order, not paired
+ABBA/BAAB repetitions. The widening decode gap with context is an important
+lead, but the ratios are not promoted speedups: sampled power/thermal strata
+cannot establish fixed clocks or absence of contention, token agreement is
+not a per-layer oracle, and the selector-off control is a selected-off route
+through the SG8-equipped executable rather than a separately built shipping
+binary. There is no MLX comparison in this receipt. The very long prefill
+times are also a separate optimization problem; this screen does not isolate
+their operation-level causes.
+
+Raw backend outputs: `sg8-bf16-contexts-bounded.json`,
+`sg4-bf16-contexts-bounded.json`, and `off-bf16-contexts-bounded.json`;
+SHA-256 respectively `ae5b3c8941648ab0517c052c98396797e880dc6a8e8cc4067a34bde85f5b529d`,
+`898c6ccf6733dd1bfbdd2ca17c53e96e55590c1e1f66d689fa4d3e48d3a50310`, and
+`2f91c50a2936973b3186e82cc15aa7d4fcd9e8b15825274b9a92e062caaf5a5b`.
+The `queue-results/g4-donor12b-pr4-{11,12,13}-*-bounded-contexts/`
+directories retain job manifests, queue reports, conditions, stdout and
+stderr. No 4096-token case was run by these jobs.
+
+## Hosted CI repair on the integration branch
+
+PR #4's starting checkpoint had host-side fixtures pinned to its old
+11-candidate/17-entry catalog despite containing 18 catalog candidates and
+31 exported entries. The stacked branch updated those exact reviewed
+cardinalities and the corresponding export-arm counts; the catalog validator
+still rejects omitted, reordered or duplicated candidates. It also gates
+the macOS-only artifact-inspection entry point so Linux workspace builds fail
+closed with an explicit unsupported-platform error instead of trying to import
+Metal APIs. Locally, all 118 Python host checks, the macOS workspace check,
+and both artifact-inspection binary unit tests passed. A new hosted CI run
+is required for this repair commit; the preceding PR run remains failed.
 
 Remaining gates: authenticated real-weight W4/W8 sidecar loading, per-layer
-and KV comparison, long-context
-attention correctness/timing, checkpoint logits/continuation quality, and
-paired end-to-end timing against both the default rvLLM route and MLX.
+and KV comparison, dedicated long-context attention correctness/timing,
+checkpoint logits/continuation quality, and paired end-to-end timing against
+both the default rvLLM route and MLX. Long-context BF16 continuation alone
+does not close any of these numerical or comparison gates.
