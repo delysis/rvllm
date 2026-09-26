@@ -877,10 +877,11 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
     let stop = Arc::new(AtomicBool::new(false));
     let signal = Arc::clone(&stop);
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
-    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    let monitor = PowerMonitor::start(Some(
-        &queue.join(format!("power-{stamp}-{}.jsonl", std::process::id())),
-    ))?;
+    // Sampling invokes macOS power tools. Keep it entirely off while an
+    // always-on daemon has no work instead of burning CPU and growing an idle
+    // journal forever. A monitor remains live across condition waits and job
+    // execution so its history still spans the complete admission interval.
+    let mut monitor = None;
     let mut idle = Instant::now();
     let mut waiting = BTreeMap::<String, Instant>::new();
     loop {
@@ -947,7 +948,18 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 )
                 .into());
             }
-            let observation = probe_shared(&monitor, &job.conditions, None, &mut probes)?;
+            if monitor.is_none() {
+                let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+                monitor = Some(PowerMonitor::start(Some(
+                    &queue.join(format!("power-{stamp}-{}.jsonl", std::process::id())),
+                ))?);
+            }
+            let observation = probe_shared(
+                monitor.as_ref().expect("monitor initialized above"),
+                &job.conditions,
+                None,
+                &mut probes,
+            )?;
             pending.push(
                 json!({"id":job.id,"wait_seconds":started.elapsed().as_secs(),
                 "conditions":observation}),
@@ -969,7 +981,15 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
             let wait_started = waiting
                 .get(&job.id)
                 .ok_or("selected job is missing its waiting deadline")?;
-            match execute(&job, queue, &monitor, &stop, *wait_started)? {
+            match execute(
+                &job,
+                queue,
+                monitor
+                    .as_ref()
+                    .ok_or("selected job is missing its power monitor")?,
+                &stop,
+                *wait_started,
+            )? {
                 Some(false) => {
                     if idle_seconds.is_none() {
                         quarantine_manifest(
@@ -1000,6 +1020,9 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 &queue.join("state.json"),
                 &json!({"status":status,"pid":std::process::id(),"pending":pending}),
             )?;
+            if pending.is_empty() {
+                monitor = None;
+            }
             if !pending.is_empty() {
                 idle = Instant::now();
             }
@@ -1489,6 +1512,25 @@ mod tests {
         );
         assert_eq!(fs::read(dir.path().join("STOP")).unwrap(), b"preserved");
         assert_eq!(fs::read_dir(dir.path().join("results")).unwrap().count(), 0);
+        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("power-")
+        }));
+    }
+
+    #[test]
+    fn idle_worker_does_not_start_a_power_observer() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("jobs")).unwrap();
+        fs::create_dir(dir.path().join("results")).unwrap();
+        run_owned(dir.path(), &dir.path().join("hardware.lock"), Some(0)).unwrap();
+        assert_eq!(
+            read_json(&dir.path().join("state.json")).unwrap()["status"],
+            "idle"
+        );
         assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| {
             entry
                 .unwrap()
