@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 45] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 46] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -62,6 +62,7 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 45] = [
     MetalResearchCandidate::QmvW8G32R8Sg2,
     MetalResearchCandidate::GlobalD512ShortR4T128,
     MetalResearchCandidate::QmvW4G32R4Sg8K8,
+    MetalResearchCandidate::QmvW8G32R4Sg8K8,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -261,6 +262,14 @@ impl MetalResearchCandidate {
                 numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
                 source: concat!(include_str!("research_shaders/decode_round_common.metal"),
                     include_str!("research_shaders/qmv_w4_g32_r4_sg8_k8.metal")),
+            },
+            Self::QmvW8G32R4Sg8K8 => CandidateSpec {
+                name: "metal-qmv-w8-g32-r4-sg8-k8", kernels: &[ResearchKernel::QmvW8G32R4Sg8K8],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/qmv_w8_g32_r4_sg8_k8.metal"),
+                min_tokens: 1, max_tokens: 1, window_independent: false,
+                numerical_contract: "authenticated-g32-fp16-scales-bf16-qmv-fp32-rne",
+                source: concat!(include_str!("research_shaders/decode_round_common.metal"),
+                    include_str!("research_shaders/qmv_w8_g32_r4_sg8_k8.metal")),
             },
             Self::GlobalD512ShortR4T128 => CandidateSpec {
                 name: "metal-global-d512-short-r4t128", kernels: &[ResearchKernel::GlobalD512ShortR4T128],
@@ -571,7 +580,15 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 44);
+        assert_eq!(all.len(), 46);
+        let donor_schedules = all.split_off(44);
+        assert_eq!(
+            donor_schedules
+                .iter()
+                .map(|candidate| candidate["name"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["metal-qmv-w4-g32-r4-sg8-k8", "metal-qmv-w8-g32-r4-sg8-k8"]
+        );
         let next_round = all.split_off(40);
         assert_eq!(next_round.len(), 4);
         let additions = all.split_off(18);

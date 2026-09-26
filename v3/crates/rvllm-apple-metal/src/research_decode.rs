@@ -95,6 +95,11 @@ pub fn qmv_decode_contract(
             AppleLowBitWeightFormat::W8A16,
             AppleLowBitTensorRole::OutputProjection,
             4096 | 8192
+        ) | (
+            MetalResearchCandidate::QmvW8G32R4Sg8K8,
+            AppleLowBitWeightFormat::W8A16,
+            AppleLowBitTensorRole::OutputProjection,
+            4096 | 8192
         )
     )
 }

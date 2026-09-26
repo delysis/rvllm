@@ -53,6 +53,7 @@ pub enum MetalResearchCandidate {
     QmvW8G32R8Sg2,
     GlobalD512ShortR4T128,
     QmvW4G32R4Sg8K8,
+    QmvW8G32R4Sg8K8,
 }
 
 impl MetalResearchCandidate {
@@ -115,7 +116,11 @@ impl MetalResearchCandidate {
     pub const fn decode_round_operator(self) -> bool {
         matches!(
             self,
-            Self::FfnBf16R4Sg2 | Self::QmvW4G32R8Sg2 | Self::QmvW8G32R8Sg2 | Self::QmvW4G32R4Sg8K8
+            Self::FfnBf16R4Sg2
+                | Self::QmvW4G32R8Sg2
+                | Self::QmvW8G32R8Sg2
+                | Self::QmvW4G32R4Sg8K8
+                | Self::QmvW8G32R4Sg8K8
         )
     }
 
@@ -129,6 +134,7 @@ impl MetalResearchCandidate {
                 | Self::QmvW8G32R8Sg2
                 | Self::GlobalD512ShortR4T128
                 | Self::QmvW4G32R4Sg8K8
+                | Self::QmvW8G32R4Sg8K8
         )
     }
 

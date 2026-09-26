@@ -656,6 +656,7 @@ impl MetalLowBitProjectionOffsets {
             crate::research_evidence::ResearchKernel::QmvW4G32R8Sg2,
             crate::research_evidence::ResearchKernel::QmvW8G32R8Sg2,
             crate::research_evidence::ResearchKernel::QmvW4G32R4Sg8K8,
+            crate::research_evidence::ResearchKernel::QmvW8G32R4Sg8K8,
         ]
         .into_iter()
         .find(|kernel| kernel_name == kernel.name());

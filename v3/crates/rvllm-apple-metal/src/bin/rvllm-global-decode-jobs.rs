@@ -592,6 +592,7 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 MetalResearchCandidate::QmvW4G32R8Sg2 => &[15360],
                 MetalResearchCandidate::QmvW4G32R4Sg8K8 => &[15360],
                 MetalResearchCandidate::QmvW8G32R8Sg2 => &[4096, 8192],
+                MetalResearchCandidate::QmvW8G32R4Sg8K8 => &[4096, 8192],
                 _ => unreachable!(),
             };
             keys.iter()
@@ -1344,6 +1345,18 @@ fn main() -> Result {
             println!("{}",found[0]); Ok(())
         }
         [action,source,directory] if action=="compile" => compile(&absolute(source)?,&absolute(directory)?),
+        [action,candidate,path] if action=="emit-source" => {
+            let candidate: MetalResearchCandidate = candidate.parse()?;
+            validate_selected(&[candidate.name().to_owned()])?;
+            let source = rvllm_apple_metal::kernels::kernel_source_with_options(
+                MetalFloatType::Bf16,
+                MetalKernelOptions {
+                    research: candidate,
+                    ..MetalKernelOptions::default()
+                },
+            );
+            write(&absolute(path)?, source.as_bytes())
+        }
         [action,campaign,root,queue,test,conditions,selected @ ..] if action=="prepare" =>
             prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected),
         [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false,None,&[]),
@@ -1356,7 +1369,7 @@ fn main() -> Result {
         }
         [action,root,length,output,expected @ ..] if action=="advance" && !expected.is_empty() =>
             advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE...".into()),
     }
 }
 

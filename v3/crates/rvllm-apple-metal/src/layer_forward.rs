@@ -6208,6 +6208,9 @@ unsafe fn encode_low_bit_down_projection(
         ) | (
             crate::MetalResearchCandidate::QmvW8G32R8Sg2,
             AppleLowBitTensorRole::OutputProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R4Sg8K8,
+            AppleLowBitTensorRole::OutputProjection
         )
     );
     // This selector owns decode only. Prefill and other phases retain the
@@ -6294,6 +6297,9 @@ unsafe fn encode_low_bit_projection_strided(
             AppleLowBitTensorRole::DenseDownProjection
         ) | (
             crate::MetalResearchCandidate::QmvW8G32R8Sg2,
+            AppleLowBitTensorRole::OutputProjection
+        ) | (
+            crate::MetalResearchCandidate::QmvW8G32R4Sg8K8,
             AppleLowBitTensorRole::OutputProjection
         )
     );

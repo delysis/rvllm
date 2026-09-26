@@ -82,6 +82,8 @@ fn exact_shape_route_and_each_refusal_boundary() {
 fn qmv_role_format_shape_are_separate_requirements() {
     assert_eq!(ResearchKernel::QmvW4G32R4Sg8K8.limits(), (256, 0));
     assert_eq!(ResearchKernel::QmvW4G32R4Sg8K8.qmv_output_rows(), Some(32));
+    assert_eq!(ResearchKernel::QmvW8G32R4Sg8K8.limits(), (256, 0));
+    assert_eq!(ResearchKernel::QmvW8G32R4Sg8K8.qmv_output_rows(), Some(32));
     assert_eq!(ResearchKernel::QmvW4G32R8Sg2.qmv_output_rows(), Some(16));
     for (selector, format, role, k) in [
         (
@@ -103,7 +105,19 @@ fn qmv_role_format_shape_are_separate_requirements() {
             4096,
         ),
         (
+            Candidate::QmvW8G32R4Sg8K8,
+            Format::W8A16,
+            Role::OutputProjection,
+            4096,
+        ),
+        (
             Candidate::QmvW8G32R8Sg2,
+            Format::W8A16,
+            Role::OutputProjection,
+            8192,
+        ),
+        (
+            Candidate::QmvW8G32R4Sg8K8,
             Format::W8A16,
             Role::OutputProjection,
             8192,
@@ -166,6 +180,7 @@ fn generated_qmv_source_retains_fp16_scale_abi_and_defaults() {
         Candidate::QmvW4G32R8Sg2,
         Candidate::QmvW4G32R4Sg8K8,
         Candidate::QmvW8G32R8Sg2,
+        Candidate::QmvW8G32R4Sg8K8,
         Candidate::GlobalD512ShortR4T128,
     ] {
         let source = crate::kernels::kernel_source_with_options(
@@ -184,7 +199,10 @@ fn generated_qmv_source_retains_fp16_scale_abi_and_defaults() {
         );
         if matches!(
             c,
-            Candidate::QmvW4G32R8Sg2 | Candidate::QmvW4G32R4Sg8K8 | Candidate::QmvW8G32R8Sg2
+            Candidate::QmvW4G32R8Sg2
+                | Candidate::QmvW4G32R4Sg8K8
+                | Candidate::QmvW8G32R8Sg2
+                | Candidate::QmvW8G32R4Sg8K8
         ) {
             assert!(source.contains("device const half *scales"));
             assert!(!source.contains("device const bfloat *scales"));

@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v4";
-pub const RESEARCH_KERNEL_COUNT: usize = 61;
+pub const RESEARCH_KERNEL_COUNT: usize = 62;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -70,6 +70,7 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_qmv_w8_g32_r8_sg2",
     "research_global_d512_short_r4t128",
     "research_qmv_w4_g32_r4_sg8_k8",
+    "research_qmv_w8_g32_r4_sg8_k8",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,6 +137,7 @@ pub enum ResearchKernel {
     QmvW8G32R8Sg2 = 58,
     GlobalD512ShortR4T128 = 59,
     QmvW4G32R4Sg8K8 = 60,
+    QmvW8G32R4Sg8K8 = 61,
 }
 
 impl ResearchKernel {
@@ -146,7 +148,7 @@ impl ResearchKernel {
     pub const fn qmv_output_rows(self) -> Option<usize> {
         match self {
             Self::QmvW4G32R8Sg2 | Self::QmvW8G32R8Sg2 => Some(16),
-            Self::QmvW4G32R4Sg8K8 => Some(32),
+            Self::QmvW4G32R4Sg8K8 | Self::QmvW8G32R4Sg8K8 => Some(32),
             _ => None,
         }
     }
@@ -157,7 +159,7 @@ impl ResearchKernel {
             Self::QmvW4G32R8Sg2 => (64, 0),
             Self::QmvW8G32R8Sg2 => (64, 0),
             Self::GlobalD512ShortR4T128 => (128, 2048),
-            Self::QmvW4G32R4Sg8K8 => (256, 0),
+            Self::QmvW4G32R4Sg8K8 | Self::QmvW8G32R4Sg8K8 => (256, 0),
 
             Self::GlobalD512R8P64T64 => (64, 10016),
             Self::GlobalD512R8P64T128 => (128, 10016),
@@ -220,6 +222,7 @@ impl ResearchKernel {
             Self::QmvW8G32R8Sg2 => MetalResearchCandidate::QmvW8G32R8Sg2,
             Self::GlobalD512ShortR4T128 => MetalResearchCandidate::GlobalD512ShortR4T128,
             Self::QmvW4G32R4Sg8K8 => MetalResearchCandidate::QmvW4G32R4Sg8K8,
+            Self::QmvW8G32R4Sg8K8 => MetalResearchCandidate::QmvW8G32R4Sg8K8,
 
             Self::GlobalD512R8P64T64 => MetalResearchCandidate::GlobalD512R8P64T64,
             Self::GlobalD512R8P64T128 => MetalResearchCandidate::GlobalD512R8P64T128,
