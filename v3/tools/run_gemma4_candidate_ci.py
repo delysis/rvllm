@@ -124,7 +124,10 @@ def run_checks(workspace: Path, output: Path) -> None:
             result["rust_tests"] += len(suite["tests"])
         emitted = run("runtime-catalog", ["cargo", "run", *COMMON, "-p", "rvllm-apple-metal", "--bin",
                                          "rvllm-metal-research-source", "--", "--catalog"])
-        catalog.verify_exported(reviewed, catalog.decode(emitted))
+        runtime_catalog = catalog.decode(emitted)
+        full_reviewed = catalog.decode(
+            (workspace / "tools/gemma4_metal_full_catalog.json").read_text())
+        catalog.verify_full_exported(reviewed, full_reviewed, runtime_catalog)
         hashes = {"runtime-catalog.stdout": hashlib.sha256(emitted.encode()).hexdigest()}
         for dtype in ("bf16", "f16"):
             for candidate in export_map:

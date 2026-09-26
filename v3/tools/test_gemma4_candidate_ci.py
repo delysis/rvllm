@@ -70,6 +70,7 @@ class CandidateCiTests(unittest.TestCase):
             inventory = workspace / "tools/gemma4_candidate_host_tests.json"
             inventory.write_bytes((TOOLS / inventory.name).read_bytes())
             (workspace / "tools/gemma4_metal_catalog.json").write_bytes((TOOLS / "gemma4_metal_catalog.json").read_bytes())
+            (workspace / "tools/gemma4_metal_full_catalog.json").write_bytes((TOOLS / "gemma4_metal_full_catalog.json").read_bytes())
             commands = []
 
             def fake_run(argv, **kwargs):
@@ -79,7 +80,7 @@ class CandidateCiTests(unittest.TestCase):
                     return subprocess.CompletedProcess(argv, 0, self.output(suite).encode(), b"")
                 if argv[:2] == ["cargo", "run"]:
                     if argv[-1] == "--catalog":
-                        return subprocess.CompletedProcess(argv, 0, (TOOLS / "gemma4_metal_catalog.json").read_bytes(), b"")
+                        return subprocess.CompletedProcess(argv, 0, (TOOLS / "gemma4_metal_full_catalog.json").read_bytes(), b"")
                     candidate = argv[-1]
                     source = "\n".join("kernel void " + n + "() {}" for n in ci.EXPORTS[candidate])
                     return subprocess.CompletedProcess(argv, 0, ("// fixture\n" + source).encode(), b"")

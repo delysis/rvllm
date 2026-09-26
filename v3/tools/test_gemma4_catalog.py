@@ -11,6 +11,15 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(len(catalog.exports(got)),18)
         self.assertEqual(len(catalog.sources(got)),18)
         self.assertEqual(catalog.exports(got)['metal-mma32-load4'],('wave2_gemm_mma32_load4','wave2_qkv_mma32_load4'))
+    def test_full_catalog_preserves_legacy_prefix_and_exact_new_registry(self):
+        full=catalog.decode((TOOLS/'gemma4_metal_full_catalog.json').read_text())
+        catalog.verify_full_exported(self.value,full,copy.deepcopy(full))
+        changed=copy.deepcopy(full)
+        changed['candidates'][-1]['kernels'][0]='unreviewed_kernel'
+        with self.assertRaises(ValueError):catalog.verify_full_exported(self.value,full,changed)
+        changed=copy.deepcopy(full)
+        changed['candidates'][0]['name']='renamed_baseline'
+        with self.assertRaises(ValueError):catalog.verify_full_exported(self.value,changed,changed)
     def test_duplicate_names_missing_families_and_unknown_fields_are_rejected(self):
         for change in [lambda v:v['candidates'].pop(),lambda v:v['candidates'].append(v['candidates'][1]),
                        lambda v:v.update(device_qualified=True),lambda v:v.update(default='auto'),
