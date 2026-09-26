@@ -202,6 +202,7 @@ fn every_near_miss_shape_and_overflow_is_rejected() {
             ..DECODE_TILES[0]
         },
         DecodeTile {
+            capacity_tokens: 0,
             rows: 1,
             keys: 8,
             panel: 64,
@@ -210,6 +211,7 @@ fn every_near_miss_shape_and_overflow_is_rejected() {
             simd_matrix: false,
         },
         DecodeTile {
+            capacity_tokens: 0,
             rows: 1,
             keys: 8,
             panel: 128,
@@ -451,4 +453,89 @@ fn staging_panel_size_does_not_change_fp32_association() {
             .zip(&expected)
             .all(|(a, b)| a.to_bits() == b.to_bits()));
     }
+}
+
+#[test]
+fn stream_capacity_is_allocated_capacity_not_only_visible_length() {
+    for tile in [STREAM_R4T128_C2048, STREAM_R1T32_C2048] {
+        for length in [256, 512, 1024, 2048] {
+            let f = Fixture::for_tile(length, 32, tile);
+            let plan = DecodePlan::new(tile, f.shape, DecodeOutput::Bf16).unwrap();
+            assert_eq!(plan.grid, [(16 / tile.rows) as usize, 1, 1]);
+            assert_eq!(
+                plan.threadgroup_bytes,
+                if tile.rows == 1 { 0 } else { 2048 }
+            );
+            assert_eq!(plan.scratch_bytes, 0);
+            let (buffers, bytes) = layout(plan);
+            assert!(plan.buffers_fit(buffers, bytes));
+            // The visible prefix is unchanged; an oversized declared allocation
+            // must still refuse rather than silently running a bounded shader.
+            let oversized = DecodeShape {
+                max_blocks: 65,
+                ..f.shape
+            };
+            assert!(DecodePlan::new(tile, oversized, DecodeOutput::Bf16).is_none());
+        }
+        assert!(DecodePlan::new(
+            tile,
+            DecodeShape {
+                max_blocks: u32::MAX,
+                block_size: u32::MAX,
+                ..shape()
+            },
+            DecodeOutput::F32
+        )
+        .is_none());
+    }
+    let old = Fixture::for_tile(512, 32, SHORT_R4T128);
+    assert!(DecodePlan::new(SHORT_R4T128, old.shape, DecodeOutput::Bf16).is_some());
+    assert!(DecodePlan::new(
+        SHORT_R4T128,
+        DecodeShape {
+            max_blocks: 17,
+            ..old.shape
+        },
+        DecodeOutput::Bf16
+    )
+    .is_none());
+}
+
+#[test]
+fn stream_split_is_eight_complete_partitions_with_disjoint_persistent_scratch() {
+    let tile = SPLIT_STREAM_R4S256T128_C2048;
+    let f = Fixture::for_split(2048, 32, tile);
+    let split = SplitDecodePlan::new(tile, f.shape, DecodeOutput::Bf16).unwrap();
+    assert_eq!(split.partial_grid, [4, 8, 1]);
+    assert_eq!(split.partial_threads, [128, 1, 1]);
+    assert_eq!(split.merge_grid, [16, 1, 1]);
+    assert_eq!(split.merge_threads, [32, 1, 1]);
+    assert_eq!(split.partial_threadgroup_bytes, 2048);
+    assert_eq!(split.scratch_bytes, 263168);
+    assert_eq!(
+        model_scratch_bytes(crate::MetalResearchCandidate::GlobalD512SplitStreamR4S256T128C2048),
+        split.scratch_bytes
+    );
+    let single = DecodePlan::new(STREAM_R4T128_C2048, f.shape, DecodeOutput::Bf16).unwrap();
+    let (common, bytes) = layout(single);
+    let partials = bytes.next_multiple_of(16);
+    let buffers = SplitDecodeBuffers { common, partials };
+    assert!(split.buffers_fit(buffers, partials + split.scratch_bytes));
+    assert!(!split.buffers_fit(buffers, partials + split.scratch_bytes - 1));
+    assert!(!split.buffers_fit(
+        SplitDecodeBuffers {
+            partials: common.output,
+            ..buffers
+        },
+        partials + split.scratch_bytes
+    ));
+    assert!(SplitDecodePlan::new(
+        tile,
+        DecodeShape {
+            max_blocks: 65,
+            ..f.shape
+        },
+        DecodeOutput::Bf16
+    )
+    .is_none());
 }

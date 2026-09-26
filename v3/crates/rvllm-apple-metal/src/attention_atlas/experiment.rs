@@ -133,6 +133,7 @@ impl Control {
             Self::ExistingGlobalR16P128T128 => (16, 128, 128),
             Self::CurrentMatrixR8K32P64T128 => {
                 return Some(crate::attention_global_decode::DecodeTile {
+                    capacity_tokens: 0,
                     rows: 8,
                     keys: 32,
                     panel: 64,
@@ -144,6 +145,7 @@ impl Control {
             _ => return None,
         };
         Some(crate::attention_global_decode::DecodeTile {
+            capacity_tokens: 0,
             rows,
             keys: 8,
             panel,

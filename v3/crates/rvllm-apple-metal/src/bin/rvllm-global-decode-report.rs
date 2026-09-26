@@ -1,6 +1,7 @@
 //! Summarize every retained global-decode ABBA cell without sample selection.
 #![forbid(unsafe_code)]
 
+use rvllm_apple_metal::{decode_round_campaign, MetalResearchCandidate};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -56,13 +57,25 @@ fn bootstrap_median_95(values: &[f64]) -> Result<[f64; 2]> {
 
 fn cell(directory: &Path) -> Result<Value> {
     let receipt = read(&directory.join("native/abba.json"))?;
+    let selector = receipt["candidate"]
+        .as_str()
+        .and_then(|s| s.parse::<MetalResearchCandidate>().ok());
+    let strict = selector.is_some_and(|c| c.round_two())
+        || receipt["schema"] == "rvllm.global-decode.abba.v3";
+    let round_two_stats = if strict {
+        Some(decode_round_campaign::validate_collection(&receipt)?)
+    } else {
+        None
+    };
     let balanced = receipt["balanced_abba_baab"] == true;
     let count = if balanced { 10 } else { 5 };
     if receipt["blocks"].as_u64() != Some(count as u64) {
         return Err("block count does not match collection contract".into());
     }
-    if receipt["schema"] != "rvllm.global-decode.abba.v1"
-        || receipt["status"] != "collected"
+    if !matches!(
+        receipt["schema"].as_str(),
+        Some("rvllm.global-decode.abba.v1" | "rvllm.global-decode.abba.v3")
+    ) || receipt["status"] != "collected"
         || receipt["samples"].as_array().map(Vec::len) != Some(count * 4)
     {
         return Err(format!("invalid ABBA receipt: {}", directory.display()).into());
@@ -160,7 +173,10 @@ fn cell(directory: &Path) -> Result<Value> {
         "operator_k":receipt["operator_k"],
         "baseline_mean_ms_per_iteration":baseline * 10.0,
         "candidate_mean_ms_per_iteration":candidate * 10.0,
-        "timing_unit":"one complete operator invocation; fused baseline may use two encoders",
+        "timing_unit":"one complete operator invocation; fused baseline and split candidate include both encoders",
+        "timing_metric":receipt["timing_metric"],
+        "round_two_collection_stats":round_two_stats.map(|stats| stats.receipt()),
+        "identity_qualification":"summary only; use review-round2 for source/build/oracle/queue pins and advancement",
         "ratio_of_means":baseline / candidate,
         "median_paired_block_ratio":median(paired.clone())?,
         "paired_block_ratios":paired,

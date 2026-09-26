@@ -1,7 +1,6 @@
 //! Safe checked host adapter; unsafe code is confined to typed Metal bindings.
 //! No pipeline creation, allocation, labels, clocks, logging or environment reads.
 use crate::research_decode::{GateUpPlan, GateUpRequest};
-use crate::research_evidence::ResearchKernel;
 use crate::{MetalFloatType, PipelineCache};
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
@@ -19,7 +18,7 @@ pub fn gate_up_plan(pipelines: &PipelineCache, request: GateUpRequest) -> Option
         return None;
     }
     let plan = request.plan()?;
-    pipelines.research_pso(ResearchKernel::FfnBf16R4Sg2.name(), 64, 0)?;
+    pipelines.research_pso(plan.kernel.name(), plan.threads[0], 0)?;
     Some(plan)
 }
 
@@ -37,7 +36,7 @@ pub fn try_encode_gate_up(
     let Some(plan) = gate_up_plan(pipelines, request) else {
         return Ok(false);
     };
-    let Some(pso) = pipelines.research_pso(ResearchKernel::FfnBf16R4Sg2.name(), 64, 0) else {
+    let Some(pso) = pipelines.research_pso(plan.kernel.name(), plan.threads[0], 0) else {
         return Ok(false);
     };
     let encoder = command.computeCommandEncoder().ok_or_else(|| {
@@ -45,7 +44,7 @@ pub fn try_encode_gate_up(
             AppleError::MetalUnavailable,
             AppleCtx {
                 backend: "metal",
-                op: "research_ffn_bf16_r4_sg2",
+                op: plan.kernel.name(),
                 device: "apple-silicon",
             },
         )
@@ -69,6 +68,6 @@ pub fn try_encode_gate_up(
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(size(plan.grid), size(plan.threads));
     encoder.endEncoding();
-    pipelines.record_research_dispatch(ResearchKernel::FfnBf16R4Sg2);
+    pipelines.record_research_dispatch(plan.kernel);
     Ok(true)
 }

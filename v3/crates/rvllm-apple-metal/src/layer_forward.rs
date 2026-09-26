@@ -6197,22 +6197,7 @@ unsafe fn encode_low_bit_down_projection(
     phase: MetalPhase,
 ) -> Result<()> {
     let selected = pipelines.kernel_options().research;
-    let targeted = matches!(
-        (selected, projection.role()),
-        (
-            crate::MetalResearchCandidate::QmvW4G32R8Sg2,
-            AppleLowBitTensorRole::DenseDownProjection
-        ) | (
-            crate::MetalResearchCandidate::QmvW4G32R4Sg8K8,
-            AppleLowBitTensorRole::DenseDownProjection
-        ) | (
-            crate::MetalResearchCandidate::QmvW8G32R8Sg2,
-            AppleLowBitTensorRole::OutputProjection
-        ) | (
-            crate::MetalResearchCandidate::QmvW8G32R4Sg8K8,
-            AppleLowBitTensorRole::OutputProjection
-        )
-    );
+    let targeted = crate::research_decode::qmv_role_target(selected, projection.role());
     // This selector owns decode only. Prefill and other phases retain the
     // incumbent route even when the research candidate is selected.
     if targeted
@@ -6287,22 +6272,7 @@ unsafe fn encode_low_bit_projection_strided(
     phase: MetalPhase,
 ) -> Result<()> {
     let selected = pipelines.kernel_options().research;
-    let targeted = matches!(
-        (selected, projection.role()),
-        (
-            crate::MetalResearchCandidate::QmvW4G32R8Sg2,
-            AppleLowBitTensorRole::DenseDownProjection
-        ) | (
-            crate::MetalResearchCandidate::QmvW4G32R4Sg8K8,
-            AppleLowBitTensorRole::DenseDownProjection
-        ) | (
-            crate::MetalResearchCandidate::QmvW8G32R8Sg2,
-            AppleLowBitTensorRole::OutputProjection
-        ) | (
-            crate::MetalResearchCandidate::QmvW8G32R4Sg8K8,
-            AppleLowBitTensorRole::OutputProjection
-        )
-    );
+    let targeted = crate::research_decode::qmv_role_target(selected, projection.role());
     // This selector owns decode only. Prefill and other phases retain the
     // incumbent route even when the research candidate is selected.
     if targeted

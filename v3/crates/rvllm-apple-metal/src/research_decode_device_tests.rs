@@ -31,8 +31,19 @@ struct Data {
 }
 impl Data {
     fn new(setup: &Setup, k: usize) -> TestResult<Self> {
-        let ffn = setup.candidate == MetalResearchCandidate::FfnBf16R4Sg2;
-        let (payloads, expected, label) = if ffn {
+        Self::with_fixture(setup, k, false)
+    }
+
+    fn with_fixture(setup: &Setup, k: usize, dense_ffn: bool) -> TestResult<Self> {
+        let ffn = setup.candidate.ffn_decode();
+        let (payloads, expected, label) = if ffn && dense_ffn {
+            let (x, w, expected) = cpu::dense_ffn_fixture();
+            (
+                vec![words(&x), words(&w)],
+                expected,
+                "ffn-dense-M1-K3840-I15360".to_owned(),
+            )
+        } else if ffn {
             let mut w = vec![0; 30720 * 3840 * 2];
             for row in 0..30720 {
                 for term in 0..8 {
@@ -47,14 +58,7 @@ impl Data {
                 "ffn-M1-K3840-I15360".to_owned(),
             )
         } else {
-            let bits = if matches!(
-                setup.candidate,
-                MetalResearchCandidate::QmvW4G32R8Sg2 | MetalResearchCandidate::QmvW4G32R4Sg8K8
-            ) {
-                4
-            } else {
-                8
-            };
+            let bits = if setup.candidate.qmv_w4() { 4 } else { 8 };
             let fixture = cpu::Group32Fixture::new(bits, 3840, k);
             let expected = fixture.output();
             (
@@ -94,10 +98,7 @@ impl Data {
         let projection = if ffn {
             None
         } else {
-            let w4 = matches!(
-                setup.candidate,
-                MetalResearchCandidate::QmvW4G32R8Sg2 | MetalResearchCandidate::QmvW4G32R4Sg8K8
-            );
+            let w4 = setup.candidate.qmv_w4();
             Some(MetalLowBitProjectionOffsets::new_for_role(
                 if w4 {
                     Role::DenseDownProjection
@@ -311,11 +312,6 @@ fn guarded_bad_launch(data: &Data, setup: &Setup, k: usize, case: usize) -> Test
     let encoder = command.computeCommandEncoder().ok_or("no encoder")?;
     let kernel = setup.candidate.kernels()[0];
     let ffn = data.projection.is_none();
-    let grid = if ffn {
-        1920
-    } else {
-        3840 / kernel.qmv_output_rows().ok_or("QMV output tile missing")?
-    };
     encoder.setComputePipelineState(setup.pipelines.get(kernel.name())?);
     let m = if case == 1 { 2 } else { 1 };
     let wrong_k = if case == 2 { k as u32 - 1 } else { k as u32 };
@@ -352,12 +348,21 @@ fn guarded_bad_launch(data: &Data, setup: &Setup, k: usize, case: usize) -> Test
     }
     encoder.dispatchThreadgroups_threadsPerThreadgroup(
         MTLSize {
-            width: grid,
+            width: if ffn { 15360 } else { 3840 }
+                / crate::research_decode::operator_launch(setup.candidate)
+                    .ok_or("operator launch missing")?
+                    .rows_per_group,
             height: 1,
             depth: 1,
         },
         MTLSize {
-            width: if case == 0 { 32 } else { kernel.limits().0 },
+            width: if case == 0 {
+                32
+            } else {
+                crate::research_decode::operator_launch(setup.candidate)
+                    .ok_or("operator launch missing")?
+                    .threads
+            },
             height: 1,
             depth: 1,
         },
@@ -375,14 +380,7 @@ fn guarded_bad_launch(data: &Data, setup: &Setup, k: usize, case: usize) -> Test
 }
 
 fn cases(candidate: MetalResearchCandidate) -> &'static [usize] {
-    match candidate {
-        MetalResearchCandidate::FfnBf16R4Sg2 => &[3840],
-        MetalResearchCandidate::QmvW4G32R8Sg2 => &[15360],
-        MetalResearchCandidate::QmvW4G32R4Sg8K8 => &[15360],
-        MetalResearchCandidate::QmvW8G32R8Sg2 => &[4096, 8192],
-        MetalResearchCandidate::QmvW8G32R4Sg8K8 => &[4096, 8192],
-        _ => &[],
-    }
+    candidate.operator_keys()
 }
 
 #[test]
@@ -393,8 +391,18 @@ fn decode_round_oracle() -> TestResult {
         return Err("decode operator selector required".into());
     }
     let mut reports = Vec::new();
-    for &k in cases(setup.candidate) {
-        let data = Data::new(&setup, k)?;
+    let ffn = setup.candidate.ffn_decode();
+    let fixtures: Vec<_> = cases(setup.candidate)
+        .iter()
+        .flat_map(|&k| {
+            [false, true]
+                .into_iter()
+                .filter(move |dense| !*dense || ffn)
+                .map(move |dense| (k, dense))
+        })
+        .collect();
+    for (k, dense_ffn) in fixtures {
+        let data = Data::with_fixture(&setup, k, dense_ffn)?;
         let identity = (
             data.arena.allocated(),
             data.arena.regions().len(),
@@ -501,7 +509,7 @@ fn decode_round_oracle() -> TestResult {
         let path = setup.directory.join(format!("{}.bf16", data.label));
         write_new(&path, &candidate_output)?;
         reports.push(
-            json!({"label":data.label,"k":k,"bf16_file":path,"bf16_sha256":sha256(&path)?,
+            json!({"label":data.label,"k":k,"dense_ffn_fixture":dense_ffn,"bf16_file":path,"bf16_sha256":sha256(&path)?,
             "max_fp64_abs_error":max_error,"incumbent_max_fp64_abs_error":baseline_error,
             "reference":"independent scalar FP64 with incumbent BF16 boundaries",
             "predeclared_bound":"0.015625*abs(reference)+1e-5",
@@ -545,6 +553,20 @@ fn decode_round_abba() -> TestResult {
         return Err("unqualified operator K".into());
     }
     let data = Data::new(&setup, k)?;
+    if setup.candidate.ffn_decode()
+        && !oracle["cases"].as_array().is_some_and(|cases| {
+            cases.iter().any(|case| {
+                case["dense_ffn_fixture"] == true
+                    && case["k"] == 3840
+                    && case["repeats"] == 3
+                    && case["guards_untouched"] == true
+                    && case["repeated_bit_exact"] == true
+                    && case["exact_dispatch_accounting"] == true
+            })
+        })
+    {
+        return Err("dense full-shape FFN correctness case required before timing".into());
+    }
     let case = oracle["cases"]
         .as_array()
         .ok_or("no cases")?

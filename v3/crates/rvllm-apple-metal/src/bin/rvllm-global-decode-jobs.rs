@@ -1,6 +1,7 @@
 //! Offline, explicit queue preparation. No accelerator execution, implicit
 //! submission, shell, environment-based dispatch, winner selection or promotion.
 #![forbid(unsafe_code)]
+use rvllm_apple_metal::decode_round_campaign as round_two;
 use rvllm_apple_metal::{MetalFloatType, MetalKernelOptions, MetalResearchCandidate};
 use serde_json::{json, Value};
 use std::{
@@ -139,7 +140,7 @@ fn validate_timing_request(length: u32, selected: &[String]) -> Result {
     if selected.iter().any(|name| {
         name.parse::<MetalResearchCandidate>().is_ok_and(|c| {
             c.decode_round_operator()
-                || (c == MetalResearchCandidate::GlobalD512ShortR4T128 && length > 512)
+                || (c.global_capacity_tokens() != 0 && length > c.global_capacity_tokens())
         })
     }) {
         return Err("requested length is outside the selected candidate contract".into());
@@ -240,6 +241,16 @@ fn compile(source: &Path, directory: &Path) -> Result {
 }
 fn id(config: &Value, candidate: MetalResearchCandidate, suffix: &str) -> Result<String> {
     let campaign = config["campaign"].as_str().ok_or("campaign missing")?;
+    if candidate.round_two() {
+        let value = format!(
+            "{campaign}-{}-{suffix}",
+            candidate.name().trim_start_matches("metal-")
+        );
+        if value.len() > 96 {
+            return Err("queue ID exceeds 96 bytes".into());
+        }
+        return Ok(value);
+    }
     if let Some(tile) = candidate.global_decode_tile() {
         if tile.keys != 8 || tile.per_tile_softmax {
             return Ok(format!(
@@ -305,6 +316,13 @@ fn job(
     inputs: Vec<Value>,
     after: Vec<String>,
 ) -> Result {
+    let mut inputs = inputs;
+    if config["screen_protocol"] == round_two::PROTOCOL {
+        validate_observation_policy(&config["conditions"])?;
+        if !config["confirmation_of"].is_null() {
+            inputs.push(config["confirmation_of"].clone());
+        }
+    }
     let value = json!({"schema":"rvllm.experiment_job.v1","id":job_id,"purpose":purpose,
         "command":{"executable":pin(executable)?,"cwd":root,"args":args,"env":env},
         "inputs":inputs,"after":after,"conditions":config["conditions"],
@@ -399,6 +417,7 @@ fn advancement_job(
 fn source_path(root: &Path, c: MetalResearchCandidate, flavor: &str) -> PathBuf {
     root.join(format!("{}-{flavor}.metal", c.name()))
 }
+#[allow(clippy::too_many_arguments)]
 fn prepare(
     campaign: &str,
     root: &Path,
@@ -406,8 +425,28 @@ fn prepare(
     test: &Path,
     conditions: &Path,
     selected: &[String],
+    round_two_mode: bool,
+    confirmation: Option<&Path>,
 ) -> Result {
     validate_selected(selected)?;
+    if !round_two_mode
+        && selected.iter().any(|name| {
+            name.parse::<MetalResearchCandidate>()
+                .is_ok_and(MetalResearchCandidate::round_two)
+        })
+    {
+        return Err("new candidates require prepare-round2".into());
+    }
+    if round_two_mode
+        && (selected.is_empty()
+            || selected.iter().any(|name| {
+                name.parse::<MetalResearchCandidate>()
+                    .map_or(true, |c| !round_two::supported(c))
+            }))
+    {
+        return Err("prepare-round2 requires explicit supported candidate names".into());
+    }
+
     if campaign.is_empty()
         || campaign.len() > 32
         || !campaign
@@ -420,7 +459,7 @@ fn prepare(
     // The power source is always explicit. Other controls may be intentionally
     // unconstrained for exploratory campaigns; the queue records every sampled
     // value so later analysis can stratify rather than waiting for an idealized
-    // host state. Confirmation campaigns should pin all four controls.
+    // host state. Round-two confirmations keep the same observation-only policy.
     if !matches!(policy["power_source"].as_str(), Some("ac" | "battery"))
         || !(policy["low_power_mode"].is_null() || policy["low_power_mode"].is_boolean())
         || !(policy["pmset_power_mode"].is_null()
@@ -432,6 +471,29 @@ fn prepare(
             "power source must be explicit; optional controls must be null or valid".into(),
         );
     }
+    if round_two_mode {
+        validate_observation_policy(&policy)?;
+    }
+    let confirmation_pin = if let Some(prior_root) = confirmation {
+        let prior_path = prior_root.join("campaign.json");
+        let prior = read(&prior_path)?;
+        if !round_two_mode
+            || prior["screen_protocol"] != round_two::PROTOCOL
+            || prior["campaign"] == campaign
+            || prior["test_executable"]["sha256"] != hash(test)?
+            || prior["job_generator"]["sha256"] != hash(&std::env::current_exe()?)?
+            || selected.iter().any(|name| {
+                !prior["candidate_names"]
+                    .as_array()
+                    .is_some_and(|names| names.iter().any(|n| n == name.as_str()))
+            })
+        {
+            return Err("confirmation requires a distinct ID, same frozen binaries and prior candidate names".into());
+        }
+        Some(pin(&prior_path)?)
+    } else {
+        None
+    };
     std::fs::create_dir(root)?;
     std::fs::create_dir(root.join("jobs"))?;
     let executable = std::env::current_exe()?;
@@ -465,15 +527,42 @@ fn prepare(
     let names = family.iter().map(|c| c.name()).collect::<Vec<_>>();
     let config = json!({"schema":"rvllm.global-decode.campaign.v1","campaign":campaign,
         "candidate_names":names,
+        "screen_protocol":if round_two_mode { Some(round_two::PROTOCOL) } else { None },
+        "confirmation_of":confirmation_pin,
+        "conditions_are_observations_only":round_two_mode,
+        "source_base_commit":if round_two_mode { Some("593e1d6fb25088608198f2248dcac038d19fe761") } else { None },
         "queue":queue,"test_executable":pin(&test_snapshot)?,"job_generator":pin(&generator_snapshot)?,
         "queue_runner":pin(&runner_snapshot)?,
         "abba_retainer":pin(&retainer_snapshot)?,"exploratory":exploratory,
         "conditions":policy,"conditions_input":pin(conditions)?,
         "screen_length":256,"advancement_lengths":[512,1024,2048],
-        "deferred_confirmation_lengths":[4096],
-        "split_kv":false,"local_prefill":false,
+        "deferred_confirmation_lengths":if round_two_mode { json!([]) } else { json!([4096]) },
+        "split_kv":round_two_mode && family.iter().any(|candidate| candidate.split_global_decode_tile().is_some()),
+        "local_prefill":false,
         "promotion":false,"status":"proposed_unqualified"});
     json_new(&root.join("campaign.json"), &config)?;
+    if round_two_mode {
+        let mut arms = Vec::new();
+        for &candidate in &family {
+            arms.push(json!({"candidate":candidate.name(),
+                "operator_keys":candidate.operator_keys(),
+                "capacity_tokens":candidate.global_capacity_tokens(),
+                "geometry":expected_geometry(candidate)?,
+                "kernels":candidate.kernels().iter().map(|k| json!({
+                    "name":k.name(),"threads":k.limits().0,
+                    "source_threadgroup_bytes":k.limits().1})).collect::<Vec<_>>(),
+                "status":"unqualified"}));
+        }
+        json_new(
+            &root.join("round2-plan.json"),
+            &json!({"schema":round_two::PROTOCOL,
+            "campaign":campaign,"arms":arms,"initial_attention_length":256,
+            "advancement_lengths":[512,1024,2048],"blocks":10,"samples":40,
+            "control_drift_limit":0.05,"automatic_submission":false,
+            "automatic_retry":false,"sample_pruning":false,"promotion":false}),
+        )?;
+    }
+
     let mut all = Vec::new();
     let metal = tool("metal")?;
     let linker = tool("metallib")?;
@@ -485,7 +574,11 @@ fn prepare(
                 ..MetalKernelOptions::default()
             },
         );
-        let flavors: &[&str] = if candidate.decode_round_operator() {
+        let flavors: &[&str] = if candidate.decode_round_operator()
+            || candidate
+                .split_global_decode_tile()
+                .is_some_and(|t| t.streaming())
+        {
             &["core"]
         } else {
             &["core", "oracle"]
@@ -544,6 +637,11 @@ fn prepare(
 fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String]) -> Result {
     let config_path = root.join("campaign.json");
     let config = read(&config_path)?;
+    let second_round = config["screen_protocol"] == round_two::PROTOCOL;
+    if second_round {
+        validate_observation_policy(&config["conditions"])?;
+    }
+
     let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
     let test = absolute(
         config["test_executable"]["path"]
@@ -609,6 +707,18 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         if !selected.is_empty() && !selected.iter().any(|name| name == candidate.name()) {
             continue;
         }
+        if candidate.round_two() && !second_round {
+            return Err("new candidate cannot bypass the second-round campaign protocol".into());
+        }
+        let prerequisite = if second_round && timing {
+            Some(admit_round_two(
+                root,
+                candidate,
+                timing_length.ok_or("length missing")?,
+            )?)
+        } else {
+            None
+        };
         // The split oracle validates the production partial+merge entry points
         // directly and therefore needs the exact core source.  Only the
         // single-pass oracle uses the appended diagnostic entry point.
@@ -638,6 +748,12 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
             pin(&build_path)?,
             pin(&config_path)?,
         ];
+        if second_round {
+            inputs.push(pin(&root.join("round2-plan.json"))?);
+            if let Some(prerequisite) = &prerequisite {
+                inputs.extend(prerequisite.iter().cloned());
+            }
+        }
         let mut after = vec![compile_id];
         let mut env = json!({});
         env[format!("{PREFIX}CANDIDATE")] = json!(candidate.name());
@@ -686,7 +802,10 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                     != config["test_executable"]["sha256"]
                 || (candidate.decode_round_operator()
                     && !operator_oracle_identity_matches(candidate, &oracle["identity"]))
-                || ((matrix || candidate == MetalResearchCandidate::GlobalD512ShortR4T128)
+                || ((matrix
+                    || candidate
+                        .global_decode_tile()
+                        .is_some_and(|t| t.streaming()))
                     && (oracle["numerical_contract"]
                         != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
                         || oracle["fp64_max_abs_bound"] != 5.0e-4
@@ -708,16 +827,10 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
             }
         }
         let cells = if timing && candidate.decode_round_operator() {
-            let keys: &[u32] = match candidate {
-                MetalResearchCandidate::FfnBf16R4Sg2 => &[3840],
-                MetalResearchCandidate::QmvW4G32R8Sg2 => &[15360],
-                MetalResearchCandidate::QmvW4G32R4Sg8K8 => &[15360],
-                MetalResearchCandidate::QmvW8G32R8Sg2 => &[4096, 8192],
-                MetalResearchCandidate::QmvW8G32R4Sg8K8 => &[4096, 8192],
-                _ => unreachable!(),
-            };
-            keys.iter()
-                .map(|&k| (timing_length, Some(k)))
+            candidate
+                .operator_keys()
+                .iter()
+                .map(|&k| (timing_length, Some(k as u32)))
                 .collect::<Vec<_>>()
         } else {
             vec![(timing_length, None)]
@@ -732,8 +845,8 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 env[format!("{PREFIX}OPERATOR_K")] = json!(k.to_string());
             }
             let job_id = id(&config, candidate, &suffix)?;
-            // The existing queue expands {output} in argv ONLY, never in env.
-            // Its exclusive result directory is results/<immutable job ID>.
+            // Pin the exclusive result directory directly. The queue also expands
+            // {output} in argv/env, but this identity does not depend on expansion.
             env[format!("{PREFIX}REPORT_DIR")] =
                 json!(queue.join("results").join(&job_id).join("native"));
             let test_name = if candidate.decode_round_operator() {
@@ -742,6 +855,12 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
                 } else {
                     "decode_round_oracle"
                 }
+            } else if timing
+                && candidate
+                    .split_global_decode_tile()
+                    .is_some_and(|t| t.streaming())
+            {
+                "global_decode_split_stream_abba"
             } else if timing && candidate.split_global_decode_tile().is_some() {
                 "global_decode_split_abba_v2"
             } else if timing {
@@ -1574,6 +1693,534 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 }
+
+fn validate_observation_policy(policy: &Value) -> Result {
+    let keys = [
+        "power_source",
+        "low_power_mode",
+        "pmset_power_mode",
+        "thermal_state",
+        "quiet_process_names",
+        "observe_process_names",
+        "idle_llama_servers",
+        "minimum_free_bytes",
+        "disk_path",
+    ];
+    if !policy.as_object().is_some_and(|object| {
+        object.len() == keys.len() && keys.iter().all(|key| object.contains_key(*key))
+    }) {
+        return Err("round2 conditions require exactly the nine explicit queue fields".into());
+    }
+    if !matches!(policy["power_source"].as_str(), Some("ac" | "battery"))
+        || !policy["low_power_mode"].is_null()
+        || !policy["pmset_power_mode"].is_null()
+        || !policy["thermal_state"].is_null()
+        || policy["quiet_process_names"] != json!([])
+        || policy["idle_llama_servers"] != json!([])
+        || policy["minimum_free_bytes"] != 0
+        || !policy["disk_path"]
+            .as_str()
+            .is_some_and(|p| Path::new(p).is_absolute())
+        || !policy["observe_process_names"]
+            .as_array()
+            .is_some_and(|names| {
+                ["cargo", "rustc"]
+                    .iter()
+                    .all(|required| names.iter().any(|n| n == *required))
+                    && names.iter().all(|n| {
+                        n.as_str()
+                            .is_some_and(|s| !s.is_empty() && !s.contains('/'))
+                    })
+            })
+    {
+        return Err("round2 requires null power-mode/thermal constraints, no quiet/idle-server gates, zero disk threshold, and observed (not gated) cargo/rustc".into());
+    }
+    Ok(())
+}
+
+fn expected_geometry(candidate: MetalResearchCandidate) -> Result<Value> {
+    if !round_two::supported(candidate) {
+        return Err("not a second-round candidate".into());
+    }
+    let (rows, keys, panel, threads, grid, scratch) =
+        if let Some(tile) = candidate.global_decode_tile() {
+            (
+                tile.rows as usize,
+                tile.keys as usize,
+                tile.panel as usize,
+                tile.threads as usize,
+                json!([16 / tile.rows, 1, 1]),
+                0,
+            )
+        } else if let Some(tile) = candidate.split_global_decode_tile() {
+            (
+                tile.rows as usize,
+                tile.keys as usize,
+                tile.panel as usize,
+                tile.threads as usize,
+                json!([16 / tile.rows, tile.partitions, 1]),
+                tile.partitions as usize * 16 * 514 * 4,
+            )
+        } else {
+            let launch = rvllm_apple_metal::research_decode::operator_launch(candidate)
+                .ok_or("operator launch missing")?;
+            let n = if candidate.ffn_decode() { 15360 } else { 3840 };
+            (
+                launch.rows_per_group,
+                1,
+                32,
+                launch.threads,
+                json!([n / launch.rows_per_group, 1, 1]),
+                0,
+            )
+        };
+    Ok(
+        json!({"rows":rows,"keys":keys,"panel":panel,"threads":threads,"grid":grid,
+        "scratch_bytes":scratch,"simd_matrix":false,
+        "max_logical_capacity_tokens":candidate.global_capacity_tokens()}),
+    )
+}
+
+fn validate_resource_identity(identity: &Value, candidate: MetalResearchCandidate) -> Result {
+    if identity["candidate"] != candidate.name()
+        || identity["gpu_family"] != "Apple9"
+        || !identity["device_name"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+        || identity["kernel"] != candidate.kernels()[0].name()
+    {
+        return Err("native candidate/device identity mismatch".into());
+    }
+    for (key, value) in expected_geometry(candidate)?
+        .as_object()
+        .ok_or("bad geometry")?
+    {
+        if identity[key] != *value {
+            return Err(format!("native geometry mismatch: {key}").into());
+        }
+    }
+    let kernels = identity["kernels"]
+        .as_array()
+        .ok_or("native kernel resources missing")?;
+    if kernels.len() != candidate.kernels().len() {
+        return Err("kernel family size mismatch".into());
+    }
+    for (actual, expected) in kernels.iter().zip(candidate.kernels()) {
+        let (threads, shared) = expected.limits();
+        if actual["name"] != expected.name()
+            || actual["threads"].as_u64() != Some(threads as u64)
+            || actual["source_threadgroup_bytes"].as_u64() != Some(shared as u64)
+            || actual["actual_execution_width"] != 32
+            || !actual["actual_max_threads"]
+                .as_u64()
+                .is_some_and(|n| n >= threads as u64)
+            || actual["actual_static_threadgroup_bytes"].as_u64().is_none()
+        {
+            return Err("missing/mismatched public PSO resource evidence".into());
+        }
+    }
+    Ok(())
+}
+
+/// Compare the submitted queue manifest with the generated one, including
+/// scalar limits and all pins. The queue serializes additional default-null
+/// fields; compare the contractual fields rather than JSON whitespace/defaults.
+fn verified_round_two_job(root: &Path, queue: &Path, job_id: &str) -> Result<(Value, Vec<Value>)> {
+    let generated_path = root.join("jobs").join(format!("{job_id}.json"));
+    let submitted_path = queue.join("jobs").join(format!("{job_id}.json"));
+    let generated = read(&generated_path)?;
+    let submitted = read(&submitted_path)?;
+    for key in [
+        "schema",
+        "id",
+        "purpose",
+        "command",
+        "inputs",
+        "after",
+        "stable_seconds",
+        "max_wait_seconds",
+        "max_run_seconds",
+    ] {
+        if generated[key] != submitted[key] {
+            return Err(
+                format!("submitted job differs from generated contract: {job_id}: {key}").into(),
+            );
+        }
+    }
+    // These campaign jobs have no validator/submission override. Reject an
+    // injected optional command even though the queue serializes null defaults.
+    for key in ["validator", "kernel_game_submission"] {
+        if !generated[key].is_null() || !submitted[key].is_null() {
+            return Err("unexpected optional queue command or submission override".into());
+        }
+    }
+    // Optional condition fields are always explicit for this protocol.
+    if generated["conditions"] != submitted["conditions"] {
+        return Err("submitted observation policy differs".into());
+    }
+    validate_observation_policy(&submitted["conditions"])?;
+    if submitted["id"] != job_id || submitted["stable_seconds"] != 0 {
+        return Err("submitted job ID/dwell mismatch".into());
+    }
+    let directory = succeeded(queue, job_id)?;
+    let report_path = directory.join("report.json");
+    let report = read(&report_path)?;
+    if report["schema"] != "rvllm.experiment_result.v1"
+        || report["id"] != job_id
+        || report["overdue"] != false
+        || report["exit_code"] != 0
+    {
+        return Err("queue receipt identity/runtime failure".into());
+    }
+    let mut pins = vec![
+        pin(&generated_path)?,
+        pin(&submitted_path)?,
+        pin(&report_path)?,
+    ];
+    for item in std::iter::once(&submitted["command"]["executable"]).chain(
+        submitted["inputs"]
+            .as_array()
+            .ok_or("job input pins missing")?
+            .iter(),
+    ) {
+        let path = absolute(item["path"].as_str().ok_or("pin path missing")?)?;
+        if pin(&path)? != *item {
+            return Err("submitted input/executable pin drift".into());
+        }
+        pins.push(item.clone());
+    }
+    Ok((submitted, pins))
+}
+
+/// Read-only revalidation. Summaries cannot authorize advancement: all raw
+/// sample files, submitted manifests, executable/source/build/library pins,
+/// native numerical oracle and matching output are required again.
+fn round_two_cell(
+    root: &Path,
+    candidate: MetalResearchCandidate,
+    length: u32,
+    operator_k: Option<usize>,
+) -> Result<Value> {
+    let config_path = root.join("campaign.json");
+    let config = read(&config_path)?;
+    if config["screen_protocol"] != round_two::PROTOCOL
+        || config["source_base_commit"] != "593e1d6fb25088608198f2248dcac038d19fe761"
+        || !config["candidate_names"]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name == candidate.name()))
+    {
+        return Err("candidate/campaign is not second-round sealed input".into());
+    }
+    round_two::predecessor(candidate, length)?;
+    validate_observation_policy(&config["conditions"])?;
+    for key in [
+        "test_executable",
+        "job_generator",
+        "abba_retainer",
+        "queue_runner",
+    ] {
+        let path = absolute(
+            config[key]["path"]
+                .as_str()
+                .ok_or("executable pin missing")?,
+        )?;
+        if config[key] != pin(&path)? {
+            return Err(format!("{key} identity drift").into());
+        }
+    }
+    let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
+    let suffix = if let Some(k) = operator_k {
+        format!("abba-L0-K{k}")
+    } else {
+        format!("abba-L{length}")
+    };
+    let job_id = id(&config, candidate, &suffix)?;
+    let (job, mut pins) = verified_round_two_job(root, &queue, &job_id)?;
+    if job["purpose"] != "exploratory_timing" {
+        return Err("round2 timing must remain exploratory".into());
+    }
+    let directory = queue.join("results").join(&job_id).join("native");
+    let receipt_path = directory.join("abba.json");
+    let receipt = read(&receipt_path)?;
+    let stats = round_two::validate_collection(&receipt)?;
+    if receipt["candidate"] != candidate.name()
+        || receipt["length"].as_u64() != Some(length as u64)
+        || receipt["operator_k"].as_u64() != operator_k.map(|k| k as u64)
+    {
+        return Err("cell shape identity mismatch".into());
+    }
+    validate_resource_identity(&receipt["identity"], candidate)?;
+    pins.push(pin(&receipt_path)?);
+    pins.push(pin(&config_path)?);
+    for (index, sample) in receipt["samples"]
+        .as_array()
+        .ok_or("samples missing")?
+        .iter()
+        .enumerate()
+    {
+        let path = directory.join(format!("sample-{}-{}.json", index / 4, index % 4));
+        if read(&path)? != *sample {
+            return Err("raw sample differs from aggregate; never prune".into());
+        }
+        pins.push(pin(&path)?);
+    }
+    let env = &job["command"]["env"];
+    let source = absolute(
+        env[format!("{PREFIX}SOURCE")]
+            .as_str()
+            .ok_or("source missing")?,
+    )?;
+    let library = absolute(
+        env[format!("{PREFIX}METALLIB")]
+            .as_str()
+            .ok_or("library missing")?,
+    )?;
+    let build_path = absolute(
+        env[format!("{PREFIX}BUILD_RECEIPT")]
+            .as_str()
+            .ok_or("build missing")?,
+    )?;
+    let build = read(&build_path)?;
+    if source != source_path(root, candidate, "core")
+        || receipt["identity"]["oracle_library"] != false
+        || build["schema"] != "rvllm.global-decode.build.v1"
+        || receipt["identity"]["core_sha256"] != hash(&source)?
+        || receipt["identity"]["source_sha256"] != hash(&source)?
+        || receipt["identity"]["metallib_sha256"] != hash(&library)?
+        || receipt["identity"]["build_receipt_sha256"] != hash(&build_path)?
+        || receipt["identity"]["test_executable_sha256"] != config["test_executable"]["sha256"]
+        || build["status"] != "compiled"
+        || build["flags"] != json!(["-std=metal3.1", "-fno-fast-math"])
+        || build["source_sha256"] != hash(&source)?
+        || build["metallib_sha256"] != hash(&library)?
+    {
+        return Err("compiled native identity mismatch".into());
+    }
+    let air = build_path
+        .parent()
+        .ok_or("build has no parent")?
+        .join("kernel.air");
+    if build["air_sha256"] != hash(&air)? {
+        return Err("AIR identity drift".into());
+    }
+    pins.push(pin(&air)?);
+    let compile_id = id(&config, candidate, "compile-core")?;
+    let (_, compile_pins) = verified_round_two_job(root, &queue, &compile_id)?;
+    pins.extend(compile_pins);
+    let oracle_id = id(&config, candidate, "oracle")?;
+    let (oracle_job, oracle_pins) = verified_round_two_job(root, &queue, &oracle_id)?;
+    pins.extend(oracle_pins);
+    let oracle_path = absolute(
+        env[format!("{PREFIX}ORACLE_RECEIPT")]
+            .as_str()
+            .ok_or("oracle missing")?,
+    )?;
+    let expected_oracle = queue.join("results").join(&oracle_id).join("native").join(
+        if candidate.split_global_decode_tile().is_some() {
+            "split-oracle.json"
+        } else {
+            "oracle.json"
+        },
+    );
+    let oracle = read(&oracle_path)?;
+    if oracle_path != expected_oracle
+        || receipt["oracle_receipt_sha256"] != hash(&oracle_path)?
+        || oracle["status"] != "passed"
+    {
+        return Err("native oracle identity mismatch".into());
+    }
+    validate_resource_identity(&oracle["identity"], candidate)?;
+    let expected_oracle_library = candidate.split_global_decode_tile().is_none();
+    if oracle["identity"]["oracle_library"].as_bool() != Some(expected_oracle_library) {
+        return Err("oracle library role mismatch".into());
+    }
+    if candidate.global_decode_tile().is_some() {
+        let oracle_compile_id = id(&config, candidate, "compile-oracle")?;
+        let (_, oracle_compile_pins) = verified_round_two_job(root, &queue, &oracle_compile_id)?;
+        pins.extend(oracle_compile_pins);
+    }
+    for key in [
+        "candidate",
+        "core_sha256",
+        "test_executable_sha256",
+        "device_name",
+        "gpu_family",
+    ] {
+        if oracle["identity"][key] != receipt["identity"][key] {
+            return Err("oracle/timing identity drift".into());
+        }
+    }
+    let oracle_env = &oracle_job["command"]["env"];
+    for (field, variable) in [
+        ("source_sha256", "SOURCE"),
+        ("metallib_sha256", "METALLIB"),
+        ("build_receipt_sha256", "BUILD_RECEIPT"),
+    ] {
+        let path = absolute(
+            oracle_env[format!("{PREFIX}{variable}")]
+                .as_str()
+                .ok_or("oracle pin missing")?,
+        )?;
+        if oracle["identity"][field] != hash(&path)? {
+            return Err("oracle compiled pin drift".into());
+        }
+    }
+    let cases = oracle["cases"].as_array().ok_or("oracle cases missing")?;
+    let label = format!("L{length}");
+    let case = cases
+        .iter()
+        .find(|case| {
+            operator_k.map_or(case["label"] == label, |k| {
+                case["k"].as_u64() == Some(k as u64)
+            })
+        })
+        .ok_or("cell has no correctness case")?;
+    if case["repeats"] != 3 {
+        return Err("three repeated uses required".into());
+    }
+    if candidate.decode_round_operator() {
+        if oracle["schema"] != "rvllm.decode-round.oracle.v1"
+            || case["repeated_bit_exact"] != true
+            || case["guards_untouched"] != true
+            || case["exact_dispatch_accounting"] != true
+            || case["persistent_arena_unchanged"] != true
+        {
+            return Err("operator numerical/guard/accounting evidence missing".into());
+        }
+        if candidate.ffn_decode()
+            && !cases.iter().any(|case| {
+                case["dense_ffn_fixture"] == true
+                    && case["k"] == 3840
+                    && case["repeats"] == 3
+                    && case["repeated_bit_exact"] == true
+                    && case["guards_untouched"] == true
+                    && case["exact_dispatch_accounting"] == true
+                    && case["persistent_arena_unchanged"] == true
+            })
+        {
+            return Err("full dense FFN oracle case missing".into());
+        }
+    } else if candidate.split_global_decode_tile().is_some() {
+        if oracle["schema"] != "rvllm.global-decode.split-oracle.v1"
+            || oracle["streaming_fp32_max_abs_bound"] != 5e-5
+            || oracle["streaming_fp64_max_abs_bound"] != 5e-4
+            || oracle["streaming_fp64_relative_l2_bound"] != 1e-4
+            || oracle["host_refusals"] != 21
+            || oracle["shader_refusals"] != 4
+            || case["repeatable"] != true
+            || case["guard_bytes_preserved"] != true
+            || case["once_rounded_bf16"] != true
+        {
+            return Err("split numerical/guard evidence missing".into());
+        }
+    } else if oracle["schema"] != "rvllm.global-decode.oracle.v1"
+        || oracle["fp64_max_abs_bound"] != 5e-4
+        || oracle["fp64_relative_l2_bound"] != 1e-4
+        || case["exact_fp32_gpu_oracle"] != true
+        || case["exact_once_rounded_bf16"] != true
+        || case["read_inputs_and_guard_bytes_preserved"] != true
+        || case["sampled_gpu_dots_match_cpu_fp32"] != true
+        || case["sampled_gpu_dots_pass_fp64_bound"] != true
+    {
+        return Err("unsplit numerical/guard evidence missing".into());
+    }
+    // Hash ALL oracle outputs, not only the requested timing length.
+    for case in cases {
+        let path = absolute(case["bf16_file"].as_str().ok_or("oracle output missing")?)?;
+        if case["bf16_sha256"] != hash(&path)? {
+            return Err("oracle output changed".into());
+        }
+        pins.push(pin(&path)?);
+    }
+    pins.push(pin(&oracle_path)?);
+    // Stable, de-duplicated pin list. Conflicting pins are a hard failure.
+    let mut unique = BTreeMap::new();
+    for item in pins {
+        let path = item["path"].as_str().ok_or("pin path missing")?.to_owned();
+        if unique
+            .insert(path, item.clone())
+            .is_some_and(|old| old != item)
+        {
+            return Err("conflicting proof input identities".into());
+        }
+    }
+    let queue_report = read(&queue.join("results").join(&job_id).join("report.json"))?;
+    Ok(
+        json!({"schema":round_two::PROTOCOL,"campaign":config["campaign"],
+        "candidate":candidate.name(),"length":length,"operator_k":operator_k,
+        "statistics":stats.receipt(),"pins":unique.into_values().collect::<Vec<_>>(),
+        "queue_sampled_conditions_eligible":queue_report["sampled_conditions_eligible"],
+        "conditions_are_observations_only":true,
+        "confirmation_of":config["confirmation_of"],"promotion":false}),
+    )
+}
+
+fn admit_round_two(
+    root: &Path,
+    candidate: MetalResearchCandidate,
+    length: u32,
+) -> Result<Vec<Value>> {
+    let Some(previous) = round_two::predecessor(candidate, length)? else {
+        return Ok(Vec::new());
+    };
+    // Revalidate the complete chain, not just an editable advancement summary.
+    // Depth is bounded by the four predeclared lengths, so no unbounded recursion.
+    let mut inputs = admit_round_two(root, candidate, previous)?;
+    let proof = round_two_cell(root, candidate, previous, None)?;
+    if proof["statistics"]["promising_screen_only"] != true {
+        return Err(
+            "preceding screen failed drift/order/whole-block diagnostic; preserve it, do not retry"
+                .into(),
+        );
+    }
+    let path = root.join(format!(
+        "{}-L{previous}-to-L{length}.screen.json",
+        candidate.name()
+    ));
+    json_new_or_identical(&path, &proof)?;
+    inputs.push(pin(&path)?);
+    inputs.extend(
+        proof["pins"]
+            .as_array()
+            .ok_or("proof pins missing")?
+            .iter()
+            .cloned(),
+    );
+    // Avoid redundant large executable hashing in queue input validation.
+    let mut unique = BTreeMap::new();
+    for item in inputs {
+        let path = item["path"].as_str().ok_or("pin path missing")?.to_owned();
+        if unique
+            .insert(path, item.clone())
+            .is_some_and(|old| old != item)
+        {
+            return Err("conflicting advancement input identities".into());
+        }
+    }
+    Ok(unique.into_values().collect())
+}
+
+fn review_round_two(root: &Path, length: u32, selected: &[String]) -> Result {
+    validate_selected(selected)?;
+    let mut cells = Vec::new();
+    for name in selected {
+        let candidate: MetalResearchCandidate = name.parse()?;
+        if candidate.decode_round_operator() {
+            for &k in candidate.operator_keys() {
+                cells.push(round_two_cell(root, candidate, length, Some(k))?);
+            }
+        } else {
+            cells.push(round_two_cell(root, candidate, length, None)?);
+        }
+    }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({"schema":round_two::PROTOCOL,
+        "cells":cells,"automatic_submission":false,"automatic_retry":false,"promotion":false}))?
+    );
+    Ok(())
+}
+
 fn main() -> Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.as_slice() {
@@ -1605,7 +2252,13 @@ fn main() -> Result {
             write(&absolute(path)?, source.as_bytes())
         }
         [action,campaign,root,queue,test,conditions,selected @ ..] if action=="prepare" =>
-            prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected),
+            prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected,false,None),
+        [action,campaign,root,queue,test,conditions,selected @ ..] if action=="prepare-round2" =>
+            prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected,true,None),
+        [action,campaign,root,queue,test,conditions,prior,selected @ ..] if action=="confirm-round2" =>
+            prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected,true,Some(&absolute(prior)?)),
+        [action,root,length,selected @ ..] if action=="review-round2" && !selected.is_empty() =>
+            review_round_two(&absolute(root)?,length.parse()?,selected),
         [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false,None,&[]),
         [action,root,selected @ ..] if action=="oracle-jobs" && !selected.is_empty() =>
             generate(&absolute(root)?,false,None,selected),
@@ -1618,7 +2271,7 @@ fn main() -> Result {
             advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
         [action,root,stage,output,expected @ ..] if action=="operator-advance" && !expected.is_empty() =>
             operator_advance(&absolute(root)?,stage,&absolute(output)?,expected),
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE... | operator-advance ROOT compile|oracle QUEUE_OUTPUT EXPECTED_CANDIDATE...".into()),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE... | operator-advance ROOT compile|oracle QUEUE_OUTPUT EXPECTED_CANDIDATE... | prepare-round2 ID ROOT QUEUE TEST_EXE CONDITIONS_JSON CANDIDATE... | confirm-round2 ID ROOT QUEUE TEST_EXE CONDITIONS_JSON PRIOR_ROOT CANDIDATE... | review-round2 ROOT LENGTH CANDIDATE...".into()),
     }
 }
 
@@ -1638,5 +2291,72 @@ mod next_round_queue_tests {
         assert!(validate_timing_request(512, &[short.clone()]).is_ok());
         assert!(validate_timing_request(1024, &[short.clone()]).is_err());
         assert!(validate_timing_request(0, &[short]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod round_two_policy_tests {
+    use super::*;
+
+    fn policy() -> Value {
+        json!({
+            "power_source": "ac", "low_power_mode": null,
+            "pmset_power_mode": null, "thermal_state": null,
+            "minimum_free_bytes": 0, "disk_path": "/",
+            "quiet_process_names": [], "idle_llama_servers": [],
+            "observe_process_names": ["cargo", "rustc"]
+        })
+    }
+
+    #[test]
+    fn observations_cannot_be_replaced_with_waiting_conditions() {
+        assert!(validate_observation_policy(&policy()).is_ok());
+        for (key, value) in [
+            ("thermal_state", json!(0)),
+            ("low_power_mode", json!(false)),
+            ("pmset_power_mode", json!(2)),
+            ("quiet_process_names", json!(["cargo"])),
+            ("idle_llama_servers", json!([{"pid": 1, "port": 8080}])),
+            ("minimum_free_bytes", json!(1)),
+            ("observe_process_names", json!(["cargo"])),
+            ("disk_path", json!("relative")),
+            ("unexpected", json!(true)),
+        ] {
+            let mut changed = policy();
+            changed[key] = value;
+            assert!(validate_observation_policy(&changed).is_err(), "{key}");
+        }
+        let mut missing = policy();
+        missing.as_object_mut().unwrap().remove("thermal_state");
+        assert!(validate_observation_policy(&missing).is_err());
+    }
+
+    #[test]
+    fn new_candidates_have_unique_bounded_manifest_identities() {
+        let config = json!({"campaign": "round2-test", "screen_protocol": round_two::PROTOCOL});
+        let mut identities = BTreeSet::new();
+        let mut count = 0;
+        for candidate in candidates()
+            .into_iter()
+            .filter(|candidate| candidate.round_two())
+        {
+            count += 1;
+            let geometry = expected_geometry(candidate).unwrap();
+            assert_eq!(geometry["simd_matrix"], false);
+            for suffix in ["compile-core", "oracle", "abba-L2048", "abba-L0-K15360"] {
+                let identity = id(&config, candidate, suffix).unwrap();
+                assert!(identity.len() <= 96);
+                assert!(identities.insert(identity));
+            }
+            if candidate.decode_round_operator() {
+                assert_eq!(geometry["max_logical_capacity_tokens"], 0);
+                assert!(!candidate.operator_keys().is_empty());
+            } else {
+                assert_eq!(geometry["max_logical_capacity_tokens"], 2048);
+                assert!(round_two::predecessor(candidate, 4096).is_err());
+                assert_eq!(round_two::predecessor(candidate, 2048).unwrap(), Some(1024));
+            }
+        }
+        assert_eq!(count, 8);
     }
 }

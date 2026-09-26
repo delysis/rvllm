@@ -497,7 +497,8 @@ impl MetalLowBitProjectionOffsets {
         )
     }
 
-    /// Default-off decode schedule on the SAME authenticated descriptor. False
+    /// Default-off decode schedule on the SAME authenticated descriptor. The
+    /// compatibility method name also admits the selected round-two schedule. False
     /// means no encode and no ledger delta; invalid buffer ranges remain errors.
     #[allow(clippy::too_many_arguments)]
     pub fn try_encode_strided_bf16_decode_candidate(
@@ -524,15 +525,12 @@ impl MetalLowBitProjectionOffsets {
         {
             return Ok(false);
         }
-        let [kernel] = selected.kernels() else {
+        let Some(launch) = crate::research_decode::operator_launch(selected) else {
             return Ok(false);
         };
-        let Some(output_tile_width) = kernel.qmv_output_rows() else {
-            return Ok(false);
-        };
-        let (threads, scratch_bytes) = kernel.limits();
+        let kernel = launch.kernel;
         if pipelines
-            .research_pso(kernel.name(), threads, scratch_bytes)
+            .research_pso(kernel.name(), launch.threads, 0)
             .is_none()
         {
             return Ok(false);
@@ -547,7 +545,7 @@ impl MetalLowBitProjectionOffsets {
             output_row_stride,
             output_column,
             kernel.name(),
-            output_tile_width,
+            launch.rows_per_group,
         )?;
         Ok(true)
     }
@@ -652,14 +650,12 @@ impl MetalLowBitProjectionOffsets {
             });
         }
 
-        let research_kernel = [
-            crate::research_evidence::ResearchKernel::QmvW4G32R8Sg2,
-            crate::research_evidence::ResearchKernel::QmvW8G32R8Sg2,
-            crate::research_evidence::ResearchKernel::QmvW4G32R4Sg8K8,
-            crate::research_evidence::ResearchKernel::QmvW8G32R4Sg8K8,
-        ]
-        .into_iter()
-        .find(|kernel| kernel_name == kernel.name());
+        let selected = pipelines.kernel_options().research;
+        let research_kernel = crate::research_decode::operator_launch(selected)
+            .filter(|launch| {
+                (selected.qmv_w4() || selected.qmv_w8()) && launch.kernel.name() == kernel_name
+            })
+            .map(|launch| launch.kernel);
         let pipeline = pipelines.get(kernel_name)?;
         let encoder = command_buffer
             .computeCommandEncoder()

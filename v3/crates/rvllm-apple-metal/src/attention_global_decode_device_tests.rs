@@ -170,8 +170,18 @@ impl Setup {
                 0,
             )
         } else if candidate.decode_round_operator() {
-            let (rows, threads, grid) = operator_launch_identity(candidate)?;
-            (rows, 1, 32, threads, false, json!([grid, 1, 1]), 0)
+            let launch = crate::research_decode::operator_launch(candidate)
+                .ok_or("operator launch missing")?;
+            let n = if candidate.ffn_decode() { 15360 } else { 3840 };
+            (
+                launch.rows_per_group as u32,
+                1,
+                32,
+                launch.threads as u32,
+                false,
+                json!([n / launch.rows_per_group, 1, 1]),
+                0,
+            )
         } else {
             let tile = split.unwrap();
             (
@@ -192,6 +202,7 @@ impl Setup {
             "rows":rows, "keys":keys, "panel":panel, "threads":threads,
             "simd_matrix":matrix, "grid":grid,
             "scratch_bytes":scratch_bytes,
+            "max_logical_capacity_tokens":candidate.global_capacity_tokens(),
             "gpu_family":format!("{:?}",pipelines.gpu_family()),
             "device_name":context.device().name().to_string(), "oracle_library":oracle});
         write_new(
@@ -379,7 +390,7 @@ fn encode_serial(
         .ok_or("serial encoder unavailable")?;
     encoder.setComputePipelineState(pso);
     let params = plan.params();
-    let panel = if plan.tile.short_unsplit() {
+    let panel = if plan.tile.streaming() {
         64
     } else {
         plan.tile.panel
@@ -493,7 +504,7 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
     const MATRIX_REL_L2: f64 = 1.0e-4;
     let mut fixtures: Vec<(String, Fixture)> = LIVE_LENGTHS
         .into_iter()
-        .filter(|&n| !tile.short_unsplit() || n <= 512)
+        .filter(|&n| tile.capacity_tokens == 0 || n <= tile.capacity_tokens)
         .map(|n| (format!("L{n}"), Fixture::for_tile(n, 32, tile)))
         .collect();
     for n in [1, 7, 8, 9, 31, 32, 33, 257] {
@@ -518,7 +529,7 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
     let mut tied = Fixture::new(33, 7);
     tied.q.fill(0);
     fixtures.push(("equal-logits".into(), tied));
-    if tile.short_unsplit() {
+    if tile.streaming() {
         let mut suffix = Fixture::for_tile(256, 32, tile);
         suffix.position = 31;
         suffix.table[2] = i32::MAX; // unobserved suffix must not veto restored visibility
@@ -646,7 +657,7 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
             }
             relative_l2 =
                 relative_l2.max(squared_error.sqrt() / squared_reference.sqrt().max(1e-30));
-            if matrix_bounded || tile.short_unsplit() {
+            if matrix_bounded || tile.streaming() {
                 assert!(
                     max_fp64_error <= MATRIX_MAX_ABS,
                     "matrix FP64 absolute bound: {label}: {max_fp64_error}"
@@ -678,8 +689,8 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
             "max_cpu_fp32_abs_error":max_cpu_error,
             "independent_cpu_reference":"scalar FP64",
             "max_fp64_abs_error":max_fp64_error,"relative_l2_error":relative_l2,
-            "fp64_max_abs_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_MAX_ABS) } else { None },
-            "fp64_relative_l2_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_REL_L2) } else { None },
+            "fp64_max_abs_bound":if matrix_bounded || tile.streaming() { Some(MATRIX_MAX_ABS) } else { None },
+            "fp64_relative_l2_bound":if matrix_bounded || tile.streaming() { Some(MATRIX_REL_L2) } else { None },
             "serial_fp32_exact":serial_exact,"serial_fp32_max_abs_difference":serial_max_abs,
             "sampled_dot_source":"independent serial GPU oracle, not instrumented candidate",
             "sampled_gpu_dots_match_cpu_fp32":true,
@@ -787,11 +798,11 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
         data.check(true);
         rejected += 1;
     }
-    if tile.short_unsplit() {
+    if tile.streaming() {
         // Reject a larger logical capacity on the host even though its live
         // context is only 33: no encoded/no-write success can escape this gate.
         let mut too_large = good;
-        too_large.max_blocks_per_seq = 513;
+        too_large.max_blocks_per_seq = tile.capacity_tokens / good.block_size + 1;
         let before = setup.pipelines.research_dispatch_snapshot();
         let command = setup.context.queue().commandBuffer().ok_or("no command")?;
         assert!(try_encode_global_decode(
@@ -886,9 +897,9 @@ fn run_global_decode_device_oracle(matrix_bounded: bool) -> TestResult {
     };
     let receipt = json!({"schema":schema,"status":"passed",
         "scope":"synthetic attention operator; not model or full-route qualification",
-        "numerical_contract":if matrix_bounded || tile.short_unsplit() { "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16" } else { "exact-serial-fp32" },
-        "fp64_max_abs_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_MAX_ABS) } else { None },
-        "fp64_relative_l2_bound":if matrix_bounded || tile.short_unsplit() { Some(MATRIX_REL_L2) } else { None },
+        "numerical_contract":if matrix_bounded || tile.streaming() { "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16" } else { "exact-serial-fp32" },
+        "fp64_max_abs_bound":if matrix_bounded || tile.streaming() { Some(MATRIX_MAX_ABS) } else { None },
+        "fp64_relative_l2_bound":if matrix_bounded || tile.streaming() { Some(MATRIX_REL_L2) } else { None },
         "serial_fp32_role":if matrix_bounded { "diagnostic-only; mismatch is retained, not silently accepted as exact" } else { "required-exact" },
         "identity":setup.identity,"cases":reports,"host_rejected_dispatches":rejected,
         "encoded_metadata_refusals":shader_refusals,"timing_eligible":false});
@@ -924,35 +935,72 @@ fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
         1_u32, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 2047, 2048, 2049,
     ]
     .into_iter()
-    .map(|n| (format!("L{n}"), Fixture::new(n, 32)))
+    .filter(|&n| n <= tile.capacity_tokens())
+    .map(|n| (format!("L{n}"), Fixture::for_split(n, 32, tile)))
     .collect();
     for (label, page) in [
         ("first-hole", 0_usize),
-        ("middle-hole", 8),
-        ("last-hole", 15),
+        ("middle-hole", (tile.capacity_tokens() / 512) as usize),
+        ("last-hole", (tile.capacity_tokens() / 256 - 1) as usize),
     ] {
-        let mut fixture = Fixture::new(4096, 256);
+        let mut fixture = Fixture::new(tile.capacity_tokens(), 256);
         // Fixture::new deliberately reserves two future logical blocks for
         // tail-read detection.  This bounded split family admits an exact
         // 4096-token logical table, so remove only those unused table entries;
         // retain the extra physical cache allocation as poisoned padding.
-        fixture.shape.max_blocks = 16;
-        fixture.table.truncate(16);
+        fixture.shape.max_blocks = tile.capacity_tokens() / 256;
+        fixture.table.truncate(fixture.shape.max_blocks as usize);
         fixture.table[page] = -1;
         fixtures.push((label.into(), fixture));
     }
+    if tile.streaming() {
+        for n in [7, 8, 9, 31, 32, 33, 257] {
+            fixtures.push((format!("tail{n}"), Fixture::for_split(n, 7, tile)));
+        }
+        let mut empty = Fixture::for_split(65, 7, tile);
+        empty.table.fill(-17);
+        fixtures.push(("all-holes".into(), empty));
+        let mut prefix = Fixture::for_split(65, 7, tile);
+        prefix.position = 30;
+        for t in 31..65 {
+            let base = physical_base(prefix.shape, &prefix.table, t).unwrap();
+            prefix.k[base..base + 512].fill(0x7fc1);
+            prefix.v[base..base + 512].fill(0x7fc1);
+        }
+        fixtures.push(("restored-prefix-speculative-suffix".into(), prefix.clone()));
+        prefix.context = 31;
+        fixtures.push(("rollback-same-visible-prefix".into(), prefix));
+        let mut suffix = Fixture::for_split(256, 32, tile);
+        suffix.position = 31;
+        suffix.table[2] = i32::MAX;
+        fixtures.push(("future-page-metadata-poison".into(), suffix));
+        let mut newest = Fixture::for_split(256, 32, tile);
+        let base = physical_base(newest.shape, &newest.table, 255).unwrap();
+        newest.k[base..base + 512].fill(round_bf16(0.125));
+        newest.v[base..base + 512].fill(round_bf16(3.0));
+        fixtures.push(("newest-owner-page-noncontiguous".into(), newest));
+        let mut tied = Fixture::for_split(33, 7, tile);
+        tied.q.fill(0);
+        fixtures.push(("equal-logits".into(), tied));
+    }
+    let mut prefix_output = None;
     let mut reports = Vec::new();
     for (label, fixture) in fixtures {
         let plan = SplitDecodePlan::new(tile, fixture.shape, DecodeOutput::F32)
             .ok_or("split plan rejected oracle fixture")?;
         let reference_plan = DecodePlan::new(
-            crate::attention_global_decode::DecodeTile {
-                rows: tile.rows,
-                keys: tile.keys,
-                panel: tile.panel,
-                threads: tile.threads,
-                per_tile_softmax: tile.simd_matrix,
-                simd_matrix: tile.simd_matrix,
+            if tile.streaming() {
+                crate::attention_global_decode::STREAM_R4T128_C2048
+            } else {
+                crate::attention_global_decode::DecodeTile {
+                    capacity_tokens: 0,
+                    rows: tile.rows,
+                    keys: tile.keys,
+                    panel: tile.panel,
+                    threads: tile.threads,
+                    per_tile_softmax: tile.simd_matrix,
+                    simd_matrix: tile.simd_matrix,
+                }
             },
             fixture.shape,
             DecodeOutput::F32,
@@ -961,7 +1009,16 @@ fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
         let cpu = reference::output_f32(&fixture, reference_plan)?;
         let cpu_f64 = reference::output_f64(&fixture, reference_plan)?;
         let data = Guarded::new(&setup.context, &fixture)?;
-        let repeats = if matrix_bounded { 3 } else { 1 };
+        let arena_identity = (
+            data.arena.allocated(),
+            data.arena.regions().len(),
+            data.arena.buffer().contents(),
+        );
+        let repeats = if matrix_bounded || tile.streaming() {
+            3
+        } else {
+            1
+        };
         let mut first_output = None;
         for _ in 0..repeats {
             data.reset()?;
@@ -991,6 +1048,21 @@ fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
             complete(&command)?;
             expect_family_count(&setup, before, 2);
             data.check(false);
+            assert_eq!(
+                arena_identity,
+                (
+                    data.arena.allocated(),
+                    data.arena.regions().len(),
+                    data.arena.buffer().contents()
+                )
+            );
+            let scratch = data.payload(4);
+            assert!(
+                scratch[plan.scratch_bytes..]
+                    .iter()
+                    .all(|&byte| byte == 0xff),
+                "unused scratch capacity was touched: {label}"
+            );
             let output = data.payload(0);
             if let Some(first) = &first_output {
                 assert_eq!(
@@ -1035,6 +1107,21 @@ fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
                 "split CPU error: {label}: {max_cpu_error}"
             );
         }
+        if tile.streaming() {
+            assert!(
+                max_fp64_error <= 5e-4,
+                "stream split FP64 absolute bound: {label}"
+            );
+            assert!(
+                relative_l2 <= 1e-4,
+                "stream split FP64 relative-L2 bound: {label}"
+            );
+            if label == "restored-prefix-speculative-suffix" {
+                prefix_output = Some(actual.clone());
+            } else if label == "rollback-same-visible-prefix" {
+                assert_eq!(Some(&actual), prefix_output.as_ref(), "rollback visibility");
+            }
+        }
         assert_eq!(
             data.payload(2),
             rounded,
@@ -1050,6 +1137,11 @@ fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
             "partial_count":plan.partial_count,"scratch_bytes":plan.scratch_bytes,
             "bf16_file":bf16_path,"bf16_sha256":sha256(&bf16_path)?}));
     }
+    let (host_refusals, shader_refusals) = if tile.streaming() {
+        streaming_split_refusals(&setup)?
+    } else {
+        (0, 0)
+    };
     let schema = if matrix_bounded {
         "rvllm.global-decode.split-matrix-oracle.v1"
     } else {
@@ -1065,12 +1157,135 @@ fn run_global_decode_split_device_oracle(matrix_bounded: bool) -> TestResult {
         "numerical_contract":if matrix_bounded { "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16" } else { "bounded-split-fp32" },
         "fp64_max_abs_bound":if matrix_bounded { Some(5e-4) } else { None },
         "fp64_relative_l2_bound":if matrix_bounded { Some(1e-4) } else { None },
-        "identity":setup.identity,"cases":reports,"timing_eligible":false});
+        "identity":setup.identity,"cases":reports,"timing_eligible":false,
+        "streaming_fp32_max_abs_bound":if tile.streaming() { Some(5e-5) } else { None },
+        "streaming_fp64_max_abs_bound":if tile.streaming() { Some(5e-4) } else { None },
+        "streaming_fp64_relative_l2_bound":if tile.streaming() { Some(1e-4) } else { None },
+        "host_refusals":host_refusals,"shader_refusals":shader_refusals});
     write_new(
         &setup.directory.join(filename),
         &serde_json::to_vec_pretty(&receipt)?,
     )?;
     Ok(())
+}
+
+/// Exercise the same public adapter as the real layer route. All failures
+/// preserve every output and scratch byte; no research encode is counted for
+/// host refusal. Bad device metadata counts both submitted stages, but writes
+/// nothing. This is deliberately outside every timing closure.
+fn streaming_split_refusals(setup: &Setup) -> TestResult<(u32, u32)> {
+    let tile = setup
+        .candidate
+        .split_global_decode_tile()
+        .ok_or("split tile missing")?;
+    let f = Fixture::for_split(33, 7, tile);
+    let data = Guarded::new(&setup.context, &f)?;
+    let good = dims(f.shape);
+    let mut host_refusals = 0;
+    for case in 0..19 {
+        data.reset()?;
+        let mut d = good;
+        let mut binding = data.split_bindings(0);
+        let mut phase = MetalPhase::Decode;
+        match case {
+            0 => d.num_heads = 8,
+            1 => d.num_kv_heads = 8,
+            2 => d.head_dim = 256,
+            3 => d.attention_window = 1024,
+            4 => d.attn_scale = 0.5,
+            5 => d.hidden = 3841,
+            6 => d.num_layers = 47,
+            7 => d.intermediate = 15359,
+            8 => d.num_tokens = 2,
+            9 => d.block_size = 0,
+            10 => d.max_blocks_per_seq = tile.capacity_tokens() / d.block_size + 1,
+            11 => {
+                phase = MetalPhase::Prefill {
+                    max_seqlen_q: 1,
+                    batch_size: 1,
+                }
+            }
+            12 => binding.common.q += 1,
+            13 => binding.common.output = binding.common.k,
+            14 => binding.common.v = binding.common.k,
+            15 => binding.common.positions = usize::MAX - 3,
+            16 => binding.partials = binding.common.q,
+            17 => binding.partials = usize::MAX - 3,
+            _ => binding.common.output = binding.partials,
+        }
+        let before = setup.pipelines.research_dispatch_snapshot();
+        let command = setup.context.queue().commandBuffer().ok_or("no command")?;
+        assert!(try_encode_split_global_decode(
+            &setup.pipelines,
+            &command,
+            data.arena.buffer(),
+            &d,
+            phase,
+            binding,
+            DecodeOutput::F32
+        )?
+        .is_none());
+        complete(&command)?;
+        expect_family_count(setup, before, 0);
+        data.check(true);
+        host_refusals += 1;
+    }
+    for options in [
+        MetalKernelOptions::default(),
+        MetalKernelOptions {
+            research: setup.candidate,
+            ..MetalKernelOptions::default()
+        },
+    ] {
+        let untyped = PipelineCache::with_kernel_options(options);
+        let command = setup.context.queue().commandBuffer().ok_or("no command")?;
+        assert!(try_encode_split_global_decode(
+            &untyped,
+            &command,
+            data.arena.buffer(),
+            &good,
+            MetalPhase::Decode,
+            data.split_bindings(0),
+            DecodeOutput::F32
+        )?
+        .is_none());
+        complete(&command)?;
+        data.check(true);
+        assert!(untyped
+            .research_dispatch_snapshot()
+            .counts
+            .iter()
+            .all(|&n| n == 0));
+        host_refusals += 1;
+    }
+    let mut shader_refusals = 0;
+    for case in 0..4 {
+        let mut bad = f.clone();
+        match case {
+            0 => bad.context = 0,
+            1 => bad.position = -1,
+            2 => bad.position = bad.context,
+            _ => bad.table[0] = bad.shape.num_blocks as i32,
+        }
+        let guarded = Guarded::new(&setup.context, &bad)?;
+        let before = setup.pipelines.research_dispatch_snapshot();
+        let command = setup.context.queue().commandBuffer().ok_or("no command")?;
+        assert!(try_encode_split_global_decode(
+            &setup.pipelines,
+            &command,
+            guarded.arena.buffer(),
+            &good,
+            MetalPhase::Decode,
+            guarded.split_bindings(0),
+            DecodeOutput::F32
+        )?
+        .is_some());
+        complete(&command)?;
+        expect_family_count(setup, before, 1);
+        guarded.check(true);
+        shader_refusals += 1;
+    }
+    Ok((host_refusals, shader_refusals))
 }
 
 fn encode_baseline(
@@ -1156,7 +1371,11 @@ fn global_decode_abba() -> TestResult {
         || oracle["identity"]["candidate"] != setup.identity["candidate"]
         || oracle["identity"]["core_sha256"] != setup.identity["core_sha256"]
         || oracle["identity"]["test_executable_sha256"] != setup.identity["test_executable_sha256"]
-        || ((matrix || setup.candidate == MetalResearchCandidate::GlobalD512ShortR4T128)
+        || ((matrix
+            || setup
+                .candidate
+                .global_decode_tile()
+                .is_some_and(|t| t.streaming()))
             && (oracle["numerical_contract"]
                 != "independent-fp64-absolute-and-relative-l2-plus-exact-once-rounded-bf16"
                 || oracle["fp64_max_abs_bound"] != 5.0e-4
@@ -1180,8 +1399,8 @@ fn global_decode_abba() -> TestResult {
         .candidate
         .global_decode_tile()
         .ok_or("unsplit tile required")?;
-    if tile.short_unsplit() && !matches!(length, 256 | 512) {
-        return Err("short candidate is bounded to L=256/512".into());
+    if tile.capacity_tokens != 0 && length > tile.capacity_tokens {
+        return Err("length exceeds the selected logical capacity contract".into());
     }
     let f = Fixture::for_tile(length, 32, tile);
     let data = Guarded::new(&setup.context, &f)?;
@@ -1257,9 +1476,9 @@ fn global_decode_abba() -> TestResult {
         run('B', 1)?;
     }
     let mut samples = Vec::new();
-    let blocks = if tile.short_unsplit() { 10 } else { 5 };
+    let blocks = if tile.streaming() { 10 } else { 5 };
     for block in 0..blocks {
-        let order = if tile.short_unsplit() && block % 2 == 1 {
+        let order = if tile.streaming() && block % 2 == 1 {
             ['B', 'A', 'A', 'B']
         } else {
             ['A', 'B', 'B', 'A']
@@ -1269,7 +1488,8 @@ fn global_decode_abba() -> TestResult {
             let (gpu, wall) = run(arm, 100)?;
             let after = control_snapshot()?;
             let sample = json!({"block":block,"position":position,"arm":arm.to_string(),
-                "dispatches":100,"gpu_seconds":gpu,"synchronized_wall_seconds":wall,
+                "dispatches":100,"operator_iterations":100,"actual_compute_encoders":100,
+                "gpu_seconds":gpu,"synchronized_wall_seconds":wall,
                 "controls_before":before,"controls_after":after});
             write_new(
                 &setup
@@ -1292,7 +1512,8 @@ fn global_decode_abba() -> TestResult {
         "identity":setup.identity,"oracle_receipt_sha256":sha256(&oracle_path)?,
         "length":length,"baseline":"attention_decode_f16 (BF16 typed)",
         "candidate":setup.candidate.name(),"warmups_per_arm":5,"blocks":blocks,
-        "balanced_abba_baab":tile.short_unsplit(),
+        "balanced_abba_baab":tile.streaming(),
+        "conditions_are_observations_only":true,
         "dispatches_per_sample":100,"control_drift_fraction":drift,"control_drift_limit":0.05,
         "control_drift_passed":drift <= 0.05,"source_compiles_during_samples":0,
         "samples":samples,"timing_eligible":false,
@@ -1472,5 +1693,182 @@ fn global_decode_split_abba_v2() -> TestResult {
         &setup.directory.join("abba.json"),
         &serde_json::to_vec_pretty(&receipt)?,
     )?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "source-bound complete split+merge balanced screen; explicit pinned oracle and fresh report required"]
+fn global_decode_split_stream_abba() -> TestResult {
+    let setup = Setup::new(false)?;
+    let tile = setup
+        .candidate
+        .split_global_decode_tile()
+        .filter(|tile| tile.streaming())
+        .ok_or("streaming split candidate required")?;
+    let length: u32 = std::env::var(format!("{PREFIX}LENGTH"))?.parse()?;
+    if !LIVE_LENGTHS.contains(&length) {
+        return Err("length outside sealed five-cell sweep".into());
+    }
+    let oracle_path = env_path("ORACLE_RECEIPT")?;
+    let oracle: Value = serde_json::from_slice(&std::fs::read(&oracle_path)?)?;
+    if oracle["schema"] != "rvllm.global-decode.split-oracle.v1"
+        || oracle["status"] != "passed"
+        || oracle["identity"] != setup.identity
+        || oracle["identity"]["oracle_library"] != false
+        || oracle["streaming_fp32_max_abs_bound"] != 5e-5
+        || oracle["streaming_fp64_max_abs_bound"] != 5e-4
+        || oracle["streaming_fp64_relative_l2_bound"] != 1e-4
+        || oracle["host_refusals"] != 21
+        || oracle["shader_refusals"] != 4
+    {
+        return Err("exact streaming split oracle required before timing".into());
+    }
+    let label = format!("L{length}");
+    let case = oracle["cases"]
+        .as_array()
+        .ok_or("missing oracle cases")?
+        .iter()
+        .find(|case| case["label"] == label)
+        .ok_or("length not qualified")?;
+    let expected_path = PathBuf::from(case["bf16_file"].as_str().ok_or("missing exact output")?);
+    if case["bf16_sha256"] != sha256(&expected_path)? {
+        return Err("oracle output identity mismatch".into());
+    }
+    let expected = std::fs::read(&expected_path)?;
+    if length > tile.capacity_tokens() {
+        return Err("length exceeds the selected logical capacity contract".into());
+    }
+    let f = Fixture::for_split(length, 32, tile);
+    let data = Guarded::new(&setup.context, &f)?;
+    let layer = dims(f.shape);
+    let arena_identity = (
+        data.arena.allocated(),
+        data.arena.regions().len(),
+        data.arena.buffer().contents(),
+    );
+    // All allocation, file IO, environment reads, PSO construction and controls
+    // are outside the encode loop. Only the existing atomic receipt hook stays.
+    let run = |arm: char, repeats: u32| -> TestResult<(f64, f64)> {
+        let before = setup.pipelines.research_dispatch_snapshot();
+        let wall_start = Instant::now();
+        let command = setup
+            .context
+            .queue()
+            .commandBuffer()
+            .ok_or("command unavailable")?;
+        for _ in 0..repeats {
+            if arm == 'A' {
+                encode_baseline(&setup, &command, &data, f.shape)?;
+            } else {
+                try_encode_split_global_decode(
+                    &setup.pipelines,
+                    &command,
+                    data.arena.buffer(),
+                    &layer,
+                    MetalPhase::Decode,
+                    data.split_bindings(2),
+                    DecodeOutput::Bf16,
+                )?
+                .ok_or("candidate fallback invalidates measurement")?;
+            }
+        }
+        complete(&command)?;
+        let wall = wall_start.elapsed().as_secs_f64();
+        let gpu = command.GPUEndTime() - command.GPUStartTime();
+        if !gpu.is_finite() || gpu <= 0.0 {
+            return Err("GPU timestamps unavailable".into());
+        }
+        expect_family_count(&setup, before, if arm == 'B' { repeats as u64 } else { 0 });
+        assert_eq!(
+            arena_identity,
+            (
+                data.arena.allocated(),
+                data.arena.regions().len(),
+                data.arena.buffer().contents()
+            )
+        );
+        data.check(false);
+        if arm == 'B' {
+            assert_eq!(
+                data.payload(2),
+                expected,
+                "timed repeated-use output changed"
+            );
+        } else {
+            for bytes in data.payload(2).chunks_exact(2) {
+                assert!(
+                    crate::attention_global_decode::widen_bf16(u16::from_le_bytes(
+                        bytes.try_into().unwrap()
+                    ))
+                    .is_finite()
+                );
+            }
+        }
+        Ok((gpu, wall))
+    };
+    // Five warmups per arm, then ten balanced ABBA/BAAB blocks. Each
+    // iteration encodes PARTIAL THEN MERGE in the same command buffer.
+    // No batching partials separately, component-time subtraction, or pruning.
+    for _ in 0..5 {
+        run('A', 1)?;
+        run('B', 1)?;
+    }
+    let mut samples = Vec::new();
+    let blocks = 10;
+    for block in 0..blocks {
+        let order = if block % 2 == 1 {
+            ['B', 'A', 'A', 'B']
+        } else {
+            ['A', 'B', 'B', 'A']
+        };
+        for (position, arm) in order.into_iter().enumerate() {
+            let before = control_snapshot()?;
+            let (gpu, wall) = run(arm, 100)?;
+            let after = control_snapshot()?;
+            let sample = json!({"block":block,"position":position,"arm":arm.to_string(),
+                "dispatches":100,"operator_iterations":100,
+                "actual_compute_encoders":if arm == 'B' { 200 } else { 100 },
+                "partial_dispatches":if arm == 'B' { 100 } else { 0 },
+                "merge_dispatches":if arm == 'B' { 100 } else { 0 },
+                "baseline_dispatches":if arm == 'A' { 100 } else { 0 },
+                "gpu_seconds":gpu,"synchronized_wall_seconds":wall,
+                "controls_before":before,"controls_after":after});
+            write_new(
+                &setup
+                    .directory
+                    .join(format!("sample-{block}-{position}.json")),
+                &serde_json::to_vec_pretty(&sample)?,
+            )?;
+            samples.push(sample);
+        }
+    }
+    let controls: Vec<f64> = samples
+        .iter()
+        .filter(|s| s["arm"] == "A")
+        .map(|s| s["gpu_seconds"].as_f64().unwrap())
+        .collect();
+    let drift = controls.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        / controls.iter().copied().fold(f64::INFINITY, f64::min)
+        - 1.0;
+    let receipt = json!({"schema":"rvllm.global-decode.abba.v3","status":"collected",
+        "identity":setup.identity,"oracle_receipt_sha256":sha256(&oracle_path)?,
+        "length":length,"baseline":"attention_decode_f16 (BF16 typed)",
+        "candidate":setup.candidate.name(),"warmups_per_arm":5,"blocks":blocks,
+        "balanced_abba_baab":true,
+        "timing_metric":"complete-interleaved-partial-merge-command-buffer",
+        "conditions_are_observations_only":true,
+        "candidate_dispatches_per_operation":2,
+        "dispatches_per_sample":100,"control_drift_fraction":drift,"control_drift_limit":0.05,
+        "control_drift_passed":drift <= 0.05,"source_compiles_during_samples":0,
+        "samples":samples,"timing_eligible":false,
+        "pending":"external queue condition continuity, sealed referee and real-weight full-route gates",
+        "promotion":false});
+    write_new(
+        &setup.directory.join("abba.json"),
+        &serde_json::to_vec_pretty(&receipt)?,
+    )?;
+    if drift > 0.05 {
+        return Err("control drift exceeded 5%; retain all samples as invalid".into());
+    }
     Ok(())
 }
