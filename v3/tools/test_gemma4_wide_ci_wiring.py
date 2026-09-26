@@ -8,13 +8,13 @@ V3 = Path(__file__).resolve().parents[1]
 
 
 class WideCiWiringTests(unittest.TestCase):
-    def test_delivery_gate_covers_all_seven_selections_and_new_rust_files(self):
+    def test_delivery_gate_covers_full_catalog_and_new_rust_files(self):
         gate = (V3 / 'tools/check_gemma4_candidate_delivery.sh').read_text()
         catalog = json.loads((V3 / 'tools/gemma4_metal_catalog.json').read_text())
         selections = [row['name'] for row in catalog['candidates']]
         self.assertEqual(selections[:7], ['off', 'metal-short-mma16x64', 'metal-rounded-gate32',
                                     'metal-gqa-kv8', 'metal-mma32-prefetch', 'metal-attn-q4', 'metal-rms-simd32'])
-        self.assertEqual(len(selections), 18)
+        self.assertEqual(len(selections), 48)
         self.assertIn('for candidate in "${candidate_names[@]}"', gate)
         self.assertIn('--verify-exported', gate)
         manifest = (V3 / 'tools/gemma4_candidate_rustfmt.paths').read_text()

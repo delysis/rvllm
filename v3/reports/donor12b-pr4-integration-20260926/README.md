@@ -238,6 +238,17 @@ directories. The top-logit JSON is in each job's `trial.stdout`.
 real-activation numerical discrepancy, or checkpoint sensitivity remains to
 be distinguished; the present evidence does not choose among them.
 
+The separate one-projection W4 package, manifest SHA-256
+`1b9c43598644619432589b66836ed22e52d1e48c968e4b93134f21bd5e324949`,
+also completed its first real-weight route (queue job 26, observed conditions
+eligible). It replaced only layer-0 down, exercised one batch and two decode
+SG8 W4 dispatches, and returned the same first two token IDs as native BF16,
+`[9079, 236761]`. This is encouraging but extremely narrow checkpoint-quality
+evidence: W4 can change logits without changing these argmax tokens. The CLI
+reported total package-route preparation counters of one library compile and
+70 pipeline-state compiles; these are not a zero-compile package receipt.
+Neither W4 nor W8 is promoted from a two-token probe.
+
 ## Hosted CI repair on the integration branch
 
 PR #4's starting checkpoint had host-side fixtures pinned to its old
@@ -272,8 +283,34 @@ queue receipt, records conditions without waiting for thermal stability, and
 must confirm the same generated token IDs, actual candidate dispatch, and
 zero inference compiles. Job 26 then probes one real W4 layer-0 down sidecar;
 that does not gate the separate native-BF16 SG8 decision. The promotion
-disposition will use all four timing samples, including any reversal or
+disposition uses all four timing samples, including any reversal or
 condition change, rather than selecting favorable arms.
+
+All four 256-token jobs subsequently passed, with eligible observed
+conditions, matching generated IDs `[236770, 236770]`, and zero library or
+pipeline compilations. SG8 dispatches were observed for all 48 layers;
+selector-off had no research dispatches. Decode durations in queue order
+were **333.15, 1237.18, 1237.64, 337.98 ms**, yielding 3.71× and 3.66×
+paired control/SG8 ratios (3.69× from the two-arm means). The two controls
+agree within 0.04%; the two SG8 arms differ by 1.45%. The result survives
+reversing run order and a much slower ambient host state than the first
+screen. This advances SG8 to **BF16 full-route promotion candidate**, no
+longer just an operator lead. It does not yet change the production default:
+two-token agreement on one artificial prompt cannot detect later-step KV or
+logit drift. Jobs 27–28 ran the same prompt for 64 decoded tokens on SG8 and
+selector-off. Both completed with no inference compiles. SG8 dispatched its
+native family for all 64 steps and reported **9.605 s / 6.663 tok/s**;
+selector-off reported **51.111 s / 1.252 tok/s**. The latter queue receipt was
+condition-ineligible after a power-observer timeout, so its 5.32× timing ratio
+is only diagnostic, not promotion evidence. The generated IDs agree at the
+first **63** positions and differ at the final position: SG8 `236761`,
+selector-off `236770`. This is a precise, newly observed numerical boundary,
+not a generic reason to shelve a faster implementation. Jobs 29–30 repeat
+the 64-token comparison in reverse order to determine whether that position
+is reproducible. Until the discrepancy is understood or bounded by a
+checkpoint-quality criterion, SG8 remains the BF16 performance leader but
+not the production default. W4/W8 package quality is evaluated separately
+and cannot veto a native-BF16 speed result.
 
 For orientation only, the first SG8 BF16 two-token decode observations imply
 13.96, 12.83, 11.62, and 10.00 tokens/s at 256–2048 contexts. The retained
@@ -284,7 +321,12 @@ rvLLM measured two generated tokens in single runs; MLX measured 64 tokens
 over seven trials, and the runs were not interleaved. Conversely, SG8 prefill
 remains roughly 8.00×, 11.10×, 12.08×, and 14.27× slower than the retained
 MLX prompt-throughput observations; the donor SG8 decode kernels are not a
-prefill solution. The exact original MLX/rvLLM comparison and limitations are
+prefill solution. The first SG8 64-token route observation is 6.663 tok/s at
+256 context, just 5.2% above the retained 6.331 tok/s MLX BF16 value, but
+that comparison is also non-interleaved and is **not** an established MLX
+lead. It demonstrates how much the earlier two-token extrapolation can
+overstate a cross-framework result in a changing host state. The exact
+original MLX/rvLLM comparison and limitations are
 in `../gemma4-rvllm-good-enough-matrix-20260924/README.md`.
 
 Remaining gates: real-weight W4/W8 sidecar correctness, per-layer
