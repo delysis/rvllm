@@ -29,6 +29,18 @@ All five entry points compiled with Metal 3.1, linked, loaded, and formed comput
 
 The milliseconds in `oracle.json` are diagnostic single-dispatch observations, not benchmark results. They were not collected with ABBA/BAAB, sufficient warmup, incumbent pairing, or a real checkpoint and must not be used as speedup claims.
 
+### Persistent-queue replay
+
+On 2026-09-26 the same five-case live-device referee was submitted three times, sequentially, through the existing persistent experiment queue. All three jobs terminated `succeeded` with exit code 0, unchanged declared inputs, no violations, and all five cases `passed` on every replay. The queue sampled and retained the ambient host state rather than waiting for a pristine machine; the SAM audio-restoration process was active during these runs. These are independent process-level correctness/repeatability replays, not timing qualification.
+
+| Queue job | Report SHA-256 | Trial stdout SHA-256 | Result |
+|---|---|---|---|
+| `g4-metal-next-device-correctness-r1-20260926` | `e03ae95255fc81fc8fb3e59d6dec8565d4bbb619672f34c3a67c182d2f1876ee` | `d2fab24fc557f106213d32145c2bbce8550948d5e6476d2155251d75b1b7b676` | succeeded; 5/5 passed |
+| `g4-metal-next-device-correctness-r2-20260926` | `74061418bfc56feb0012abbabcfecdd4c99d2ec3d69de875e1dc22fbe3274c98` | `087f25edf2b595450dc5708f624274003ce1982f3b58d038ec2c6bc428850c63` | succeeded; 5/5 passed |
+| `g4-metal-next-device-correctness-r3-20260926` | `0d85c3beec646be3e73ddebe4275ba89e88e8823ecdd6f8ff9274fe67f45adec` | `c3b5afd3afee37ce855b48f0b8beb3f0d6116dfaec9d705f52c0d31030aedc6b` | succeeded; 5/5 passed |
+
+The submitted manifests and complete nonempty queue outputs are sealed under `jobs/` and `queue-results/`. Each source-to-copy SHA-256 was checked after capture. `trial.stderr` was empty for all three jobs and is intentionally not represented as a nonempty artifact.
+
 ## What is and is not integrated
 
 Integrated:
