@@ -349,6 +349,59 @@ overstate a cross-framework result in a changing host state. The exact
 original MLX/rvLLM comparison and limitations are
 in `../gemma4-rvllm-good-enough-matrix-20260924/README.md`.
 
+The next serial sustained screen used a 512-token prompt with 64 decode
+steps. SG8 and selector-off both passed the queue's observed-condition check
+with zero inference compiles, but this is one arm per route, not ABBA. SG8
+reported prefill `22,553.54 ms`, decode `4,685.89 ms` (`13.658 tok/s`);
+selector-off reported prefill `22,707.15 ms`, decode `55,590.12 ms`
+(`1.151 tok/s`). The descriptive control/SG8 decode ratio is `11.86×`,
+while prefill is essentially unchanged. Both consumed identical prompt
+token IDs. Their generated IDs first differ at zero-based index 36 and at
+seven of 64 positions in total, so this is **not** a numerical qualification
+or promotion ratio. Same-host MLX-LM BF16 512/64 jobs and two first-divergent-
+step top-logit probes followed this pair. They use the retained MLX
+checkpoint/benchmark implementation, which is not the same source-file
+identity or necessarily the same prompt-token values as the rvLLM run; any
+ratio remains an exploratory framework comparison. Raw queue results are in
+`queue-results/g4-donor12b-pr4-{36,37}-*/`.
+
+The first same-host MLX-LM BF16 512/64 arm completed all seven trials and
+reported generation rates `5.448, 4.829, 4.599, 5.331, 4.912, 3.703,
+5.524 tok/s` (printed arithmetic average `4.907 tok/s`), plus average
+prompt throughput `187.622 tok/s`. Its process exited zero, but the queue
+labeled the job `rejected` solely because one power-observer sample exceeded
+freshness; the complete output and conditions remain in
+`queue-results/g4-donor12b-pr4-38-mlx-bf16-pp512-64/`. Compared with SG8's
+single 512/64 process at `13.658 tok/s`, this suggests a large decode lead,
+but **not** a qualified cross-framework ratio: the MLX condition stratum was
+ineligible, checkpoint/token-workload identities differ, and generated
+continuations are not matched. The roughly 7.6–8.3× rvLLM/MLX prefill gap
+across these MLX averages remains the clearer bottleneck. An independent MLX
+rerun used zero stability dwell and unchanged inputs; no trial from job 38 was
+pruned. Job 41 completed all
+seven trials, exited zero, and passed the queue condition check. Its generation
+rates were `5.999, 5.339, 5.442, 5.085, 4.772, 5.650, 5.360 tok/s`
+(printed arithmetic average `5.378 tok/s`); prompt average was
+`173.051 tok/s`. The single SG8 512/64 observation divided by this second
+MLX average is 2.54×, while the previous condition-ineligible MLX average
+was `4.907 tok/s`. Both MLX trial sets are retained. Because exact
+checkpoint, prompt-token, and output identities are not shared, this is a
+same-host exploratory throughput comparison, **not** an admitted head-to-head
+kernel or model-quality win. The second receipt is in
+`queue-results/g4-donor12b-pr4-41-mlx-bf16-pp512-64-r2/`.
+
+The two 512-token first-divergence probes (jobs 39–40) both passed their queue
+condition checks. They used identical 512 prompt-token IDs and generated the
+same first 36 tokens. At generated index 36, SG8 selected `236761` and
+selector-off selected `236770`. Diagnostic re-finalized top logits ranked
+`236761` 16.375 versus `236770` 16.25 for SG8, and `236770` 16.75 versus
+`236761` 16.625 for selector-off. Each margin is 0.125 in the opposite
+direction. These are FP16-buffer diagnostic logits with an added finalization
+dispatch, not a direct sampled-logit tap or independent high-precision oracle.
+They localize the full-route disagreement and give the next numerical trial
+an exact point to investigate. The complete outputs and conditions are in
+`queue-results/g4-donor12b-pr4-{39,40}-*/`.
+
 ## Opt-in Metal prefill-stage diagnostic: unsupported counters on this host
 
 An instrumentation-feature-only change retains the completed prefill stage
