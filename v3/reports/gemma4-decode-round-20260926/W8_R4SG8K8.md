@@ -30,8 +30,14 @@ No native oracle, dense-weight correctness, paired timing, full-route, or
 MLX-relative result exists for this arm. The W4 v02 campaign already pins
 the current release generator and test executable by absolute path and hash.
 Rebuilding those paths for W8 before W4 completes would invalidate W4's
-later stages. A new W8 campaign should therefore be prepared with fresh
-release executables after W4's pinned stages complete, or with immutable
-per-campaign executable copies. Then run compile -> native oracle for both K
-shapes -> paired operator timing -> real-weight/full-route selection, keeping
-each failed receipt.
+later stages. Campaign `g4-donor-w8-r4sg8k8-01` instead pins separate copies
+of the checked debug generator, native-test binary, queue submitter, and ABBA
+retainer under `v3/target/campaign-binaries/`, leaving W4's release binaries
+untouched. Its compile job is submitted to the persistent serial queue.
+These local binary copies are rebuildable artifacts, not checked-in source;
+their SHA-256 identities are in `campaign.json` and its job manifest.
+
+After compile success, run the native oracle for both K shapes, then paired
+operator timing and real-weight/full-route selection, keeping each failed
+receipt. Debug-host timing can screen a GPU kernel, but any production speed
+claim must be rechecked with the release route and exact executable identity.

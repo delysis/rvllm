@@ -1,0 +1,63 @@
+{
+  "after": [],
+  "command": {
+    "args": [
+      "compile",
+      "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w8-r4sg8k8-01/metal-qmv-w8-g32-r4-sg8-k8-core.metal",
+      "{output}/build"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w8-r4sg8k8-01",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/target/campaign-binaries/g4-donor-w8-r4sg8k8-01/rvllm-global-decode-jobs",
+      "sha256": "fc78f291f9e731e12dfeaa50d654ad775c4e840bb312632147f88b1a1065eb3e"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3",
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "sam_audio_one.py",
+      "mpc-content"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-donor-w8-r4sg8k8-01-qmv-w8-g32-r4-sg8-k8-compile-core",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w8-r4sg8k8-01/metal-qmv-w8-g32-r4-sg8-k8-core.metal",
+      "sha256": "ea4cfd77da67ad656e7e6d5f531d51ffb898540defe56f4e276c095443359482"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-metal-next-20260925/v3/reports/gemma4-decode-round-20260926/g4-donor-w8-r4sg8k8-01/campaign.json",
+      "sha256": "a4dbcea6a3f73b8f78db568397bc385dadb5a686123c96938741906c38497a8e"
+    },
+    {
+      "path": "/usr/bin/xcrun",
+      "sha256": "583d56907aafdf0634bd23d58af21a78cae0cb0727bc12a4ea2565271a8b57af"
+    },
+    {
+      "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metal",
+      "sha256": "3c7420a3853873c8bdfa6b532a71e7ed3dc3af4f46c1d215eef4b78d419ad392"
+    },
+    {
+      "path": "/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.hzt8fH/Metal.xctoolchain/usr/bin/metallib",
+      "sha256": "92a9f7c97e4a54c5889f32c03c0ce28fc4743e18dad26ec0a0c9bde132e1716b"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "preparation",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}
