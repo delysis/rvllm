@@ -268,7 +268,7 @@ pub struct MetalModelCapacity {
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
-pub const METAL_NUMERIC_ABI_VERSION: u32 = 10;
+pub const METAL_NUMERIC_ABI_VERSION: u32 = 11;
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -1796,6 +1796,21 @@ fn preflight_low_bit_replacement_descriptors(
     float_type: MetalFloatType,
     replacements: &[MetalLowBitWeightReplacement],
 ) -> Result<Vec<MetalLowBitWeightReplacement>> {
+    preflight_low_bit_replacement_descriptors_with_options(
+        model_dir,
+        float_type,
+        replacements,
+        rvllm_apple_metal::MetalKernelOptions::default(),
+    )
+}
+
+#[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
+fn preflight_low_bit_replacement_descriptors_with_options(
+    model_dir: &std::path::Path,
+    float_type: MetalFloatType,
+    replacements: &[MetalLowBitWeightReplacement],
+    options: rvllm_apple_metal::MetalKernelOptions,
+) -> Result<Vec<MetalLowBitWeightReplacement>> {
     let mut sorted = replacements.to_vec();
     sorted.sort_by(|left, right| left.tensor_name.cmp(&right.tensor_name));
     if sorted
@@ -1809,7 +1824,11 @@ fn preflight_low_bit_replacement_descriptors(
             model_ctx("prepare_low_bit_weights"),
         ));
     }
-    if !sorted.is_empty() && float_type != MetalFloatType::F16 {
+    if !sorted.is_empty()
+        && float_type != MetalFloatType::F16
+        && !(float_type == MetalFloatType::Bf16
+            && rvllm_apple_metal::donor12b::bf16_sidecars_allowed(options))
+    {
         return Err(RvllmError::apple(
             AppleError::InvalidWeightBlob {
                 reason: "W4A16/W8A16 sidecars require an F16 Metal model",
@@ -1975,15 +1994,29 @@ impl ModelMetalBackend {
         // The opt-in currently exposes conversion/readback utilities only;
         // production Gemma KV pages remain exact native F16/BF16 storage.
         let experimental_kv_int8_active = false;
-        let low_bit_projection_count = state
-            .layers
-            .iter()
-            .filter(|layer| layer.low_bit_down_proj.is_some())
-            .count() as u32;
-        let low_bit_weight_bytes = state
-            .layers
-            .iter()
-            .filter_map(|layer| layer.low_bit_down_proj)
+        // Count physical authenticated sidecars, not just dense-down and not
+        // the logical V alias of the same raw K bytes.
+        let physical = || {
+            state.layers.iter().flat_map(|layer| {
+                [
+                    layer.low_bit_q_proj,
+                    layer.low_bit_k_proj,
+                    if layer.k_proj_name == layer.v_proj_name {
+                        None
+                    } else {
+                        layer.low_bit_v_proj
+                    },
+                    layer.low_bit_o_proj,
+                    layer.low_bit_gate_proj,
+                    layer.low_bit_up_proj,
+                    layer.low_bit_down_proj,
+                ]
+                .into_iter()
+                .flatten()
+            })
+        };
+        let low_bit_projection_count = u32::try_from(physical().count()).unwrap_or(u32::MAX);
+        let low_bit_weight_bytes = physical()
             .try_fold(0_u64, |total, projection| {
                 total.checked_add(projection.resident_bytes() as u64)
             })
@@ -2739,6 +2772,7 @@ impl ModelMetalBackend {
             float_type,
             &low_bit_replacements,
         )?;
+        state.resolve_low_bit_projection_aliases()?;
         if state.memory_budget != memory_report {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
@@ -2796,7 +2830,16 @@ impl ModelMetalBackend {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        preflight_low_bit_replacement_descriptors(&self.model_dir, float_type, &replacements)
+        if rvllm_apple_metal::donor12b::bf16_sidecars_allowed(self.kernel_options) {
+            preflight_low_bit_replacement_descriptors_with_options(
+                &self.model_dir,
+                float_type,
+                &replacements,
+                self.kernel_options,
+            )
+        } else {
+            preflight_low_bit_replacement_descriptors(&self.model_dir, float_type, &replacements)
+        }
     }
 
     fn hybrid_low_bit_arena_budget_bytes(
@@ -2844,7 +2887,10 @@ impl ModelMetalBackend {
         if replacements.is_empty() {
             return Ok(());
         }
-        if float_type != MetalFloatType::F16 {
+        if float_type != MetalFloatType::F16
+            && !(float_type == MetalFloatType::Bf16
+                && rvllm_apple_metal::donor12b::bf16_sidecars_allowed(self.kernel_options))
+        {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
                     reason: "W4A16/W8A16 sidecars require an F16 Metal model",
@@ -4221,8 +4267,8 @@ impl ModelMetalBackend {
                     self.perf.add_command_buffers(1);
                 }
             }
-            self.perf
-                .add_layer_encoders(Self::estimate_layer_encoder_count(
+            self.perf.add_layer_encoders(
+                Self::estimate_layer_encoder_count(
                     &weights,
                     &dims,
                     layer_trace_scratch.is_some(),
@@ -4242,7 +4288,9 @@ impl ModelMetalBackend {
                         layer_trace_scratch.is_some(),
                         arena.capacity(),
                     ),
-                ));
+                )
+                .saturating_add_signed(pipelines.donor_layer_encoder_correction()),
+            );
             if weights.layer_scalar_offset.is_some() {
                 self.perf.add_layer_scale_encoder_fusions(1);
             }

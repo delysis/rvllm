@@ -90,6 +90,9 @@ pub struct PipelineCache {
     research_dispatches: ResearchDispatchCounters,
     low_bit_dispatches: Cell<[u64; AppleLowBitTensorRole::COUNT * 2]>,
     low_bit_dispatch_overflowed: Cell<bool>,
+    // Physical encoder correction for the current synchronously encoded layer.
+    // Only the explicit donor family writes this; no atomics or allocation.
+    donor_layer_encoder_correction: Cell<i64>,
 }
 
 impl PipelineCache {
@@ -108,6 +111,7 @@ impl PipelineCache {
             research_dispatches: ResearchDispatchCounters::default(),
             low_bit_dispatches: Cell::new([0; AppleLowBitTensorRole::COUNT * 2]),
             low_bit_dispatch_overflowed: Cell::new(false),
+            donor_layer_encoder_correction: Cell::new(0),
         }
     }
 
@@ -121,6 +125,26 @@ impl PipelineCache {
     #[must_use]
     pub fn research_dispatch_snapshot(&self) -> ResearchDispatchSnapshot {
         self.research_dispatches.snapshot()
+    }
+
+    pub(crate) fn reset_donor_layer_encoder_correction(&self) {
+        self.donor_layer_encoder_correction.set(0);
+    }
+
+    pub(crate) fn add_donor_layer_encoder_correction(&self, delta: i64) {
+        // Bounded to a handful of encoders per layer; reset before encoding.
+        self.donor_layer_encoder_correction
+            .set(self.donor_layer_encoder_correction.get() + delta);
+    }
+
+    /// Adjustment to the legacy logical encoder estimator, for the just
+    /// encoded layer only. This is not a GPU-completion or timing receipt.
+    pub fn donor_layer_encoder_correction(&self) -> i64 {
+        if crate::donor12b::simdgroups(self.kernel_options.research).is_some() {
+            self.donor_layer_encoder_correction.get()
+        } else {
+            0
+        }
     }
 
     pub(crate) fn record_research_dispatch(&self, kernel: ResearchKernel) {

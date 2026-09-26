@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 46] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 48] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -63,6 +63,8 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 46] = [
     MetalResearchCandidate::GlobalD512ShortR4T128,
     MetalResearchCandidate::QmvW4G32R4Sg8K8,
     MetalResearchCandidate::QmvW8G32R4Sg8K8,
+    MetalResearchCandidate::Donor12bSg8,
+    MetalResearchCandidate::Donor12bSg4,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -229,6 +231,28 @@ impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
         match self {
+            Self::Donor12bSg8 => CandidateSpec {
+                name: "metal-donor12b-sg8",
+                kernels: &[DonorSg8W4, DonorSg8W8, DonorSg8BatchW4, DonorSg8BatchW8, DonorSg8GateW4, DonorSg8GateW8, DonorSg8QkvW4, DonorSg8QkvW8, DonorSg8NativeGate, DonorSg8NativeProjection, DonorSg8LocalAttention, DonorSg8GlobalAttention],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/donor12b_sg8.metal"),
+                min_tokens: 1,
+                max_tokens: 128,
+                window_independent: true,
+                numerical_contract: "signed-g32-fp16-scales-bf16-boundaries-fp32-donor-order-not-bitwise-incumbent",
+                source: concat!(include_str!("research_shaders/donor12b_common.metal"),
+                                include_str!("research_shaders/donor12b_sg8.metal")),
+            },
+            Self::Donor12bSg4 => CandidateSpec {
+                name: "metal-donor12b-sg4",
+                kernels: &[DonorSg4W4, DonorSg4W8, DonorSg4BatchW4, DonorSg4BatchW8, DonorSg4GateW4, DonorSg4GateW8, DonorSg4QkvW4, DonorSg4QkvW8, DonorSg4NativeGate, DonorSg4NativeProjection, DonorSg4LocalAttention, DonorSg4GlobalAttention],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/donor12b_sg4.metal"),
+                min_tokens: 1,
+                max_tokens: 128,
+                window_independent: true,
+                numerical_contract: "signed-g32-fp16-scales-bf16-boundaries-fp32-donor-order-not-bitwise-incumbent",
+                source: concat!(include_str!("research_shaders/donor12b_common.metal"),
+                                include_str!("research_shaders/donor12b_sg4.metal")),
+            },
             Self::FfnBf16R4Sg2 => CandidateSpec {
                 name: "metal-ffn-bf16-r4-sg2", kernels: &[ResearchKernel::FfnBf16R4Sg2],
                 source_file: Some("crates/rvllm-apple-metal/src/research_shaders/ffn_bf16_r4_sg2.metal"),
@@ -580,7 +604,9 @@ mod tests {
             serde_json::from_str(include_str!("../../../tools/gemma4_metal_catalog.json")).unwrap();
         let mut legacy = catalog_json();
         let all = legacy["candidates"].as_array_mut().unwrap();
-        assert_eq!(all.len(), 46);
+        assert_eq!(all.len(), 48);
+        let donor = all.split_off(46);
+        assert_eq!(donor.len(), 2);
         let donor_schedules = all.split_off(44);
         assert_eq!(
             donor_schedules
@@ -595,7 +621,7 @@ mod tests {
         let reviewed_global: serde_json::Value =
             serde_json::from_str(include_str!("../../../tools/global-decode/family.json")).unwrap();
         assert_eq!(reviewed_global["candidates"], serde_json::json!(additions));
-        // Archived prefix retains its historical schema; new slots are v4.
+        // Archived prefix retains its historical schema; new donor slots are v5.
         legacy["dispatch_schema"] = serde_json::json!("rvllm.metal.research-dispatch.v3");
         assert_eq!(reviewed, legacy);
         // The additive family must have all source-defined specializations.
