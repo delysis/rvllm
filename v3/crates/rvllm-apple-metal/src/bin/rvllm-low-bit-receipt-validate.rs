@@ -1,5 +1,6 @@
 //! Fail-closed validator for native-BF16 low-bit real-weight receipts.
 
+use rvllm_apple_metal::kernels::KERNEL_COUNT;
 use serde::Deserialize;
 use serde_json::json;
 use std::{collections::BTreeSet, env, error::Error, fs, path::PathBuf};
@@ -187,6 +188,14 @@ fn nearly_equal(actual: f64, expected: f64) -> bool {
         && expected.is_finite()
         && (actual - expected).abs() <= 1e-12_f64.max(expected.abs() * 1e-9)
 }
+fn research_cell(format: &str, role: &str, m: usize, n: usize, k: usize) -> bool {
+    m == 1
+        && n == 3840
+        && matches!(
+            (format, role, k),
+            ("w4a16", "dense_down_projection", 15360) | ("w8a16", "output_projection", 4096 | 8192)
+        )
+}
 fn require(ok: bool, message: impl Into<String>) -> Result<()> {
     if ok {
         Ok(())
@@ -235,6 +244,7 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
         require(hash(value), "invalid receipt hash")?;
     }
     let direct = a.candidate == "n4-vs-n8";
+    let research = a.candidate == "research-r4-sg8-k8";
     require(
         r.compile_counts.metal_libraries == 1,
         "wrong Metal library count",
@@ -245,6 +255,8 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                 4
             } else if a.candidate == "adaptive" {
                 7
+            } else if research {
+                KERNEL_COUNT + 1
             } else {
                 3
             },
@@ -272,6 +284,18 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
         )?;
         require(r.direct_order.as_deref() == Some(o), "wrong direct order")?;
         [(f, m)].into_iter().collect()
+    } else if research {
+        let format = a.format.as_deref().ok_or("research requires --format")?;
+        let order = a.order.as_deref().ok_or("research requires --order")?;
+        require(
+            a.m == Some(1)
+                && matches!(order, "ABBA" | "BAAB")
+                && r.direct_order.as_deref() == Some(order)
+                && r.shape.len() == 2
+                && research_cell(format, &a.role, 1, r.shape[0], r.shape[1]),
+            "invalid research decode cell",
+        )?;
+        [(format.to_owned(), 1)].into_iter().collect()
     } else {
         require(
             matches!(
@@ -419,6 +443,7 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                 "scalar" => "",
                 "n4" => "_n4",
                 "n8" => "_n8",
+                "research-r4-sg8-k8" => "",
                 "vector" => {
                     if c.dispatch.format == "w4a16" {
                         "_n4_packed2"
@@ -445,14 +470,25 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                 },
                 _ => unreachable!(),
             };
-            let expected_kernel = format!(
-                "experimental_projection_{}_bf16{suffix}",
-                if c.dispatch.format == "w4a16" {
-                    "w4abf16"
-                } else {
-                    "w8abf16"
-                }
-            );
+            let expected_kernel = if research {
+                format!(
+                    "research_qmv_{}_g32_r4_sg8_k8",
+                    if c.dispatch.format == "w4a16" {
+                        "w4"
+                    } else {
+                        "w8"
+                    }
+                )
+            } else {
+                format!(
+                    "experimental_projection_{}_bf16{suffix}",
+                    if c.dispatch.format == "w4a16" {
+                        "w4abf16"
+                    } else {
+                        "w8abf16"
+                    }
+                )
+            };
             require(
                 c.timing.candidate_kernel.as_deref() == Some(&expected_kernel)
                     && c.timing.native_kernel.as_deref()
@@ -482,6 +518,25 @@ fn validate(r: &Receipt, a: &Args) -> Result<()> {
                 .all(|v| v.is_some_and(|x| x.is_finite() && x > 0.0)),
                 "invalid legacy derived timing",
             )?;
+            if research {
+                let native = c.timing.native_ms.as_deref().unwrap_or(&[]);
+                let candidate = c.timing.candidate_ms.as_deref().unwrap_or(&[]);
+                let native_median = median(native).ok_or("invalid research native median")?;
+                let candidate_median =
+                    median(candidate).ok_or("invalid research candidate median")?;
+                require(
+                    c.timing
+                        .native_median_ms
+                        .is_some_and(|v| nearly_equal(v, native_median))
+                        && c.timing
+                            .candidate_median_ms
+                            .is_some_and(|v| nearly_equal(v, candidate_median))
+                        && c.timing
+                            .speedup
+                            .is_some_and(|v| nearly_equal(v, native_median / candidate_median)),
+                    "research derived timing does not match samples",
+                )?;
+            }
         }
     }
     require(seen == expected, "case matrix incomplete")?;
@@ -505,6 +560,26 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn research_accepts_only_declared_decode_shapes() {
+        assert!(research_cell(
+            "w4a16",
+            "dense_down_projection",
+            1,
+            3840,
+            15360
+        ));
+        assert!(research_cell("w8a16", "output_projection", 1, 3840, 4096));
+        assert!(research_cell("w8a16", "output_projection", 1, 3840, 8192));
+        for (format, role, m, n, k) in [
+            ("w4a16", "dense_down_projection", 4, 3840, 15360),
+            ("w4a16", "output_projection", 1, 3840, 15360),
+            ("w8a16", "output_projection", 1, 3840, 15360),
+            ("w8a16", "output_projection", 1, 4096, 4096),
+        ] {
+            assert!(!research_cell(format, role, m, n, k));
+        }
+    }
     #[test]
     fn duplicate_top_level_key_fails() {
         let s = r#"{"schema":"x","schema":"y"}"#;
