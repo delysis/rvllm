@@ -282,17 +282,32 @@ impl AppleModelPackageManifest {
                 reason: "the authenticated serialized low-bit tensor contract and runtime admission are not implemented",
             });
         }
-        if self.schema_version == Self::SCHEMA_V3 && format != AppleWeightFormat::F16 {
+        if self.schema_version == Self::SCHEMA_V3
+            && !matches!(format, AppleWeightFormat::F16 | AppleWeightFormat::Bf16)
+        {
             return Err(AppleModelPackageError::InvalidLowBitTensor {
                 tensor: "<manifest>".to_owned(),
-                reason: "schema-v3 hybrid low-bit sidecars require native F16 weight shards"
-                    .to_owned(),
+                reason:
+                    "schema-v3 hybrid low-bit sidecars require native F16 or BF16 weight shards"
+                        .to_owned(),
             });
         }
 
         let mut low_bit_names = HashSet::with_capacity(self.low_bit_tensors.len());
         for tensor in &self.low_bit_tensors {
             validate_low_bit_metadata(tensor)?;
+            let matching_native_dtype = matches!(
+                (format, tensor.activation_float_type),
+                (AppleWeightFormat::F16, ApplePackageFloatType::F16)
+                    | (AppleWeightFormat::Bf16, ApplePackageFloatType::Bf16)
+            );
+            if !matching_native_dtype {
+                return Err(AppleModelPackageError::InvalidLowBitTensor {
+                    tensor: tensor.tensor_name.clone(),
+                    reason: "sidecar activation dtype does not match native weight shards"
+                        .to_owned(),
+                });
+            }
             if !low_bit_names.insert(tensor.tensor_name.as_str()) {
                 return Err(AppleModelPackageError::InvalidLowBitTensor {
                     tensor: tensor.tensor_name.clone(),
@@ -623,9 +638,6 @@ fn validate_low_bit_metadata(tensor: &AppleLowBitTensor) -> Result<(), AppleMode
     }
     if usize::from(tensor.group_size) != APPLE_LOW_BIT_GROUP_SIZE {
         return Err(invalid("low-bit group size must be 32"));
-    }
-    if tensor.activation_float_type != ApplePackageFloatType::F16 {
-        return Err(invalid("W4A16/W8A16 sidecars require F16 activations"));
     }
     let rows = usize::try_from(tensor.shape[0]).map_err(|_| invalid("row count overflow"))?;
     let k = usize::try_from(tensor.shape[1]).map_err(|_| invalid("K dimension overflow"))?;
@@ -1321,6 +1333,30 @@ mod tests {
             scales: file(root, "weights/low-bit/00000.scales.f16le", &scale_bytes),
         });
         manifest.model_fingerprint = model_assets_fingerprint(manifest);
+    }
+
+    #[test]
+    fn bf16_hybrid_metadata_requires_matching_native_shard_dtype() {
+        let root = test_root("bf16-low-bit-dtype");
+        fs::create_dir_all(&root).expect("create package root");
+        let mut value = manifest(&root);
+        add_low_bit_tensor(&root, &mut value, AppleLowBitWeightFormat::W8A16);
+        value.weight_shards[0].format = AppleWeightFormat::Bf16;
+        value.low_bit_tensors[0].activation_float_type = ApplePackageFloatType::Bf16;
+        assert!(value.validate_metadata().is_ok());
+
+        value.low_bit_tensors[0].activation_float_type = ApplePackageFloatType::F16;
+        assert!(matches!(
+            value.validate_metadata(),
+            Err(AppleModelPackageError::InvalidLowBitTensor { .. })
+        ));
+        value.low_bit_tensors[0].activation_float_type = ApplePackageFloatType::Bf16;
+        value.weight_shards[0].format = AppleWeightFormat::F16;
+        assert!(matches!(
+            value.validate_metadata(),
+            Err(AppleModelPackageError::InvalidLowBitTensor { .. })
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]

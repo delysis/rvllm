@@ -1831,7 +1831,7 @@ fn preflight_low_bit_replacement_descriptors_with_options(
     {
         return Err(RvllmError::apple(
             AppleError::InvalidWeightBlob {
-                reason: "W4A16/W8A16 sidecars require an F16 Metal model",
+                reason: "W4A16/W8A16 sidecars require F16 or the explicit BF16 donor route",
             },
             model_ctx("prepare_low_bit_weights"),
         ));
@@ -2893,7 +2893,7 @@ impl ModelMetalBackend {
         {
             return Err(RvllmError::apple(
                 AppleError::InvalidWeightBlob {
-                    reason: "W4A16/W8A16 sidecars require an F16 Metal model",
+                    reason: "W4A16/W8A16 sidecars require F16 or the explicit BF16 donor route",
                 },
                 model_ctx("prepare_low_bit_weights"),
             ));

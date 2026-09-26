@@ -25,8 +25,8 @@ cargo run --release -p rvllm-apple --features package-builder \
   --weight-format auto
 ```
 
-To produce an authenticated hybrid package while preserving every native F16
-weight, explicitly name one or more dense MLP down projections:
+To produce an authenticated hybrid package while preserving every native
+weight, explicitly name one or more dense projections:
 
 ```sh
 cargo run --release -p rvllm-apple --features package-builder \
@@ -36,14 +36,14 @@ cargo run --release -p rvllm-apple --features package-builder \
   --output /path/to/MyHybridModel.rvllm \
   --package-id publisher.model.version \
   --weight-format f16 \
-  --low-bit-down-proj \
+  --low-bit-proj \
     model.layers.0.mlp.down_proj.weight=w4a16-group32 \
-  --low-bit-down-proj \
+  --low-bit-proj \
     model.layers.1.mlp.down_proj.weight=w8a16-group32
 ```
 
 This is a tensor-level sidecar export, not a model-wide W4/W8 package. Schema
-v3 retains and authenticates the native F16 shard as well as the packed values
+v3 retains and authenticates the native F16 or BF16 shard as well as the packed values
 and FP16 scales. The runtime defaults to hybrid residency. Its internal
 native-replacement policy can omit all selected native projections from the
 Metal arena after deterministic whole-set validation, but is not an iOS
@@ -77,7 +77,9 @@ cargo run --release -p rvllm-apple --features package-builder \
   not relabel ordinary tensors as W4A16/W8A16; those formats require the
   dedicated quantizing exporter and their independent quality gates. The
   exporter accepts explicitly named, two-dimensional dense projection tensors
-  from uniform F16 checkpoints only. A layer may replace only its
+  from uniform F16 or BF16 checkpoints. BF16 sidecars are admitted at runtime
+  only under the explicit donor12b research selector with quantized BF16
+  accumulation disabled; other selectors still reject them. A layer may replace only its
   `.mlp.down_proj.weight`, or the complete dense Q/K/V/O/gate/up/down set;
   incomplete multi-role sets fail closed. LM-head and MoE replacement remain
   unsupported.
@@ -96,7 +98,8 @@ Schema v2 records and verifies byte length plus SHA-256 for:
 
 Schema v3 adds exact tensor-level low-bit descriptors and authenticates their
 packed-value and little-endian FP16-scale files. It fixes each descriptor to an
-explicit projection role, activation type F16, ABI version 1, and group size
+explicit projection role, activation type matching the native F16/BF16 shard,
+ABI version 1, and group size
 32. Package opening checks role/name/shape consistency, complete-layer set
 membership, exact shape-derived file sizes, integer domain, tail padding,
 scales, and zero-scale groups with bounded row-sized reads. Schema v2 is

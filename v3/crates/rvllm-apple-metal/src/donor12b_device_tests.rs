@@ -589,6 +589,24 @@ fn native_donor12b_operator_oracle() -> TestResult {
         Some(8),
         1,
         3840,
+        15360,
+        Role::DenseDownProjection,
+        "w8-down-m1",
+    )?);
+    cases.push(projection(
+        &setup,
+        Some(8),
+        6,
+        3840,
+        15360,
+        Role::DenseDownProjection,
+        "w8-down-m6",
+    )?);
+    cases.push(projection(
+        &setup,
+        Some(8),
+        1,
+        3840,
         8192,
         Role::OutputProjection,
         "w8-o-global-m1",

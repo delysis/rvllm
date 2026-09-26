@@ -130,6 +130,81 @@ The `queue-results/g4-donor12b-pr4-{11,12,13}-*-bounded-contexts/`
 directories retain job manifests, queue reports, conditions, stdout and
 stderr. No 4096-token case was run by these jobs.
 
+## First authenticated BF16 + W8 package route — continuation mismatch
+
+The package exporter now accepts a uniform BF16 checkpoint and an explicit
+group-32 W4/W8 sidecar for any supported dense projection role. It decodes
+source BF16 values before quantization and records a BF16 activation ABI in
+the authenticated descriptor. A fixture test compares every emitted packed
+byte and FP16 scale against the independent CPU reference, then reopens the
+package and checks that the source was unchanged. The package CLI accepts the
+general `--low-bit-proj` flag, with `--low-bit-down-proj` retained as an alias.
+The direct inference CLI now recognizes packages; its engine-session mode
+explicitly refuses a package because that mode does not install sidecars.
+
+The first real package deliberately replaces **only layer 0 dense down** with
+W8. The other 47 layers and all other roles retain native BF16 weights. Its
+manifest SHA-256 is
+`1cb72e93d101f23f969b422586bb63058bca0bb23aa80c27e87accff1d162a69`;
+the 58,982,400-byte packed W8 payload and 3,686,400-byte scale payload have
+SHA-256 values `b885c80ac1f7152998d3e29917f1fd060348d3fd6ab5b1bbf448867a8d5d0842`
+and `1e4bd6dace99ed4ab6cca745ba42f3a64ac662e1a143eea8b71c9c3f14d41175`.
+The package's BF16 metallib is the same SG8 library used for the source
+control. The package is a local ignored build artifact, not in Git; the
+checked-in manifest/job/receipt identify it but do not make it portable to
+another machine.
+
+The serial queue ran a direct 48-layer short continuation with the sidecar,
+using executable SHA-256
+`83708e99380170fcacce10528527a6e8c9fa5c198a0054d55e3d45b79b1e1e95`.
+Actual dispatch counts were `research_donor12b_sg8_batch_w8: 1` and
+`research_donor12b_sg8_w8: 2`, with zero library/pipeline compilations during
+inference. That confirms the sidecar reached prefill and both decode steps.
+The queue process exited successfully, but **the narrow continuation check failed**:
+the package returned `[496, 45518]` (`" athought"`) while the same exact
+executable, prompt, SG8 metallib, and source BF16 weights returned
+`[9079, 236761]` (`" Paris."`). The one-W8 run's observed host conditions
+were ineligible, but that does not explain the observed token mismatch;
+no latency claim is taken from it. The same-binary source control's observed
+conditions were eligible. Synthetic SG8 W8-down oracles at M1 and M6, exact
+3840×15360, passed along with the other 21 native cases (23/23 overall), so
+they do not substitute for a real-weight quality gate. Exact BF16 token
+agreement is not itself a generally valid requirement for a quantized
+checkpoint; the surprising semantic regression is a diagnostic warning,
+not a measured perplexity or logit-quality result.
+
+An ignored real-checkpoint layer-zero diagnostic then ran both routes under
+the same test executable (`364c15f249d4b73af09c91f21cb6a4825e7f88ef1daa920fa13354b2b4e8b63d`),
+stopping before later layers or logits. The trace summaries match exactly
+through the FFN activation at all reported fields and selected elements. The
+first observed difference is after the down/FFN branch: the largest absolute
+delta among the **selected** trace elements is 0.01171875; after the final
+layer-zero residual it is 0.01318359375. Both routes remain finite. This
+localizes the first observed perturbation to the intentionally replaced
+projection and does not show a gross layer-zero corruption. However, the
+trace contains summaries and selected elements, **not a complete elementwise
+diff or an independent real-activation FP64 dot oracle**. It therefore does
+not establish that the W8 shader is correct for this checkpoint, nor whether
+small layer-zero error magnifies downstream enough to change the token.
+The trace queue job exited successfully; its observed timing conditions were
+ineligible and no timing claim is made.
+
+An attempted selector-off control on the *same* BF16+W8 package was rejected
+at preparation, before inference: the incumbent generic low-bit route only
+admits F16 activations, whereas this package authentically declares BF16.
+Queue job 18 is failed/quarantined with its error retained. It supplies no
+numeric comparison, and the fail-closed guard was not weakened. A separately
+sealed SG4 donor-library package is being prepared to compare two BF16-capable
+implementations on the same quantized tensor.
+
+Raw records: `sg8-bf16-package-one-w8.json`,
+`sg8-bf16-same-binary-control.json`, `sg8-w8down-oracle/donor12b-oracle.json`,
+`sg8-bf16-one-w8-layer0-trace/{source,one-w8-package}-layer0.json`, and
+corresponding `queue-results/g4-donor12b-pr4-{14,15,16,17,18}-*/` directories.
+**Do not promote W8 from this result.** A package-sidecar load defect,
+real-activation numerical discrepancy, or checkpoint sensitivity remains to
+be distinguished; the present evidence does not choose among them.
+
 ## Hosted CI repair on the integration branch
 
 PR #4's starting checkpoint had host-side fixtures pinned to its old
@@ -143,7 +218,7 @@ Metal APIs. Locally, all 118 Python host checks, the macOS workspace check,
 and both artifact-inspection binary unit tests passed. A new hosted CI run
 is required for this repair commit; the preceding PR run remains failed.
 
-Remaining gates: authenticated real-weight W4/W8 sidecar loading, per-layer
+Remaining gates: real-weight W4/W8 sidecar correctness, per-layer
 and KV comparison, dedicated long-context attention correctness/timing,
 checkpoint logits/continuation quality, and paired end-to-end timing against
 both the default rvLLM route and MLX. Long-context BF16 continuation alone
