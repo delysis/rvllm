@@ -774,3 +774,19 @@ incorrectly says `human-authored`; `HELDOUT_QUALITY_PROTOCOL.md` corrects
 its provenance without changing pinned bytes. These two cases have no
 calibrated quality threshold or independent reference, and per-step readback
 invalidates timing. No quality acceptance or promotion follows.
+
+## Independently sourced natural-question probe: completed
+
+The predeclared four-arm teacher-forced trial on two revision-pinned MMLU
+questions also finished with clean eligible queue receipts and actual
+combined projection/raw-norm/Q4 dispatch. The candidate-minus-control NLL
+sums were -16.489494 over 24 formal-logic targets and -7.695800 over 55
+computer-science targets, but the sampled greedy IDs differed at one
+position in *each* case. The large formal-logic change was concentrated at
+one target position. `MMLU_NATURAL_RESULTS.md` gives every qualification
+boundary, artifact hash and unfavorable observation; the full 79-position
+comparison is `mmlu-natural-teacher-summary-v1.json`, with the four complete
+queue receipts in `mmlu-natural-queue-results-v1.tar.gz`. The Codex-authored
+wrapper, possible training contamination, lack of an independent same-boundary
+reference and readback-distorted timing rule out a benchmark, quality,
+performance or promotion claim.
