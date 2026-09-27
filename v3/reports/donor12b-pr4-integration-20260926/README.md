@@ -467,3 +467,17 @@ and KV comparison, dedicated long-context attention correctness/timing,
 checkpoint logits/continuation quality, and paired end-to-end timing against
 both the default rvLLM route and MLX. Long-context BF16 continuation alone
 does not close any of these numerical or comparison gates.
+
+## Later prefill-route localization
+
+The opt-in, feature-independent phase receipt and ordinary-dispatch ledger
+supersede the unsupported GPU-timestamp attempt for **route attribution**, not
+for per-kernel GPU time. See [the four-arm dispatch screen](prefill-route-ledger-01/README.md)
+and [the fused-kernel follow-up](prefill-fused-ledger-01/README.md), each with
+normal-route reports and raw queue receipts. The follow-up counted 96 default
+`gemm_rmsnorm_f16` dispatches (O and FFN down across 48 layers), replaced by
+tiled MMA GEMM plus separate normalization in the opt-in route. In one
+same-stratum real BF16 512-token pair, prefill was 21.334 s default versus
+4.392 s MMA-only (4.858× exploratory). This localizes the slow path to a
+specific dispatch substitution, but does not yet apportion GPU time among
+roles or establish numerical quality; prior longer continuations diverged.
