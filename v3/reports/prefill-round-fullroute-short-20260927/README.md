@@ -243,3 +243,37 @@ the completed first run. The serial queue accepted the manifest. This is a
 predeclared confirmation attempt, **not** confirmation evidence until its
 terminal receipt is read. The previously submitted MLX jobs remain in the
 same serial queue; none of the completed jobs were replayed.
+
+## Same-checkpoint MLX comparison: 101-token prompt
+
+The pinned `prefill26-mlx-it-bf16-m101-g64-20260927` job succeeded and
+retained one warmup plus all three 64-token MLX-LM trials. It used the same
+original 12B-it safetensor (SHA-256 `5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d`)
+and exact 101 prompt IDs as the rvLLM counterbalanced run. All three MLX
+trials produced the **same full 64 generated IDs** as every validated rvLLM
+control and combined-route child at this prompt. That is cross-framework
+output-ID agreement, not tensor/logit equivalence or a quality certificate.
+
+| Framework / route | Prompt-phase observation | Decode observation |
+| --- | ---: | ---: |
+| MLX-LM BF16, three-trial mean | 371.752 ms inferred from first-token throughput | 18.726 generated tok/s |
+| rvLLM combined Metal, four measured ABBA/BAAB children | 1774.361 ms reported prefill | 4.646 tok/s computed from 64 tokens / mean reported decode time |
+
+The descriptive ratios are **4.773× MLX advantage in prompt phase** and
+**4.031× in decode** at M101. They are planning-grade, **not** a strict paired
+cross-framework speed verdict: the jobs were not interleaved, MLX derives its
+prompt phase from first-token throughput while rvLLM reports prefill
+separately, and decode denominators may differ by the first generated step.
+The queue reported exit 0 and no kernel failure, but marked the MLX condition
+sample ineligible solely because one power-observer sample was stale
+(age 2.584 s); observed controls were AC / power mode 2 / thermal state 0,
+with no sampled competitor. No thermal wait or favorable rerun was used.
+
+The complete MLX trial JSON is `mlx-it-m101-g64-report.json`, SHA-256
+`91da1b613bf0e3d0f8452866b565bd4fc08ee1b64d48c26b2a4cfb002b671252`.
+Its immutable outer queue receipt, including the freshness violation,
+conditions journal, manifest and stdout/stderr, is
+`mlx-it-m101-g64-queue-result.tar.gz`, SHA-256
+`f18e2a2fd860039ecaf6b801df703e5e047df1d0f5db2c53fd09ac6b3ea6b68a`.
+The dependent M304 MLX job and independent rvLLM confirmation were still
+queued when this M101 result was archived; neither result is inferred here.
