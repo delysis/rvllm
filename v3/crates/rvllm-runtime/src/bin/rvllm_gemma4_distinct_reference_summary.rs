@@ -195,30 +195,47 @@ fn stale_power_only(observation: &Value, job: &Value) -> bool {
                 .as_u64()
                 .unwrap_or(u64::MAX)
         && controls["power_source"] == conditions["power_source"]
-        && controls["low_power_mode"].as_bool() == Some(false)
-        && controls["pmset_power_mode"]
-            .as_u64()
-            .is_some_and(|mode| mode <= 2)
-        && controls["thermal_state"]
-            .as_u64()
-            .is_some_and(|state| state <= 3)
-        && controls["cpu_speed_limit_percent"].as_u64().unwrap_or(100) == 100
-        && controls["scheduler_limit_percent"].as_u64().unwrap_or(100) == 100
-        && controls["available_cpus"].as_u64().unwrap_or(1) > 0
+        && controls["low_power_mode"].as_bool().is_some_and(|value| {
+            conditions["low_power_mode"]
+                .as_bool()
+                .is_none_or(|required| value == required)
+        })
+        && controls["pmset_power_mode"].as_u64().is_some_and(|mode| {
+            mode <= 2
+                && conditions["pmset_power_mode"]
+                    .as_u64()
+                    .is_none_or(|required| mode == required)
+        })
+        && controls["thermal_state"].as_u64().is_some_and(|state| {
+            state <= 3
+                && conditions["thermal_state"]
+                    .as_u64()
+                    .is_none_or(|required| state == required)
+        })
+        && ["cpu_speed_limit_percent", "scheduler_limit_percent"]
+            .iter()
+            .all(|key| {
+                controls.get(*key) == Some(&Value::Null) || controls[*key].as_u64() == Some(100)
+            })
+        && (controls.get("available_cpus") == Some(&Value::Null)
+            || controls["available_cpus"]
+                .as_u64()
+                .is_some_and(|count| count > 0))
         && observation["competing_processes"]
             .as_array()
             .is_some_and(Vec::is_empty)
+        && observation["observed_processes"].as_array().is_some()
         && observation["idle_server_checks"]
             .as_array()
             .is_some_and(Vec::is_empty)
         && observation["probe_ms"]
             .as_f64()
-            .is_some_and(|ms| ms.is_finite() && ms <= 2500.0)
+            .is_some_and(|ms| ms.is_finite() && (0.0..=2500.0).contains(&ms))
         && (observation["activity_sampled"] == false
             || (observation["activity_sampled"] == true
                 && observation["raw_sample_age_ms"]
                     .as_f64()
-                    .is_some_and(|ms| ms <= 2500.0)))
+                    .is_some_and(|ms| ms.is_finite() && (0.0..=2500.0).contains(&ms))))
 }
 
 fn conditions(dir: &Path, job: &Value, report: &Value) -> Result<Value> {
@@ -553,7 +570,8 @@ mod tests {
             "sample":{"controls":{"power_source":"ac","low_power_mode":false,
                 "pmset_power_mode":2,"thermal_state":0,"cpu_speed_limit_percent":null,
                 "scheduler_limit_percent":null,"available_cpus":null}}},"free_bytes":200,
-            "competing_processes":[],"idle_server_checks":[],"probe_ms":0.2,"activity_sampled":false});
+            "competing_processes":[],"observed_processes":[],"idle_server_checks":[],
+            "probe_ms":0.2,"activity_sampled":false});
         assert!(stale_power_only(&sample, &job));
         let mut competitor = sample.clone();
         competitor["competing_processes"] = json!([{"pid":42}]);

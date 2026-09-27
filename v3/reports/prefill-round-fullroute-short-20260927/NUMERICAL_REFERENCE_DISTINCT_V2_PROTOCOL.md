@@ -88,10 +88,12 @@ prompt and generator pins are absent.
 
 The separate safe-Rust numerical referee
 `rvllm_gemma4_distinct_reference_summary` has source SHA-256
-`01d9e83c6626df2febb07c595b0f16229492e2020f8a3d8f9f93466074f680c6`.
+`477ec2399afd35f91258ef397a3ba9f039106df941f85e1a791480880897c023`.
 It retains hashes for every outer queue receipt and the separately written HF
 full-vocabulary JSON, checks the complete condition journal against the
-reported violations, and never reclassifies queue timing eligibility. Its
+reported violations, and never reclassifies queue timing eligibility. A
+pre-launch source audit tightened its power/CPU-control checks to match the
+queue's readiness predicate; absent control fields cannot pass by default. Its
 four focused tests and host build passed: exact six-manifest hashes, a stale
 power observation accepted only as numerical-only, competitor/freshness
 negative cases, rejection of missing combined dispatch, and HF tie ordering.
