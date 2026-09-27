@@ -30,11 +30,13 @@ packages before emitting immutable six-job manifests into a new directory.
 Refuse an existing output directory. Submit via the existing serial queue
 with zero thermal-stability dwell; record conditions and retain failures.
 
-Require actual W4/W8 sidecar dispatch, not a native-weight fallback, over
-prefill and forced decode. The donor SG8 selector may decline a low-bit
-prefill shape and use the existing BF16 low-bit schedule; record the named
-research and per-role low-bit counts separately instead of calling that a
-native fallback. Preserve every target NLL, rank and sampled greedy ID;
+Require actual named W4/W8 sidecar dispatch during forced decode, not a
+native-weight fallback. The frozen CLI does not expose generic low-bit
+prefill dispatch separately, so this trial cannot verify which low-bit
+prefill kernel ran. The donor SG8 selector may decline a low-bit prefill
+shape and use the existing BF16 low-bit schedule; do not call a missing
+named prefill count a native fallback. Preserve every target NLL, rank and
+sampled greedy ID;
 `generated_token_ids` are supplied targets, **not** sampled agreement.
 Compare both signs of all per-position changes to the native donor SG8 route.
 The fail-closed `rvllm_gemma4_lowbit_teacher_summary` checks the exact six
