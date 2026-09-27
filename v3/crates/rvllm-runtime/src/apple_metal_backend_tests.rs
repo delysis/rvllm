@@ -2329,11 +2329,20 @@ fn tiny_one_layer_route_trace_reads_existing_buffers_and_refuses_overwrite() {
     );
     assert_eq!(trace["phase"], "decode");
     assert_eq!(trace["layer"], 0);
+    assert_eq!(trace["kv_cache_rows"], 1);
     assert_eq!(
         trace["summaries"]["attention_output"]["sha256_le_u16"]
             .as_str()
             .map(str::len),
         Some(64)
+    );
+    assert_eq!(
+        trace["summaries"]["attention_output"]["raw_u16_hex"]
+            .as_str()
+            .map(str::len),
+        trace["summaries"]["attention_output"]["shape"][1]
+            .as_u64()
+            .map(|width| width as usize * 4)
     );
     assert!(backend.launch_rollout(&handoff, None).is_err());
     assert!(trace_path.exists(), "original trace must remain intact");
