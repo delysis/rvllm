@@ -33,10 +33,16 @@ The original 12B-it config SHA-256 is
 its single model safetensor SHA-256 is
 `5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d`.
 
-Therefore the ~5.20× prompt and ~1.40× decode framework figures remain
-**descriptive, differently checkpointed orientation only**, despite exact
-prompt token IDs. They cannot establish relative performance on identical
-weights or diagnose the observed continuation mismatch. MLX-LM's pinned
+For dense BF16 kernels, these checkpoints have the same relevant projection
+shapes and storage type. Tensor *values* should not materially change the
+amount of matrix work, so the ~5.20× prompt and ~1.40× decode framework
+figures remain useful **planning-grade performance signals**. Different
+checkpoint weights do, however, invalidate numerical/output-equivalence
+claims and prevent attributing the continuation mismatch to an implementation
+bug. The ratio is still not a strict timing qualification: MLX's derived
+first-token prompt phase and rvLLM's collected prefill phase have different
+boundaries, their decode-rate denominators are not proven identical, and the
+first MLX host-condition sample failed the freshness check. MLX-LM's pinned
 `gemma4.Model.sanitize` maps the original checkpoint's
 `model.language_model.*` keys into MLX's expected
 `language_model.model.*` keys, so the next queued stage arm points MLX-LM

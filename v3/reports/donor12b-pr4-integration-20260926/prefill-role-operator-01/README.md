@@ -151,5 +151,34 @@ records the selected layout and file hash, and rejects directories with
 neither. Its focused Python suite passed 10/10 tests. The corrected source
 SHA-256 is `c9454ee6e66216debfe8f7c561e24c588c8f01064f278b5049b1141e2edb6070`.
 The corrected stage arm `g4-donor-mlx-it-bf16-stage-512-02` and dependent
-exact-token `-02` arm use new IDs and are pending in the same serial queue.
-Successful device loading and output equivalence remain unproved.
+exact-token `-02` arm use new IDs in the same serial queue. The stage arm
+successfully loaded the original 12B-it safetensor and measured all 22 cases
+with zero exit status. Its queue report marked sampled conditions ineligible
+only because one power-observer sample exceeded the freshness budget by about
+0.51 s; no competing process or thermal violation was recorded. It is an
+exploratory stage microbenchmark, not a qualified timing job. Successful
+same-checkpoint output equivalence remains unproved, and the dependent
+exact-token run is pending.
+
+| 12B-it MLX-LM isolated stage at M=512 | Mean wall ms per `mx.eval` |
+| --- | ---: |
+| Sliding QKV projections | 2.802 |
+| Sliding attention core | 0.776 |
+| Sliding O projection | 1.438 |
+| Gate/up projections plus activation | 9.222 |
+| FFN down projection | 4.695 |
+
+Five warmups preceded 100 synchronized iterations. These timings use the
+*same checkpoint bytes* as the Metal M=512 arm, but the timer boundaries are
+still different: the Metal table reports GPU command-buffer intervals and
+MLX reports wall time around `mx.eval`. Gate/up includes activation in MLX
+but not the Metal projection screen; MLX's `attention_k_eq_v` QKV path does
+not perform the same three-projection work as the Metal QKV probe. O and
+down projections are closer role/shape matches. Their measured Metal MMA32
+GPU intervals of 2.830 ms and 12.622 ms versus MLX wall intervals of 1.438
+ms and 4.695 ms point to a roughly 2–3× remaining isolated projection gap.
+That is a diagnostic direction, not a qualified cross-framework speedup or
+an allocation of normal-route prefill time. The stage JSON SHA-256 is
+`06ce6a9b7085673be2c2d24fac9b7aa92f6b0ea241e3ed71d250de64ea44516a`;
+the complete queue archive SHA-256 is
+`431c73ebd35d6857296e45d27a699bdcb647172cced63d2a8e5f9351ae13f432`.

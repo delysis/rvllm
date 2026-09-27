@@ -10,7 +10,10 @@ inspection established that the MLX package is a conversion of the **base**
 `google/gemma-4-12B` checkpoint while rvLLM used `google/gemma-4-12B-it`;
 see [CHECKPOINT_IDENTITY.md](CHECKPOINT_IDENTITY.md). Generated IDs agree at index 0 (`236770`) and differ at index 1
 (MLX `236771`, rvLLM `236770`), so this is a speed comparison at matched input
-shape, not numerical or output-trajectory equivalence.
+shape, not numerical or output-trajectory equivalence. Dense BF16 execution
+should depend mainly on shape and layout, not the checkpoint's weight values;
+the mismatch primarily limits correctness claims, not the usefulness of the
+performance signal.
 
 | Arm | 512-token prompt phase | 64-token generation | Queue conditions |
 | --- | ---: | ---: | --- |
@@ -20,7 +23,7 @@ shape, not numerical or output-trajectory equivalence.
 The orientation is about **5.14× faster MLX prompt phase** and **1.42× faster
 MLX generation** in this nearby, serial run. It is *not* a qualification ratio:
 the MLX condition sample failed the queue's freshness check (not a thermal or
-competing-process gate), the checkpoints and continuations differ, the
+competing-process gate), the continuations differ, the
 sample counts differ, and the timing boundaries differ. MLX's `prompt_tps`
 comes from its first generated token after processing the prefix (the reported
 milliseconds are derived as `512 / prompt_tps`); rvLLM's phase boundary is
