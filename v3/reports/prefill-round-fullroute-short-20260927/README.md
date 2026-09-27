@@ -106,8 +106,9 @@ second-case/cache effects are material and these jobs were not interleaved.
 The complete `combined-queue-receipt.tar.gz` archive has SHA-256
 `612b834f2dcefa6b3db993374181fd66b8722aed476e479166b2cb3ca3125ebc`.
 
-The separate `profile-off-a`, `profile-pipeline`, `profile-off-b` manifests
-predeclare a three-process control/candidate/control diagnostic series. Each
+The separate `profile-off-a`, `profile-pipeline`, `profile-off-b`,
+`profile-combined`, `profile-off-c` manifests predeclare two bracketed
+control/candidate/control diagnostic series, sharing the middle control. Each
 process retains **all three** built-in profile samples for both varied prompts.
 They have dependency order and distinct report paths. This is a variance
 screen, **not** the required within-job ABBA/BAAB qualification: its arms are
