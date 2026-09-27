@@ -1,4 +1,4 @@
-//! Seal human-authored Gemma 4 continuation targets before device trials.
+//! Seal source-provenanced Gemma 4 continuation targets before device trials.
 #![forbid(unsafe_code)]
 
 use rvllm_runtime::kernel_game::{parse_strict_json, Sha256Digest};
