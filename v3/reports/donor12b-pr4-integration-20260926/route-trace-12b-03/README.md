@@ -64,6 +64,23 @@ and normalization have matching digests; its attention output differs. A
 same-input reference needs the page table, valid logical length and the
 actual visible K/V entries, not just these physical-prefix hashes.
 
+There is an existing safe-Rust route for the **KV portion** of that next
+experiment. `KvPageIo::capture_page` on `ModelMetalBackend` returns exact native
+two-byte K/V payloads for all layers in a physical page, in layer/K/V order.
+It refuses access while a submitted Metal ticket still owns the arena; the
+direct session can call it after `collect`, before launching the next decode
+step. The direct one-sequence session in this trace constructs handoffs with
+empty block tables, for which `materialize_block_tables` assigns identity
+physical pages in logical order. A future capture must nevertheless record
+the *materialized* table and context length, select only live logical rows,
+and use the attention source layer's K/V for any shared-KV layer. The existing
+ANE prefill export also calls `capture_page`, but converts BF16 to F16, so its
+converted values are not an exact BF16 referee input. Neither safe page API
+captures the active Q tensor or an intermediate layer boundary; a complete
+same-input attention reference still needs a separately justified,
+route-preserving Q producer. This is a source-level implementation path, not
+new device evidence or an arithmetic attribution.
+
 Jobs: `g4-donor-route-trace-12b-bf16-on-03` and
 `g4-donor-route-trace-12b-bf16-off-03`. The trace executable SHA-256 is
 `eec866e924c5e3f053b2b6374e67f9156c0ac187a3697b68d4f6153ad4e8f12b`;
