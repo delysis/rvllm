@@ -74,12 +74,26 @@ Next: obtain independent tensor/logit/reference quality evidence and run a
 predeclared counterbalanced, same-workload full-route timing comparison. The
 isolated Q4K16 operator gains cannot be promoted from these route screens.
 
-Two additional correctness-only jobs are queued on the *same* varied input:
-`prefill26-fullroute-varied-pipeline32x64-20260927` tests the projection
-pipeline alone, and the dependent
+The projection-only correctness job
+`prefill26-fullroute-varied-pipeline32x64-20260927` also completed on the
+*same* varied input. It succeeded in the queue with eligible sampled conditions
+and no violations. Both 64-token generated trajectories again matched the
+control exactly. Each case actually dispatched 48 pipeline GEMMs, 48 pipeline
+QKV projections, 96 raw-norm projections and 96 normalization kernels;
+there were zero inference-case library or pipeline-state compiles. The
+dependent
 `prefill26-fullroute-varied-pipeline32x64-q4k16-20260927` tests the combined
 projection and attention selection. They are distinct selectable metallibs
-with pinned hashes. No result or speed claim is attached to those jobs yet.
+with pinned hashes; the combined job has no result yet.
+
+The projection-only job reported prefill 1859.332 ms at M101 and 1192.767 ms
+at M304. Relative to the earlier unpaired control observations, those are
+descriptively ~3.22x and ~10.26x faster. This is a **prospective full-route
+prefill gain**, not an accepted speedup: the processes were not interleaved,
+the M304 candidate's second case was faster than its first, and no repeat-drift
+or independent-confirmation gate has run. The raw queue archive
+`pipeline-queue-receipt.tar.gz` has SHA-256
+`44ce3edb10c802d19e288f377bb07ad2727a9210ff0b576c06a37431bdba09c5`.
 
 The separate `profile-off-a`, `profile-pipeline`, `profile-off-b` manifests
 predeclare a three-process control/candidate/control diagnostic series. Each
