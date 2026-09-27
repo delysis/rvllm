@@ -37,6 +37,12 @@ research and per-role low-bit counts separately instead of calling that a
 native fallback. Preserve every target NLL, rank and sampled greedy ID;
 `generated_token_ids` are supplied targets, **not** sampled agreement.
 Compare both signs of all per-position changes to the native donor SG8 route.
+The fail-closed `rvllm_gemma4_lowbit_teacher_summary` checks the exact six
+frozen manifests against the queue copies, clean terminal receipts, named
+SG8 low-bit decode dispatch, exact source-tokenized prompts and targets, and
+all finite step scores. The frozen inference executable does not expose the
+generic low-bit prefill dispatch count separately; this experiment must not
+claim that count or prefill kernel selection from its named decode ledger.
 Do not use teacher-readback timing. A one-layer quantization perturbation,
 even if numerically benign, does **not** qualify a whole-W4/W8 checkpoint,
 establish an independent numerical oracle or authorize promotion. The two
