@@ -175,7 +175,10 @@ fn is_gemma4_12b_prompt_projection(m: u32, n: u32, k: u32) -> bool {
 /// Explicit prefill tournament policy. Check both output ABIs before enabling
 /// the materialized route; missing libraries/PSOs never count as participation.
 /// No allocation, environment access or new Metal FFI enters this predicate.
-fn supports_prefill_round_projection_layer(pipelines: &PipelineCache, dims: &MetalLayerDims) -> bool {
+fn supports_prefill_round_projection_layer(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+) -> bool {
     let candidate = pipelines.kernel_options().research;
     let Some(kernels) = crate::prefill_round::projection_kernels(candidate) else {
         return false;
@@ -185,12 +188,23 @@ fn supports_prefill_round_projection_layer(pipelines: &PipelineCache, dims: &Met
         prefill_round_model(dims),
         pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
             && !pipelines.kernel_options().quantized_bf16_accumulation,
-        matches!(pipelines.gpu_family(), AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10),
-    ) && kernels.into_iter().chain(crate::prefill_round::postnorm_kernels(candidate)
-        .into_iter().flatten()).all(|kernel| {
-        let (threads, shared) = kernel.limits();
-        pipelines.research_pso(kernel.name(), threads, shared).is_some()
-    })
+        matches!(
+            pipelines.gpu_family(),
+            AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10
+        ),
+    ) && kernels
+        .into_iter()
+        .chain(
+            crate::prefill_round::postnorm_kernels(candidate)
+                .into_iter()
+                .flatten(),
+        )
+        .all(|kernel| {
+            let (threads, shared) = kernel.limits();
+            pipelines
+                .research_pso(kernel.name(), threads, shared)
+                .is_some()
+        })
 }
 
 fn prefill_round_model(dims: &MetalLayerDims) -> crate::research::Gemma12bResearchShape {
@@ -288,8 +302,7 @@ pub fn supports_gemma4_prefill_mma(
 ) -> bool {
     matches!(phase, MetalPhase::Prefill { .. })
         && (supports_prefill_round_projection_layer(pipelines, dims)
-            || (prefill_mma_enabled(pipelines)
-                && supports_qkv_prefill_projection(pipelines, dims)))
+            || (prefill_mma_enabled(pipelines) && supports_qkv_prefill_projection(pipelines, dims)))
 }
 
 #[cfg(test)]
@@ -2021,30 +2034,42 @@ pub unsafe fn metal_encode_forward_layer(
                     model: prefill_round_model(dims),
                     native_bf16: pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
                         && !pipelines.kernel_options().quantized_bf16_accumulation,
-                    apple9_or_10: matches!(pipelines.gpu_family(),
-                        AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10),
+                    apple9_or_10: matches!(
+                        pipelines.gpu_family(),
+                        AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10
+                    ),
                     prefill_single_sequence: batch_size == 1,
                     trace: trace.is_some(),
                     block_size: dims.block_size,
                     max_blocks: dims.max_blocks_per_seq,
                     num_blocks: dims.num_blocks_total,
                     scale: dims.attn_scale,
-                    offsets: [scratch.q_offset, attention_kv_cache_k_offset,
-                        attention_kv_cache_v_offset, scratch.attn_out,
-                        meta.block_tables_offset, meta.context_lens_offset, cu,
-                        meta.positions_offset],
+                    offsets: [
+                        scratch.q_offset,
+                        attention_kv_cache_k_offset,
+                        attention_kv_cache_v_offset,
+                        scratch.attn_out,
+                        meta.block_tables_offset,
+                        meta.context_lens_offset,
+                        cu,
+                        meta.positions_offset,
+                    ],
                     arena_bytes: buf.length(),
-                }.plan().ok()
+                }
+                .plan()
+                .ok()
             });
             let temporal = research_kind == crate::MetalResearchCandidate::AttentionQ4;
             let research_name = if let Some(plan) = round_plan {
                 plan.kernel.name()
-            } else { match (temporal, dims.head_dim) {
-                (true, 256) => "research_attn_q4_d256",
-                (true, _) => "research_attn_q4_d512",
-                (false, 256) => "research_gqa_kv8_d256",
-                (false, _) => "research_gqa_kv8_d512",
-            }};
+            } else {
+                match (temporal, dims.head_dim) {
+                    (true, 256) => "research_attn_q4_d256",
+                    (true, _) => "research_attn_q4_d512",
+                    (false, 256) => "research_gqa_kv8_d256",
+                    (false, _) => "research_gqa_kv8_d512",
+                }
+            };
             let research_threads = if round_plan.is_some() || temporal || dims.num_kv_heads != 8 {
                 128
             } else {
@@ -2065,7 +2090,8 @@ pub unsafe fn metal_encode_forward_layer(
                     || crate::research_next::temporal_context_capacity_fits(
                         dims.block_size,
                         dims.max_blocks_per_seq,
-                    )) {
+                    ))
+            {
                 meta.cu_seqlens_offset.and_then(|cu| {
                     let shape = crate::research::GqaBufferShape {
                         tokens: num_tokens,
@@ -2187,7 +2213,11 @@ pub unsafe fn metal_encode_forward_layer(
             }
             let groups = if use_research && round_plan.is_some() {
                 let plan = round_plan.expect("selected prefill attention plan");
-                MTLSize { width: plan.grid[0], height: plan.grid[1], depth: plan.grid[2] }
+                MTLSize {
+                    width: plan.grid[0],
+                    height: plan.grid[1],
+                    depth: plan.grid[2],
+                }
             } else if use_research && temporal {
                 MTLSize {
                     width: (total_q as usize).div_ceil(4),
@@ -2228,12 +2258,14 @@ pub unsafe fn metal_encode_forward_layer(
                 use crate::research_evidence::ResearchKernel;
                 pipelines.record_research_dispatch(if let Some(plan) = round_plan {
                     plan.kernel
-                } else { match (temporal, dims.head_dim) {
-                    (true, 256) => ResearchKernel::Temporal256,
-                    (true, _) => ResearchKernel::Temporal512,
-                    (false, 256) => ResearchKernel::Gqa256,
-                    (false, _) => ResearchKernel::Gqa512,
-                }});
+                } else {
+                    match (temporal, dims.head_dim) {
+                        (true, 256) => ResearchKernel::Temporal256,
+                        (true, _) => ResearchKernel::Temporal512,
+                        (false, 256) => ResearchKernel::Gqa256,
+                        (false, _) => ResearchKernel::Gqa512,
+                    }
+                });
             }
         }
     }
@@ -3604,32 +3636,33 @@ unsafe fn encode_rmsnorm_with_policy(
             },
         )
     })?;
-    let decision = if crate::prefill_round::postnorm_kernels(pipelines.kernel_options().research).is_some()
+    let decision = if crate::prefill_round::postnorm_kernels(pipelines.kernel_options().research)
+        .is_some()
         && full_prefill_projection
     {
         crate::prefill_round::postnorm_plan(
-        pipelines.kernel_options().research,
-        full_prefill_projection,
-        pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
-            && !pipelines.kernel_options().quantized_bf16_accumulation,
-        [input_offset, output_offset, gamma_offset],
-        num_tokens,
-        hidden,
-        eps,
-        buf.length(),
-    )
+            pipelines.kernel_options().research,
+            full_prefill_projection,
+            pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+                && !pipelines.kernel_options().quantized_bf16_accumulation,
+            [input_offset, output_offset, gamma_offset],
+            num_tokens,
+            hidden,
+            eps,
+            buf.length(),
+        )
     } else {
         crate::research_projection::postnorm_plan(
-        pipelines.kernel_options().research,
-        full_prefill_projection,
-        pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
-            && !pipelines.kernel_options().quantized_bf16_accumulation,
-        [input_offset, output_offset, gamma_offset],
-        num_tokens,
-        hidden,
-        eps,
-        buf.length(),
-    )
+            pipelines.kernel_options().research,
+            full_prefill_projection,
+            pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+                && !pipelines.kernel_options().quantized_bf16_accumulation,
+            [input_offset, output_offset, gamma_offset],
+            num_tokens,
+            hidden,
+            eps,
+            buf.length(),
+        )
     };
     let research = decision.ok().and_then(|plan| {
         let (threads, shared) = plan.kernel.limits();
@@ -3816,28 +3849,59 @@ unsafe fn encode_gemm_rmsnorm(
             let projection = crate::prefill_round::projection_plan(
                 crate::research_projection::ProjectionRequest {
                     candidate: pipelines.kernel_options().research,
-                    full_prefill: true, native_bf16: native, alpha: 1.0, beta: 0.0,
-                    shape: [m,n,k], output_f32: true,
-                    offsets: [a_offset,b_offset,raw], arena_bytes: buf.length(),
-                });
+                    full_prefill: true,
+                    native_bf16: native,
+                    alpha: 1.0,
+                    beta: 0.0,
+                    shape: [m, n, k],
+                    output_f32: true,
+                    offsets: [a_offset, b_offset, raw],
+                    arena_bytes: buf.length(),
+                },
+            );
             let norm = crate::prefill_round::postnorm_plan(
-                pipelines.kernel_options().research, true, native,
-                [raw,c_offset,gamma_offset],m,n,eps,buf.length());
-            if let (Ok(projection),Ok(norm)) = (projection,norm) {
-                let available = [projection.kernel,norm.kernel].into_iter().all(|kernel| {
-                    let (threads,shared)=kernel.limits();
-                    pipelines.research_pso(kernel.name(),threads,shared).is_some()
+                pipelines.kernel_options().research,
+                true,
+                native,
+                [raw, c_offset, gamma_offset],
+                m,
+                n,
+                eps,
+                buf.length(),
+            );
+            if let (Ok(projection), Ok(norm)) = (projection, norm) {
+                let available = [projection.kernel, norm.kernel].into_iter().all(|kernel| {
+                    let (threads, shared) = kernel.limits();
+                    pipelines
+                        .research_pso(kernel.name(), threads, shared)
+                        .is_some()
                 });
                 let output_disjoint = crate::research::projection_buffers_fit(
-                    [a_offset, b_offset, c_offset], [m, n, k], 2, buf.length(),
+                    [a_offset, b_offset, c_offset],
+                    [m, n, k],
+                    2,
+                    buf.length(),
                 );
                 if available && output_disjoint {
                     // QKV projection scratch is dead here, after its norm/RoPE/cache
                     // consumers. Keep FP32 until the unchanged normalization boundary.
-                    encode_gemm_with_output(cmd_buf,pipelines,buf,a_offset,b_offset,raw,
-                        m,n,k,1.0,0.0,true,true)?;
-                    return encode_rmsnorm_with_policy(cmd_buf,pipelines,buf,raw,c_offset,
-                        gamma_offset,n,eps,m,op,true);
+                    encode_gemm_with_output(
+                        cmd_buf, pipelines, buf, a_offset, b_offset, raw, m, n, k, 1.0, 0.0, true,
+                        true,
+                    )?;
+                    return encode_rmsnorm_with_policy(
+                        cmd_buf,
+                        pipelines,
+                        buf,
+                        raw,
+                        c_offset,
+                        gamma_offset,
+                        n,
+                        eps,
+                        m,
+                        op,
+                        true,
+                    );
                 }
             }
         }
