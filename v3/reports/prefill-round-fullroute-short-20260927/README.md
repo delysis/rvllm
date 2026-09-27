@@ -632,13 +632,29 @@ invalidate every timing field in these jobs as a speed measure. No promotion
 follows from this diagnostic; next use an independent same-checkpoint
 reference on the long prompt and broader held-out continuation quality.
 
-The next independent check is queued as immutable correctness job
-`prefill26-hf-m304-one-step-20260927`. It runs the existing, unchanged
-Transformers CPU reference script on the original 12B-it checkpoint, requesting
-one step of full-vocabulary logits and the top 16. Its 304 explicit prompt IDs
-were checked element-for-element against the sealed MLX source fixture before
-submission; the script, Python executable, checkpoint and fixture are pinned
-in `hf-m304-one-step-job.json`. This job is separate from Metal timing and
-will not establish multi-step or checkpoint-wide quality by itself. No CPU
-result is claimed until its terminal queue receipt and generated artifact
-have been inspected.
+The first independent CPU attempt, immutable job
+`prefill26-hf-m304-one-step-20260927`, failed before model loading or
+inference. Its pinned Python environment has Transformers 5.8.1, which did not
+recognize the checkpoint's `gemma4_unified` model type. The terminal queue
+report records exit 1, unchanged input pins and no queue violation; the job
+was quarantined, not replayed. The complete failed result directory,
+including its manifest, conditions and stderr, is preserved in
+`hf-m304-one-step-failed-queue-result.tar.gz` (SHA-256
+`a332466773428eda3e53359f28bdb5b9761886e9bca0c667f38f1ac50501a80f`).
+This is a reference-environment failure, not a Metal result or CPU numerical
+comparison.
+
+A separate installed Python environment reports Transformers 5.14.1 and
+recognizes this checkpoint as `Gemma4UnifiedConfig`; its
+`AutoModelForCausalLM` mapping resolves to
+`Gemma4UnifiedForConditionalGeneration` without loading weights. New immutable
+job `prefill26-hf-m304-one-step-compatible-20260927` uses the **unchanged**
+reference script and exact same 304 prompt IDs, checkpoint, one-step full
+logits and top-16 request. Its manifest
+`hf-m304-one-step-compatible-job.json` (SHA-256
+`7af03b53d77cd57ee47824c1e60b1990f1fe289d98dc79731b60bc9e2b57cd55`)
+pins that Python executable and the installed Gemma4 implementation files in
+addition to the original model and fixture. It was submitted to the serial
+queue; no CPU result is claimed until its terminal receipt and output pass
+inspection. A successful single step would still not establish multi-step or
+checkpoint-wide numerical quality.
