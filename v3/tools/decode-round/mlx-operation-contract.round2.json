@@ -1,0 +1,93 @@
+{
+  "schema": "rvllm.decode-round.mlx-operation-contract.v1",
+  "status": "plan-only-no-measurements",
+  "hot_path_instrumentation": false,
+  "required_identity": [
+    "installed MLX version/commit",
+    "macOS/SDK/device/GPU family",
+    "rvLLM test executable and generated-source/AIR/metallib SHA256",
+    "input and output tensor bytes/dtype/shape/layout/SHA256",
+    "same complete operation and precision boundaries",
+    "per-arm dispatch/allocation and synchronization evidence",
+    "all samples and order/condition observations"
+  ],
+  "operations": {
+    "ffn": {
+      "input": [
+        1,
+        3840
+      ],
+      "gate_up_weights": [
+        30720,
+        3840
+      ],
+      "output": [
+        1,
+        15360
+      ],
+      "storage": "native BF16",
+      "operation": "Gate||Up matmul with explicit BF16 boundary, incumbent clamped tanh GELU(gate)*up, final BF16",
+      "include": "both projections plus activation and output materialization; never activation-only"
+    },
+    "global_attention": {
+      "q": [
+        1,
+        16,
+        1,
+        512
+      ],
+      "kv": [
+        1,
+        1,
+        "L",
+        512
+      ],
+      "lengths": [
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "scale": 1.0,
+      "storage": "BF16 Q/K/V, FP32 softmax, BF16 final output",
+      "mask": "only position-visible non-hole keys; define all-hole zero result explicitly",
+      "gqa": "no KV tiling",
+      "math_only": "contiguous gather outside timer must be disclosed; not the same paged operation",
+      "full_paged_operation": "include gather/layout/mask materialization and synchronization costs; retain owner cache-write cost separately if common to both"
+    },
+    "group32_qmv": {
+      "n": 3840,
+      "m": 1,
+      "w4_k": [
+        15360
+      ],
+      "w8_k": [
+        4096,
+        8192
+      ],
+      "rvllm_storage": "signed nibble/byte weights; group-32 FP16 scales; BF16 activation/output",
+      "mlx_storage_warning": "MLX affine quantized_matmul packed uint32 weights plus scales/biases is not automatically equivalent",
+      "required_adapter_gate": "lossless reconstruction over every weight and scale, layout/group/tail proof, unchanged checkpoint identity, equivalent precision/rounding; otherwise reject same-storage label"
+    }
+  },
+  "evaluation": "build fresh complete operations, force output evaluation and synchronize; repeated eval of cached arrays is not a sample",
+  "sampling": {
+    "warmups_per_arm": 5,
+    "blocks": 10,
+    "order": "alternating ABBA and BAAB",
+    "samples_retained": 40,
+    "complete_operations_per_sample": 100,
+    "control_drift_limit": 0.05,
+    "promising_rule": "drift <= 0.05 AND ABBA median > 1 AND BAAB median > 1 AND whole-block bootstrap lower 95% endpoint > 1",
+    "automatic_retry": false,
+    "sample_pruning": false,
+    "automatic_submission": false
+  },
+  "device_receipts": [],
+  "source_documentation": [
+    "https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.fast.scaled_dot_product_attention.html",
+    "https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.quantized_matmul.html",
+    "https://ml-explore.github.io/mlx/build/html/usage/lazy_evaluation.html"
+  ],
+  "promotion": false
+}

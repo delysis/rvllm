@@ -1,0 +1,189 @@
+{
+  "schema": "rvllm.decode-round.unbound-plan.v2",
+  "source_base_commit": "593e1d6fb25088608198f2248dcac038d19fe761",
+  "status": "source-implemented-device-unqualified",
+  "submittable": false,
+  "screen_protocol": "rvllm.decode-round.screen.v3",
+  "new_candidates": [
+    {
+      "candidate": "metal-ffn-bf16-r2-sg2",
+      "operator_k": [
+        3840
+      ],
+      "capacity_tokens": 0,
+      "ledger_slots": [
+        60
+      ],
+      "threads": 64,
+      "source_threadgroup_bytes": 0,
+      "rows_per_threadgroup": 4,
+      "persistent_scratch_bytes": 0,
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-ffn-bf16-r4-sg4",
+      "operator_k": [
+        3840
+      ],
+      "capacity_tokens": 0,
+      "ledger_slots": [
+        61
+      ],
+      "threads": 128,
+      "source_threadgroup_bytes": 0,
+      "rows_per_threadgroup": 16,
+      "persistent_scratch_bytes": 0,
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-qmv-w4-g32-r4-sg4",
+      "operator_k": [
+        15360
+      ],
+      "capacity_tokens": 0,
+      "ledger_slots": [
+        62
+      ],
+      "threads": 128,
+      "source_threadgroup_bytes": 0,
+      "rows_per_threadgroup": 16,
+      "persistent_scratch_bytes": 0,
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-qmv-w8-g32-r4-sg4-k8192",
+      "operator_k": [
+        8192
+      ],
+      "capacity_tokens": 0,
+      "ledger_slots": [
+        63
+      ],
+      "threads": 128,
+      "source_threadgroup_bytes": 0,
+      "rows_per_threadgroup": 16,
+      "persistent_scratch_bytes": 0,
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-qmv-w8-g32-r2-sg4-k4096",
+      "operator_k": [
+        4096
+      ],
+      "capacity_tokens": 0,
+      "ledger_slots": [
+        64
+      ],
+      "threads": 128,
+      "source_threadgroup_bytes": 0,
+      "rows_per_threadgroup": 8,
+      "persistent_scratch_bytes": 0,
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-global-d512-stream-r4t128-c2048",
+      "operator_k": [],
+      "capacity_tokens": 2048,
+      "ledger_slots": [
+        65
+      ],
+      "threads": 128,
+      "source_threadgroup_bytes": 2048,
+      "rows_per_threadgroup": 4,
+      "persistent_scratch_bytes": 0,
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-global-d512-stream-r1t32-c2048",
+      "operator_k": [],
+      "capacity_tokens": 2048,
+      "ledger_slots": [
+        66
+      ],
+      "threads": 32,
+      "source_threadgroup_bytes": 0,
+      "rows_per_threadgroup": 1,
+      "persistent_scratch_bytes": 0,
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-global-d512-split-stream-r4s256t128-c2048",
+      "operator_k": [],
+      "capacity_tokens": 2048,
+      "ledger_slots": [
+        67,
+        68
+      ],
+      "threads": 128,
+      "source_threadgroup_bytes": 2048,
+      "rows_per_threadgroup": 4,
+      "persistent_scratch_bytes": 263168,
+      "status": "unqualified"
+    }
+  ],
+  "historical_controls": [
+    {
+      "candidate": "metal-ffn-bf16-r4-sg2",
+      "operator_k": [
+        3840
+      ],
+      "capacity_tokens": 0,
+      "interpretation": "measured incumbent-comparison reference; rerun separately"
+    },
+    {
+      "candidate": "metal-global-d512-short-r4t128",
+      "operator_k": [],
+      "capacity_tokens": 512,
+      "interpretation": "measured bounded reference; cannot advance beyond L512"
+    },
+    {
+      "candidate": "metal-qmv-w4-g32-r8-sg2",
+      "operator_k": [
+        15360
+      ],
+      "capacity_tokens": 0,
+      "interpretation": "drift-failed historical schedule; not a qualified winner"
+    },
+    {
+      "candidate": "metal-qmv-w8-g32-r8-sg2",
+      "operator_k": [
+        4096,
+        8192
+      ],
+      "capacity_tokens": 0,
+      "interpretation": "K8192 drift follow-up; K4096 regression/control only"
+    }
+  ],
+  "qualification": [
+    "strict source/AIR/metallib and resource identities",
+    "complete correctness/refusal/repeat gates",
+    "L0 operator cells or L256 attention screen",
+    "explicit L512 then L1024 then L2048 only after every preceding screen passes",
+    "distinct campaign confirmation with frozen binaries",
+    "real checkpoint, layer and full-route qualification"
+  ],
+  "sampling": {
+    "warmups_per_arm": 5,
+    "blocks": 10,
+    "order": "alternating ABBA and BAAB",
+    "samples_retained": 40,
+    "complete_operations_per_sample": 100,
+    "control_drift_limit": 0.05,
+    "promising_rule": "drift <= 0.05 AND ABBA median > 1 AND BAAB median > 1 AND whole-block bootstrap lower 95% endpoint > 1",
+    "automatic_retry": false,
+    "sample_pruning": false,
+    "automatic_submission": false
+  },
+  "split_metric": "one command buffer containing 100 interleaved partial-then-merge complete operations; no partial-only ranking",
+  "conditions_file": "conditions.round2-observed-ac.json",
+  "stable_seconds": 0,
+  "promotion": false,
+  "claims_excluded": [
+    "MLX measurement",
+    "real checkpoint qualification",
+    "full-model speedup",
+    "register residency",
+    "ISA or occupancy inference from source",
+    "default promotion"
+  ]
+}

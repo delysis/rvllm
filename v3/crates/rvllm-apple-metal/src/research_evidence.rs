@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
 pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v4";
-pub const RESEARCH_KERNEL_COUNT: usize = 62;
+pub const RESEARCH_KERNEL_COUNT: usize = 71;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -71,6 +71,15 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_global_d512_short_r4t128",
     "research_qmv_w4_g32_r4_sg8_k8",
     "research_qmv_w8_g32_r4_sg8_k8",
+    "research_ffn_bf16_r2_sg2",
+    "research_ffn_bf16_r4_sg4",
+    "research_qmv_w4_g32_r4_sg4",
+    "research_qmv_w8_g32_r4_sg4_k8192",
+    "research_qmv_w8_g32_r2_sg4_k4096",
+    "research_global_d512_stream_r4t128_c2048",
+    "research_global_d512_stream_r1t32_c2048",
+    "research_global_d512_split_stream_r4s256t128_c2048_partial",
+    "research_global_d512_split_stream_r4s256t128_c2048_merge",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -138,6 +147,15 @@ pub enum ResearchKernel {
     GlobalD512ShortR4T128 = 59,
     QmvW4G32R4Sg8K8 = 60,
     QmvW8G32R4Sg8K8 = 61,
+    FfnBf16R2Sg2 = 62,
+    FfnBf16R4Sg4 = 63,
+    QmvW4G32R4Sg4 = 64,
+    QmvW8G32R4Sg4K8192 = 65,
+    QmvW8G32R2Sg4K4096 = 66,
+    GlobalD512StreamR4T128C2048 = 67,
+    GlobalD512StreamR1T32C2048 = 68,
+    GlobalD512SplitStreamR4S256T128C2048Partial = 69,
+    GlobalD512SplitStreamR4S256T128C2048Merge = 70,
 }
 
 impl ResearchKernel {
@@ -155,6 +173,15 @@ impl ResearchKernel {
     /// Source budgets, checked in addition to queried PSO/device limits.
     pub const fn limits(self) -> (usize, usize) {
         match self {
+            Self::FfnBf16R2Sg2 => (64, 0),
+            Self::FfnBf16R4Sg4 => (128, 0),
+            Self::QmvW4G32R4Sg4 => (128, 0),
+            Self::QmvW8G32R4Sg4K8192 => (128, 0),
+            Self::QmvW8G32R2Sg4K4096 => (128, 0),
+            Self::GlobalD512StreamR4T128C2048 => (128, 2048),
+            Self::GlobalD512StreamR1T32C2048 => (32, 0),
+            Self::GlobalD512SplitStreamR4S256T128C2048Partial => (128, 2048),
+            Self::GlobalD512SplitStreamR4S256T128C2048Merge => (32, 0),
             Self::FfnBf16R4Sg2 => (64, 0),
             Self::QmvW4G32R8Sg2 => (64, 0),
             Self::QmvW8G32R8Sg2 => (64, 0),
@@ -217,6 +244,21 @@ impl ResearchKernel {
     pub const fn owner(self) -> crate::research::MetalResearchCandidate {
         use crate::research::MetalResearchCandidate;
         match self {
+            Self::FfnBf16R2Sg2 => MetalResearchCandidate::FfnBf16R2Sg2,
+            Self::FfnBf16R4Sg4 => MetalResearchCandidate::FfnBf16R4Sg4,
+            Self::QmvW4G32R4Sg4 => MetalResearchCandidate::QmvW4G32R4Sg4,
+            Self::QmvW8G32R4Sg4K8192 => MetalResearchCandidate::QmvW8G32R4Sg4K8192,
+            Self::QmvW8G32R2Sg4K4096 => MetalResearchCandidate::QmvW8G32R2Sg4K4096,
+            Self::GlobalD512StreamR4T128C2048 => {
+                MetalResearchCandidate::GlobalD512StreamR4T128C2048
+            }
+            Self::GlobalD512StreamR1T32C2048 => MetalResearchCandidate::GlobalD512StreamR1T32C2048,
+            Self::GlobalD512SplitStreamR4S256T128C2048Partial => {
+                MetalResearchCandidate::GlobalD512SplitStreamR4S256T128C2048
+            }
+            Self::GlobalD512SplitStreamR4S256T128C2048Merge => {
+                MetalResearchCandidate::GlobalD512SplitStreamR4S256T128C2048
+            }
             Self::FfnBf16R4Sg2 => MetalResearchCandidate::FfnBf16R4Sg2,
             Self::QmvW4G32R8Sg2 => MetalResearchCandidate::QmvW4G32R8Sg2,
             Self::QmvW8G32R8Sg2 => MetalResearchCandidate::QmvW8G32R8Sg2,

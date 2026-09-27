@@ -73,8 +73,26 @@ impl Fixture {
     /// Bound logical visibility without changing physical allocation/page ownership.
     pub fn for_tile(length: u32, block_size: u32, tile: super::DecodeTile) -> Self {
         let mut f = Self::new(length, block_size);
-        if tile.short_unsplit() {
-            assert!(length <= 512);
+        if tile.capacity_tokens != 0 {
+            let blocks = length.div_ceil(block_size);
+            if blocks
+                .checked_mul(block_size)
+                .is_some_and(|n| n <= tile.capacity_tokens)
+            {
+                f.shape.max_blocks = blocks;
+                f.table.truncate(blocks as usize);
+            }
+        }
+        f
+    }
+
+    /// Remove only unused logical entries when testing the tighter streaming
+    /// split contract. Physical pages, their permutation and poisoned padding
+    /// are unchanged. Legacy split fixtures retain their original capacity.
+    pub fn for_split(length: u32, block_size: u32, tile: super::SplitDecodeTile) -> Self {
+        let mut f = Self::new(length, block_size);
+        if tile.streaming() {
+            assert!(length.div_ceil(block_size) * block_size <= tile.capacity_tokens());
             f.shape.max_blocks = length.div_ceil(block_size);
             f.table.truncate(f.shape.max_blocks as usize);
         }

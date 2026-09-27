@@ -1,0 +1,195 @@
+{
+  "after": [
+    "g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core",
+    "g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle"
+  ],
+  "command": {
+    "args": [
+      "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/ed2561406306a45a1c44b0fa14bc6f047a404b13fc4dfd68f44f3954585e1363-test",
+      "ed2561406306a45a1c44b0fa14bc6f047a404b13fc4dfd68f44f3954585e1363",
+      "--ignored",
+      "--exact",
+      "attention_global_decode_device_tests::global_decode_split_stream_abba",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01",
+    "env": {
+      "RVLLM_METAL_GLOBAL_DECODE_BUILD_RECEIPT": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/build.json",
+      "RVLLM_METAL_GLOBAL_DECODE_CANDIDATE": "metal-global-d512-split-stream-r4s256t128-c2048",
+      "RVLLM_METAL_GLOBAL_DECODE_LENGTH": "256",
+      "RVLLM_METAL_GLOBAL_DECODE_METALLIB": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/kernel.metallib",
+      "RVLLM_METAL_GLOBAL_DECODE_ORACLE_RECEIPT": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/split-oracle.json",
+      "RVLLM_METAL_GLOBAL_DECODE_REPORT_DIR": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-abba-L256/native",
+      "RVLLM_METAL_GLOBAL_DECODE_SOURCE": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/metal-global-d512-split-stream-r4s256t128-c2048-core.metal"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/f7db5b3c0da651b1d8f9f6881e7eaffa011387c0d2c7a5c9deade3716c9fe4db-retainer",
+      "sha256": "f7db5b3c0da651b1d8f9f6881e7eaffa011387c0d2c7a5c9deade3716c9fe4db"
+    }
+  },
+  "conditions": {
+    "disk_path": "/",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 0,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "rvllm_metal_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-abba-L256",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/metal-global-d512-split-stream-r4s256t128-c2048-core.metal",
+      "sha256": "f5d6e5a18437b545d2b8b53311a25f8dc297e890bd73adf422181404b21699b9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/kernel.metallib",
+      "sha256": "87c812527faf941d5ed77c89aed335d0c87240f3cceac8a782829155fdc4c7ea"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/build.json",
+      "sha256": "4e8df8b33061846f83b286ff2f1a37f30a993e48b99eeeec245223dd7931ca0d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/campaign.json",
+      "sha256": "a3072ceb2f8edf2bdcec1ecfb3b73c21a65086396a4569f039d5620cccfa4724"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/round2-plan.json",
+      "sha256": "4546bd96944eb2ea625ddc5f0ea58a1bbe2bd0527c9006443e8b6479cc842ee7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/ed2561406306a45a1c44b0fa14bc6f047a404b13fc4dfd68f44f3954585e1363-test",
+      "sha256": "ed2561406306a45a1c44b0fa14bc6f047a404b13fc4dfd68f44f3954585e1363"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/split-oracle.json",
+      "sha256": "204269ab588876e6622f94108dcc9d0fcdde28e1594341fff0a8abae3f556d36"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L1.split.bf16",
+      "sha256": "4db40270a87bb0eb17ed28bb24340055eef721c88d210715d7d622c62a094938"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L255.split.bf16",
+      "sha256": "4c0aa3e678024d40a75859bbb619e73fee04d0b5d01af4e8aa6a5b22b7785712"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L256.split.bf16",
+      "sha256": "ed156db7190d11e2ea6401626ade55ca8656e727e15781e88f7a84e8c2509ddc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L257.split.bf16",
+      "sha256": "81d42e518623c4dbaa717a8d73dda7ec74bd635b2e65ddf3696e520812894cc5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L511.split.bf16",
+      "sha256": "51d774285ef40677dc02c5ebdecc13a975092fd10d667842a189b225dad266e4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L512.split.bf16",
+      "sha256": "3479ac1d3ead90706d7b5c42f7b3c1bb658ef6988bd9e24e912813374aef0dc8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L513.split.bf16",
+      "sha256": "5d66b4fb9d4c0a114b25bd8bf155b628de2cc7e9402bbfbe57c0f3ee45fd33d1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L1023.split.bf16",
+      "sha256": "888c9b89ef47699d38d1f60d597253f665e8964ab4b682b57b99c9bd3bbcaf2f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L1024.split.bf16",
+      "sha256": "bc4968d916998e4e4df5f1673e1de189813a2885d68b6a3b65daa02d0ad021d7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L1025.split.bf16",
+      "sha256": "e857ff9d4667ba1a829ada8d1998bb41a7337f2b54663d7eb5b5863be0514304"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L2047.split.bf16",
+      "sha256": "e1f2c08ca647b4db6a280891662b9f706b02a786c63a5e444f451320ec6330c0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/L2048.split.bf16",
+      "sha256": "dfc8a45fbb1e6ab9381301b19136f0b83b0057f12cdf418f90257c1604f82a87"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/first-hole.split.bf16",
+      "sha256": "3e5fe8fe869cae128b78ba5261e442251b917c086d418830238ff9e9afd1362d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/middle-hole.split.bf16",
+      "sha256": "5563dca7c82695fff805b93503eb09ad534d76ce2d98b582df9903c25f948fff"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/last-hole.split.bf16",
+      "sha256": "d91df200aac2cdbd99682f0c4f2ed62b899f4004a30087347c0d5817edfd6661"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/tail7.split.bf16",
+      "sha256": "a7071bc7be84d2ad911437c10a38e06fe22d20fe0ec8998ae1d12d47d1f7cef4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/tail8.split.bf16",
+      "sha256": "687e6ba2330e6fb64eeafeca284b15b2db18bddd219a8a8979888a958cd38b61"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/tail9.split.bf16",
+      "sha256": "65880fecf0498cd505f7c90cf796c921995fbef473fea097223b698f2a581c43"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/tail31.split.bf16",
+      "sha256": "cd9fb63ff8bb3a27e3f70ea1752227a37851a26b6465d1c98f80071c4d12f06e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/tail32.split.bf16",
+      "sha256": "2ba8e64e94d1defa8b0461e2ac792ec9733eee10e4a218f8781ce628b49975c5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/tail33.split.bf16",
+      "sha256": "e4efe370c0ac4b76c4ae3720f41672fe735c178606d88db05b4046665427360f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/tail257.split.bf16",
+      "sha256": "81d42e518623c4dbaa717a8d73dda7ec74bd635b2e65ddf3696e520812894cc5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/all-holes.split.bf16",
+      "sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/restored-prefix-speculative-suffix.split.bf16",
+      "sha256": "cd9fb63ff8bb3a27e3f70ea1752227a37851a26b6465d1c98f80071c4d12f06e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/rollback-same-visible-prefix.split.bf16",
+      "sha256": "cd9fb63ff8bb3a27e3f70ea1752227a37851a26b6465d1c98f80071c4d12f06e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/future-page-metadata-poison.split.bf16",
+      "sha256": "2ba8e64e94d1defa8b0461e2ac792ec9733eee10e4a218f8781ce628b49975c5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/newest-owner-page-noncontiguous.split.bf16",
+      "sha256": "393ec5ee224135524ab7fe29456f41ac86c8a2b59edaf44c89ed0c79efe63fce"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native/equal-logits.split.bf16",
+      "sha256": "b2f4a982350f427634e6cf8f375db4d8fdef47ccef3bb53707fedc3bbcebc8d9"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "exploratory_timing",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

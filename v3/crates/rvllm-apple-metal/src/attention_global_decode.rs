@@ -18,12 +18,23 @@ pub const SPLIT32_SCRATCH_BYTES: usize = 32 * HEADS as usize * SPLIT_PARTIAL_FLO
 /// Capacity is conservatively bounded on the HOST; never a shader-only live
 /// length rejection which could be mistaken for a successful normal decode.
 pub const SHORT_R4T128: DecodeTile = DecodeTile {
+    capacity_tokens: 512,
     rows: 4,
     keys: 1,
     panel: 512,
     threads: 128,
     per_tile_softmax: false,
     simd_matrix: false,
+};
+
+pub const STREAM_R4T128_C2048: DecodeTile = DecodeTile {
+    capacity_tokens: 2048,
+    ..SHORT_R4T128
+};
+pub const STREAM_R1T32_C2048: DecodeTile = DecodeTile {
+    rows: 1,
+    threads: 32,
+    ..STREAM_R4T128_C2048
 };
 
 pub const LIVE_LENGTHS: [u32; 5] = [256, 512, 1024, 2048, 4096];
@@ -34,6 +45,11 @@ pub const fn model_scratch_bytes(candidate: crate::MetalResearchCandidate) -> us
         crate::MetalResearchCandidate::GlobalD512SplitCoopKeyR8K8P64T128S32
     ) {
         SPLIT32_SCRATCH_BYTES
+    } else if matches!(
+        candidate,
+        crate::MetalResearchCandidate::GlobalD512SplitStreamR4S256T128C2048
+    ) {
+        8 * HEADS as usize * SPLIT_PARTIAL_FLOATS as usize * 4
     } else {
         SPLIT_SCRATCH_BYTES
     }
@@ -41,6 +57,8 @@ pub const fn model_scratch_bytes(candidate: crate::MetalResearchCandidate) -> us
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DecodeTile {
+    /// Maximum logical table capacity. Zero preserves the old unbounded policy.
+    pub capacity_tokens: u32,
     pub rows: u32,
     pub keys: u32,
     pub panel: u32,
@@ -51,6 +69,7 @@ pub struct DecodeTile {
 
 pub const DECODE_TILES: [DecodeTile; 19] = [
     DecodeTile {
+        capacity_tokens: 0,
         rows: 8,
         keys: 8,
         panel: 64,
@@ -59,6 +78,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 8,
         keys: 8,
         panel: 64,
@@ -67,6 +87,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 8,
         keys: 8,
         panel: 128,
@@ -75,6 +96,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 8,
         keys: 8,
         panel: 128,
@@ -83,6 +105,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 8,
         panel: 64,
@@ -91,6 +114,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 8,
         panel: 64,
@@ -99,6 +123,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 8,
         panel: 128,
@@ -107,6 +132,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 8,
         panel: 128,
@@ -115,6 +141,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 1,
         keys: 8,
         panel: 128,
@@ -123,6 +150,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 16,
         panel: 64,
@@ -131,6 +159,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 32,
         panel: 64,
@@ -139,6 +168,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 16,
         panel: 64,
@@ -147,6 +177,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 32,
         panel: 64,
@@ -155,6 +186,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: false,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 16,
         panel: 64,
@@ -163,6 +195,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: true,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 32,
         panel: 64,
@@ -171,6 +204,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: true,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 16,
         panel: 128,
@@ -179,6 +213,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: true,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 8,
         keys: 32,
         panel: 64,
@@ -187,6 +222,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: true,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 16,
         panel: 64,
@@ -195,6 +231,7 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
         simd_matrix: true,
     },
     DecodeTile {
+        capacity_tokens: 0,
         rows: 16,
         keys: 64,
         panel: 64,
@@ -206,16 +243,32 @@ pub const DECODE_TILES: [DecodeTile; 19] = [
 
 impl DecodeTile {
     pub const fn short_unsplit(self) -> bool {
-        self.rows == 4
+        self.capacity_tokens == 512
+            && self.rows == 4
             && self.keys == 1
             && self.panel == 512
             && self.threads == 128
             && !self.per_tile_softmax
             && !self.simd_matrix
     }
+    /// Full-D fixed64 stream: one head per SIMDgroup, no matrix approximation.
+    pub const fn streaming(self) -> bool {
+        self.short_unsplit()
+            || (self.capacity_tokens == 2048
+                && self.keys == 1
+                && self.panel == 512
+                && !self.per_tile_softmax
+                && !self.simd_matrix
+                && ((self.rows == 4 && self.threads == 128)
+                    || (self.rows == 1 && self.threads == 32)))
+    }
+
     pub const fn supported(self) -> bool {
-        if self.short_unsplit() {
+        if self.streaming() {
             return true;
+        }
+        if self.capacity_tokens != 0 {
+            return false;
         }
         ((!self.simd_matrix
             && self.rows == 1
@@ -250,8 +303,8 @@ impl DecodeTile {
     /// Q is staged once; one K or V panel reuses the same storage. Scores,
     /// corrections and weights are FP32. Eight signed page IDs are separate.
     pub const fn threadgroup_bytes(self) -> usize {
-        if self.short_unsplit() {
-            return 2 * 512 * 2;
+        if self.streaming() {
+            return if self.rows == 1 { 0 } else { 2 * 512 * 2 };
         }
         if self.simd_matrix {
             (4 * (self.rows * self.panel + self.keys * self.panel)
@@ -330,21 +383,45 @@ pub struct SplitDecodeTile {
 }
 
 impl SplitDecodeTile {
-    pub const fn supported(self) -> bool {
-        self.rows == 8
-            && matches!((self.keys, self.simd_matrix), (8, false) | (32, true))
-            && ((self.partition == 256 && self.partitions == 16 && !self.dynamic_partition)
-                || (self.partition == 0
-                    && self.keys == 8
-                    && !self.simd_matrix
-                    && self.partitions == 32
-                    && self.dynamic_partition))
-            && self.panel == 64
+    pub const fn streaming(self) -> bool {
+        self.rows == 4
+            && self.keys == 1
+            && self.partition == 256
+            && self.panel == 512
             && self.threads == 128
+            && !self.simd_matrix
+            && self.partitions == 8
+            && !self.dynamic_partition
+    }
+
+    pub const fn capacity_tokens(self) -> u32 {
+        if self.streaming() {
+            2048
+        } else {
+            SPLIT_MAX_TOKENS
+        }
+    }
+
+    pub const fn supported(self) -> bool {
+        self.streaming()
+            || (self.rows == 8
+                && matches!((self.keys, self.simd_matrix), (8, false) | (32, true))
+                && ((self.partition == 256 && self.partitions == 16 && !self.dynamic_partition)
+                    || (self.partition == 0
+                        && self.keys == 8
+                        && !self.simd_matrix
+                        && self.partitions == 32
+                        && self.dynamic_partition))
+                && self.panel == 64
+                && self.threads == 128)
     }
 
     pub const fn partial_threadgroup_bytes(self) -> usize {
+        if self.streaming() {
+            return 2048;
+        }
         DecodeTile {
+            capacity_tokens: 0,
             rows: self.rows,
             keys: self.keys,
             panel: self.panel,
@@ -355,6 +432,17 @@ impl SplitDecodeTile {
         .threadgroup_bytes()
     }
 }
+
+pub const SPLIT_STREAM_R4S256T128_C2048: SplitDecodeTile = SplitDecodeTile {
+    rows: 4,
+    keys: 1,
+    partition: 256,
+    panel: 512,
+    threads: 128,
+    simd_matrix: false,
+    partitions: 8,
+    dynamic_partition: false,
+};
 
 pub const SPLIT_R8S256T128: SplitDecodeTile = SplitDecodeTile {
     rows: 8,
@@ -429,7 +517,7 @@ impl SplitDecodePlan {
             return None;
         }
         let capacity = shape.max_blocks.checked_mul(shape.block_size)?;
-        if capacity > SPLIT_MAX_TOKENS || capacity > i32::MAX as u32 {
+        if capacity > tile.capacity_tokens() || capacity > i32::MAX as u32 {
             return None;
         }
         let partial_count = tile.partitions;
@@ -593,7 +681,9 @@ impl DecodePlan {
         {
             return None;
         }
-        if tile.short_unsplit() && shape.max_blocks.checked_mul(shape.block_size)? > 512 {
+        if tile.capacity_tokens != 0
+            && shape.max_blocks.checked_mul(shape.block_size)? > tile.capacity_tokens
+        {
             return None;
         }
         let cache_bytes = (shape.num_blocks as usize)

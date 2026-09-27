@@ -253,3 +253,117 @@ fn fusion_oracle_retains_intermediate_rounding_and_gelu_tails() {
     assert!(values.iter().any(|&x| widen(x) > 1.0));
     assert!(values.iter().any(|&x| widen(x) < -1.0));
 }
+
+#[test]
+fn round_two_ffn_launches_reuse_all_refusal_boundaries() {
+    for (candidate, rows, threads) in [
+        (Candidate::FfnBf16R2Sg2, 4, 64),
+        (Candidate::FfnBf16R4Sg4, 16, 128),
+    ] {
+        let mut good = request();
+        good.selected = candidate;
+        let plan = good.plan().unwrap();
+        assert_eq!(plan.kernel, candidate.kernels()[0]);
+        assert_eq!(plan.grid, [15360 / rows, 1, 1]);
+        assert_eq!(plan.threads, [threads, 1, 1]);
+        for case in 0..10 {
+            let mut bad = good;
+            match case {
+                0 => bad.decode = false,
+                1 => bad.model.tokens = 2,
+                2 => bad.has_low_bit_gate_or_up = true,
+                3 => bad.capture_gate_up = true,
+                4 => bad.quantized_accumulation = true,
+                5 => bad.dtype = None,
+                6 => bad.dtype = Some(MetalFloatType::F16),
+                7 => bad.offsets[2] = bad.offsets[1],
+                8 => bad.arena_bytes = bad.offsets[2] + 30719,
+                _ => bad.model.hidden = 3841,
+            }
+            assert!(bad.plan().is_none(), "{candidate:?}: refusal {case}");
+        }
+        let zero = ResearchDispatchSnapshot::default();
+        let mut after = zero;
+        after.counts[plan.kernel as usize] = 1;
+        assert!(after.verify_exact(plan.kernel, 1).is_ok());
+        assert!(zero.checked_since(after).is_err());
+    }
+}
+
+#[test]
+fn round_two_qmv_shapes_are_not_interchangeable() {
+    for (candidate, format, role, k, rows) in [
+        (
+            Candidate::QmvW4G32R4Sg4,
+            Format::W4A16,
+            Role::DenseDownProjection,
+            15360,
+            16,
+        ),
+        (
+            Candidate::QmvW8G32R4Sg4K8192,
+            Format::W8A16,
+            Role::OutputProjection,
+            8192,
+            16,
+        ),
+        (
+            Candidate::QmvW8G32R2Sg4K4096,
+            Format::W8A16,
+            Role::OutputProjection,
+            4096,
+            8,
+        ),
+    ] {
+        assert!(qmv_decode_contract(candidate, format, role, 1, 3840, k));
+        assert!(qmv_role_target(candidate, role));
+        for other_k in [4096, 8192, 15360] {
+            assert_eq!(
+                qmv_decode_contract(candidate, format, role, 1, 3840, other_k),
+                k == other_k
+            );
+        }
+        for m in [0, 2, 16, 32] {
+            assert!(!qmv_decode_contract(candidate, format, role, m, 3840, k));
+        }
+        assert!(!qmv_role_target(candidate, Role::QueryProjection));
+        let launch = operator_launch(candidate).unwrap();
+        assert_eq!(launch.rows_per_group, rows);
+        assert_eq!(launch.threads, 128);
+        assert_eq!(launch.kernel, candidate.kernels()[0]);
+    }
+}
+
+#[test]
+fn all_round_two_sources_are_default_off_with_explicit_storage_and_owned_kernels() {
+    let defaults = MetalKernelOptions::default();
+    let off = crate::kernels::kernel_source_with_options(MetalFloatType::Bf16, defaults);
+    for candidate in crate::research_catalog::ALL_CANDIDATES
+        .into_iter()
+        .filter(|c| c.round_two())
+    {
+        assert!(candidate.explicit_storage_abi());
+        let source = crate::kernels::kernel_source_with_options(
+            MetalFloatType::Bf16,
+            MetalKernelOptions {
+                research: candidate,
+                ..defaults
+            },
+        );
+        for kernel in candidate.kernels() {
+            assert!(!off.contains(kernel.name()));
+            assert_eq!(
+                source
+                    .matches(&format!("kernel void {}(", kernel.name()))
+                    .count(),
+                1
+            );
+            assert_eq!(kernel.owner(), candidate);
+        }
+        if candidate.qmv_w4() || candidate.qmv_w8() {
+            assert!(source.contains("device const half *scales"));
+            assert!(!source.contains("device const bfloat *scales"));
+        }
+    }
+    assert_eq!(defaults.research, Candidate::Off);
+}

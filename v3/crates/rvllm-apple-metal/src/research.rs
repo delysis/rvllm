@@ -54,6 +54,14 @@ pub enum MetalResearchCandidate {
     GlobalD512ShortR4T128,
     QmvW4G32R4Sg8K8,
     QmvW8G32R4Sg8K8,
+    FfnBf16R2Sg2,
+    FfnBf16R4Sg4,
+    QmvW4G32R4Sg4,
+    QmvW8G32R4Sg4K8192,
+    QmvW8G32R2Sg4K4096,
+    GlobalD512StreamR4T128C2048,
+    GlobalD512StreamR1T32C2048,
+    GlobalD512SplitStreamR4S256T128C2048,
 }
 
 impl MetalResearchCandidate {
@@ -61,6 +69,12 @@ impl MetalResearchCandidate {
     pub const fn global_decode_tile(self) -> Option<crate::attention_global_decode::DecodeTile> {
         if matches!(self, Self::GlobalD512ShortR4T128) {
             return Some(crate::attention_global_decode::SHORT_R4T128);
+        }
+        if matches!(self, Self::GlobalD512StreamR4T128C2048) {
+            return Some(crate::attention_global_decode::STREAM_R4T128_C2048);
+        }
+        if matches!(self, Self::GlobalD512StreamR1T32C2048) {
+            return Some(crate::attention_global_decode::STREAM_R1T32_C2048);
         }
         use crate::attention_global_decode::DecodeTile;
         let (rows, keys, panel, threads, per_tile_softmax, simd_matrix) = match self {
@@ -86,6 +100,7 @@ impl MetalResearchCandidate {
             _ => return None,
         };
         Some(DecodeTile {
+            capacity_tokens: 0,
             rows,
             keys,
             panel,
@@ -99,6 +114,9 @@ impl MetalResearchCandidate {
         self,
     ) -> Option<crate::attention_global_decode::SplitDecodeTile> {
         match self {
+            Self::GlobalD512SplitStreamR4S256T128C2048 => {
+                Some(crate::attention_global_decode::SPLIT_STREAM_R4S256T128_C2048)
+            }
             Self::GlobalD512SplitR8S256T128 => {
                 Some(crate::attention_global_decode::SPLIT_R8S256T128)
             }
@@ -121,21 +139,89 @@ impl MetalResearchCandidate {
                 | Self::QmvW8G32R8Sg2
                 | Self::QmvW4G32R4Sg8K8
                 | Self::QmvW8G32R4Sg8K8
+                | Self::FfnBf16R2Sg2
+                | Self::FfnBf16R4Sg4
+                | Self::QmvW4G32R4Sg4
+                | Self::QmvW8G32R4Sg4K8192
+                | Self::QmvW8G32R2Sg4K4096
         )
     }
 
     /// These sources have explicit BF16 operands and (for QMV) FP16 scales.
     /// They must never participate in the generic half -> bfloat rewrite.
     pub const fn explicit_storage_abi(self) -> bool {
+        self.round_two()
+            || matches!(
+                self,
+                Self::FfnBf16R4Sg2
+                    | Self::QmvW4G32R8Sg2
+                    | Self::QmvW8G32R8Sg2
+                    | Self::GlobalD512ShortR4T128
+                    | Self::QmvW4G32R4Sg8K8
+                    | Self::QmvW8G32R4Sg8K8
+            )
+    }
+
+    /// Exact 593e1d6f follow-up identities. This is not a qualification flag.
+    pub const fn round_two(self) -> bool {
         matches!(
             self,
-            Self::FfnBf16R4Sg2
-                | Self::QmvW4G32R8Sg2
-                | Self::QmvW8G32R8Sg2
-                | Self::GlobalD512ShortR4T128
-                | Self::QmvW4G32R4Sg8K8
-                | Self::QmvW8G32R4Sg8K8
+            Self::FfnBf16R2Sg2
+                | Self::FfnBf16R4Sg4
+                | Self::QmvW4G32R4Sg4
+                | Self::QmvW8G32R4Sg4K8192
+                | Self::QmvW8G32R2Sg4K4096
+                | Self::GlobalD512StreamR4T128C2048
+                | Self::GlobalD512StreamR1T32C2048
+                | Self::GlobalD512SplitStreamR4S256T128C2048
         )
+    }
+
+    pub const fn ffn_decode(self) -> bool {
+        matches!(
+            self,
+            Self::FfnBf16R4Sg2 | Self::FfnBf16R2Sg2 | Self::FfnBf16R4Sg4
+        )
+    }
+
+    pub const fn qmv_w4(self) -> bool {
+        matches!(
+            self,
+            Self::QmvW4G32R8Sg2 | Self::QmvW4G32R4Sg8K8 | Self::QmvW4G32R4Sg4
+        )
+    }
+
+    pub const fn qmv_w8(self) -> bool {
+        matches!(
+            self,
+            Self::QmvW8G32R8Sg2
+                | Self::QmvW8G32R4Sg8K8
+                | Self::QmvW8G32R4Sg4K8192
+                | Self::QmvW8G32R2Sg4K4096
+        )
+    }
+
+    /// Zero denotes the pre-existing unbounded host contract, not measured capacity.
+    pub const fn global_capacity_tokens(self) -> u32 {
+        if let Some(tile) = self.global_decode_tile() {
+            tile.capacity_tokens
+        } else if let Some(tile) = self.split_global_decode_tile() {
+            tile.capacity_tokens()
+        } else {
+            0
+        }
+    }
+
+    /// The complete operator cells, shared by queue generation and device tests.
+    pub const fn operator_keys(self) -> &'static [usize] {
+        match self {
+            Self::FfnBf16R4Sg2 | Self::FfnBf16R2Sg2 | Self::FfnBf16R4Sg4 => &[3840],
+            Self::QmvW4G32R8Sg2 | Self::QmvW4G32R4Sg8K8 | Self::QmvW4G32R4Sg4 => &[15360],
+            Self::QmvW8G32R8Sg2 | Self::QmvW8G32R4Sg8K8 => &[4096, 8192],
+            Self::QmvW8G32R4Sg4K8192 => &[8192],
+            Self::QmvW8G32R2Sg4K4096 => &[4096],
+            _ => &[],
+        }
     }
 
     pub const fn name(self) -> &'static str {

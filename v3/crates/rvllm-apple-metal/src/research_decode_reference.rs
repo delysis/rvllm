@@ -163,3 +163,21 @@ pub fn group32_fp64(
         })
         .collect()
 }
+
+/// Full dense BF16 weights for the additional correctness-only FFN gate.
+/// The measured sparse fixture remains unchanged; this allocation and the
+/// independent FP64 projection are never performed in a timed sample.
+pub fn dense_ffn_fixture() -> (Vec<u16>, Vec<u16>, Vec<u16>) {
+    let x = sparse_activation();
+    let weights: Vec<_> = (0..30720_u32 * 3840)
+        .map(|index| {
+            let mut value = index.wrapping_mul(179).wrapping_add(1009);
+            value ^= value << 13;
+            value ^= value >> 17;
+            value ^= value << 5;
+            bf16(((value & 65535) as f64 / 32768.0 - 1.0) * 0.125)
+        })
+        .collect();
+    let expected = dense_gate_up(&x, &weights, 15360);
+    (x, weights, expected)
+}

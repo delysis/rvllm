@@ -84,6 +84,26 @@ def sources(value: dict) -> list[str]:
 def verify_exported(reviewed: dict,actual: dict) -> None:
     if validate(actual)!=validate(reviewed):raise ValueError('runtime catalog differs from reviewed golden')
 
+def verify_full_exported(reviewed: dict, full: dict, actual: dict) -> None:
+    validate(reviewed)
+    if (type(full) is not dict or set(full)!=set(reviewed)
+        or full['schema']!=reviewed['schema']
+        or full['dispatch_schema']!='rvllm.metal.research-dispatch.v4'
+        or full['default']!=reviewed['default']
+        or full['device_qualified'] is not False
+        or type(full['candidates']) is not list
+        or len(full['candidates'])!=54
+        or full['candidates'][:len(NAMES)]!=reviewed['candidates']):
+        raise ValueError('full catalog does not preserve reviewed prefix and v4 contract')
+    names=[row.get('name') for row in full['candidates'] if type(row) is dict]
+    kernels=[kernel for row in full['candidates'] if type(row) is dict
+             for kernel in row.get('kernels',[]) if type(kernel) is str]
+    if (len(names)!=54 or len(set(names))!=54
+        or len(kernels)!=71 or len(set(kernels))!=71):
+        raise ValueError('full catalog candidate or kernel registry is incomplete')
+    if actual!=full:
+        raise ValueError('runtime full catalog differs from reviewed golden')
+
 def check_source(value: dict,candidate: str,source: str) -> None:
     expected=exports(value).get(candidate)
     # Exclude comments: documentary examples must not count as compiled entry points.

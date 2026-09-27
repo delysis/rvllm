@@ -1,0 +1,78 @@
+{
+  "advancement_lengths": [
+    512,
+    1024,
+    2048
+  ],
+  "arms": [
+    {
+      "candidate": "metal-global-d512-stream-r4t128-c2048",
+      "capacity_tokens": 2048,
+      "geometry": {
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "keys": 1,
+        "max_logical_capacity_tokens": 2048,
+        "panel": 512,
+        "rows": 4,
+        "scratch_bytes": 0,
+        "simd_matrix": false,
+        "threads": 128
+      },
+      "kernels": [
+        {
+          "name": "research_global_d512_stream_r4t128_c2048",
+          "source_threadgroup_bytes": 2048,
+          "threads": 128
+        }
+      ],
+      "operator_keys": [],
+      "status": "unqualified"
+    },
+    {
+      "candidate": "metal-global-d512-split-stream-r4s256t128-c2048",
+      "capacity_tokens": 2048,
+      "geometry": {
+        "grid": [
+          4,
+          8,
+          1
+        ],
+        "keys": 1,
+        "max_logical_capacity_tokens": 2048,
+        "panel": 512,
+        "rows": 4,
+        "scratch_bytes": 263168,
+        "simd_matrix": false,
+        "threads": 128
+      },
+      "kernels": [
+        {
+          "name": "research_global_d512_split_stream_r4s256t128_c2048_partial",
+          "source_threadgroup_bytes": 2048,
+          "threads": 128
+        },
+        {
+          "name": "research_global_d512_split_stream_r4s256t128_c2048_merge",
+          "source_threadgroup_bytes": 0,
+          "threads": 32
+        }
+      ],
+      "operator_keys": [],
+      "status": "unqualified"
+    }
+  ],
+  "automatic_retry": false,
+  "automatic_submission": false,
+  "blocks": 10,
+  "campaign": "g4-r2-var-01",
+  "control_drift_limit": 0.05,
+  "initial_attention_length": 256,
+  "promotion": false,
+  "sample_pruning": false,
+  "samples": 40,
+  "schema": "rvllm.decode-round.screen.v3"
+}

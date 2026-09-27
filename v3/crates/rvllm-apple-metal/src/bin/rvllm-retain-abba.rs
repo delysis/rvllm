@@ -1,6 +1,7 @@
 //! Run a pinned ABBA test and retain a complete drift-invalid collection.
 #![forbid(unsafe_code)]
 
+use rvllm_apple_metal::{decode_round_campaign, MetalResearchCandidate};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -31,6 +32,19 @@ fn validate_retained_receipt(path: &Path) -> Result<()> {
     let receipt: Value = serde_json::from_reader(File::open(path)?)?;
     let candidate = std::env::var(CANDIDATE)?;
     let length: u64 = std::env::var(LENGTH)?.parse()?;
+    let selector: MetalResearchCandidate = candidate.parse()?;
+    if selector.round_two() || receipt["schema"] == "rvllm.global-decode.abba.v3" {
+        let stats = decode_round_campaign::validate_collection(&receipt)?;
+        if receipt["candidate"] != candidate
+            || receipt["length"].as_u64() != Some(length)
+            || stats.control_drift <= decode_round_campaign::DRIFT_LIMIT
+        {
+            return Err(
+                "failed child did not leave this cell's complete drift-invalid collection".into(),
+            );
+        }
+        return Ok(());
+    }
     let balanced = receipt["balanced_abba_baab"] == true;
     let blocks = if balanced { 10 } else { 5 };
     if receipt["blocks"].as_u64() != Some(blocks)

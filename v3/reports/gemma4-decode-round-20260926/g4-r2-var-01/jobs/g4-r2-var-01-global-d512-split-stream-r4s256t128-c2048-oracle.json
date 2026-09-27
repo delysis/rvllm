@@ -1,0 +1,70 @@
+{
+  "after": [
+    "g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core"
+  ],
+  "command": {
+    "args": [
+      "--ignored",
+      "--exact",
+      "attention_global_decode_device_tests::global_decode_split_device_oracle",
+      "--test-threads=1",
+      "--nocapture"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01",
+    "env": {
+      "RVLLM_METAL_GLOBAL_DECODE_BUILD_RECEIPT": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/build.json",
+      "RVLLM_METAL_GLOBAL_DECODE_CANDIDATE": "metal-global-d512-split-stream-r4s256t128-c2048",
+      "RVLLM_METAL_GLOBAL_DECODE_METALLIB": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/kernel.metallib",
+      "RVLLM_METAL_GLOBAL_DECODE_REPORT_DIR": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle/native",
+      "RVLLM_METAL_GLOBAL_DECODE_SOURCE": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/metal-global-d512-split-stream-r4s256t128-c2048-core.metal"
+    },
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/executables/ed2561406306a45a1c44b0fa14bc6f047a404b13fc4dfd68f44f3954585e1363-test",
+      "sha256": "ed2561406306a45a1c44b0fa14bc6f047a404b13fc4dfd68f44f3954585e1363"
+    }
+  },
+  "conditions": {
+    "disk_path": "/",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 0,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "rvllm_metal_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-oracle",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/metal-global-d512-split-stream-r4s256t128-c2048-core.metal",
+      "sha256": "f5d6e5a18437b545d2b8b53311a25f8dc297e890bd73adf422181404b21699b9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/kernel.metallib",
+      "sha256": "87c812527faf941d5ed77c89aed335d0c87240f3cceac8a782829155fdc4c7ea"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-pr4-20260924/v3/reports/gemma4-global-decode-local-20260924/queue/results/g4-r2-var-01-global-d512-split-stream-r4s256t128-c2048-compile-core/build/build.json",
+      "sha256": "4e8df8b33061846f83b286ff2f1a37f30a993e48b99eeeec245223dd7931ca0d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/campaign.json",
+      "sha256": "a3072ceb2f8edf2bdcec1ecfb3b73c21a65086396a4569f039d5620cccfa4724"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-round2-integration-20260926/v3/reports/gemma4-decode-round-20260926/g4-r2-var-01/round2-plan.json",
+      "sha256": "4546bd96944eb2ea625ddc5f0ea58a1bbe2bd0527c9006443e8b6479cc842ee7"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}
