@@ -59,3 +59,30 @@ total above. Its create-new output
 Both W4 and W8 CLI selectors are listed for every matrix. Two focused unit
 tests and a real pinned-file generation passed; this is still not a built
 or authenticated full package.
+
+The existing layer-0 W4 package was revalidated by a separately frozen
+`rvllm_apple_package` executable, SHA-256
+`c9cc445b139d747548f94c8d6ec141f7059b7111aafd9c5562d4678c3509ae16`.
+Validation returned package identity
+`d9004e911c7da95f61496a89b21d0d87290ab77833b2a86d957611fcda52a9f1`.
+Its `metal/` subtree has all six required macOS/iOS/iOS-simulator ×
+F16/BF16 library/manifest pairs; the macOS BF16 library matches the donor
+SHA above. The runtime's portable low-bit planner permits a down-only sidecar
+or a complete projection set per layer, and treats shared K as V in layers
+5, 11, 17, 23, 29, 35, 41 and 47. The sealed plan supplies the complete
+set per layer. This is source compatibility, not runtime admission evidence.
+
+A separate safe-Rust one-package runner
+`rvllm_gemma4_lowbit_full_w4_build` is frozen at executable SHA-256
+`a0c387ed45a20e2fc91eb2b502ba99e39cf6c8acf752b0b91673284482b992d1`.
+Its source SHA-256 is
+`6f3a77139f471f972b2a35c5cde02d2f330dffc5c10e09185910d3707a44ee16`.
+Its `--verify-only` pass checked the pinned plan, builder, model, config,
+tokenizer, donor library and unused output path without writing a package.
+The intended output is
+`v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm` in this PR8 worktree.
+The builder source SHA-256 is
+`88335d2407689818689f02025a2d849e08b4af378eb1230695fdd4bee19f4306`.
+The serial queue caps runs at 3,600 seconds; a future immutable build job
+must preserve a failure receipt if the export exceeds that bound. No such
+job has yet been submitted, and no full package exists.
