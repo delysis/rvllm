@@ -82,6 +82,24 @@ The small inner referee/driver JSON and logs, without multi-gigabyte raw
 buffers, are in `inner-v3-json.tar.gz` (SHA-256
 `86c6662b4e6107650cad320ac758b769a6fb02afe2ef80048235216a59b6661c`).
 
+An independent **M512 shape extension** then used the same frozen v3
+referee/driver and fresh, immutable queue IDs. Both arms passed their full
+short-to-long correctness ladders; all eight paired timing jobs succeeded and
+were eligible in one sampled AC/power-mode-2/thermal-0 stratum. Each job has
+seven or eight power samples and no queue-reported violation. The 5% drift
+gate passed: 2.093% for load4 and 0.045% for lookahead. Per-process median
+GPU intervals were 6.062–6.189 ms for load4 and 4.585–4.587 ms for lookahead;
+the descriptive control/lookahead ratio is **1.3351×**. This strengthens the
+M256 operator prospect across a second shape, but still does not establish a
+full-route model speedup, MLX parity, checkpoint quality, or promotion. M512
+adjudication SHA-256:
+`f0149dca38c80a2974c1b0a3cc92d36644a27dcffcef216376755c20949cd7a1`.
+The ten M512 queue manifests/results are in `queue-results-v3-m512.tar.gz`
+(SHA-256 `b240684dfb71b203d9d1eee128c1a2193439eb313229aa3d09e532ab950af515`),
+and the small inner JSON/logs, excluding raw buffers, are in
+`inner-v3-m512-json.tar.gz` (SHA-256
+`4535df2d9b2c926895c11758d26de45623ba6644e7970a6a3693a53c4c97743c`).
+
 The frozen v1 executable is SHA-256
 `227d6e45a90060ca7b47f723ed9fefb6c030d9d3a117c18939468e61356c2107`.
 The frozen v2 executable is SHA-256
