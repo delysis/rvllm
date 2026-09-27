@@ -119,5 +119,10 @@ Read-only review found the expected serial dependencies, fresh output paths,
 original model/HF environment and normal/combined metallibs, exact target
 IDs, new frozen Metal executable/full-vector flag and no old v2 source or
 executable pin. Neither the dry run nor these authoritative jobs have been
-submitted yet. Submission must use only the authoritative six manifests in
-the order above, after verifying queue state and unchanged pins.
+submitted at this checkpoint. The read-only serial-queue check then showed
+no v3 ID, a waiting queue, and six unused output paths. At 2026-09-27
+20:07 UTC the six authoritative manifests were accepted in the order above,
+each with its declared dependency. The dry-run directory was not submitted.
+Submission is not a numerical result; retrieve terminal receipts without
+resubmitting, retain all separate full-vector files and failed evidence, and
+run the frozen referee only after all six jobs finish.
