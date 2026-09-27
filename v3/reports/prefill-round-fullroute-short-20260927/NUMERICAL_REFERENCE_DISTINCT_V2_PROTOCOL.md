@@ -84,5 +84,16 @@ All six generated manifests have `purpose=correctness`, distinct immutable
 IDs, the expected serial dependency chain, unchanged original checkpoint and
 reference/Metal executable pins, correct new prompt/first-target IDs, and
 `--teacher-prefill-last-logits` on Metal arms. The old MMLU source, dataset,
-prompt and generator pins are absent. The manifests are **not submitted**:
-the separate numerical-only referee and its negative tests remain required.
+prompt and generator pins are absent.
+
+The separate safe-Rust numerical referee
+`rvllm_gemma4_distinct_reference_summary` has source SHA-256
+`01d9e83c6626df2febb07c595b0f16229492e2020f8a3d8f9f93466074f680c6`.
+It retains hashes for every outer queue receipt and the separately written HF
+full-vocabulary JSON, checks the complete condition journal against the
+reported violations, and never reclassifies queue timing eligibility. Its
+four focused tests and host build passed: exact six-manifest hashes, a stale
+power observation accepted only as numerical-only, competitor/freshness
+negative cases, rejection of missing combined dispatch, and HF tie ordering.
+No v2 manifests have been submitted yet; review of the final referee and
+the existing serial queue state precedes submission.
