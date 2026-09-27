@@ -122,3 +122,19 @@ every timing observation, sampled power stratum and within-arm/bracketing
 control drift. It refuses a missing, failed, fallback or changed-work receipt.
 Mixed or stale condition samples remain visible but cannot pass its diagnostic
 eligibility flag; even a favorable report remains non-ABBA evidence.
+
+The separate immutable job `prefill26-fullroute-abba-combined-01-20260927`
+is queued **after** the last five-arm profile. Its feature-gated safe-Rust
+driver `rvllm-prefill-route-abba` pins the original BF16 inference executable
+and both metallibs, uses the same two varied prompts and 64-token
+continuations, and fixes two warmups per arm followed by ABBA and BAAB
+measurement blocks in one serial queue job. Each child process has a retained
+stdout/stderr and validated receipt. The driver rejects changed prompt or
+generated IDs, inference-time compilation, wrong research dispatch, missing
+samples, and overwritten output. It reports both order-specific ratios and
+all-sample 5% drift, but does **not** make a promotion decision: the queue's
+condition envelope, independent confirmation, and tensor/logit/reference
+quality checks remain separate. Its config and queue manifest are
+`abba-combined-01-config.json` and `abba-combined-01-job.json`; the queue pins
+the 23.9-GB model file rather than copying it into Git. No result was present
+when this job was submitted.
