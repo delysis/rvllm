@@ -481,3 +481,12 @@ same-stratum real BF16 512-token pair, prefill was 21.334 s default versus
 4.392 s MMA-only (4.858× exploratory). This localizes the slow path to a
 specific dispatch substitution, but does not yet apportion GPU time among
 roles or establish numerical quality; prior longer continuations diverged.
+
+The subsequent [exact-token MLX comparison](mlx-exact-prompt-01/README.md)
+uses the same 512 input token IDs and a 64-token continuation. Nearby MLX
+trials averaged 546.029 prompt tok/s and 18.979 generation tok/s; the rvLLM
+SG8+MMA arm took 4.821 s prefill and 13.346 tok/s decode. These imply an
+exploratory roughly 5.14× MLX prompt-phase and 1.42× generation advantage,
+but the MLX queue condition sample was freshness-ineligible, the checkpoint
+bytes are not matched, and the second output ID differs. The older random-
+token MLX baseline of 173.051 prompt tok/s is not a settled comparator.

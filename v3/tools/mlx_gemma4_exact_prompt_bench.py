@@ -41,8 +41,8 @@ def main() -> None:
 
     import mlx.core as mx
     from mlx_lm import load, stream_generate
-    import mlx_lm.generate as mlx_generate
 
+    mx.random.seed(0)
     model, tokenizer, config = load(
         str(args.model),
         return_config=True,
@@ -90,7 +90,7 @@ def main() -> None:
         "model_index_sha256": sha256(args.model / "model.safetensors.index.json"),
         "rvllm_report": str(args.rvllm_report.resolve()),
         "rvllm_report_sha256": sha256(args.rvllm_report),
-        "mlx_generate_source_sha256": sha256(Path(mlx_generate.__file__)),
+        "mlx_generate_source_sha256": sha256(Path(stream_generate.__code__.co_filename)),
         "prompt_token_ids_sha256": hashlib.sha256(
             json.dumps(prompt, separators=(",", ":")).encode()
         ).hexdigest(),
