@@ -382,3 +382,30 @@ All 12 inner children, config and summary are retained in
 `4651f706264617ef4453c143f6bad5285868a58b4ab710f75214c3331aff82ea`.
 This remains a research route, **not** a production promotion or an
 independent tensor/logit/reference quality gate.
+
+## Standalone M304 ABBA follow-up (submitted, not scored)
+
+The reversed-order result motivates a direct single-prompt comparison: MLX's
+M304 harness runs that prompt alone, whereas the original rvLLM M304 was
+second in a two-prompt process. The safe-Rust ABBA driver now also admits only
+the sealed singleton workloads `[101]` and `[304]`, in addition to the two
+existing orders. Its default remains `[101, 304]`. The output validator
+requires the exact declared case count and length, as well as the prior
+route, generated-ID, dispatch, zero-inference-compile and fresh-output checks.
+Focused tests passed 3/3, including singleton acceptance and rejection of a
+wrong length or extra case, and the release binary built locally.
+
+The new immutable serial-queue job
+`prefill26-fullroute-abba-combined-04-m304-only-20260927` was accepted with
+one pinned M304 prompt, a fresh output path, the same model/inference/
+metallib identities, fixed warmups, ABBA/BAAB order and 5% drift gate. Its
+prompt JSONL SHA-256 is
+`72e42ab11ef82d9a1779c2d93c9f30c3bbc39bc9f5ea478cc293ec18a4b68406`,
+config SHA-256 is
+`a6b52c4cdffc4c34e1337fc0d7422599a95080f79c4f364efba8467f6c89e782`,
+frozen driver executable SHA-256 is
+`731958aa478f463d943986046a4a731a52f86cf112ab399c926a8908aedfbb3b`,
+and source SHA-256 is
+`a45eb2b8d55323b633bcdc6c5e2dd4b2d3f2586b2d0466a752a7a22736f98c43`.
+No speed or quality result is asserted before the terminal queue receipt.
+This job does not replay or rewrite any completed run.

@@ -1,0 +1,20 @@
+{
+  "schema": "rvllm.prefill_route_abba_config.v1",
+  "infer_executable": {
+    "path": "/tmp/rvllm-prefill-v3-target-20260927/release/rvllm_metal_infer",
+    "sha256": "7b6487471816cfe71999bf9d54631589105dcf88cb4f569e924c28c048cc1e20"
+  },
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "prompts_jsonl": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/prompt-m304-only.jsonl",
+  "control_metallib": {
+    "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-apple-build-v3-20260927/normal.metallib",
+    "sha256": "bb88c9667b4b7ac3758760b602abe40cbe72cc907bf3c40e2f2a2d33b0bd8df2"
+  },
+  "candidate_metallib": {
+    "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-apple-build-v3-20260927/metal-prefill-pipeline32x64-q4k16.metallib",
+    "sha256": "8a1234a3ac14cb1c55c6c4c601c4fb2647defbc955b14be3a2c23414552fbfcb"
+  },
+  "candidate_name": "metal-prefill-pipeline32x64-q4k16",
+  "expected_prompt_lengths": [304],
+  "output_dir": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/abba-combined-04-m304-only-raw"
+}

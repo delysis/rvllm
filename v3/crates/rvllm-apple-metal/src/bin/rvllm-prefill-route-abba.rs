@@ -61,12 +61,12 @@ struct Config {
     candidate_metallib: Pin,
     candidate_name: String,
     #[serde(default = "default_prompt_lengths")]
-    expected_prompt_lengths: [usize; 2],
+    expected_prompt_lengths: Vec<usize>,
     output_dir: PathBuf,
 }
 
-fn default_prompt_lengths() -> [usize; 2] {
-    [101, 304]
+fn default_prompt_lengths() -> Vec<usize> {
+    vec![101, 304]
 }
 
 fn sha256(path: &Path) -> Result<String> {
@@ -140,7 +140,7 @@ fn check_output(
     report: &Value,
     arm: Arm,
     candidate_name: &str,
-    expected_prompt_lengths: [usize; 2],
+    expected_prompt_lengths: &[usize],
 ) -> Result<Value> {
     if report["schema"] != "rvllm.apple_metal_text_session.v1"
         || report["status"] != "pass"
@@ -150,8 +150,8 @@ fn check_output(
         return Err("wrong route, dtype, or session status".into());
     }
     let cases = report["cases"].as_array().ok_or("missing cases")?;
-    if cases.len() != 2 {
-        return Err("expected both predeclared prompts".into());
+    if cases.len() != expected_prompt_lengths.len() {
+        return Err("wrong number of predeclared prompts".into());
     }
     let mut compact = Vec::new();
     for (index, case) in cases.iter().enumerate() {
@@ -271,7 +271,7 @@ fn run_child(config: &Config, arm: Arm, ordinal: usize) -> Result<Value> {
         &report,
         arm,
         &config.candidate_name,
-        config.expected_prompt_lengths,
+        &config.expected_prompt_lengths,
     )?;
     write_new(
         &config.output_dir.join(format!("{prefix}.validated.json")),
@@ -293,7 +293,10 @@ fn run() -> Result<()> {
     let config: Config = serde_json::from_slice(&config_bytes).map_err(|e| e.to_string())?;
     if config.schema != "rvllm.prefill_route_abba_config.v1"
         || expected_dispatch(&config.candidate_name).is_empty()
-        || !matches!(config.expected_prompt_lengths, [101, 304] | [304, 101])
+        || !matches!(
+            config.expected_prompt_lengths.as_slice(),
+            [101] | [304] | [101, 304] | [304, 101]
+        )
         || !config.model_dir.is_dir()
         || !config.prompts_jsonl.is_file()
     {
@@ -344,7 +347,7 @@ fn run() -> Result<()> {
         );
     }
     let mut scores = Vec::new();
-    for case_index in 0..2 {
+    for case_index in 0..config.expected_prompt_lengths.len() {
         let prefill = |ordinal: usize| -> Result<f64> {
             positive(&samples[ordinal]["cases"][case_index], "prefill_ms")
         };
@@ -453,7 +456,7 @@ mod tests {
             &report,
             Arm::Candidate,
             "metal-prefill-pipeline32x64",
-            [101, 304]
+            &[101, 304]
         )
         .is_ok());
         let mut reversed = report.clone();
@@ -462,14 +465,37 @@ mod tests {
             &reversed,
             Arm::Candidate,
             "metal-prefill-pipeline32x64",
-            [304, 101]
+            &[304, 101]
         )
         .is_ok());
         assert!(check_output(
             &reversed,
             Arm::Candidate,
             "metal-prefill-pipeline32x64",
-            [101, 304]
+            &[101, 304]
+        )
+        .is_err());
+        let mut single = report.clone();
+        single["cases"].as_array_mut().unwrap().remove(0);
+        assert!(check_output(
+            &single,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            &[304]
+        )
+        .is_ok());
+        assert!(check_output(
+            &single,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            &[101]
+        )
+        .is_err());
+        assert!(check_output(
+            &report,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            &[304]
         )
         .is_err());
         report["cases"][0]["research_dispatch"]["counts"] = json!({});
@@ -477,7 +503,7 @@ mod tests {
             &report,
             Arm::Candidate,
             "metal-prefill-pipeline32x64",
-            [101, 304]
+            &[101, 304]
         )
         .unwrap_err()
         .contains("fallback"));
@@ -491,7 +517,7 @@ mod tests {
             &report,
             Arm::Candidate,
             "metal-prefill-pipeline32x64",
-            [101, 304]
+            &[101, 304]
         )
         .unwrap_err()
         .contains("compile"));
