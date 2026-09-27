@@ -575,3 +575,33 @@ The complete compact outer receipts, including both manifests, conditions,
 stdout/stderr and terminal reports, are in
 `hf-capital16-queue-results.tar.gz`, SHA-256
 `85bf379b904ee11a5e98eb98d597f98b11de9db739d312b331d8dfd8a2cd3a69`.
+
+## Long-prompt teacher-forced loss probe: submitted, not yet adjudicated
+
+The default-off `metal-quality-research` CLI feature adds a **safe-Rust**
+teacher-forced diagnostic to the ordinary single-prompt Metal route. It
+performs normal prefill and decode selection, reads the full-vocabulary logits
+after each decode collect using the existing backend probe, scores a fixed
+target token, and feeds that target into the next step. The probe adds a GPU
+readback and synchronization at every step; **none of its timings is speed
+evidence**. It reports each greedy sampled ID separately from each
+teacher-fed ID, token rank/logit/NLL and aggregate mean NLL/perplexity. It
+does not pass trace scratch into kernel selection. Its CLI is unavailable in
+ordinary builds. Focused feature-enabled tests passed 14/14, and the
+ordinary binary tests passed 11/11; the feature-enabled Apple release build
+passed. The frozen diagnostic executable SHA-256 is
+`6d79ae67f0e7fde8500e1b5b7d901940edab3d9c3aae484e83fd166950d5bfec`.
+
+Two independent immutable serial-queue correctness jobs were submitted:
+`prefill26-teacher-m304-off-20260927` and dependent
+`prefill26-teacher-m304-combined-20260927`. They pin the original 12B-it
+checkpoint, executable, respective metallibs, exact M304 prompt JSONL, and
+the same-checkpoint MLX report. The 16 target IDs are the first 16 IDs from
+that MLX run, sealed in `teacher-m304-mlx16.json` (SHA-256
+`9984b53cc02946d912048a860a69fe9c95f1e279a66487c4612ab7762f97c53b`).
+The jobs are intended to exercise actual combined raw projection/norm and
+Q4K16 dispatch on the long prefill route, then compare candidate and control
+loss on the *same fixed trajectory*. This is not held-out text, an
+independent numerical reference, full checkpoint quality, or a promotion
+gate. No result is asserted until both terminal queue receipts and dispatch
+ledgers have been inspected; failed receipts will be retained without replay.

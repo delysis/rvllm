@@ -1,4 +1,5 @@
 #![recursion_limit = "256"]
+#![forbid(unsafe_code)]
 
 //! Apple Metal text inference workflow for Gemma tokenizers.
 //!
@@ -42,6 +43,8 @@ struct CliArgs {
     profile_samples: usize,
     profile_report: Option<PathBuf>,
     top_logits: usize,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_token_ids: Option<Vec<u32>>,
     json_output: bool,
 }
 
@@ -108,6 +111,29 @@ struct InferReport {
     metal_weight_dtype: String,
     metal_moe_router_weight_dtype: String,
     diagnostic_top_logits: Vec<TopLogit>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_forced: Option<TeacherReport>,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct TeacherStep {
+    target_token_id: u32,
+    sampled_token_id: u32,
+    target_logit: f32,
+    target_rank: usize,
+    negative_log_likelihood: f64,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct TeacherReport {
+    schema: &'static str,
+    claim: &'static str,
+    steps: Vec<TeacherStep>,
+    total_negative_log_likelihood: f64,
+    mean_negative_log_likelihood: f64,
+    perplexity: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,6 +231,8 @@ where
     let mut profile_samples = 0usize;
     let mut profile_report = None;
     let mut top_logits = 0usize;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_token_ids = None;
     let mut json_output = false;
 
     let mut iter = args.into_iter().map(Into::into).peekable();
@@ -223,7 +251,34 @@ where
                 if value.is_empty() {
                     return Err("--prompt must not be empty".to_owned());
                 }
+                if prompt.is_some() {
+                    return Err("single-prompt input was specified more than once".to_owned());
+                }
                 prompt = Some(value);
+            }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-prompt-jsonl" => {
+                let path = PathBuf::from(
+                    iter.next()
+                        .ok_or_else(|| "--teacher-prompt-jsonl requires a path".to_owned())?,
+                );
+                if prompt.is_some() {
+                    return Err("single-prompt input was specified more than once".to_owned());
+                }
+                let raw = std::fs::read_to_string(&path)
+                    .map_err(|error| format!("read {}: {error}", path.display()))?;
+                let mut lines = raw.lines();
+                let line = lines.next().ok_or("empty teacher prompt JSONL")?;
+                if lines.any(|line| !line.trim().is_empty()) {
+                    return Err("teacher prompt JSONL must contain exactly one case".to_owned());
+                }
+                let value: serde_json::Value = serde_json::from_str(line)
+                    .map_err(|error| format!("parse {}: {error}", path.display()))?;
+                let text = value["prompt"]
+                    .as_str()
+                    .filter(|text| !text.is_empty())
+                    .ok_or("teacher prompt JSONL requires nonempty prompt")?;
+                prompt = Some(text.to_owned());
             }
             "--prompts-jsonl" => {
                 prompts_jsonl =
@@ -305,6 +360,19 @@ where
                     .ok_or_else(|| "--top-logits requires a value".to_owned())?;
                 top_logits = parse_positive_usize("--top-logits", &value)?;
             }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-token-ids" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "--teacher-token-ids requires a value".to_owned())?;
+                if teacher_token_ids.is_some() {
+                    return Err("--teacher-token-ids may be specified only once".to_owned());
+                }
+                if value.split(',').any(|part| part.trim().is_empty()) {
+                    return Err("--teacher-token-ids contains an empty token ID".to_owned());
+                }
+                teacher_token_ids = Some(parse_token_ids("--teacher-token-ids", &value)?);
+            }
             "--json" => {
                 json_output = true;
             }
@@ -344,6 +412,18 @@ where
     if profile_report.is_some() && profile_samples == 0 {
         return Err("--profile-report requires --profile-samples".to_owned());
     }
+    #[cfg(feature = "metal-quality-research")]
+    if let Some(targets) = &teacher_token_ids {
+        if prompt.is_none()
+            || !json_output
+            || hf_reference.is_some()
+            || !eos_token_ids.is_empty()
+            || top_logits != 0
+            || targets.len() != max_new_tokens
+        {
+            return Err("--teacher-token-ids requires one JSON prompt, exactly --max-new-tokens targets, and no HF reference, EOS list or top-logit probe".to_owned());
+        }
+    }
 
     Ok(CliArgs {
         model_dir: model_dir.ok_or_else(|| "--model-dir is required".to_owned())?,
@@ -362,17 +442,23 @@ where
         profile_samples,
         profile_report,
         top_logits,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_token_ids,
         json_output,
     })
 }
 
 fn usage() -> String {
-    "usage: rvllm_metal_infer --model-dir <DIR> (--prompt <TEXT> | --prompts-jsonl <PATH> | --reference-manifest <PATH>) \
+    #[allow(unused_mut)] // The research-only feature appends its own arguments.
+    let mut usage = "usage: rvllm_metal_infer --model-dir <DIR> (--prompt <TEXT> | --prompts-jsonl <PATH> | --reference-manifest <PATH>) \
      [--session-backend direct|engine] [--max-new-tokens N] [--max-total-tokens N] \
      [--eos-token-ids IDS] [--no-bos] [--large-model-opt-in] [--hf-reference <JSON>] \
      [--report <JSON>] [--case-timeout-seconds N] [--profile-samples N] \
      [--profile-report <JSON>] [--top-logits N] [--json]"
-        .to_owned()
+        .to_owned();
+    #[cfg(feature = "metal-quality-research")]
+    usage.push_str("\nresearch-only: --teacher-prompt-jsonl PATH --teacher-token-ids ID,ID,... --json (single prompt; never timing evidence)");
+    usage
 }
 
 fn tokenizer_path(model_dir: &std::path::Path) -> PathBuf {
@@ -717,6 +803,12 @@ fn report_value(
                 .clone()
                 .unwrap_or(serde_json::Value::Null),
         );
+    #[cfg(feature = "metal-quality-research")]
+    if let Some(teacher) = report.teacher_forced.as_ref() {
+        value["claim"] = serde_json::json!("research-only teacher-forced quality diagnostic; timing and full-route promotion are not qualified");
+        value["teacher_forced"] = serde_json::to_value(teacher)
+            .expect("teacher report contains only finite, serializable values");
+    }
     value
 }
 
@@ -2458,6 +2550,58 @@ fn select_top_logits(logits: &[f32], limit: usize) -> Vec<TopLogit> {
     ranked
 }
 
+#[cfg(feature = "metal-quality-research")]
+fn score_teacher_step(
+    logits: &[f32],
+    target_token_id: u32,
+    sampled_token_id: u32,
+) -> Result<TeacherStep, String> {
+    let target_index = target_token_id as usize;
+    let target_logit = *logits
+        .get(target_index)
+        .ok_or_else(|| format!("teacher token {target_token_id} exceeds vocabulary"))?;
+    if !target_logit.is_finite()
+        || logits.is_empty()
+        || logits
+            .iter()
+            .any(|value| value.is_nan() || *value == f32::INFINITY)
+    {
+        return Err("teacher target or logits are nonfinite".to_owned());
+    }
+    let max_logit = logits
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .fold(f32::NEG_INFINITY, f32::max) as f64;
+    let exp_sum: f64 = logits
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .map(|value| ((value as f64) - max_logit).exp())
+        .sum();
+    if !exp_sum.is_finite() || exp_sum <= 0.0 {
+        return Err("invalid teacher log-sum-exp".to_owned());
+    }
+    let nll = max_logit + exp_sum.ln() - target_logit as f64;
+    if !nll.is_finite() || nll < -1e-9 {
+        return Err("invalid teacher negative log likelihood".to_owned());
+    }
+    let target_rank = 1 + logits
+        .iter()
+        .enumerate()
+        .filter(|(index, value)| {
+            **value > target_logit || (**value == target_logit && *index < target_index)
+        })
+        .count();
+    Ok(TeacherStep {
+        target_token_id,
+        sampled_token_id,
+        target_logit,
+        target_rank,
+        negative_log_likelihood: nll.max(0.0),
+    })
+}
+
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     use rvllm_apple::{AppleBackend, HandoffCapsule, HandoffKind};
@@ -2558,6 +2702,8 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
 
     let mut current = *prompt_tokens.last().expect("prompt token");
     let mut generated_token_ids = Vec::with_capacity(args.max_new_tokens);
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_steps = Vec::with_capacity(args.max_new_tokens);
     let mut finish_reason = FinishReason::Length;
     let decode_start = std::time::Instant::now();
     for step_idx in 0..args.max_new_tokens {
@@ -2582,6 +2728,17 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
             ));
         }
         let sampled = out[0].token_id.raw();
+        #[cfg(feature = "metal-quality-research")]
+        if let Some(targets) = args.teacher_token_ids.as_ref() {
+            let target = targets[step_idx];
+            let logits = backend
+                .probe_read_decode_logits_f32(1)
+                .map_err(|err| format!("read teacher logits at step {step_idx}: {err}"))?;
+            teacher_steps.push(score_teacher_step(&logits, target, sampled)?);
+            generated_token_ids.push(target);
+            current = TokenId(target);
+            continue;
+        }
         generated_token_ids.push(sampled);
         current = TokenId(sampled);
         if args.eos_token_ids.contains(&sampled) {
@@ -2613,6 +2770,27 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     } else {
         Vec::new()
     };
+    #[cfg(feature = "metal-quality-research")]
+    let teacher_forced = args.teacher_token_ids.as_ref().map(|_| {
+        let total_negative_log_likelihood: f64 = teacher_steps
+            .iter()
+            .map(|step| step.negative_log_likelihood)
+            .sum();
+        let mean_negative_log_likelihood =
+            total_negative_log_likelihood / teacher_steps.len() as f64;
+        let perplexity = mean_negative_log_likelihood.exp();
+        if !total_negative_log_likelihood.is_finite() || !perplexity.is_finite() {
+            return Err("nonfinite teacher-forced aggregate".to_owned());
+        }
+        Ok(TeacherReport {
+            schema: "rvllm.metal_teacher_forced_quality.v1",
+            claim: "research-only teacher-forced decode loss after normal-route prefill; readback adds synchronization and is never timing or independent numerical-reference evidence",
+            steps: teacher_steps,
+            total_negative_log_likelihood,
+            mean_negative_log_likelihood,
+            perplexity,
+        })
+    }).transpose()?;
     let stats = backend.probe_perf_stats();
     let research_dispatch = backend
         .probe_research_dispatches()
@@ -2673,6 +2851,8 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         metal_weight_dtype,
         metal_moe_router_weight_dtype,
         diagnostic_top_logits,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_forced,
     })
 }
 
@@ -2759,6 +2939,8 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
             json_output: true,
         }
     }
@@ -3146,7 +3328,8 @@ mod tests {
 
     #[test]
     fn rvllm_metal_infer_json_report_has_schema_and_claim() {
-        let report = InferReport {
+        #[allow(unused_mut)]
+        let mut report = InferReport {
             model_dir: PathBuf::from("/tmp/gemma4-e2b"),
             prompt: "Hello".to_owned(),
             prompt_token_ids: vec![2, 4],
@@ -3196,6 +3379,8 @@ mod tests {
             metal_weight_dtype: "bfloat16".to_owned(),
             metal_moe_router_weight_dtype: "bfloat16".to_owned(),
             diagnostic_top_logits: Vec::new(),
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced: None,
         };
         let comparison = ReferenceComparison {
             path: PathBuf::from("/tmp/ref.json"),
@@ -3210,6 +3395,23 @@ mod tests {
         assert_eq!(value["library_compiles"], 1);
         assert_eq!(value["pipeline_state_compiles"], 31);
         assert_eq!(value["last_step_gpu_execution_ns"], 1_000_000);
+        #[cfg(feature = "metal-quality-research")]
+        {
+            report.teacher_forced = Some(TeacherReport {
+                schema: "rvllm.metal_teacher_forced_quality.v1",
+                claim: "test research diagnostic",
+                steps: vec![score_teacher_step(&[0.0, 1.0], 1, 1).unwrap()],
+                total_negative_log_likelihood: 0.313_261_687_518_222_8,
+                mean_negative_log_likelihood: 0.313_261_687_518_222_8,
+                perplexity: 0.313_261_687_518_222_8_f64.exp(),
+            });
+            let quality = report_value(&report, None);
+            assert_eq!(
+                quality["teacher_forced"]["schema"],
+                "rvllm.metal_teacher_forced_quality.v1"
+            );
+            assert!(quality["claim"].as_str().unwrap().contains("research-only"));
+        }
         #[cfg(feature = "metal-stage-instrumentation")]
         assert_eq!(
             value["metal_stage_timing"]["schema"],
@@ -3272,6 +3474,8 @@ mod tests {
             metal_weight_dtype: "bfloat16".to_owned(),
             metal_moe_router_weight_dtype: "bfloat16".to_owned(),
             diagnostic_top_logits: Vec::new(),
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced: None,
         };
         let reference = HfReference {
             path: PathBuf::from("/tmp/ref.json"),
@@ -3320,6 +3524,8 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
             json_output: true,
         };
         let report = run_infer(&args).expect("run E2B Metal text inference");
@@ -3365,6 +3571,8 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
             json_output: true,
         };
         let report = run_infer(&args).expect("run configured-context E2B Metal text inference");
@@ -3445,6 +3653,8 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
             json_output: true,
         };
         let reference = parse_hf_reference(reference_path).expect("parse HF text reference");
@@ -3524,6 +3734,8 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
             json_output: true,
         };
         let prompt_token_ids =
@@ -3610,5 +3822,117 @@ mod tests {
             CLAIM,
             "Apple Metal text inference workflow; not production-ready until acceptance gates pass"
         );
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_score_is_stable_and_rejects_invalid_logits() {
+        let step = score_teacher_step(&[0.0, 1.0, 2.0], 1, 2).unwrap();
+        let expected = (1.0_f64 + (-1.0_f64).exp() + (-2.0_f64).exp()).ln() + 1.0;
+        assert!((step.negative_log_likelihood - expected).abs() < 1e-12);
+        assert_eq!(step.target_rank, 2);
+        assert_eq!(step.sampled_token_id, 2);
+        assert!(score_teacher_step(&[f32::NEG_INFINITY, 1.0], 1, 1).is_ok());
+        assert!(score_teacher_step(&[0.0, f32::NAN], 0, 0).is_err());
+        assert!(score_teacher_step(&[0.0], 1, 0).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_mode_requires_single_json_prompt_and_exact_targets() {
+        let base = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7,8",
+            "--json",
+        ];
+        assert_eq!(
+            parse_args_from(base).unwrap().teacher_token_ids,
+            Some(vec![7, 8])
+        );
+        let wrong_count = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7",
+            "--json",
+        ];
+        assert!(parse_args_from(wrong_count).is_err());
+        let no_json = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7,8",
+        ];
+        assert!(parse_args_from(no_json).is_err());
+        let empty_id = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7,,8",
+            "--json",
+        ];
+        assert!(parse_args_from(empty_id).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_prompt_jsonl_requires_exactly_one_nonempty_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.jsonl");
+        std::fs::write(&path, "{\"prompt\":\"Hello\"}\n").unwrap();
+        let path = path.to_str().unwrap();
+        let args = [
+            "--model-dir",
+            "/tmp/model",
+            "--teacher-prompt-jsonl",
+            path,
+            "--teacher-token-ids",
+            "7",
+            "--json",
+        ];
+        assert_eq!(
+            parse_args_from(args).unwrap().prompt.as_deref(),
+            Some("Hello")
+        );
+
+        std::fs::write(
+            dir.path().join("prompt.jsonl"),
+            "{\"prompt\":\"Hello\"}\n{\"prompt\":\"Again\"}\n",
+        )
+        .unwrap();
+        assert!(parse_args_from(args).is_err());
+        std::fs::write(dir.path().join("prompt.jsonl"), "{\"prompt\":\"\"}\n").unwrap();
+        assert!(parse_args_from(args).is_err());
+        std::fs::write(dir.path().join("prompt.jsonl"), "{\"prompt\":\"Hello\"}\n").unwrap();
+        let duplicate = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Duplicate",
+            "--teacher-prompt-jsonl",
+            path,
+            "--teacher-token-ids",
+            "7",
+            "--json",
+        ];
+        assert!(parse_args_from(duplicate).is_err());
     }
 }
