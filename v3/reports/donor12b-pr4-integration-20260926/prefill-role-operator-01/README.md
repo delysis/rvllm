@@ -97,8 +97,9 @@ The output is explicitly labeled
 projection screen above timed GPU command-buffer intervals at M=6, 84, 230,
 650, or 1024, while the MLX wall timer includes `mx.eval` at M=512. MLX
 gate/up includes activation whereas the Metal gate/up operator does not.
-The MLX-LM model is a BF16 conversion whose tensor-byte identity with the
-rvLLM safetensor is unproved. These are useful role-scale diagnostics and
+The MLX-LM model is a BF16 conversion of the **base** 12B checkpoint, not the
+rvLLM 12B-it checkpoint; three corresponding layer-0 tensor-byte hashes
+are different (see `../mlx-exact-prompt-01/CHECKPOINT_IDENTITY.md`). These are useful role-scale diagnostics and
 show what to match next, not a normalized candidate ranking. In particular,
 the large Metal advantage over its *own* batch8 comparator cannot erase the
 separately measured exploratory full-route MLX advantage (~5.20x prompt
@@ -117,3 +118,9 @@ alignment but does not make the MLX wall and Metal GPU intervals equivalent,
 nor does it match fusion, activation, checkpoint tensors, or output-rounding
 boundaries. A normal-route stage trace or bounded fused-operator timing is
 still required to assign the default prefill's time by role.
+
+The same stage harness was also submitted as
+`g4-donor-mlx-it-bf16-stage-512-01` against the original 12B-it snapshot,
+after the M=512 Metal arm. Its result is pending. Pinned MLX-LM source
+statically maps the original checkpoint's tensor-key prefix, but successful
+device loading and output equivalence have not yet been demonstrated.

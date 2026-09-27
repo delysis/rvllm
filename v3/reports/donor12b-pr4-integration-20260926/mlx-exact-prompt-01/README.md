@@ -5,9 +5,10 @@ baseline. MLX was fed the **same 512 token IDs** recorded by the real-weight
 rvLLM Gemma 4 12B case, and both routes generated 64 tokens. The MLX-LM source
 and BF16 checkpoint configuration/index, rvLLM executable/metallib, scripts,
 manifests, queue observations, and normal-route reports are sealed in the
-manifests and `queue-results.tar.gz`. The MLX checkpoint is a separately
-packaged conversion; tensor-byte identity with the rvLLM checkpoint is **not**
-established. Generated IDs agree at index 0 (`236770`) and differ at index 1
+manifests and `queue-results.tar.gz`. Subsequent source and tensor-byte
+inspection established that the MLX package is a conversion of the **base**
+`google/gemma-4-12B` checkpoint while rvLLM used `google/gemma-4-12B-it`;
+see [CHECKPOINT_IDENTITY.md](CHECKPOINT_IDENTITY.md). Generated IDs agree at index 0 (`236770`) and differ at index 1
 (MLX `236771`, rvLLM `236770`), so this is a speed comparison at matched input
 shape, not numerical or output-trajectory equivalence.
 
@@ -19,7 +20,7 @@ shape, not numerical or output-trajectory equivalence.
 The orientation is about **5.14× faster MLX prompt phase** and **1.42× faster
 MLX generation** in this nearby, serial run. It is *not* a qualification ratio:
 the MLX condition sample failed the queue's freshness check (not a thermal or
-competing-process gate), the checkpoint bytes and continuations differ, the
+competing-process gate), the checkpoints and continuations differ, the
 sample counts differ, and the timing boundaries differ. MLX's `prompt_tps`
 comes from its first generated token after processing the prefix (the reported
 milliseconds are derived as `512 / prompt_tps`); rvLLM's phase boundary is
@@ -66,9 +67,9 @@ job used a new ID and source hash; no failed receipt was overwritten. Both
 corrected MLX jobs and the rvLLM job are retained in the archive, including
 conditions and stdout/stderr.
 
-Next comparisons should bracket rvLLM and MLX arms under the same workload,
-collect repeated samples without requiring thermal stability, and compare
-model tensor identities or explicitly keep the checkpoint difference. True
+Next comparisons should use the **same 12B-it checkpoint** for both frameworks,
+bracket arms under the same workload, and collect repeated samples without
+requiring thermal stability. True
 per-role GPU timing remains missing. The opt-in MMA prefill switch must not be
 promoted until route-preserving internal-tensor and checkpoint-quality gates
 resolve the continuation divergence.
