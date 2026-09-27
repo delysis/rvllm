@@ -169,6 +169,10 @@ const RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_STOP_AFT
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_LAYER";
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+const RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV: &str = "RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION";
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_TRACE_JSON_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_JSON";
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV: &str = "RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS";
@@ -794,7 +798,31 @@ fn metal_debug_stop_after_layer() -> Option<usize> {
 
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 fn metal_debug_trace_layers() -> Vec<usize> {
-    std::env::var(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV)
+    metal_debug_parse_layer_list(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV)
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_route_trace_layers() -> Vec<usize> {
+    metal_debug_parse_layer_list(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV)
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_route_trace_position() -> Option<i32> {
+    let raw = std::env::var(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV).ok()?;
+    match raw.parse() {
+        Ok(position) => Some(position),
+        Err(err) => {
+            eprintln!(
+                "metal debug trace: ignoring invalid {RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV}={raw:?}: {err}"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(all(test, feature = "apple", target_os = "macos"))]
+fn metal_debug_parse_layer_list(name: &str) -> Vec<usize> {
+    std::env::var(name)
         .ok()
         .map(|raw| {
             raw.split(',')
@@ -807,7 +835,7 @@ fn metal_debug_trace_layers() -> Vec<usize> {
                         Ok(layer_idx) => Some(layer_idx),
                         Err(err) => {
                             eprintln!(
-                                "metal debug trace: ignoring invalid trace layer {part:?}: {err}"
+                                "metal debug trace: ignoring invalid {name} layer {part:?}: {err}"
                             );
                             None
                         }
@@ -872,6 +900,7 @@ fn metal_debug_layer_controls_enabled() -> bool {
     metal_debug_finite_layers_enabled()
         || metal_debug_stop_after_layer().is_some()
         || !metal_debug_trace_layers().is_empty()
+        || !metal_debug_route_trace_layers().is_empty()
 }
 
 #[cfg(all(not(test), feature = "apple", target_os = "macos"))]
@@ -942,12 +971,14 @@ fn debug_f16_summary_json(
     let mut first_nonfinite_index = None;
     let mut max_abs = 0.0f32;
     let mut abs_sum = 0.0f64;
+    let mut digest = Sha256::new();
     let mut first_values = String::new();
     let mut selected_values = Vec::new();
     const SELECTED_TRACE_INDICES: &[usize] = &[
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 16, 32, 64, 128, 256, 512, 1024, 1535,
     ];
     for (idx, raw) in bits.iter().enumerate() {
+        digest.update(raw.to_le_bytes());
         let value = f16::from_bits(*raw).to_f32();
         if idx < 16 {
             if idx > 0 {
@@ -982,8 +1013,9 @@ fn debug_f16_summary_json(
     };
     let first_nonfinite =
         first_nonfinite_index.map_or_else(|| "null".to_owned(), |idx| idx.to_string());
+    let sha256_le_u16 = format!("{:x}", digest.finalize());
     format!(
-        "\"{label}\":{{\"shape\":[{num_tokens},{elems_per_token}],\"total_count\":{elem_count},\"finite_count\":{finite_count},\"max_abs\":{max_abs:.9e},\"mean_abs\":{mean_abs:.9e},\"first_nonfinite_index\":{first_nonfinite},\"first_values\":[{first_values}],\"selected\":[{}]}}",
+        "\"{label}\":{{\"shape\":[{num_tokens},{elems_per_token}],\"sha256_le_u16\":\"{sha256_le_u16}\",\"total_count\":{elem_count},\"finite_count\":{finite_count},\"max_abs\":{max_abs:.9e},\"mean_abs\":{mean_abs:.9e},\"first_nonfinite_index\":{first_nonfinite},\"first_values\":[{first_values}],\"selected\":[{}]}}",
         selected_values.join(",")
     )
 }
@@ -1016,6 +1048,7 @@ fn debug_write_layer_trace_json(
     attention_kv_cache_v_offset: usize,
     shared_kv_source_layer: Option<usize>,
     trace: Option<&MetalLayerTraceState>,
+    route_observation: bool,
 ) -> Result<()> {
     let phase_name = match phase {
         MetalPhase::Decode => "decode",
@@ -1255,11 +1288,26 @@ fn debug_write_layer_trace_json(
     let shared_kv_source_layer_json = shared_kv_source_layer
         .map(|layer| layer.to_string())
         .unwrap_or_else(|| "null".to_owned());
+    let observation_mode = if route_observation {
+        "post_layer_existing_buffers_per_layer_sync"
+    } else {
+        "instrumented_tensor_snapshots"
+    };
     let json = format!(
-        "{{\"schema\":\"rvllm.gemma4_metal_layer_trace.v1\",\"op\":\"{op}\",\"phase\":\"{phase_name}\",\"layer\":{layer_idx},\"shared_kv_source_layer\":{shared_kv_source_layer_json},\"num_tokens\":{num_tokens},\"kv_cache_rows\":{kv_cache_rows},\"summaries\":{{{}}},\"claim\":\"rvLLM Metal layer debug summary only; no final logits, ANE, or production claim.\"}}\n",
+        "{{\"schema\":\"rvllm.gemma4_metal_layer_trace.v1\",\"observation_mode\":\"{observation_mode}\",\"op\":\"{op}\",\"phase\":\"{phase_name}\",\"layer\":{layer_idx},\"shared_kv_source_layer\":{shared_kv_source_layer_json},\"num_tokens\":{num_tokens},\"kv_cache_rows\":{kv_cache_rows},\"summaries\":{{{}}},\"claim\":\"rvLLM Metal layer debug summary only; per-layer synchronization changes scheduling and this is not a timing, final-logit, ANE, or production claim.\"}}\n",
         summaries.join(",")
     );
-    std::fs::write(path, json).map_err(|_| {
+    let write_result = if route_observation {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .and_then(|mut file| file.write_all(json.as_bytes()))
+    } else {
+        std::fs::write(path, json)
+    };
+    write_result.map_err(|_| {
         RvllmError::apple(
             AppleError::InvalidWeightBlob {
                 reason: "failed to write Metal layer trace JSON",
@@ -4032,11 +4080,34 @@ impl ModelMetalBackend {
             Vec::new()
         };
         #[cfg(test)]
+        let route_trace_layers = if self.explicit_options.is_none() {
+            metal_debug_route_trace_layers()
+        } else {
+            Vec::new()
+        };
+        #[cfg(test)]
+        let route_trace_position = metal_debug_route_trace_position();
+        #[cfg(test)]
         let trace_json_path = self
             .explicit_options
             .is_none()
             .then(metal_debug_trace_json_path)
             .flatten();
+        #[cfg(test)]
+        if !route_trace_layers.is_empty()
+            && (route_trace_position.is_none()
+                || trace_json_path.is_none()
+                || route_trace_layers
+                    .iter()
+                    .any(|idx| trace_layers.contains(idx)))
+        {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "route trace requires position and JSON path, with no detailed trace overlap",
+                },
+                model_ctx(op),
+            ));
+        }
         #[cfg(test)]
         let shared_kv_skip_mode = if self.explicit_options.is_none() {
             metal_debug_shared_kv_skip_mode()
@@ -4049,7 +4120,8 @@ impl ModelMetalBackend {
         let debug_layer_checks = (self.explicit_options.is_none()
             && metal_debug_finite_layers_enabled())
             || stop_after_layer.is_some()
-            || !trace_layers.is_empty();
+            || !trace_layers.is_empty()
+            || !route_trace_layers.is_empty();
         #[cfg(not(test))]
         let debug_layer_checks = false;
 
@@ -4338,9 +4410,17 @@ impl ModelMetalBackend {
             }
 
             #[cfg(test)]
+            let route_trace_this_layer = route_trace_layers.contains(&one.layer_idx)
+                && route_trace_position.is_some_and(|position| {
+                    let region = &one.positions;
+                    let ptr = unsafe { arena.host_ptr(region) as *const i32 };
+                    unsafe { ptr.read() == position }
+                });
+            #[cfg(test)]
             if (self.explicit_options.is_none() && metal_debug_finite_layers_enabled())
                 || stop_after_layer.is_some()
                 || trace_layers.contains(&one.layer_idx)
+                || route_trace_this_layer
             {
                 self.wait_for_metal_queue("debug_layer_finite")?;
                 let residual_nonfinite = debug_print_f16_region_token_stats(
@@ -4440,6 +4520,7 @@ impl ModelMetalBackend {
                             attention_kv_cache_v_offset,
                             one.shared_kv_source_layer,
                             layer_trace_state,
+                            false,
                         )?;
                         eprintln!(
                             "metal debug trace: wrote layer {} summary to {}",
@@ -4447,6 +4528,45 @@ impl ModelMetalBackend {
                             layer_path.display()
                         );
                     }
+                }
+                if route_trace_this_layer {
+                    let path = trace_json_path
+                        .as_deref()
+                        .expect("validated route trace path");
+                    let layer_path = metal_debug_trace_json_path_for_layer(path, one.layer_idx);
+                    debug_write_layer_trace_json(
+                        arena,
+                        &layer_path,
+                        op,
+                        phase,
+                        one.layer_idx,
+                        num_tokens,
+                        state.hidden_size,
+                        one.dims.q_dim,
+                        one.dims.kv_dim,
+                        intermediate,
+                        state.residual.offset,
+                        one.q.offset,
+                        one.k.offset,
+                        one.v.offset,
+                        one.attn_out.offset,
+                        one.gate_up_out.offset,
+                        one.activated.offset,
+                        state.ple.as_ref().map_or(0, |ple| ple.ple_dim),
+                        state.max_probe_tokens,
+                        one.kv_cache_k.offset,
+                        one.kv_cache_v.offset,
+                        attention_kv_cache_k_offset,
+                        attention_kv_cache_v_offset,
+                        one.shared_kv_source_layer,
+                        None,
+                        true,
+                    )?;
+                    eprintln!(
+                        "metal debug route trace: wrote dispatch-preserving layer {} summary to {}",
+                        one.layer_idx,
+                        layer_path.display()
+                    );
                 }
             }
 
