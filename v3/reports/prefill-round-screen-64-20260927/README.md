@@ -62,9 +62,25 @@ the same 5% between-process drift rejection. Its referee SHA-256 is
 `314b251bb766c09e6cb511ac6491d53b44446a9cccae686848f919ab26dae8aa`;
 its driver SHA-256 is
 `5de0112e8adf54be22b17cc32d4d5a5a72ccd69efb05de12f8aa2137128b8811`.
-Two independent M256 correctness arms have been submitted with new IDs;
-matched timing is admitted only if both pass. The v3 outcome is pending, not
-silently substituted for the rejected v2 result.
+Both independent v3 M256 correctness arms passed with eligible queue
+conditions. The predeclared eight-job ABBA/BAAB timing sequence was then
+submitted under the new `prefill26-projection-v3-time256-20260927` campaign.
+All eight jobs succeeded and were queue eligible in one sampled stratum (AC,
+power mode 2, thermal state 0, low-power mode off); each has seven power
+samples and no queue-reported violations. The unchanged 5% drift gate passed:
+0.773% for load4 and 0.065% for lookahead. Per-process median GPU intervals
+were 2.960–2.983 ms for load4 and 2.373–2.374 ms for lookahead. The
+descriptive control/lookahead ratio was **1.2507×**. This is a prospective
+*isolated M256 operator* win under the new, separately declared protocol, not
+a retroactive v2 pass, full-model speedup, or production promotion. Independent
+shape and checkpoint/full-route quality remain open. V3 adjudication SHA-256:
+`e048f7e48a4a98540d598dac88913e9911ebb70d300248033cb1dcb6abfde1c0`.
+The ten v3 manifests and queue receipts are archived separately as
+`queue-results-v3.tar.gz` (SHA-256
+`ab67045fceb38c1e6c5db1cbb080cc388be62b85288781363f35c48de6526177`).
+The small inner referee/driver JSON and logs, without multi-gigabyte raw
+buffers, are in `inner-v3-json.tar.gz` (SHA-256
+`86c6662b4e6107650cad320ac758b769a6fb02afe2ef80048235216a59b6661c`).
 
 The frozen v1 executable is SHA-256
 `227d6e45a90060ca7b47f723ed9fefb6c030d9d3a117c18939468e61356c2107`.
