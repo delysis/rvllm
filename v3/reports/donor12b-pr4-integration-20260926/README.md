@@ -7,7 +7,9 @@ real-weight donor component screen; and
 [`prefill512-01/README.md`](prefill512-01/README.md) records the paired
 512-token prefill-off/on/on/off comparison;
 [`global1024-01/README.md`](global1024-01/README.md) isolates SG8 global
-attention at 1024 tokens; and
+attention at 1024 tokens;
+[`global1024-64-01/README.md`](global1024-64-01/README.md) extends that
+component toggle to 64 sustained decode steps; and
 [`prefill512-64-01/README.md`](prefill512-64-01/README.md) finds the first
 64-token continuation differences for each prefill switch. These default-off
 diagnostic experiments do not promote a kernel or establish quality.
