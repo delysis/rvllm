@@ -663,7 +663,22 @@ fn prepare(
     }
     json_new(&root.join("compile-jobs.json"), &json!(all))
 }
+struct GeneratorRepair {
+    receipt_pin: Value,
+    generator_pin: Value,
+}
+
 fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String]) -> Result {
+    generate_with_repair(root, timing, length, selected, None)
+}
+
+fn generate_with_repair(
+    root: &Path,
+    timing: bool,
+    length: Option<u32>,
+    selected: &[String],
+    repair: Option<&GeneratorRepair>,
+) -> Result {
     let config_path = root.join("campaign.json");
     let config = read(&config_path)?;
     let second_round = config["screen_protocol"] == round_two::PROTOCOL;
@@ -677,10 +692,37 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
             .as_str()
             .ok_or("test missing")?,
     )?;
-    if pin(&test)? != config["test_executable"]
-        || pin(&std::env::current_exe()?)? != config["job_generator"]
-    {
-        return Err("test/generator executable identity drift".into());
+    if pin(&test)? != config["test_executable"] {
+        return Err("test executable identity drift".into());
+    }
+    let current_generator = pin(&std::env::current_exe()?)?;
+    if let Some(repair) = repair {
+        let original = absolute(
+            config["job_generator"]["path"]
+                .as_str()
+                .ok_or("original generator path missing")?,
+        )?;
+        let repaired = absolute(
+            repair.generator_pin["path"]
+                .as_str()
+                .ok_or("repair generator path missing")?,
+        )?;
+        let receipt = absolute(
+            repair.receipt_pin["path"]
+                .as_str()
+                .ok_or("repair receipt path missing")?,
+        )?;
+        if !second_round
+            || !timing
+            || pin(&original)? != config["job_generator"]
+            || pin(&repaired)? != repair.generator_pin
+            || pin(&receipt)? != repair.receipt_pin
+            || current_generator["sha256"] != repair.generator_pin["sha256"]
+        {
+            return Err("round-two generator repair identity drift".into());
+        }
+    } else if current_generator != config["job_generator"] {
+        return Err("generator executable identity drift".into());
     }
     let retainer = if timing {
         let path = absolute(
@@ -779,6 +821,10 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         ];
         if second_round {
             inputs.push(pin(&root.join("round2-plan.json"))?);
+            if let Some(repair) = repair {
+                inputs.push(repair.receipt_pin.clone());
+                inputs.push(repair.generator_pin.clone());
+            }
             if let Some(prerequisite) = &prerequisite {
                 inputs.extend(prerequisite.iter().cloned());
             }
@@ -983,6 +1029,72 @@ fn generate(root: &Path, timing: bool, length: Option<u32>, selected: &[String])
         }
     }
     json_new_or_identical(&root.join(output), &json!(all))
+}
+
+/// Continue an immutable round-two campaign after a generator-only repair.
+/// The old generator and every prior screen remain pinned; only new jobs gain
+/// the content-addressed repaired generator and a separate repair receipt.
+fn repair_round_two_timing(root: &Path, length: u32, candidate_name: &str) -> Result {
+    let candidate: MetalResearchCandidate = candidate_name.parse()?;
+    if !round_two::supported(candidate) || length < 512 {
+        return Err("repair requires one supported round-two survivor at L512 or later".into());
+    }
+    validate_timing_request(length, &[candidate_name.to_owned()])?;
+    let config_path = root.join("campaign.json");
+    let config = read(&config_path)?;
+    if config["screen_protocol"] != round_two::PROTOCOL
+        || !config["candidate_names"]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name == candidate_name))
+    {
+        return Err("candidate is not in the immutable round-two campaign".into());
+    }
+    let original = absolute(
+        config["job_generator"]["path"]
+            .as_str()
+            .ok_or("original generator path missing")?,
+    )?;
+    if pin(&original)? != config["job_generator"] {
+        return Err("original generator identity drift".into());
+    }
+    let current = std::env::current_exe()?;
+    if hash(&current)? == config["job_generator"]["sha256"] {
+        return Err("repair generator must differ from the original".into());
+    }
+    // This validates the complete predecessor chain without rerunning it.
+    // Existing screen files admit only byte-for-byte regenerated content.
+    let prerequisite_pins = admit_round_two(root, candidate, length)?;
+    let queue = absolute(config["queue"].as_str().ok_or("queue missing")?)?;
+    let snapshot = snapshot_executable(&current, &queue, "round2-repair-generator")?;
+    let generator_pin = pin(&snapshot)?;
+    let receipt = json!({
+        "schema":"rvllm.global-decode.generator-repair.v1",
+        "campaign":config["campaign"],
+        "campaign_pin":pin(&config_path)?,
+        "original_generator":config["job_generator"],
+        "repair_generator":generator_pin,
+        "candidate":candidate_name,
+        "length":length,
+        "prerequisite_pins":prerequisite_pins,
+        "repair_scope":"immutable JSON regeneration uses exact original bytes; no completed queue job rerun",
+        "promotion":false
+    });
+    let receipt_path = root.join(format!(
+        "{}-L{length}.generator-repair.json",
+        candidate.name()
+    ));
+    json_new_or_identical(&receipt_path, &receipt)?;
+    let repair = GeneratorRepair {
+        receipt_pin: pin(&receipt_path)?,
+        generator_pin: pin(&snapshot)?,
+    };
+    generate_with_repair(
+        root,
+        true,
+        Some(length),
+        &[candidate_name.to_owned()],
+        Some(&repair),
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -2360,6 +2472,8 @@ fn main() -> Result {
             prepare(campaign,&absolute(root)?,&absolute(queue)?,&absolute(test)?,&absolute(conditions)?,selected,true,Some(&absolute(prior)?)),
         [action,root,length,selected @ ..] if action=="review-round2" && !selected.is_empty() =>
             review_round_two(&absolute(root)?,length.parse()?,selected),
+        [action,root,length,candidate] if action=="repair-round2-timing" =>
+            repair_round_two_timing(&absolute(root)?,length.parse()?,candidate),
         [action,root] if action=="oracle-jobs" => generate(&absolute(root)?,false,None,&[]),
         [action,root,selected @ ..] if action=="oracle-jobs" && !selected.is_empty() =>
             generate(&absolute(root)?,false,None,selected),
@@ -2372,7 +2486,7 @@ fn main() -> Result {
             advance(&absolute(root)?,length.parse()?,&absolute(output)?,expected),
         [action,root,stage,output,expected @ ..] if action=="operator-advance" && !expected.is_empty() =>
             operator_advance(&absolute(root)?,stage,&absolute(output)?,expected),
-        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE... | operator-advance ROOT compile|oracle QUEUE_OUTPUT EXPECTED_CANDIDATE... | prepare-round2 ID ROOT QUEUE TEST_EXE CONDITIONS_JSON CANDIDATE... | confirm-round2 ID ROOT QUEUE TEST_EXE CONDITIONS_JSON PRIOR_ROOT CANDIDATE... | review-round2 ROOT LENGTH CANDIDATE...".into()),
+        _=>Err("usage: rvllm-global-decode-jobs test-exe CARGO_JSON | emit-source CANDIDATE FRESH_FILE | prepare ID ROOT QUEUE TEST_EXE CONDITIONS_JSON [CANDIDATE...] | compile SOURCE FRESH_OUTPUT_DIR | oracle-jobs ROOT [CANDIDATE...] | timing-jobs ROOT [LENGTH CANDIDATE...] | advance ROOT LENGTH OUTPUT EXPECTED_CANDIDATE... | operator-advance ROOT compile|oracle QUEUE_OUTPUT EXPECTED_CANDIDATE... | prepare-round2 ID ROOT QUEUE TEST_EXE CONDITIONS_JSON CANDIDATE... | confirm-round2 ID ROOT QUEUE TEST_EXE CONDITIONS_JSON PRIOR_ROOT CANDIDATE... | review-round2 ROOT LENGTH CANDIDATE... | repair-round2-timing ROOT LENGTH CANDIDATE".into()),
     }
 }
 
