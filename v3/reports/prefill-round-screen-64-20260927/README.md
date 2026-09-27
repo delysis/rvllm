@@ -50,6 +50,22 @@ if warranted; these receipts will not be rewritten or selectively discarded.
 Adjudication SHA-256:
 `8e39027dc82e50f905a7ae177864ffb241aefc8638e64e48fd7ac27babc6d8d4`.
 
+The preserved nine-sample GPU series show a consistent within-process decline:
+the first measured sample exceeds the last in all eight jobs, sometimes by
+nearly 90%, after the v2 protocol's two fixed warmups. This supports an
+insufficient-warmup explanation for part of the drift; it does not establish
+the exact cause or rescue v2. A separately source- and driver-sealed v3
+protocol (`c85c6f1e`) predeclares **20 fixed warmups followed by the same nine
+measured samples** for timing jobs, while correctness screens retain two
+warmups. It does not wait for a thermal state or for convergence, and retains
+the same 5% between-process drift rejection. Its referee SHA-256 is
+`314b251bb766c09e6cb511ac6491d53b44446a9cccae686848f919ab26dae8aa`;
+its driver SHA-256 is
+`5de0112e8adf54be22b17cc32d4d5a5a72ccd69efb05de12f8aa2137128b8811`.
+Two independent M256 correctness arms have been submitted with new IDs;
+matched timing is admitted only if both pass. The v3 outcome is pending, not
+silently substituted for the rejected v2 result.
+
 The frozen v1 executable is SHA-256
 `227d6e45a90060ca7b47f723ed9fefb6c030d9d3a117c18939468e61356c2107`.
 The frozen v2 executable is SHA-256
