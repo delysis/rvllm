@@ -489,3 +489,24 @@ All 12 inner child receipts, config and summary are retained in
 The next accepted speed campaign would need a *predeclared* variance-robust
 protocol and independent numerical/logit/reference quality, not a favorable
 resample of this job.
+
+## One-step logit diagnostic (pending)
+
+Two new immutable correctness jobs, `prefill26-logits-m304-off-g1-20260927`
+and `prefill26-logits-m304-combined-g1-20260927`, run the identical 304-token
+original-12B-it prompt through the normal and combined BF16 Metal routes.
+They pin the original model, tokenizer, inference executable, and respective
+metallibs; the candidate depends on the control's queue success. Each requests
+one generated token and the existing diagnostic top 256 logits. Neither is a
+timing job, and neither changes the kernel-selection path to collect a trace.
+
+The new safe-Rust `rvllm-prefill-logit-compare` checks the terminal queue
+receipts, identities, actual dispatch, prompt and generated IDs, and finite,
+unique, sorted top-logit entries before writing a create-new comparison.
+It records both jobs' sampled-condition eligibility rather than rejecting a
+run solely for a stale observer. Its focused tests passed locally. The hook
+reads logits **after the single decode step**, so this is a limited
+distribution diagnostic, not the prefill-boundary logits, a full-vocabulary
+comparison, a first-internal-difference trace, an independent reference, or
+a checkpoint-wide quality gate. The results will be reported here only after
+both queue jobs reach terminal receipts.
