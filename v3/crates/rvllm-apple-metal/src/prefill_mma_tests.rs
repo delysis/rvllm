@@ -140,6 +140,26 @@ fn native_bf16_mma_checks_tails_precision_and_real_projection_time(
             ("down", 1024, 3840, 15360, vec!["mlp.down_proj"]),
         ];
     }
+    if std::env::var_os("RVLLM_METAL_MMA_M512").is_some() {
+        shapes = vec![
+            (
+                "qkv-sliding",
+                512,
+                8192,
+                3840,
+                vec!["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"],
+            ),
+            (
+                "gate-up",
+                512,
+                30720,
+                3840,
+                vec!["mlp.gate_proj", "mlp.up_proj"],
+            ),
+            ("output", 512, 3840, 4096, vec!["self_attn.o_proj"]),
+            ("down", 512, 3840, 15360, vec!["mlp.down_proj"]),
+        ];
+    }
     for (label, m, n, k, names) in shapes {
         let mut weights = Vec::new();
         for name in names {

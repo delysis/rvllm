@@ -62,10 +62,58 @@ The complete raw `role-timing.json` SHA-256 is
 the immutable queue receipt archive SHA-256 is
 `14e05ef1caee196f802ad392a7b0756197d3d418ed882fc73086211a70a9d73f`.
 
-The already-implemented pinned MLX-LM BF16 stage harness was submitted next
-as `g4-donor-mlx-bf16-stage-512-01` with a zero-second stability gate. It
-measures 22 isolated prefill/decode stage cases at length 512 using upstream
-MLX's synchronized timing-loop protocol. Its receipt is pending. Even when
-complete, its loaded conversion, operator shapes, and synchronization
-boundaries must be compared explicitly before any rvLLM/MLX role ratio is
-called matched.
+## MLX BF16 stage orientation at length 512
+
+The already-implemented pinned MLX-LM stage harness completed as
+`g4-donor-mlx-bf16-stage-512-01`, with a zero-second stability gate. Its
+sampled conditions were eligible (AC, power mode 2, thermal state 0); the
+test exited zero and measured all 22 planned cases. It uses MLX-LM source
+`87b7b583`, MLX timing-protocol source `c215b6f8`, five warmups and 100
+`mx.eval`-synchronized iterations per isolated case. Inputs are materialized
+before timing. The following values are the mean milliseconds per iteration,
+not a normal autoregressive-route profile:
+
+| MLX stage | Prefill M=512, ms | Decode M=1, ms |
+| --- | ---: | ---: |
+| Embedding and scale | 0.443 | 0.317 |
+| Sliding QKV projection | 2.979 | 0.427 |
+| Full-attention QKV projection | 3.002 | 0.373 |
+| Sliding SDPA core | 1.593 | 0.180 |
+| Full SDPA core | 1.947 | 0.287 |
+| Sliding O projection | 1.524 | 0.264 |
+| Full O projection | 2.882 | 0.373 |
+| Gate/up and activation | 9.890 | 0.748 |
+| FFN down projection | 5.772 | 0.477 |
+| Representative RMSNorm and residual | 0.343 | 0.166 |
+| Tied LM head and logit softcap | 80.452 | 5.102 |
+
+The prefill LM-head case projects all 512 rows and must not be counted as
+normal-route prefill cost, where only the final position is needed. The
+representative layer is 0 for sliding attention and 5 for full attention.
+The output is explicitly labeled
+`measured_microbenchmark_not_normal_route` in the raw JSON.
+
+**No rvLLM/MLX per-role speedup follows from this table.** The Metal
+projection screen above timed GPU command-buffer intervals at M=6, 84, 230,
+650, or 1024, while the MLX wall timer includes `mx.eval` at M=512. MLX
+gate/up includes activation whereas the Metal gate/up operator does not.
+The MLX-LM model is a BF16 conversion whose tensor-byte identity with the
+rvLLM safetensor is unproved. These are useful role-scale diagnostics and
+show what to match next, not a normalized candidate ranking. In particular,
+the large Metal advantage over its *own* batch8 comparator cannot erase the
+separately measured exploratory full-route MLX advantage (~5.20x prompt
+phase, ~1.40x decode for an exact-token 512+64 sequence); that framework
+comparison has additional timing-boundary and generated-output differences.
+
+The raw stage JSON SHA-256 is
+`0a1620b7cbcae5966f8ac109357e315cee9275813c77f605fb0b7902499c490b`;
+the complete immutable queue receipt archive SHA-256 is
+`f618e32951e5e736ea0cd56dc7baeaf9579feac398ef9aa99347df262ba0248d`.
+The real-weight M=512 Metal arm was submitted as
+`g4-donor-bf16-prefill-mma-role-m512-01`; it measures sliding QKV, gate/up,
+O projection, and FFN down on the same M with the earlier production-versus-
+prototype correctness checks. Its result is pending. This improves shape
+alignment but does not make the MLX wall and Metal GPU intervals equivalent,
+nor does it match fusion, activation, checkpoint tensors, or output-rounding
+boundaries. A normal-route stage trace or bounded fused-operator timing is
+still required to assign the default prefill's time by role.
