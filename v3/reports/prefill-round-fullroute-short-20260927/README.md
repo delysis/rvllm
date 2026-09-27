@@ -80,3 +80,11 @@ pipeline alone, and the dependent
 `prefill26-fullroute-varied-pipeline32x64-q4k16-20260927` tests the combined
 projection and attention selection. They are distinct selectable metallibs
 with pinned hashes. No result or speed claim is attached to those jobs yet.
+
+The separate `profile-off-a`, `profile-pipeline`, `profile-off-b` manifests
+predeclare a three-process control/candidate/control diagnostic series. Each
+process retains **all three** built-in profile samples for both varied prompts.
+They have dependency order and distinct report paths. This is a variance
+screen, **not** the required within-job ABBA/BAAB qualification: its arms are
+not interleaved and no favorable sample may be selected. The 5% drift and
+independent confirmation gates remain necessary before any speed verdict.
