@@ -70,6 +70,8 @@ mod donor12b_device_tests;
 pub mod donor12b_metal;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod gemma4_model;
+#[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+pub mod gpu_capture;
 pub mod kernels;
 pub mod options;
 pub mod prefill_attention_candidate;

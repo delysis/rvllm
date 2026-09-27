@@ -1860,6 +1860,19 @@ fn preflight_low_bit_replacement_descriptors_with_options(
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 impl ModelMetalBackend {
+    /// Explicit diagnostic capture of this backend's Metal device.
+    #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+    pub fn start_gpu_capture(
+        &self,
+        path: &std::path::Path,
+    ) -> std::result::Result<rvllm_apple_metal::gpu_capture::MetalGpuCapture, String> {
+        let context = self
+            .ctx
+            .as_ref()
+            .ok_or_else(|| "Metal backend is not prepared for GPU capture".to_owned())?;
+        rvllm_apple_metal::gpu_capture::MetalGpuCapture::start(context, path)
+    }
+
     #[must_use]
     pub fn new(model_dir: PathBuf) -> Self {
         Self {

@@ -1648,6 +1648,13 @@ fn run_direct_session(
     let metal_weight_dtype = backend.metal_weight_dtype_report().to_owned();
     let metal_moe_router_weight_dtype = backend.metal_moe_router_weight_dtype_report().to_owned();
 
+    #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+    let capture_path = std::env::var_os("RVLLM_METAL_PREFILL_GPU_TRACE");
+    #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+    if capture_path.is_some() && cases.len() != 1 {
+        return Err("prefill GPU capture requires exactly one session case".into());
+    }
+
     let mut case_reports = Vec::with_capacity(cases.len());
     for (idx, case) in cases.iter().enumerate() {
         let case_start = std::time::Instant::now();
@@ -1681,6 +1688,14 @@ fn run_direct_session(
             vec![(prompt_len - 1) as u32],
             vec![prompt_len as u32],
         );
+        #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+        let gpu_capture = capture_path
+            .as_ref()
+            .map(|path| {
+                let capture = backend.start_gpu_capture(std::path::Path::new(path))?;
+                Ok::<_, String>((capture, path))
+            })
+            .transpose()?;
         let prefill_start = std::time::Instant::now();
         let prefill_ticket = backend
             .launch_prefill(&prefill)
@@ -1694,6 +1709,10 @@ fn run_direct_session(
                 case.spec.name,
                 prefill_out.len()
             ));
+        }
+        #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+        if let Some((capture, path)) = gpu_capture {
+            capture.finish(std::path::Path::new(path))?;
         }
         check_case_timeout(args, &case.spec.name, case_start)?;
         let prefill_ms = ms(prefill_start.elapsed());
@@ -2650,6 +2669,13 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     let prefill_dispatch_before = backend.probe_research_dispatches();
     #[cfg(feature = "metal-route-diagnostics")]
     let ordinary_before = backend.probe_ordinary_prefill_dispatches();
+    #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+    let gpu_capture = std::env::var_os("RVLLM_METAL_PREFILL_GPU_TRACE")
+        .map(|path| {
+            let capture = backend.start_gpu_capture(std::path::Path::new(&path))?;
+            Ok::<_, String>((capture, path))
+        })
+        .transpose()?;
     let prefill_start = std::time::Instant::now();
     let prefill_ticket = backend
         .launch_prefill(&prefill)
@@ -2662,6 +2688,10 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
             "prefill unexpectedly returned {} sampled tokens",
             prefill_out.len()
         ));
+    }
+    #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+    if let Some((capture, path)) = gpu_capture {
+        capture.finish(std::path::Path::new(&path))?;
     }
     let prefill_ms = ms(prefill_start.elapsed());
     let prefill_stats = stats_delta(prefill_stats_before, backend.probe_perf_stats());
