@@ -183,6 +183,52 @@ The 101-token failures are preserved and no sample or arm was removed. The
 the arms ran in separate processes. Its drift pass is **not** within-job
 ABBA/BAAB speed qualification, independent confirmation, checkpoint-quality
 acceptance, or promotion. The separately queued counterbalanced full-route
-job is now the next speed gate; the exact-token same-checkpoint MLX jobs will
+job was the next speed gate; the exact-token same-checkpoint MLX jobs will
 subsequently show where the new route stands relative to MLX, with their
 different timing boundary explicitly labeled.
+
+## Counterbalanced combined-route full-route screen
+
+The immutable `prefill26-fullroute-abba-combined-01-20260927` queue job
+completed successfully (exit 0, no violations, eligible sampled conditions).
+The sampled comparison stratum was AC power, power mode 2, thermal state 0,
+and low-power mode off; no thermal stability was required or inferred. The
+feature-gated Rust driver ran two fixed warmups per arm, then four measured
+control and four measured combined-route child processes in ABBA and BAAB
+order. It retained all 12 children's stdout, stderr, and validated receipts.
+Every child used the pinned original 12B-it weights, executable and prompts,
+produced the expected 64 generated IDs for each prompt, showed the expected
+candidate dispatch (or no research dispatch for control), and reported zero
+inference-case compilation. These checks establish route and output-ID
+agreement, **not** an independent numerical or checkpoint-quality oracle.
+
+| Prompt | Control prefill samples (ms) | Combined prefill samples (ms) | ABBA / BAAB control-to-candidate ratio | Five-percent within-arm drift |
+| --- | --- | --- | --- | --- |
+| 101 tokens | 6113.187, 6076.298, 6123.950, 6246.407 | 1696.250, 1767.662, 1809.402, 1824.129 | 3.519× / 3.405× | **Fail**: control 2.179%, candidate 7.539% |
+| 304 tokens | 12306.610, 12372.684, 12269.974, 12300.971 | 640.003, 640.364, 640.604, 639.076 | 19.275× / 19.201× | **Pass**: control 0.537%, candidate 0.145% |
+
+The 304-token prefill result is a strong, queue-eligible **single-job
+counterbalanced speed screen**; the 101-token result remains drift-inconclusive
+despite its apparent gain. The order-specific ratios were independently
+recomputed from the retained arrays. Neither result is an independently
+confirmed winner, production promotion, checkpoint-wide quality verdict, or
+MLX comparison. The 5% gate was not relaxed or applied selectively. Power
+sampling cannot establish fixed GPU clocks or absence of every transient
+competitor.
+
+The raw driver summary `abba-combined-01-raw/summary.json` has SHA-256
+`5173d5f7a3f75623461963a19c8249747caea7e91e6745c24bd57e8fe150108a`.
+The complete outer queue receipt (`job.json`, `report.json`,
+`conditions.jsonl`, and trial stdout/stderr) is
+`abba-combined-01-queue-result.tar.gz`, SHA-256
+`66f81029be7f408a3fe94b03a5cfaffc2a2e16221ba697db964c233e88adc385`.
+All 12 inner child receipts, the config, and summary are in
+`abba-combined-01-children.tar.gz`, SHA-256
+`100f5ddef36ff87230793dbe3fdbfd7c3df5726e1bec96205fe0fe7a107cc958`.
+The large checkpoint and compiled binaries remain local, with identities
+recorded in the receipts rather than copied into Git.
+
+Next: an independently run, predeclared confirmation at the same shapes;
+route-preserving tensor/logit/reference and checkpoint-quality checks; then
+same-checkpoint MLX orientation with its different prompt timing boundary
+made explicit. Do not rerun or rewrite this completed job.
