@@ -25,8 +25,8 @@ comparing.
 | Layer | On/off stored-buffer observation |
 | --- | --- |
 | 4 | All captured field digests equal. |
-| 5, first selected global layer | Q/K/V and active KV-cache digests equal. Attention output differs at 1 of 8,192 BF16 elements: index 2,428 is `b755` on versus `b754` off, or −0.000012695789337158203 versus −0.000012636184692382812 (absolute difference 5.960464477539063e−8). The complete 3,840-element stored residual after this layer is bitwise equal. |
-| 6 | Several KV/FFN digests differ. The attention output differs at 358 of 4,096 elements and the stored residual at 1,730 of 3,840; maximum finite residual difference is 0.046875. |
+| 5, first selected global layer | Q/K/V and physical-prefix KV-cache digests equal. Attention output differs at 1 of 8,192 BF16 elements: index 2,428 is `b755` on versus `b754` off, or −0.000012695789337158203 versus −0.000012636184692382812 (absolute difference 5.960464477539063e−8). The complete 3,840-element stored residual after this layer is bitwise equal. |
+| 6 | Physical-prefix KV and FFN digests differ. The attention output differs at 358 of 4,096 elements and the stored residual at 1,730 of 3,840; maximum finite residual difference is 0.046875. |
 
 Thus the **first observed stored-field difference** is one BF16 attention-output
 element in layer 5. It does not prove the first arithmetic difference, a defect,
@@ -54,6 +54,15 @@ K/V values, so it cannot test these candidates against an independent
 same-input reference. Do not alter donor arithmetic based on this source list
 or treat bitwise equality of the stored layer-5 residual as proof that the
 subsequent layer-6 state is equal.
+
+The route trace's KV summaries hash a contiguous physical prefix of each
+cache buffer (`kv_cache_rows * kv_dim` from its base offset), not a logical
+token sequence gathered through the block table. Therefore the layer-6 KV
+digest difference alone does **not** establish that an attention kernel read
+different logical history. Layer-6 Q/K/V values immediately after projection
+and normalization have matching digests; its attention output differs. A
+same-input reference needs the page table, valid logical length and the
+actual visible K/V entries, not just these physical-prefix hashes.
 
 Jobs: `g4-donor-route-trace-12b-bf16-on-03` and
 `g4-donor-route-trace-12b-bf16-off-03`. The trace executable SHA-256 is
