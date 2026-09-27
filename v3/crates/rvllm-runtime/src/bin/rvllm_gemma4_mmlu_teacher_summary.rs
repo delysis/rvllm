@@ -208,6 +208,7 @@ fn read_arm(
     let report_path = dir.join("report.json");
     let job_path = dir.join("job.json");
     let trial_path = dir.join("trial.stdout");
+    let stderr_path = dir.join("trial.stderr");
     let conditions_path = dir.join("conditions.jsonl");
     let report = read(&report_path)?;
     if string(&report, "id")? != id
@@ -306,6 +307,7 @@ fn read_arm(
         ("job", job_path.as_path()),
         ("report", report_path.as_path()),
         ("trial_stdout", trial_path.as_path()),
+        ("trial_stderr", stderr_path.as_path()),
         ("conditions", conditions_path.as_path()),
     ]
     .into_iter()
@@ -381,19 +383,30 @@ fn summarize_case(
 ) -> Result<Value> {
     let (control_steps, control_sum) = scored_steps(control, prompt, targets)?;
     let (candidate_steps, candidate_sum) = scored_steps(candidate, prompt, targets)?;
-    let positions = control_steps.iter().zip(&candidate_steps).enumerate().map(|(index, (a, b))| {
-        json!({
-            "index": index,
-            "target_token_id": targets[index],
-            "control_nll": a["negative_log_likelihood"],
-            "candidate_nll": b["negative_log_likelihood"],
-            "candidate_minus_control_nll": b["negative_log_likelihood"].as_f64().unwrap() - a["negative_log_likelihood"].as_f64().unwrap(),
-            "control_rank": a["target_rank"],
-            "candidate_rank": b["target_rank"],
-            "control_greedy_id": a["sampled_token_id"],
-            "candidate_greedy_id": b["sampled_token_id"],
+    let positions = control_steps
+        .iter()
+        .zip(&candidate_steps)
+        .enumerate()
+        .map(|(index, (a, b))| {
+            let control_nll = at(a, "negative_log_likelihood")?
+                .as_f64()
+                .ok_or("control NLL not numeric")?;
+            let candidate_nll = at(b, "negative_log_likelihood")?
+                .as_f64()
+                .ok_or("candidate NLL not numeric")?;
+            Ok(json!({
+                "index": index,
+                "target_token_id": targets[index],
+                "control_nll": control_nll,
+                "candidate_nll": candidate_nll,
+                "candidate_minus_control_nll": candidate_nll - control_nll,
+                "control_rank": a["target_rank"],
+                "candidate_rank": b["target_rank"],
+                "control_greedy_id": a["sampled_token_id"],
+                "candidate_greedy_id": b["sampled_token_id"],
+            }))
         })
-    }).collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     let rank_differences = positions
         .iter()
         .filter(|position| position["control_rank"] != position["candidate_rank"])
