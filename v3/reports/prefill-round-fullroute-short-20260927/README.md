@@ -754,3 +754,23 @@ Their complete ten-file queue archive is
 `5f389eceb9d62b3dd8a56fb0f11cd67ec7865bebbecefc9bd90b479bed7a0051`);
 `PREFILL_BOUNDARY_AUDIT.md` contains the pinned identities, actual dispatch
 and limitations. All probe timings are invalid as speed evidence.
+
+## Synthetic continuation quality diagnostic: completed
+
+Four immutable, serial, original-BF16-12B-it teacher-forced jobs on two
+**Codex-authored synthetic** passages all succeeded with unchanged pins and
+eligible sampled conditions. The combined candidate actually dispatched
+raw projection, raw norm, tiled projection and Q4 attention on all 48
+layers. Across 28 map-catalog targets, its NLL sum was 80.489513 versus
+80.899545 for control (candidate minus control -0.410032); across 36
+reservoir-log targets, it was 133.168436 versus 131.855451 (+1.312984).
+The routes chose the same greedy ID at every position, but target ranks
+changed at 4 and 10 positions respectively. Supplied targets appear in
+`generated_token_ids` as teacher-forcing transport; that field is **not**
+greedy agreement. Every position, condition, source identity and raw
+receipt is in `HELDOUT_QUALITY_RESULTS.md`, `heldout-teacher-summary-v1.json`
+and `heldout-teacher-queue-results-v1.tar.gz`. The submitted source JSON
+incorrectly says `human-authored`; `HELDOUT_QUALITY_PROTOCOL.md` corrects
+its provenance without changing pinned bytes. These two cases have no
+calibrated quality threshold or independent reference, and per-step readback
+invalidates timing. No quality acceptance or promotion follows.
