@@ -308,3 +308,38 @@ and queue condition observation remain in force. This is a predeclared
 **order-sensitivity test**, not evidence of a speed result until its terminal
 receipt and all 12 children are inspected. It does not replay any completed
 job or alter a production default.
+
+## Independent same-order ABBA confirmation
+
+The separately submitted immutable job
+`prefill26-fullroute-abba-combined-02-20260927` finished successfully (exit 0,
+no violations, eligible sampled AC / power-mode-2 / thermal-state-0 stratum).
+It used the same pinned configuration except for a fresh output path and
+retained all 12 children, including four fixed warmups. All measured children
+matched the expected 64 generated IDs in both cases, actual route dispatch,
+and zero inference-case compilation. An independent calculation from the
+retained eight measured child arrays reproduced the order-specific ratios.
+
+| Prompt | Control prefill samples (ms) | Combined prefill samples (ms) | ABBA / BAAB ratio | Five-percent within-arm drift |
+| --- | --- | --- | --- | --- |
+| 101 tokens, first case | 6023.265, 5960.802, 6225.040, 5888.634 | 1899.539, 1688.483, 1886.816, 1799.092 | 3.340× / 3.286× | **Fail**: control 3.350%, candidate 11.111% |
+| 304 tokens, second case | 12296.057, 12337.055, 12296.130, 12477.744 | 654.034, 639.720, 655.545, 635.646 | 19.040× / 19.187× | **Pass**: control 1.478%, candidate 2.811% |
+
+Thus the M304-second speed screen replicated in a separate queue job with
+both ABBA and BAAB blocks passing drift; the M101-first speed gate failed
+again, and its unfavorable observations remain intact. The repeat strengthens
+the **fixed-workload-position** result, not an arbitrary M304 prompt claim:
+both jobs put M304 second, so within-process prompt-order/cache effects remain
+unresolved. The queued reversed-order job is the predeclared probe of that
+limit. None of these runs supplies an independent tensor/logit reference,
+checkpoint-wide quality gate, matched MLX timing boundary, or production
+promotion.
+
+The second raw driver summary SHA-256 is
+`d328e5b48bb85bfded1e2f4da64a6094baa63adf5e027d2234653298fa30251b`.
+The complete queue receipt `abba-combined-02-queue-result.tar.gz` has SHA-256
+`c39e6f120df73754f4e1c1d9d5a59b0e9d2f3ae21da26e1745ab5f4d175dbd91`.
+All 12 inner child receipts, config and summary are in
+`abba-combined-02-children.tar.gz`, SHA-256
+`9618e8457991d135ce18544076df7899513f84d02401101fe7fbc2cb15a75ccf`.
+No completed job was replayed or modified.
