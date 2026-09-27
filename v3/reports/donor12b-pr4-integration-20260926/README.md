@@ -1,5 +1,17 @@
 # Donor12B Metal candidates on PR #4 — integration screen
 
+Latest follow-up evidence: [`SG8_MECHANISMS_AND_PREFILL.md`](SG8_MECHANISMS_AND_PREFILL.md)
+separates observed speed from mechanism hypotheses;
+[`component-screen-01/README.md`](component-screen-01/README.md) records the
+real-weight donor component screen; and
+[`prefill512-01/README.md`](prefill512-01/README.md) records the paired
+512-token prefill-off/on/on/off comparison;
+[`global1024-01/README.md`](global1024-01/README.md) isolates SG8 global
+attention at 1024 tokens; and
+[`prefill512-64-01/README.md`](prefill512-64-01/README.md) finds the first
+64-token continuation differences for each prefill switch. These default-off
+diagnostic experiments do not promote a kernel or establish quality.
+
 Source integration commit `cab070ffeb9b83b2b4e182b3fe5769a2d58b65d8` is based on
 PR #4 checkpoint `645a963f0fcdd76b3edc2e689bd1b796a60fd11f`. The two
 pre-existing donor QMV dispatch slots 60–61 are preserved; the new SG8/SG4
