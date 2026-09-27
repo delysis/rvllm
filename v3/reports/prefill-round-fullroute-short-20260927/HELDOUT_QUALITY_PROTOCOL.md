@@ -37,7 +37,7 @@ for `map-catalog` and
 `2a42c70fa235cee07a35dd9a1ecd001997eae3e9b7ad6e48760dc736115992d3`
 for `reservoir-log`.
 
-| Case | Prompt tokens including BOS | Human-authored target tokens |
+| Case | Prompt tokens including BOS | Codex-authored target tokens |
 | --- | ---: | ---: |
 | `map-catalog` | 203 | 28 |
 | `reservoir-log` | 199 | 36 |
