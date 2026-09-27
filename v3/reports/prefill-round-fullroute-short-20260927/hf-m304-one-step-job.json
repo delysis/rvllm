@@ -1,0 +1,67 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "prefill26-hf-m304-one-step-20260927",
+  "purpose": "correctness",
+  "command": {
+    "executable": {
+      "path": "/Users/george/christian_mystics/venv/bin/python",
+      "sha256": "695fc18cdb9a699c6b1ea88ce4027854782ed704eb34cc3200e6f8380155b6a8"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "args": [
+      "scripts/dump_gemma4_hf_reference_logits.py",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--prompt-token-ids",
+      "2,4394,8687,699,496,57728,151262,236787,669,8339,55288,19015,657,85083,236764,840,1061,5873,563,35726,1418,4168,9137,573,29283,236761,669,8710,55288,19015,1186,1056,506,6573,563,3426,22778,35769,810,6468,236761,2154,8492,1800,162012,964,1932,236793,506,8339,5873,10683,28959,4876,532,506,8710,5873,10683,12571,236761,2154,9863,506,6573,11076,2787,506,4576,236764,834,506,8710,55288,20246,6535,236761,669,8339,5873,10683,19925,4876,236761,2154,10119,506,8339,5873,10708,1061,14812,29283,9137,532,10683,951,4876,236764,1651,506,8710,55288,10683,25454,4876,236761,669,4667,96773,27662,600,1418,10683,2471,815,496,4709,31744,532,600,506,6376,18558,3014,951,87613,236761,562,3209,5433,3189,506,33563,31519,3595,8492,8339,4876,531,496,3540,11709,236764,840,53778,1602,711,2619,861,12505,236761,2154,9853,506,6573,691,16680,532,1800,162012,8678,236761,669,8339,5873,10683,12571,236772,21716,4876,236764,1651,506,8710,5873,10683,31013,236761,669,3540,11709,2036,10977,1724,3595,16258,532,951,1032,5734,236761,562,34926,6195,23513,506,3540,16258,618,9853,12505,236764,840,506,4667,96773,21105,600,15523,1547,506,3303,99885,12800,8492,236789,236751,236761,2154,7672,506,8710,55288,691,6535,573,9626,236764,1651,506,8339,5873,10683,19925,236772,21716,4876,236761,669,9626,2212,1602,711,3423,1027,5873,29283,580,7672,236761,669,151262,8150,496,16789,1527,529,4709,10683,12505,236764,11207,1679,684,55288,236764,2180,22953,16258,618,861,65949,236761,42187,506,69570,573,8492,1343,7672,236764,8701,506,1719,607,506,11333,9292,1527,236764,532,8082,3217,506,3595,3540,16258,776,711,2352,506,3890,236761",
+      "--decode-steps",
+      "1",
+      "--top-k",
+      "16",
+      "--selected-token-ids",
+      "107",
+      "--full-logits",
+      "--device",
+      "cpu",
+      "--output",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/hf-m304-one-step-reference.json"
+    ],
+    "env": {}
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/scripts/dump_gemma4_hf_reference_logits.py",
+      "sha256": "ee667350686acfb6f6110f07153bbd4a1e2af8170d0446d1b30052a86bd276e0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mlx-source-m304.json",
+      "sha256": "82f426165d049d2d736eef11fe8306be29d7e0decf75499d64ffe3f9a5ec5a53"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    }
+  ],
+  "after": [],
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [],
+    "observe_process_names": ["cargo", "rustc", "python", "rvllm_metal_infer"],
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184
+  },
+  "stable_seconds": 0,
+  "max_wait_seconds": 7200,
+  "max_run_seconds": 3600
+}

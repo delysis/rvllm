@@ -576,7 +576,7 @@ stdout/stderr and terminal reports, are in
 `hf-capital16-queue-results.tar.gz`, SHA-256
 `85bf379b904ee11a5e98eb98d597f98b11de9db739d312b331d8dfd8a2cd3a69`.
 
-## Long-prompt teacher-forced loss probe: submitted, not yet adjudicated
+## Long-prompt teacher-forced loss probe: complete diagnostic
 
 The default-off `metal-quality-research` CLI feature adds a **safe-Rust**
 teacher-forced diagnostic to the ordinary single-prompt Metal route. It
@@ -599,9 +599,46 @@ checkpoint, executable, respective metallibs, exact M304 prompt JSONL, and
 the same-checkpoint MLX report. The 16 target IDs are the first 16 IDs from
 that MLX run, sealed in `teacher-m304-mlx16.json` (SHA-256
 `9984b53cc02946d912048a860a69fe9c95f1e279a66487c4612ab7762f97c53b`).
-The jobs are intended to exercise actual combined raw projection/norm and
-Q4K16 dispatch on the long prefill route, then compare candidate and control
-loss on the *same fixed trajectory*. This is not held-out text, an
-independent numerical reference, full checkpoint quality, or a promotion
-gate. No result is asserted until both terminal queue receipts and dispatch
-ledgers have been inspected; failed receipts will be retained without replay.
+Both immutable jobs finished successfully with exit code zero, unchanged
+pinned files, eligible sampled conditions, and no queue violations. They
+produced the same 304 prompt IDs and 16 teacher-fed IDs. The control research
+dispatch ledger was empty. The combined route actually dispatched tiled GEMM
+48, QKV 48, raw projection 96, raw norm 96, D256 attention 40, and D512
+attention 8, without overflow. This closes the tiny-prompt *dispatch coverage*
+gap, but not the independent numerical-reference or checkpoint-quality gate.
+
+Every MLX-derived target was rank one and was the greedy sampled ID in **both**
+rvLLM routes at all 16 steps. Summed target NLL was 2.1273205155 for control
+and 2.0495501052 for combined (candidate minus control −0.0777704104);
+mean NLL was 0.1329575322 versus 0.1280968816, and exp(mean NLL) was
+1.14220149 versus 1.13666312. The candidate had a lower NLL on this one
+fixed, model-generated trajectory, but individual deltas had both signs:
+step 5 was +0.0366221 and step 15 was −0.1027260. The complete 16-row
+comparison, including target IDs, both greedy IDs, ranks, and both NLLs,
+is in `teacher-m304-comparison.json` (SHA-256
+`53726586f682d7368658afa80695372026e6681c3c8e14cfd30bb8404aefed8f`).
+The complete outer queue receipts (manifest, terminal report, conditions,
+stdout and stderr for both jobs) are in `teacher-m304-queue-results.tar.gz`
+(SHA-256 `e4697ceab2e22734767207f9f3c04403073cc9771ae06089a20bbb2b54429ab7`).
+The reported total compile counters were one library and 58/64 pipeline states
+for control/candidate; this single-prompt report does not separate preparation
+from inference compilation. No job was replayed or held for thermal stability.
+
+The trajectory comes from same-checkpoint **MLX-generated tokens**, not
+held-out truth. Agreement that they remain rank one is useful, and the
+route-dependent distribution difference is measurable, but neither arm is
+independently certified as numerically correct. The per-step readbacks also
+invalidate every timing field in these jobs as a speed measure. No promotion
+follows from this diagnostic; next use an independent same-checkpoint
+reference on the long prompt and broader held-out continuation quality.
+
+The next independent check is queued as immutable correctness job
+`prefill26-hf-m304-one-step-20260927`. It runs the existing, unchanged
+Transformers CPU reference script on the original 12B-it checkpoint, requesting
+one step of full-vocabulary logits and the top 16. Its 304 explicit prompt IDs
+were checked element-for-element against the sealed MLX source fixture before
+submission; the script, Python executable, checkpoint and fixture are pinned
+in `hf-m304-one-step-job.json`. This job is separate from Metal timing and
+will not establish multi-step or checkpoint-wide quality by itself. No CPU
+result is claimed until its terminal queue receipt and generated artifact
+have been inspected.
