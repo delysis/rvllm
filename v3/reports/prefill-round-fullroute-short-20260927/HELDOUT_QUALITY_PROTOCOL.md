@@ -53,7 +53,10 @@ No thermal-stability wait is permitted; report every condition observation.
 Before seeing data, the analysis is fixed as follows: retain all 28 and 36
 positions, report each route's sum and mean NLL for each case, the
 candidate-minus-control difference, every position where rank or greedy ID
-differs, and the first generated-ID difference if any. Require exact prompt
+differs, and the first **sampled greedy-ID** difference if any. The CLI's
+`generated_token_ids` field contains the forced target sequence in this
+mode, so equality in that field is a transport check, not model agreement.
+Require exact prompt
 and target IDs, unchanged pins, terminal queue success, and actual combined
 raw projection, raw normalization, QKV/GEMM and Q4 attention dispatch before
 calling this a route observation. Do not select favorable positions or
