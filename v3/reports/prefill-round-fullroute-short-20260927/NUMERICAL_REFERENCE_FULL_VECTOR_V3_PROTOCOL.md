@@ -48,7 +48,7 @@ tokenizer, exact prompt JSONLs and target IDs, checkpoint config and weights,
 HF script/environment, Metal source/executable/metallibs, and generator. The
 referee must verify terminal success/exit zero/unchanged pins/no overrun,
 complete condition journals, exact token IDs, full 262144-logit HF output,
-full 262144-bit Metal final rows, teacher receipt hashes, and actual combined
+full 262144-logit Metal final rows, teacher receipt hashes, and actual combined
 GEMM48/QKV48/raw projection96/raw norm96/Q4 D25640/D5128 dispatch per case.
 Preserve all five outer queue receipt files per job and each separate HF and
 Metal full-vector output, including failures. Never overwrite or resubmit a
@@ -88,3 +88,36 @@ directory. Those files remain local and unsubmitted; their paths must not be
 used as final queue artifacts. Before generating an authoritative fresh
 directory, finish the separate full-vector referee and review every resulting
 manifest and output path. No v3 queue job has been submitted.
+
+## Referee and authoritative manifest checkpoint (still no submission)
+
+The separate safe-Rust `rvllm_gemma4_full_vector_summary` source SHA-256 is
+`ac53c2e77926b786f3653bd3e01c726764675d25bdc3565a90c951bed45f3720`.
+Its six focused host tests passed, including all six frozen manifest hashes,
+stale-power-only condition classification, exact combined dispatch, HF tie
+ordering, full-vector bit/negative-infinity metrics, and rejection of wrong
+Metal scalar rank or full-vector receipt SHA. A host Clippy correctness gate
+passed. This is not a device-result or parity verdict.
+
+After that referee checkpoint, the generator wrote a **new** authoritative
+`numerical-reference-full-vector-v3-queue/` directory, distinct from the
+preserved dry run. The six sealed manifest SHA-256 values in queue order are:
+
+| Arm | Manifest SHA-256 |
+| --- | --- |
+| bridge HF | `194fda0dc5807ff6d02adac0b0b66b7a8f2fc6012bb31e7d6f58ebce22604a89` |
+| bridge control | `ec54f48d0b303643a3c8f5c35a84467faf1d9d4c38b77c08d2431738ead37a85` |
+| bridge combined | `767d4bf67d0c0fa80c18806ccbf39ca7a12d44c431ed567f4ac2fab6aadc0744` |
+| seed HF | `02fcb7a07c521e3f1fb064226aa39ba481d76c5a6de22d53a5c3dd203df877f8` |
+| seed control | `2ac12e6e661796a16929a264d81c2e541ddbb38ec06948967f7199d09129e1d4` |
+| seed combined | `83b1fd6fb074edc2b090d7014e555170ea2555142cfb74a4069398018eab76b1` |
+
+Bridge and seed prompt JSONL hashes are respectively
+`d59925dd4d9297fd802cd3fec73fc82162b8991b650ee8f9056b6999c120a6db`
+and `b7f8c4f4761a995b7bc4696388e046dd841651a47d7b7bc60fc2271ccba923ed`.
+Read-only review found the expected serial dependencies, fresh output paths,
+original model/HF environment and normal/combined metallibs, exact target
+IDs, new frozen Metal executable/full-vector flag and no old v2 source or
+executable pin. Neither the dry run nor these authoritative jobs have been
+submitted yet. Submission must use only the authoritative six manifests in
+the order above, after verifying queue state and unchanged pins.
