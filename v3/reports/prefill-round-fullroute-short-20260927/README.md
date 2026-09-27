@@ -84,7 +84,7 @@ there were zero inference-case library or pipeline-state compiles. The
 dependent
 `prefill26-fullroute-varied-pipeline32x64-q4k16-20260927` tests the combined
 projection and attention selection. They are distinct selectable metallibs
-with pinned hashes; the combined job has no result yet.
+with pinned hashes.
 
 The projection-only job reported prefill 1859.332 ms at M101 and 1192.767 ms
 at M304. Relative to the earlier unpaired control observations, those are
@@ -94,6 +94,17 @@ the M304 candidate's second case was faster than its first, and no repeat-drift
 or independent-confirmation gate has run. The raw queue archive
 `pipeline-queue-receipt.tar.gz` has SHA-256
 `44ce3edb10c802d19e288f377bb07ad2727a9210ff0b576c06a37431bdba09c5`.
+
+The combined job also queue-succeeded, with eligible sampled conditions, zero
+violations, zero inference-case compiles, and **exact agreement across all 128
+generated IDs**. Each case dispatched the four projection slots above plus
+40 combined D256 and eight combined D512 prefill-attention calls. Its
+descriptive unpaired prefill was 1877.087 ms at M101 and 647.637 ms at M304,
+compared with the same earlier off observations of 5988.558 and 12234.214 ms.
+Those are roughly 3.19x and 18.89x *orientation*, not accepted speedups:
+second-case/cache effects are material and these jobs were not interleaved.
+The complete `combined-queue-receipt.tar.gz` archive has SHA-256
+`612b834f2dcefa6b3db993374181fd66b8722aed476e479166b2cb3ca3125ebc`.
 
 The separate `profile-off-a`, `profile-pipeline`, `profile-off-b` manifests
 predeclare a three-process control/candidate/control diagnostic series. Each
