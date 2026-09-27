@@ -443,3 +443,49 @@ The immutable outer queue receipt, including its freshness violation,
 conditions, manifest and stdout/stderr, is
 `mlx-it-m304-g64-queue-result.tar.gz`, SHA-256
 `df993c5b4ea10326418b031227de7d5e72437a4f0d84156213e9a96020134abc`.
+
+## Standalone M304 result: output agreement, timing drift failure
+
+The immutable singleton job
+`prefill26-fullroute-abba-combined-04-m304-only-20260927` completed successfully
+(exit 0, no queue violations, eligible sampled AC / power-mode-2 /
+thermal-state-0 stratum). All 12 children, including the four fixed
+warmups, ran exactly one 304-token prompt, dispatched the expected control
+or combined candidate route, compiled no library or pipeline state inside
+the inference case, and produced the **same full 64 generated IDs** as one
+another and the three standalone MLX trials. The ABBA/BAAB ratios were
+independently recomputed from every retained measured child.
+
+| Control prefill samples (ms) | Combined prefill samples (ms) | ABBA / BAAB ratio | Five-percent within-arm drift |
+| --- | --- | --- | --- |
+| 13727.966, 13977.460, 13823.613, 13837.877 | 2191.719, 2226.328, 2023.257, 2071.590 | 6.271× / 6.755× | **Fail**: control 1.817%, candidate 7.686% |
+
+The candidate's first-to-later measured samples moved enough to reject the
+predeclared 5% gate. This is an **inconclusive standalone speed screen**,
+not a qualified 6× result, despite its direction and exact generated IDs.
+No sample was dropped, the threshold was not relaxed, and this completed job
+will not be replayed. It is also consistent with the earlier observation
+that later work in a process can be faster, but does not identify a cache or
+kernel mechanism.
+
+For planning only, the mean combined standalone prefill was 2128.223 ms
+versus MLX's inferred 659.799 ms (~3.226× MLX advantage), while rvLLM
+computed 2.748 tok/s from 64 tokens / mean reported decode time versus MLX
+18.489 tok/s (~6.727×). The rvLLM timing drift failure, MLX's stale power
+sample, noninterleaved processes, different prompt-phase timing boundaries,
+and possible first-generated-step denominator difference prevent a strict
+cross-framework verdict. The new standalone ratio is close to the earlier
+M304-first two-case planning orientation, but does not independently qualify
+that cross-framework comparison.
+
+The raw singleton summary SHA-256 is
+`2da4fa49909b70a09c67afa3212b984d0f7c8264c34e653db57b9878b36bfc32`.
+Its complete outer queue receipt is
+`abba-combined-04-m304-only-queue-result.tar.gz`, SHA-256
+`fb5f7d16714317871ae89ab2710cff56dad0e882b3244a33f0e5fb40be7749e9`.
+All 12 inner child receipts, config and summary are retained in
+`abba-combined-04-m304-only-children.tar.gz`, SHA-256
+`ca2b7077514d187ded02ffa59eb68ec5ccc2c69f6bf59d6334c494e0c064b23c`.
+The next accepted speed campaign would need a *predeclared* variance-robust
+protocol and independent numerical/logit/reference quality, not a favorable
+resample of this job.
