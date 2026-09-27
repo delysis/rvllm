@@ -14,7 +14,13 @@ class WideCiWiringTests(unittest.TestCase):
         selections = [row['name'] for row in catalog['candidates']]
         self.assertEqual(selections[:7], ['off', 'metal-short-mma16x64', 'metal-rounded-gate32',
                                     'metal-gqa-kv8', 'metal-mma32-prefetch', 'metal-attn-q4', 'metal-rms-simd32'])
-        self.assertEqual(len(selections), 48)
+        self.assertEqual(len(selections), 52)
+        self.assertEqual(selections[-4:], [
+            'metal-prefill-load4-control',
+            'metal-prefill-pipeline32x64',
+            'metal-prefill-q4k16',
+            'metal-prefill-pipeline32x64-q4k16',
+        ])
         self.assertIn('for candidate in "${candidate_names[@]}"', gate)
         self.assertIn('--verify-exported', gate)
         manifest = (V3 / 'tools/gemma4_candidate_rustfmt.paths').read_text()
