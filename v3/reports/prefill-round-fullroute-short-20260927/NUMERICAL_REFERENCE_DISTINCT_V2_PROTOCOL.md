@@ -2,7 +2,8 @@
 
 This is a **new** correctness-only trial, not a retry or reinterpretation of
 the six MMLU reference jobs. Those jobs and the frozen strict referee retain
-their original failed eligibility verdict. No v2 job has been submitted yet.
+their original failed eligibility verdict. The source and protocol were frozen
+before any v2 submission.
 
 The immutable proposed source is `numerical-reference-distinct-v2-source.json`,
 SHA-256 `2f212a4b1c316e49b52b78fc80e33a62c35772f0028e4da7d52ee7268c3d008a`.
@@ -97,5 +98,10 @@ queue's readiness predicate; absent control fields cannot pass by default. Its
 four focused tests and host build passed: exact six-manifest hashes, a stale
 power observation accepted only as numerical-only, competitor/freshness
 negative cases, rejection of missing combined dispatch, and HF tie ordering.
-No v2 manifests have been submitted yet; review of the final referee and
-the existing serial queue state precedes submission.
+The final referee and six manifests were reviewed before submission. The
+existing serial queue was waiting only on unrelated, obsolete blocked
+dependencies. At 2026-09-27 18:22 UTC the six v2 manifests were accepted in
+the exact dependent order above, with no ID reused. Submission is **not** a
+correctness result. Do not resubmit or score a nonterminal receipt; preserve
+each failed or ineligible result and both separately written HF full-logit
+files. The queue's stable-seconds gate remains zero.
