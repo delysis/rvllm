@@ -490,9 +490,9 @@ The next accepted speed campaign would need a *predeclared* variance-robust
 protocol and independent numerical/logit/reference quality, not a favorable
 resample of this job.
 
-## One-step logit diagnostic (pending)
+## One-step logit diagnostic: same token, measurable distribution difference
 
-Two new immutable correctness jobs, `prefill26-logits-m304-off-g1-20260927`
+Two immutable correctness jobs, `prefill26-logits-m304-off-g1-20260927`
 and `prefill26-logits-m304-combined-g1-20260927`, run the identical 304-token
 original-12B-it prompt through the normal and combined BF16 Metal routes.
 They pin the original model, tokenizer, inference executable, and respective
@@ -508,5 +508,43 @@ run solely for a stale observer. Its focused tests passed locally. The hook
 reads logits **after the single decode step**, so this is a limited
 distribution diagnostic, not the prefill-boundary logits, a full-vocabulary
 comparison, a first-internal-difference trace, an independent reference, or
-a checkpoint-wide quality gate. The results will be reported here only after
-both queue jobs reach terminal receipts.
+a checkpoint-wide quality gate.
+
+Both jobs finished successfully (exit 0, unchanged pinned files, no queue
+violations), with eligible sampled AC / power-mode-2 / thermal-state-0
+conditions. They used the same 304 prompt token IDs, BF16 compute and BF16
+weights, and generated the same one token ID, `107`. The control had no
+research dispatch; the candidate actually dispatched combined projection
+GEMM 48, QKV 48, raw projection 96, raw norm 96, D256 attention 40, and D512
+attention 8. Each report totals one library compile, with 58/64
+pipeline-state compiles respectively; the single-prompt report does not
+separate preparation from inference compile calls. These correctness jobs
+are **not timing evidence**: their unpaired prefill times were 13,929.570
+and 2,197.848 ms.
+
+After the one decode step, both top-ranked logit IDs were `107`, but their
+values were 14.625 (control) and 14.8125 (candidate). Of each arm's top 256
+IDs, 248 overlapped; the ranked lists were not identical, eight control IDs
+were absent from the candidate top 256, and the largest rank shift among
+common IDs was 29. Over only those 248 common IDs, the maximum absolute logit
+difference was 0.296875 and the mean absolute difference was 0.071037. This
+proves a measurable route-dependent output difference for this one-step
+probe; it does **not** establish whether either route is numerically wrong,
+what its earliest internal difference is, or whether checkpoint quality
+changes materially. In particular, one matching generated ID does not make
+the two output distributions equivalent.
+
+The final create-new comparator output is `logits-m304-g1-comparison-v2.json`,
+SHA-256 `d22515efbb30de6adf9bfb792a52346961a1235fb5a6a25ae6d68b58d10c9cb8`.
+An earlier derived output, `logits-m304-g1-comparison.json` (SHA-256
+`f97448dab0aad9e9462047a795f088436898eb75a2d78c3cf64eb44ea42db737`),
+is retained for audit but its claim incorrectly suggested preparation
+compilation had been separately measured. The v2 comparator corrects that
+claim and records the unseparated compile totals; its numerical comparison
+is unchanged. Neither output is a queue job or a new measurement.
+The complete compact outer queue receipts for both immutable jobs are in
+`logits-m304-g1-queue-results.tar.gz`, SHA-256
+`3423d6504e3403a280b3aa6f317353845664613beea820a87a27072a5fbf6067`.
+No job was replayed. The next numerical gate needs a route-preserving
+internal-tensor/reference comparison and broader checkpoint-specific prompts,
+not promotion from token agreement or this truncated top-logit comparison.

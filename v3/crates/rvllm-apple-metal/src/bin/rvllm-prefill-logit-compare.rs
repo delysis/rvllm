@@ -145,6 +145,8 @@ fn read_receipt(dir: &Path, candidate: bool) -> Result<Receipt> {
     if inference["schema"] != "rvllm.apple_metal_text_infer.v1"
         || inference["metal_compute_dtype"] != "bfloat16"
         || inference["max_new_tokens"] != 1
+        || inference["library_compiles"].as_u64().is_none()
+        || inference["pipeline_state_compiles"].as_u64().is_none()
         || inference["prompt_token_ids"]
             .as_array()
             .is_none_or(|ids| ids.len() != 304)
@@ -152,7 +154,7 @@ fn read_receipt(dir: &Path, candidate: bool) -> Result<Receipt> {
             .as_array()
             .is_none_or(|ids| ids.len() != 1)
     {
-        return Err("wrong model route, prompt length or generated work".into());
+        return Err("wrong model route, prompt length, generated work or compile telemetry".into());
     }
     expected_dispatch(&inference, candidate)?;
     let hashes = json!({
@@ -228,7 +230,7 @@ fn compare(off: &Receipt, candidate: &Receipt) -> Result<Value> {
         .eq(candidate_top.iter().map(|(id, _)| id));
     Ok(json!({
         "schema": "rvllm.prefill_top_logit_comparison.v1",
-        "claim": "one-step final decode-logit diagnostic, not a tensor/reference or checkpoint-quality verdict; queue conditions and preparation compilation are recorded separately",
+        "claim": "one-step post-decode top-logit diagnostic, not a prefill-boundary, full-vocabulary, tensor/reference or checkpoint-quality verdict; compiler-call phase is unresolved",
         "model_safetensors_sha256": MODEL_SHA256,
         "prompt_jsonl_sha256": PROMPT_SHA256,
         "inference_executable_sha256": INFER_SHA256,
@@ -240,6 +242,10 @@ fn compare(off: &Receipt, candidate: &Receipt) -> Result<Value> {
         "candidate_sampled_conditions_eligible": candidate.queue["sampled_conditions_eligible"],
         "off_violations": off.queue["violations"],
         "candidate_violations": candidate.queue["violations"],
+        "off_reported_library_compiles_total": off.inference["library_compiles"],
+        "candidate_reported_library_compiles_total": candidate.inference["library_compiles"],
+        "off_reported_pipeline_state_compiles_total": off.inference["pipeline_state_compiles"],
+        "candidate_reported_pipeline_state_compiles_total": candidate.inference["pipeline_state_compiles"],
         "generated_token_ids": off.inference["generated_token_ids"],
         "same_top_1_id": off_top[0].0 == candidate_top[0].0,
         "same_ranked_top_256_ids": same_ranked_ids,
