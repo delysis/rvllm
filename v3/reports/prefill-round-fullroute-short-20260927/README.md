@@ -232,3 +232,14 @@ Next: an independently run, predeclared confirmation at the same shapes;
 route-preserving tensor/logit/reference and checkpoint-quality checks; then
 same-checkpoint MLX orientation with its different prompt timing boundary
 made explicit. Do not rerun or rewrite this completed job.
+
+An independent fixed-protocol confirmation was submitted as the new immutable
+queue ID `prefill26-fullroute-abba-combined-02-20260927`. Its separate
+`abba-combined-02-config.json` (SHA-256
+`4713fc37bf86d33cc766e9a6ec233b2a5505b724bb7c1c8cff78467a4195e6a1`)
+uses the same pinned executable, weights, prompt file, metallibs, warmups,
+ABBA/BAAB ordering and 5% gate, but a fresh output path; its job depends on
+the completed first run. The serial queue accepted the manifest. This is a
+predeclared confirmation attempt, **not** confirmation evidence until its
+terminal receipt is read. The previously submitted MLX jobs remain in the
+same serial queue; none of the completed jobs were replayed.
