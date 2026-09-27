@@ -255,15 +255,25 @@ fn read_arm(
     };
     pinned(&job, prompt_file, prompt_sha)?;
     pinned(&job, library_file, library_sha)?;
+    let command = at(&job, "command")?;
+    let environment = at(command, "env")?;
+    let expected_selector = if mode == "combined" {
+        "metal-prefill-pipeline32x64-q4k16"
+    } else {
+        "off"
+    };
     if !command_arg(&job, "--teacher-prompt-jsonl")?.ends_with(prompt_file)
-        || string(at(at(&job, "command")?, "executable")?, "sha256")? != EXECUTABLE_SHA
+        || string(at(command, "executable")?, "sha256")? != EXECUTABLE_SHA
+        || string(environment, "RVLLM_METAL_RESEARCH")? != expected_selector
+        || !string(environment, "RVLLM_METAL_METALLIB_BF16")?.ends_with(library_file)
     {
-        return Err(format!("{id}: command prompt or executable mismatch"));
+        return Err(format!("{id}: command identity or route mismatch"));
     }
     let trial = read(&trial_path)?;
     if string(&trial, "schema")? != "rvllm.apple_metal_text_infer.v1"
         || string(&trial, "metal_compute_dtype")? != "bfloat16"
         || string(&trial, "metal_weight_dtype")? != "bfloat16"
+        || string(&trial, "model_dir")? != command_arg(&job, "--model-dir")?
     {
         return Err(format!("{id}: wrong trial schema or dtype"));
     }
