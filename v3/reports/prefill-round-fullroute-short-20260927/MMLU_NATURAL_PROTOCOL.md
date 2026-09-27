@@ -67,3 +67,21 @@ for logic and
 for computer science. The generator's earlier local dry-run directories
 `mmlu-natural-v1-generated/` and `mmlu-natural-v1-manifests/` were never
 submitted; only `mmlu-natural-v1-queue/` is authoritative.
+
+The offline `rvllm_gemma4_mmlu_teacher_summary` referee was added at
+`190a8f91` after submission, without changing any job or its pinned input.
+It pins the exact source, tokenizer, dataset, executable, model, job generator,
+prompt fixtures and metallibs; refuses nonterminal or dirty queue receipts;
+requires the actual combined dispatch counts; and retains every teacher-step
+NLL, rank and sampled greedy ID. Its four focused tests passed. It must not
+score any arm until its terminal queue receipt exists.
+
+The existing CPU/HF full-logits script is **not yet a same-boundary oracle**
+for these Metal teacher steps. That script scores the final position of a
+full-prompt forward pass at step zero. The Metal teacher hook reads logits
+after a one-token decode that replays the last prompt token, following the
+ordinary prefill. The prior M304 boundary audit found different target scores
+even within Metal between final-prefill and post-replay readback, and an
+M-dependent LM-head route. A future independent reference must first prove
+which residual/KV and LM-head boundary it matches; merely running the existing
+HF script on the same prompt would not establish numerical parity.
