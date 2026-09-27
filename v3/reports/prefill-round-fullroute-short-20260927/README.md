@@ -654,7 +654,41 @@ logits and top-16 request. Its manifest
 `hf-m304-one-step-compatible-job.json` (SHA-256
 `7af03b53d77cd57ee47824c1e60b1990f1fe289d98dc79731b60bc9e2b57cd55`)
 pins that Python executable and the installed Gemma4 implementation files in
-addition to the original model and fixture. It was submitted to the serial
-queue; no CPU result is claimed until its terminal receipt and output pass
-inspection. A successful single step would still not establish multi-step or
-checkpoint-wide numerical quality.
+addition to the original model and fixture. It finished successfully with
+exit zero and unchanged pinned files. The queue marked its condition sample
+ineligible: 13 not-ready observations had power-observer ages 2.507–2.821 s,
+although sampled controls were AC, power mode 2, thermal state 0 and no
+competing process. This affects any timing claim, not the one-step numerical
+diagnostic. No job was replayed or held for stable conditions.
+
+The CPU run returned all **262,144** finite BF16-derived logits after the
+exact same 304 prompt IDs and chose token **107**, as did both rvLLM routes.
+For token 107, max-shifted full-vocabulary log-sum-exp gives CPU target NLL
+**0.46601746**; rvLLM control was **0.68074801** and combined was
+**0.65161510**. Their NLL excesses relative to this CPU implementation are
+**0.21473055** and **0.18559764**, respectively. Raw target logits were
+14.9375 CPU, 14.625 control and 14.8125 combined. The CPU top three IDs
+were 107, 108, 106 (the latter two tied at 13.6875); both Metal routes
+ranked 106 ahead of 108. All CPU top-16 IDs occurred within each earlier
+Metal top-256 diagnostic. Thus the combined route was closer in this one
+target NLL, but **neither Metal route reproduced the CPU distribution**. A
+shared difference is visible; this does not localize a first incorrect
+arithmetic step or establish that the candidate is numerically better in
+general.
+
+The complete CPU terminal queue directory and full-vocabulary reference are
+in `hf-m304-one-step-compatible-queue-and-reference.tar.gz` (SHA-256
+`ef18f3a70e16abb36ddea043c46f1ac715002f4801a456824090d0755210fab2`).
+The uncompressed reference has SHA-256
+`e3bdfd440109606d0780d8bc82a5d6d25eb6059dd301d4a42ec02f09d35cc2ef`.
+`hf-m304-first-step-comparison.json` (SHA-256
+`71ad4c7db5dd68be8241416bdb3944e22e46a045e2f0a2d5d1ddc1b315097d70`)
+records exact source receipts, NLLs, ranks and limitations. The CPU
+implementation is independent, but uses Transformers 5.14.1 rather than the
+checkpoint config's 5.10.0 development version; it is not a certified exact
+arithmetic oracle. The CPU final full-prompt forward and Metal post-decode
+readback predict the same next-token position, but their internal execution
+boundaries are not proved identical. This is one position, not held-out or
+checkpoint-wide quality, and none of these readback jobs supplies speed
+evidence. Next localize the internal difference and evaluate predeclared
+held-out targets before any promotion.

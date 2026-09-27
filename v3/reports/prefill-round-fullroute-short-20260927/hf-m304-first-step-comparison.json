@@ -1,0 +1,61 @@
+{
+  "schema": "rvllm.gemma4_m304_first_step_reference_comparison.v1",
+  "claim": "One exact-prompt, same-checkpoint next-token distribution diagnostic; not a full-route quality or promotion verdict",
+  "prompt_token_count": 304,
+  "prompt_ids_equal_between_all_three": true,
+  "checkpoint_model_safetensors_sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d",
+  "target_token_id": 107,
+  "reference": {
+    "implementation": "Transformers 5.14.1 Gemma4UnifiedForConditionalGeneration on CPU",
+    "job_id": "prefill26-hf-m304-one-step-compatible-20260927",
+    "full_logits_sha256": "e3bdfd440109606d0780d8bc82a5d6d25eb6059dd301d4a42ec02f09d35cc2ef",
+    "vocabulary_size": 262144,
+    "next_token_id": 107,
+    "target_logit": 14.9375,
+    "target_negative_log_likelihood": 0.4660174578126135,
+    "nll_method": "max-shifted log-sum-exp over all 262144 finite logits",
+    "top_three": [
+      {"token_id": 107, "logit": 14.9375},
+      {"token_id": 108, "logit": 13.6875},
+      {"token_id": 106, "logit": 13.6875}
+    ]
+  },
+  "rvllm_control": {
+    "teacher_job_id": "prefill26-teacher-m304-off-20260927",
+    "teacher_stdout_sha256": "ff5da9957cb9a5cb14dda86d2e6cbba984ebe0d4f1b745db65a84d3e01a5eedf",
+    "top256_job_id": "prefill26-logits-m304-off-g1-20260927",
+    "top256_stdout_sha256": "0811fdcaefec9273b822e4683d5476c788af3870a70ed4800a66cfa00af5cca6",
+    "next_token_id": 107,
+    "target_logit": 14.625,
+    "target_negative_log_likelihood": 0.6807480119140035,
+    "nll_minus_reference": 0.21473055410138997,
+    "top_three": [
+      {"token_id": 107, "logit": 14.625},
+      {"token_id": 106, "logit": 13.9375},
+      {"token_id": 108, "logit": 13.8125}
+    ]
+  },
+  "rvllm_combined": {
+    "teacher_job_id": "prefill26-teacher-m304-combined-20260927",
+    "teacher_stdout_sha256": "ade90dd0cd27b5e85af8471271618124cf5d4c6f6d811b2d4b045794107877b1",
+    "top256_job_id": "prefill26-logits-m304-combined-g1-20260927",
+    "top256_stdout_sha256": "2bd9c44da3639711204ef2d939a82d0d6c43e26ee695949fa6e557f04d5b6d38",
+    "next_token_id": 107,
+    "target_logit": 14.8125,
+    "target_negative_log_likelihood": 0.6516150968448713,
+    "nll_minus_reference": 0.1855976390322578,
+    "top_three": [
+      {"token_id": 107, "logit": 14.8125},
+      {"token_id": 106, "logit": 14.125},
+      {"token_id": 108, "logit": 13.875}
+    ]
+  },
+  "condition_note": "CPU reference queue job exited zero with unchanged pinned files but was sampled-ineligible with 13 not-ready condition observations. Their power-observer ages were 2506.68-2821.24 ms; observed controls were AC, power mode 2 and thermal state 0, with no sampled competing processes. Conditions are not a numerical exclusion gate.",
+  "limitations": [
+    "The CPU implementation is independent but its Transformers version differs from the checkpoint config's development version; it has not been certified as an exact arithmetic oracle.",
+    "The Metal teacher hook reads logits after a decode collect, whereas the CPU reference reads the final position of a full-prompt forward. They predict the same next token, but internal execution boundaries have not been proved equivalent.",
+    "Metal retained per-target logits/NLL and separate top-256 probes, not full-vocabulary vectors. Full-vector distance and first internal arithmetic divergence are unavailable.",
+    "This is one position on one model-generated prompt, not held-out text, a calibrated quality threshold, or checkpoint-wide acceptance.",
+    "Readback timings are diagnostic only and must not be used as speed evidence."
+  ]
+}
