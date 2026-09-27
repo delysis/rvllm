@@ -3797,6 +3797,8 @@ unsafe fn encode_gemm_rmsnorm(
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
+    #[cfg(feature = "metal-route-diagnostics")]
+    pipelines.record_ordinary_prefill_dispatch("gemm_rmsnorm_f16");
     Ok(())
 }
 

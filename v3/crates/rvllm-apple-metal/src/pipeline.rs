@@ -18,7 +18,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 #[cfg(feature = "metal-route-diagnostics")]
-pub const ORDINARY_PREFILL_KERNEL_NAMES: [&str; 11] = [
+pub const ORDINARY_PREFILL_KERNEL_NAMES: [&str; 12] = [
     "qkv_project_f32_mma32",
     "gemm_f16_mma32",
     "qkv_project_f32_batch8",
@@ -30,6 +30,7 @@ pub const ORDINARY_PREFILL_KERNEL_NAMES: [&str; 11] = [
     "attention_prefill_f16",
     "qkv_projected_rmsnorm_rope_cache_f16",
     "qkv_headwise_rmsnorm_rope_cache_f16",
+    "gemm_rmsnorm_f16",
 ];
 
 #[cfg(feature = "metal-route-diagnostics")]
