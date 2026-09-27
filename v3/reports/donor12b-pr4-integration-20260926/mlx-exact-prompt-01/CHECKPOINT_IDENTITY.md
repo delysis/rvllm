@@ -66,5 +66,10 @@ was written; its immutable queue receipt is preserved as
 `335b88955567ef9f027826ae5b8ac3bee4c422ceb5447d040b0eafc40d789a66`.
 The reporter now validates and seals either weight layout *before* generation;
 three focused tests passed. A new `-03` exact-token job was submitted with
-a distinct report path and source hash. It must not inherit timing or output
-claims from the failed attempt.
+a distinct report path and source hash. It succeeded; see `README.md`.
+Its 12B-it MLX-LM speed was close to the old base-conversion MLX-LM speed,
+supporting the interpretation that weight-value differences were not the
+source of the large framework speed gap. The first generated-ID difference
+against rvLLM shifted from index 1 on the base conversion to index 4 on the
+same 12B-it checkpoint. This narrows the correctness question but does not
+identify the first internal numerical difference or prove either route wrong.
