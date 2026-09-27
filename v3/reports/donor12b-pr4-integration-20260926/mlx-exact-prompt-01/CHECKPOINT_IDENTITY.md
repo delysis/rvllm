@@ -45,6 +45,10 @@ load and source inspection are still not a full output-equivalence proof;
 that arm is a stage microbenchmark only. A same-checkpoint exact-token full
 route comparison and internal-tensor/reference checks remain necessary. A
 same-checkpoint 512+64 exact-token MLX-LM run was therefore queued as
-`g4-donor-mlx-it-exact-bf16-512-g64-01`, depending on the direct-load stage
-arm. Its result is pending; it must not inherit the earlier base-checkpoint
-speed or output claims.
+`g4-donor-mlx-it-exact-bf16-512-g64-01`, depending on a direct-load stage
+arm. The first stage arm failed in the harness identity collector before
+device loading because it required a sharded index; this checkpoint has a
+single safetensor. Both original manifests and the failed stage receipt are
+preserved. A focused single-file identity repair passed 10/10 Python tests;
+new stage and dependent exact-token arms use IDs ending `-02`. Their results
+are pending and must not inherit the earlier base-checkpoint claims.

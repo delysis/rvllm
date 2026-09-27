@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import sys
 import tempfile
@@ -59,6 +60,19 @@ class StageBenchTests(unittest.TestCase):
                 bench.model_identity(root, 16)
             (root / "config.json").write_text(json.dumps({"model_type": "gemma4"}))
             self.assertEqual(bench.model_identity(root, 16)["config_exposed_weight_bits"], 16)
+
+    def test_model_identity_accepts_single_safetensor_and_seals_its_bytes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "config.json").write_text(json.dumps({"model_type": "gemma4"}))
+            weights = b"bounded test weights"
+            (root / "model.safetensors").write_bytes(weights)
+            identity = bench.model_identity(root, 16)
+            self.assertEqual(identity["weight_layout"], "single_safetensor")
+            self.assertEqual(
+                identity["model_safetensors_sha256"], hashlib.sha256(weights).hexdigest()
+            )
+            self.assertNotIn("model_index_sha256", identity)
 
     def test_strict_json_rejects_non_finite_receipts(self):
         with self.assertRaises(ValueError):

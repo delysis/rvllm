@@ -157,13 +157,28 @@ def model_identity(model_path: Path, requested_bits: int) -> dict[str, Any]:
             f"requested {requested_bits}-bit path but config exposes {exposed_bits}-bit weights"
         )
     index_path = model_path / "model.safetensors.index.json"
+    single_path = model_path / "model.safetensors"
+    if index_path.is_file():
+        weight_identity = {
+            "weight_layout": "sharded_index",
+            "model_index_sha256": sha256_file(index_path),
+        }
+    elif single_path.is_file():
+        weight_identity = {
+            "weight_layout": "single_safetensor",
+            "model_safetensors_sha256": sha256_file(single_path),
+        }
+    else:
+        raise FileNotFoundError(
+            f"neither a safetensors index nor model.safetensors exists in {model_path}"
+        )
     return {
         "path": str(model_path.resolve()),
         "requested_weight_bits": requested_bits,
         "config_exposed_weight_bits": exposed_bits,
         "quantization": quantization,
         "config_sha256": sha256_file(config_path),
-        "model_index_sha256": sha256_file(index_path),
+        **weight_identity,
         "model_type": config.get("model_type"),
     }
 

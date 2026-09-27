@@ -137,6 +137,19 @@ the complete queue receipt archive SHA-256 is
 
 The same stage harness was also submitted as
 `g4-donor-mlx-it-bf16-stage-512-01` against the original 12B-it snapshot,
-after the M=512 Metal arm. Its result is pending. Pinned MLX-LM source
-statically maps the original checkpoint's tensor-key prefix, but successful
-device loading and output equivalence have not yet been demonstrated.
+after the M=512 Metal arm. It **failed before loading MLX weights** because
+the harness's identity collector assumed a sharded
+`model.safetensors.index.json`, whereas this original 12B-it checkpoint has
+a single `model.safetensors`. This is a benchmark-precondition failure, not
+evidence that MLX-LM cannot load the checkpoint or that any kernel is
+incorrect. The immutable failed queue receipt archive SHA-256 is
+`db43607a52382d32e3ab3f2a6ee024c778b86ab71fff021b3b110ee9e6772dfd`.
+The dependent exact-token `-01` job has not run and remains preserved.
+
+The harness now accepts either a sharded index or a single safetensor,
+records the selected layout and file hash, and rejects directories with
+neither. Its focused Python suite passed 10/10 tests. The corrected source
+SHA-256 is `c9454ee6e66216debfe8f7c561e24c588c8f01064f278b5049b1141e2edb6070`.
+The corrected stage arm `g4-donor-mlx-it-bf16-stage-512-02` and dependent
+exact-token `-02` arm use new IDs and are pending in the same serial queue.
+Successful device loading and output equivalence remain unproved.

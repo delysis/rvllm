@@ -1,0 +1,87 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "g4-donor-mlx-it-exact-bf16-512-g64-02",
+  "purpose": "exploratory_timing",
+  "after": ["g4-donor-mlx-it-bf16-stage-512-02"],
+  "command": {
+    "executable": {
+      "path": "/Users/george/christian_mystics/venv/bin/python",
+      "sha256": "695fc18cdb9a699c6b1ea88ce4027854782ed704eb34cc3200e6f8380155b6a8"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3",
+    "args": [
+      "tools/mlx_gemma4_exact_prompt_bench.py",
+      "--model",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--rvllm-report",
+      "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/prefill-fused-ledger-01/off-report.json",
+      "--report",
+      "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/mlx-exact-prompt-01/mlx-it-bf16-512-g64-02-report.json",
+      "--trials",
+      "3",
+      "--generation-tokens",
+      "64"
+    ],
+    "env": {
+      "MLX_METAL_PREWARM": "1",
+      "PYTHONPATH": "/Users/george/.cache/rvllm-mlx-lm-87b7b583"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/tools/mlx_gemma4_exact_prompt_bench.py",
+      "sha256": "c26f4a308dbcc4db6466c122e88a8e207636db43bec6902be63bf0df47fc2215"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/prefill-fused-ledger-01/off-report.json",
+      "sha256": "4634523c7d5be5419be7ab672b5a69fe763fdd522e5292cc93f0c774c0793a9b"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/generate.py",
+      "sha256": "4a3bf57f5679dac73791f069268866ab5b9336e58582d436b31133984e4b6971"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/models/gemma4.py",
+      "sha256": "7301367b6ffcfb125f036186650c6f56cb55be6d1e0893edae8308d27049eb47"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/models/gemma4_text.py",
+      "sha256": "73ffa75e9069ce7b2f864ccd8f0267bb80c5b5d4e2b73102b8a2a93fe03f936d"
+    },
+    {
+      "path": "/Users/george/.cache/rvllm-mlx-lm-87b7b583/mlx_lm/utils.py",
+      "sha256": "0b62f9990ef65d6346ee5ceaccbbd50b3e973bcf9aba91fd0df4c8fc8596f473"
+    }
+  ],
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [],
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184,
+    "power_source": "ac",
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama"
+    ]
+  },
+  "stable_seconds": 0,
+  "max_wait_seconds": 86400,
+  "max_run_seconds": 3600,
+  "validator": null,
+  "kernel_game_submission": null
+}
