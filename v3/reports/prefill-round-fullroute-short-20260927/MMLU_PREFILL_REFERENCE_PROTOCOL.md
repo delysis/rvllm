@@ -42,3 +42,14 @@ report them. A separately frozen diagnostic executable and fresh immutable
 job IDs are required for that stronger test; this trial is limited to the
 four per-target/greedy fields above. This correction does not turn the
 limited comparison into quality acceptance.
+
+The default-off safe-Rust `rvllm_gemma4_prefill_reference_summary` referee
+is prepared for terminal results. Give it a **new** output JSON path, the
+frozen tokenizer and source JSON, `mmlu-prefill-reference-v1-queue/`, then
+the six queue result directories in submission order: logic HF/off/combined,
+CS HF/off/combined. It checks exact frozen manifests and clean receipts,
+rederives the HF target logit/rank/NLL/greedy ID from the retained full
+vocabulary, and checks actual Metal control/combined dispatch before
+comparing the four observable fields. It records every condition and receipt
+hash. It refuses incomplete or mismatched results; do not relax it to obtain
+a favorable comparison. This referee does not make probe timing usable.
