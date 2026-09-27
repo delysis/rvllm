@@ -110,14 +110,30 @@ The raw stage JSON SHA-256 is
 `0a1620b7cbcae5966f8ac109357e315cee9275813c77f605fb0b7902499c490b`;
 the complete immutable queue receipt archive SHA-256 is
 `f618e32951e5e736ea0cd56dc7baeaf9579feac398ef9aa99347df262ba0248d`.
-The real-weight M=512 Metal arm was submitted as
-`g4-donor-bf16-prefill-mma-role-m512-01`; it measures sliding QKV, gate/up,
-O projection, and FFN down on the same M with the earlier production-versus-
-prototype correctness checks. Its result is pending. This improves shape
-alignment but does not make the MLX wall and Metal GPU intervals equivalent,
-nor does it match fusion, activation, checkpoint tensors, or output-rounding
-boundaries. A normal-route stage trace or bounded fused-operator timing is
-still required to assign the default prefill's time by role.
+The real-weight M=512 Metal arm `g4-donor-bf16-prefill-mma-role-m512-01`
+succeeded with eligible sampled conditions, zero exit status, production-
+prototype equality, BF16 round-once output, guarded buffers, and sampled
+independent FP64 checks. The values below are the median of eight GPU
+command-buffer intervals per path on the original 12B-it layer-0 weights:
+
+| Role at M=512 | rvLLM batch8 GPU ms | rvLLM MMA32 GPU ms | Batch8 / MMA32 |
+| --- | ---: | ---: | ---: |
+| Sliding QKV, N=8192 K=3840 | 27.904 | 6.291 | 4.44× |
+| Gate/up, N=30720 K=3840 | 92.791 | 21.820 | 4.25× |
+| O projection, N=3840 K=4096 | 14.810 | 2.830 | 5.23× |
+| FFN down, N=3840 K=15360 | 58.488 | 12.622 | 4.63× |
+
+The largest production-versus-batch8 FP32 relative L2 was `1.38e-6`.
+This is a useful same-shape **rvLLM operator** result, not a default fused
+projection+RMSNorm comparison or an rvLLM/MLX speedup. It improves shape
+alignment with the MLX M=512 table but does not make MLX wall and Metal GPU
+intervals equivalent, nor match fusion, activation, the base-versus-it
+checkpoint, or output-rounding boundaries. A normal-route stage trace or
+bounded fused-operator timing is still required to assign the default
+prefill's time by role. The raw timing JSON SHA-256 is
+`106bf44ef443598ceb2b57f757ca7dd1ced29de1f6e08ccb08a59b8bbc05bfe3`;
+the complete queue receipt archive SHA-256 is
+`bef73766d5653fdb0bc2f1ecc6a062182f7e6619c91d99c97ed7f32e6764db48`.
 
 The same stage harness was also submitted as
 `g4-donor-mlx-it-bf16-stage-512-01` against the original 12B-it snapshot,
