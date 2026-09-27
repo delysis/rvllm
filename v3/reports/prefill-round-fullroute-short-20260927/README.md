@@ -73,3 +73,10 @@ journals. Neither the model nor compiled binary is included.
 Next: obtain independent tensor/logit/reference quality evidence and run a
 predeclared counterbalanced, same-workload full-route timing comparison. The
 isolated Q4K16 operator gains cannot be promoted from these route screens.
+
+Two additional correctness-only jobs are queued on the *same* varied input:
+`prefill26-fullroute-varied-pipeline32x64-20260927` tests the projection
+pipeline alone, and the dependent
+`prefill26-fullroute-varied-pipeline32x64-q4k16-20260927` tests the combined
+projection and attention selection. They are distinct selectable metallibs
+with pinned hashes. No result or speed claim is attached to those jobs yet.
