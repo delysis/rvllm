@@ -548,3 +548,14 @@ The complete compact outer queue receipts for both immutable jobs are in
 No job was replayed. The next numerical gate needs a route-preserving
 internal-tensor/reference comparison and broader checkpoint-specific prompts,
 not promotion from token agreement or this truncated top-logit comparison.
+
+The existing original-12B-it CPU/Hugging Face 16-step reference for the short
+six-token capital prompt is now queued as two fresh, independent correctness
+jobs: `prefill26-hf-capital16-off-20260927` and
+`prefill26-hf-capital16-combined-20260927`. Each pins the same checked-in
+reference, executable and checkpoint, with its respective metallib and
+selector. The CLI checks all 16 generated IDs against that CPU reference;
+this is stronger than candidate/control agreement but still only one short
+prompt, not a long-context or checkpoint-wide quality gate. Both jobs were
+submitted to the serial referee without a thermal-stability wait. Their
+results and actual dispatch will be reported only after terminal receipts.
