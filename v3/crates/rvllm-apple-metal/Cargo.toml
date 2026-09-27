@@ -17,6 +17,9 @@ authors.workspace = true
 [features]
 default = []
 metal-stage-instrumentation = []
+# Compile-time-only full-route donor component attribution. Normal builds
+# contain no component mask, environment read, or encoder-side branch.
+donor-route-attribution = []
 # Explicit operator experiments; never part of the shipping selector.
 attention-atlas-research = ["dep:serde"]
 # Opt-in, device-only referee for authenticated real checkpoint projection

@@ -6,6 +6,8 @@ use crate::donor12b::{
 };
 use crate::layer_forward::{MetalLayerDims, MetalLayerWeights, MetalPhase, MetalScratch};
 use crate::low_bit_metal::MetalLowBitProjectionOffsets;
+#[cfg(feature = "donor-route-attribution")]
+use crate::options::DonorRouteMask;
 use crate::research::Gemma12bResearchShape;
 use crate::{MetalFloatType, PipelineCache};
 use objc2::runtime::ProtocolObject;
@@ -116,6 +118,14 @@ pub fn try_encode_low_bit_projection(
     stride: u32,
     column: u32,
 ) -> Result<bool> {
+    #[cfg(feature = "donor-route-attribution")]
+    if !pipelines
+        .kernel_options()
+        .donor_route_mask
+        .allows(DonorRouteMask::PROJECTION)
+    {
+        return Ok(false);
+    }
     let owner = policy(pipelines, dims, phase);
     if !owner.allowed() {
         return Ok(false);
@@ -159,6 +169,14 @@ pub fn try_encode_native_projection(
     beta: f32,
     output_f32: bool,
 ) -> Result<bool> {
+    #[cfg(feature = "donor-route-attribution")]
+    if !pipelines
+        .kernel_options()
+        .donor_route_mask
+        .allows(DonorRouteMask::PROJECTION)
+    {
+        return Ok(false);
+    }
     if alpha != 1.0 || beta != 0.0 {
         return Ok(false);
     }
@@ -210,6 +228,14 @@ pub fn gate_request(
 /// Used by both execution and optional external encoder accounting. A trace
 /// retains the materialized gate/up buffers and refuses this fused route.
 pub fn gate_plan(pipelines: &PipelineCache, request: GateRequest) -> Option<Plan> {
+    #[cfg(feature = "donor-route-attribution")]
+    if !pipelines
+        .kernel_options()
+        .donor_route_mask
+        .allows(DonorRouteMask::GATE)
+    {
+        return None;
+    }
     if request.policy.selected != pipelines.kernel_options().research
         || request.policy.dtype != pipelines.float_type()
         || request.policy.quantized_accumulation
@@ -276,6 +302,14 @@ pub fn try_encode_qkv(
     capture: bool,
     skip_kv: bool,
 ) -> Result<bool> {
+    #[cfg(feature = "donor-route-attribution")]
+    if !pipelines
+        .kernel_options()
+        .donor_route_mask
+        .allows(DonorRouteMask::PROJECTION)
+    {
+        return Ok(false);
+    }
     let request = QkvRequest {
         policy: policy(pipelines, dims, phase),
         capture_projection: capture,
@@ -307,6 +341,18 @@ pub fn try_encode_attention(
     phase: MetalPhase,
     offsets: [usize; 7],
 ) -> Result<bool> {
+    #[cfg(feature = "donor-route-attribution")]
+    if !pipelines
+        .kernel_options()
+        .donor_route_mask
+        .allows(if dims.head_dim == 256 {
+            DonorRouteMask::LOCAL_ATTENTION
+        } else {
+            DonorRouteMask::GLOBAL_ATTENTION
+        })
+    {
+        return Ok(false);
+    }
     let request = AttentionRequest {
         policy: policy(pipelines, dims, phase),
         offsets,
@@ -329,6 +375,14 @@ pub fn projected_qkv_allowed(
     dims: &MetalLayerDims,
     phase: MetalPhase,
 ) -> bool {
+    #[cfg(feature = "donor-route-attribution")]
+    if !pipelines
+        .kernel_options()
+        .donor_route_mask
+        .allows(DonorRouteMask::PROJECTION)
+    {
+        return false;
+    }
     policy(pipelines, dims, phase).allowed()
         && pipelines.float_type() == Some(MetalFloatType::Bf16)
         && donor12b::kernel(

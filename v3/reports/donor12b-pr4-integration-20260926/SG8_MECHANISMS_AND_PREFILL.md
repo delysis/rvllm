@@ -67,9 +67,11 @@ attention planner accepts decode only. Thus a full 512-row prompt cannot use
 the donor projection/attention primitive, and the full-route dispatch ledger
 shows only decode donor projections. The central GEMM dispatcher can choose
 MMA32 only when `prefill_mma32` is enabled and the shape is eligible; otherwise
-it falls through batch8, vector, tiled16, or general GEMM. The current
-long-decode wrapper selects only `RVLLM_METAL_RESEARCH`, not
-`prefill_mma32`. The actual chosen prefill kernels and per-operation GPU
+it falls through batch8, vector, tiled16, or general GEMM. The long-decode
+wrapper does not set a prefill variable, but the inference CLI **defaults both
+prefill MMA32 and prefill SIMD attention on** when their override variables
+are absent. This makes a blanket claim that these runs used a slow fallback
+incorrect. The actual chosen prefill kernels and per-operation GPU
 durations were not captured in these receipts. It is therefore justified to
 say *the donor did not fix prefill*, but **not** yet justified to assign the
 22-second prefill to a particular GEMM, FFN, attention, queue wait, or host
