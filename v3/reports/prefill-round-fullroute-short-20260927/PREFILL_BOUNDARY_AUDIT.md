@@ -182,3 +182,22 @@ original safetensor
 `5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d`,
 and normal/combined metallibs with the same hashes stated in the preceding
 boundary result. Neither job was replayed.
+
+## Source-level route interpretation, not measured ISA
+
+The pinned original config has hidden size 3,840 and vocabulary 262,144.
+`encode_logits_head` in `v3/crates/rvllm-apple-metal/src/layer_forward.rs`
+applies the same `rmsnorm_f16` stage, then calls the
+central `encode_gemm` for the LM head. At `M=1`, the ordinary selector admits
+the cooperative `gemm_f16_vec8` path (`M<=19`). At `M=304`, neither that
+condition, the bounded tiled-16 condition, nor the 20–32-row batch-eight
+window holds, so the ordinary selector names `gemm_f16`. The selected
+prefill research family does not admit these M304 LM-head dimensions; its
+actual ledger records only the layer projections and attention listed
+above. This source audit supplies a plausible *kernel-route* mechanism for
+the observed row-zero shape difference. The receipts do not independently
+record the ordinary LM-head function name, generated ISA, intermediate
+normalized row, or per-instruction arithmetic, so the first differing
+operation remains unproved. In particular, 47 differing BF16 logits do not
+measure how much, if any, of the CPU-versus-Metal NLL gap this route switch
+causes at row 303.
