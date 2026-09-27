@@ -1,0 +1,138 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "prefill26-lowbit-fulltext-w4-package-build-v1-20260927",
+  "purpose": "preparation",
+  "command": {
+    "executable": {
+      "path": "/tmp/rvllm-fulltext-package-artifacts-20260927/rvllm_gemma4_lowbit_full_w4_build",
+      "sha256": "a0c387ed45a20e2fc91eb2b502ba99e39cf6c8acf752b0b91673284482b992d1"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "args": [
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/lowbit-full-text-selectors-sealed-v1.json",
+      "/tmp/rvllm-fulltext-package-artifacts-20260927/rvllm_apple_package",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm"
+    ],
+    "env": {}
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/lowbit-full-text-selectors-sealed-v1.json",
+      "sha256": "087e5e87f8ef2fd68e6d910af17867ec2cf12ef9344e9b70cf481a6992591d7e"
+    },
+    {
+      "path": "/tmp/rvllm-fulltext-package-artifacts-20260927/rvllm_apple_package",
+      "sha256": "c9cc445b139d747548f94c8d6ec141f7059b7111aafd9c5562d4678c3509ae16"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_gemma4_lowbit_full_w4_build.rs",
+      "sha256": "6f3a77139f471f972b2a35c5cde02d2f330dffc5c10e09185910d3707a44ee16"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_gemma4_lowbit_full_selectors.rs",
+      "sha256": "3789402ace56bc4340e1b0f428c0a110526d06e111a022d4ed8e58e5965cdc98"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-apple/src/bin/rvllm_apple_package.rs",
+      "sha256": "05d994a7653886607515ce146e3b896edd43b7530eb3f2157965743a7af6eeae"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-apple/src/model_package_builder.rs",
+      "sha256": "88335d2407689818689f02025a2d849e08b4af378eb1230695fdd4bee19f4306"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-apple/src/model_package.rs",
+      "sha256": "4ad30fd118ee4a298094d79483f58b9752ca1a2b4618f94dadcb1fdecc64b73b"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/rvllm-apple-model.json",
+      "sha256": "1b9c43598644619432589b66836ed22e52d1e48c968e4b93134f21bd5e324949"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/macos/f16/rvllm.metallib",
+      "sha256": "3adf6fcdcd41959d784144a734e297f6cd54cf56feea0f2b881f3959660a6a77"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/macos/f16/pipelines.json",
+      "sha256": "78c312b911bb8007d5d4d4406562d0f0f8a03475373dd93fa1ccfaf1d95366aa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/macos/bf16/rvllm.metallib",
+      "sha256": "21d81a66d31075e9307b64b7cb8eb0eea1f1dee74c0865ff3d0fa8125579dd06"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/macos/bf16/pipelines.json",
+      "sha256": "b627b0a202aa80e0d712343aa0801131cab6fcbd2beb9ccbe71a0734792892a1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios/f16/rvllm.metallib",
+      "sha256": "28d69bdcee541e57b00b8f947594aa673f3b1374eba6aff3816654495f715a21"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios/f16/pipelines.json",
+      "sha256": "78c312b911bb8007d5d4d4406562d0f0f8a03475373dd93fa1ccfaf1d95366aa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios/bf16/rvllm.metallib",
+      "sha256": "b0d8cd101b5b1da1f4add748ec1d7fa7dcce1f9d00f1fae0f5310785be0d64c7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios/bf16/pipelines.json",
+      "sha256": "b627b0a202aa80e0d712343aa0801131cab6fcbd2beb9ccbe71a0734792892a1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios-simulator/f16/rvllm.metallib",
+      "sha256": "29a5a6b1407eed5a4c2640526988439e6675eb3e4176888a68fec72368d01a57"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios-simulator/f16/pipelines.json",
+      "sha256": "78c312b911bb8007d5d4d4406562d0f0f8a03475373dd93fa1ccfaf1d95366aa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios-simulator/bf16/rvllm.metallib",
+      "sha256": "58006a7c051e438b01620e9553dfb597dcd67823eb2152e5a87cc5d88f412f44"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w4.rvllm/metal/ios-simulator/bf16/pipelines.json",
+      "sha256": "b627b0a202aa80e0d712343aa0801131cab6fcbd2beb9ccbe71a0734792892a1"
+    }
+  ],
+  "after": [],
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 68719476736,
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target",
+    "quiet_process_names": [],
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer",
+      "rvllm_apple_package"
+    ],
+    "idle_llama_servers": []
+  },
+  "stable_seconds": 0,
+  "max_wait_seconds": 7200,
+  "max_run_seconds": 3600
+}

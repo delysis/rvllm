@@ -86,3 +86,19 @@ The builder source SHA-256 is
 The serial queue caps runs at 3,600 seconds; a future immutable build job
 must preserve a failure receipt if the export exceeds that bound. No such
 job has yet been submitted, and no full package exists.
+
+One immutable queue preparation job is predeclared in
+`lowbit-fulltext-w4-build-v1-job.json`, SHA-256
+`e1b30898029f5d12aa659c27d8ac6962d0847c90e29f432c230411c2278dacc8`,
+ID `prefill26-lowbit-fulltext-w4-package-build-v1-20260927`. It invokes the
+frozen runner exactly once, pins the plan, model/config/tokenizer, both
+executables, relevant source, donor package manifest, and all twelve Metal
+library/pipeline-manifest files. Every listed input hash was checked before
+submission. The queue remains serial; the job has zero thermal-stability
+dwell, records the power/thermal/activity observations, requires at least
+64 GiB free at launch, and is bounded by the queue's 3,600-second run cap.
+`purpose=preparation` is intentional: an ineligible sampled condition must
+still be preserved and cannot qualify performance. A failure, timeout,
+partial staging output, or successful package is retained under its original
+identity. No retry or reinterpretation of this build as device quality is
+authorized by the manifest.
