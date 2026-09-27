@@ -13,6 +13,7 @@ type Result<T> = std::result::Result<T, String>;
 
 const MODEL_SHA256: &str = "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d";
 const PROMPT_SHA256: &str = "72e42ab11ef82d9a1779c2d93c9f30c3bbc39bc9f5ea478cc293ec18a4b68406";
+const PROMPT_TEXT_SHA256: &str = "b6f99179b80deea74204837e654c11d2df9ab8be3a55e21d5824cf865da566f6";
 const INFER_SHA256: &str = "7b6487471816cfe71999bf9d54631589105dcf88cb4f569e924c28c048cc1e20";
 const NORMAL_LIB_SHA256: &str = "bb88c9667b4b7ac3758760b602abe40cbe72cc907bf3c40e2f2a2d33b0bd8df2";
 const COMBINED_LIB_SHA256: &str =
@@ -96,7 +97,23 @@ fn read_receipt(dir: &Path, candidate: bool) -> Result<Receipt> {
             dir.display()
         ));
     }
-    if job["purpose"] != "correctness"
+    let expected_id = if candidate {
+        "prefill26-logits-m304-combined-g1-20260927"
+    } else {
+        "prefill26-logits-m304-off-g1-20260927"
+    };
+    let args = job["command"]["args"]
+        .as_array()
+        .ok_or("missing inference arguments")?;
+    let prompt = args
+        .windows(2)
+        .find(|pair| pair[0] == "--prompt")
+        .and_then(|pair| pair[1].as_str())
+        .ok_or("missing inline prompt")?;
+    let prompt_text_sha256 = format!("{:x}", Sha256::digest(prompt.as_bytes()));
+    if job["id"] != expected_id
+        || prompt_text_sha256 != PROMPT_TEXT_SHA256
+        || job["purpose"] != "correctness"
         || job["command"]["executable"]["sha256"] != INFER_SHA256
         || pinned_input(&job, "model.safetensors")? != MODEL_SHA256
         || pinned_input(&job, "prompt-m304-only.jsonl")? != PROMPT_SHA256
@@ -105,7 +122,7 @@ fn read_receipt(dir: &Path, candidate: bool) -> Result<Receipt> {
         || pinned_input(&job, "tokenizer.json")?
             != "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
     {
-        return Err("model, prompt, tokenizer or executable identity changed".into());
+        return Err("job, model, prompt, tokenizer or executable identity changed".into());
     }
     let selector = if candidate {
         "metal-prefill-pipeline32x64-q4k16"
