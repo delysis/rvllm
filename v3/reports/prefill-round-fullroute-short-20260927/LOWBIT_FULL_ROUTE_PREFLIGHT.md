@@ -102,3 +102,11 @@ still be preserved and cannot qualify performance. A failure, timeout,
 partial staging output, or successful package is retained under its original
 identity. No retry or reinterpretation of this build as device quality is
 authorized by the manifest.
+
+After the manifest and protocol were pushed at `c39754d7`, the existing
+serial queue accepted that ID exactly once on 2026-09-27. Immediately before
+submission, the queue was waiting on unrelated obsolete dependencies with no
+matching ID, the package output path did not exist, and the data volume had
+128 GiB available. Submission acknowledgement does not establish launch,
+terminal success, package validation or device quality; those require the
+immutable queue receipt and post-build inspection.
