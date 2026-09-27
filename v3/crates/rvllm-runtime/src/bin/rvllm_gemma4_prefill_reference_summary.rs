@@ -18,7 +18,7 @@ const ARMS: [(&str, &str, &str, &str); 6] = [
         "mmlu-formal-logic-2443",
         "hf",
         "logic-hf-job.json",
-        "144965b1c3dc4967b3d828c66b404921e94631f269760e21aa6512c6d3ab4db",
+        "144965b1c3dc4967b3d828c66b404921e94631f269760e21aa6512c6d3fab4db",
     ),
     (
         "mmlu-formal-logic-2443",
@@ -456,6 +456,20 @@ fn run(paths: &[PathBuf]) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frozen_manifest_hashes_match_checkout() {
+        let manifests = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../reports/prefill-round-fullroute-short-20260927/mmlu-prefill-reference-v1-queue",
+        );
+        for (_, _, file, expected_sha) in ARMS {
+            assert_eq!(
+                digest(&manifests.join(file)).unwrap(),
+                expected_sha,
+                "{file}"
+            );
+        }
+    }
 
     #[test]
     fn hf_ties_use_lowest_token_id() {
