@@ -47,6 +47,8 @@ struct CliArgs {
     teacher_token_ids: Option<Vec<u32>>,
     #[cfg(feature = "metal-quality-research")]
     teacher_prefill_last_logits: bool,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_lm_head_shape_probe: bool,
     json_output: bool,
 }
 
@@ -137,10 +139,35 @@ struct TeacherReport {
     claim: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     prefill_last_step: Option<TeacherStep>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lm_head_shape_probe: Option<LmHeadShapeProbe>,
     steps: Vec<TeacherStep>,
     total_negative_log_likelihood: f64,
     mean_negative_log_likelihood: f64,
     perplexity: f64,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct LogitVectorDifference {
+    exact_bits_equal: usize,
+    differing: usize,
+    nonfinite_mismatches: usize,
+    max_finite_abs_diff: f64,
+    max_finite_abs_diff_token_id: u32,
+    mean_finite_abs_diff: f64,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct LmHeadShapeProbe {
+    schema: &'static str,
+    claim: &'static str,
+    full_rows: usize,
+    compared_row: usize,
+    vocab_size: usize,
+    short_vs_full: LogitVectorDifference,
+    short_repeat: LogitVectorDifference,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -242,6 +269,8 @@ where
     let mut teacher_token_ids = None;
     #[cfg(feature = "metal-quality-research")]
     let mut teacher_prefill_last_logits = false;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_lm_head_shape_probe = false;
     let mut json_output = false;
 
     let mut iter = args.into_iter().map(Into::into).peekable();
@@ -391,6 +420,15 @@ where
                 }
                 teacher_prefill_last_logits = true;
             }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-lm-head-shape-probe" => {
+                if teacher_lm_head_shape_probe {
+                    return Err(
+                        "--teacher-lm-head-shape-probe may be specified only once".to_owned()
+                    );
+                }
+                teacher_lm_head_shape_probe = true;
+            }
             "--json" => {
                 json_output = true;
             }
@@ -446,6 +484,12 @@ where
     if teacher_prefill_last_logits && teacher_token_ids.is_none() {
         return Err("--teacher-prefill-last-logits requires --teacher-token-ids".to_owned());
     }
+    #[cfg(feature = "metal-quality-research")]
+    if teacher_lm_head_shape_probe && !teacher_prefill_last_logits {
+        return Err(
+            "--teacher-lm-head-shape-probe requires --teacher-prefill-last-logits".to_owned(),
+        );
+    }
 
     Ok(CliArgs {
         model_dir: model_dir.ok_or_else(|| "--model-dir is required".to_owned())?,
@@ -468,6 +512,8 @@ where
         teacher_token_ids,
         #[cfg(feature = "metal-quality-research")]
         teacher_prefill_last_logits,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_lm_head_shape_probe,
         json_output,
     })
 }
@@ -481,7 +527,7 @@ fn usage() -> String {
      [--profile-report <JSON>] [--top-logits N] [--json]"
         .to_owned();
     #[cfg(feature = "metal-quality-research")]
-    usage.push_str("\nresearch-only: --teacher-prompt-jsonl PATH --teacher-token-ids ID,ID,... [--teacher-prefill-last-logits] --json (single prompt; never timing evidence)");
+    usage.push_str("\nresearch-only: --teacher-prompt-jsonl PATH --teacher-token-ids ID,ID,... [--teacher-prefill-last-logits [--teacher-lm-head-shape-probe]] --json (single prompt; never timing evidence)");
     usage
 }
 
@@ -2765,6 +2811,52 @@ fn score_prefill_last_logits(
     score_teacher_step(final_logits, target_token_id, sampled_token_id)
 }
 
+#[cfg(feature = "metal-quality-research")]
+fn compare_logit_vectors(left: &[f32], right: &[f32]) -> Result<LogitVectorDifference, String> {
+    if left.is_empty() || left.len() != right.len() {
+        return Err("LM-head shape probe requires equal nonempty logit vectors".to_owned());
+    }
+    let mut exact_bits_equal = 0;
+    let mut nonfinite_mismatches = 0;
+    let mut finite_pairs = 0;
+    let mut finite_abs_diff_sum = 0.0;
+    let mut max_finite_abs_diff = 0.0;
+    let mut max_finite_abs_diff_token_id = 0;
+    for (index, (&a, &b)) in left.iter().zip(right).enumerate() {
+        if a.is_nan() || b.is_nan() || a == f32::INFINITY || b == f32::INFINITY {
+            return Err("LM-head shape probe found invalid logits".to_owned());
+        }
+        if a.to_bits() == b.to_bits() {
+            exact_bits_equal += 1;
+        }
+        if !a.is_finite() || !b.is_finite() {
+            if a.to_bits() != b.to_bits() {
+                nonfinite_mismatches += 1;
+            }
+            continue;
+        }
+        let abs_diff = (a as f64 - b as f64).abs();
+        finite_pairs += 1;
+        finite_abs_diff_sum += abs_diff;
+        if abs_diff > max_finite_abs_diff {
+            max_finite_abs_diff = abs_diff;
+            max_finite_abs_diff_token_id = u32::try_from(index)
+                .map_err(|_| "LM-head shape probe vocabulary exceeds u32".to_owned())?;
+        }
+    }
+    if finite_pairs == 0 {
+        return Err("LM-head shape probe found no finite logit pairs".to_owned());
+    }
+    Ok(LogitVectorDifference {
+        exact_bits_equal,
+        differing: left.len() - exact_bits_equal,
+        nonfinite_mismatches,
+        max_finite_abs_diff,
+        max_finite_abs_diff_token_id,
+        mean_finite_abs_diff: finite_abs_diff_sum / finite_pairs as f64,
+    })
+}
+
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     use rvllm_apple::{AppleBackend, HandoffCapsule, HandoffKind};
@@ -2904,7 +2996,19 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     // replay of its token. This adds a full-prompt logits pass and a blocking
     // readback, so neither this run nor its continuation can be timed.
     #[cfg(feature = "metal-quality-research")]
-    let prefill_last_step = if args.teacher_prefill_last_logits {
+    let (prefill_last_step, lm_head_shape_probe) = if args.teacher_prefill_last_logits {
+        // The first row is identical input work for both LM-head shapes. A
+        // short/full/short sequence also checks whether the intervening
+        // full-row readback visibly changes a repeated short projection.
+        let short_before = if args.teacher_lm_head_shape_probe {
+            Some(
+                backend
+                    .probe_read_decode_logits_f32(1)
+                    .map_err(|err| format!("read short prefill LM-head logits: {err}"))?,
+            )
+        } else {
+            None
+        };
         let logits = backend
             .probe_read_decode_logits_f32(prompt_len)
             .map_err(|err| format!("read final prefill logits: {err}"))?;
@@ -2912,9 +3016,30 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
             .teacher_token_ids
             .as_ref()
             .expect("prefill probe requires teacher target IDs")[0];
-        Some(score_prefill_last_logits(&logits, prompt_len, target)?)
+        let last_step = score_prefill_last_logits(&logits, prompt_len, target)?;
+        let shape_probe = if let Some(short_before) = short_before {
+            let vocab_size = logits.len() / prompt_len;
+            let short_vs_full = compare_logit_vectors(&short_before, &logits[..vocab_size])?;
+            drop(logits);
+            let short_after = backend
+                .probe_read_decode_logits_f32(1)
+                .map_err(|err| format!("repeat short prefill LM-head logits: {err}"))?;
+            let short_repeat = compare_logit_vectors(&short_before, &short_after)?;
+            Some(LmHeadShapeProbe {
+                schema: "rvllm.metal_lm_head_shape_probe.v1",
+                claim: "research-only same-residual row-zero short/full/short LM-head comparison; not a final-row, tensor-reference, production, or timing verdict",
+                full_rows: prompt_len,
+                compared_row: 0,
+                vocab_size,
+                short_vs_full,
+                short_repeat,
+            })
+        } else {
+            None
+        };
+        (Some(last_step), shape_probe)
     } else {
-        None
+        (None, None)
     };
 
     let mut current = *prompt_tokens.last().expect("prompt token");
@@ -3003,6 +3128,7 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
             schema: "rvllm.metal_teacher_forced_quality.v1",
             claim: "research-only teacher-forced decode loss after normal-route prefill; readback adds synchronization and is never timing or independent numerical-reference evidence",
             prefill_last_step,
+            lm_head_shape_probe,
             steps: teacher_steps,
             total_negative_log_likelihood,
             mean_negative_log_likelihood,
@@ -3200,6 +3326,8 @@ mod tests {
             teacher_token_ids: None,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
             json_output: true,
         }
     }
@@ -3666,6 +3794,7 @@ mod tests {
                 schema: "rvllm.metal_teacher_forced_quality.v1",
                 claim: "test research diagnostic",
                 prefill_last_step: None,
+                lm_head_shape_probe: None,
                 steps: vec![score_teacher_step(&[0.0, 1.0], 1, 1).unwrap()],
                 total_negative_log_likelihood: 0.313_261_687_518_222_8,
                 mean_negative_log_likelihood: 0.313_261_687_518_222_8,
@@ -3803,6 +3932,8 @@ mod tests {
             teacher_token_ids: None,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
             json_output: true,
         };
         let report = run_infer(&args).expect("run E2B Metal text inference");
@@ -3852,6 +3983,8 @@ mod tests {
             teacher_token_ids: None,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
             json_output: true,
         };
         let report = run_infer(&args).expect("run configured-context E2B Metal text inference");
@@ -3936,6 +4069,8 @@ mod tests {
             teacher_token_ids: None,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
             json_output: true,
         };
         let reference = parse_hf_reference(reference_path).expect("parse HF text reference");
@@ -4019,6 +4154,8 @@ mod tests {
             teacher_token_ids: None,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
             json_output: true,
         };
         let prompt_token_ids =
@@ -4135,6 +4272,24 @@ mod tests {
 
     #[cfg(feature = "metal-quality-research")]
     #[test]
+    fn lm_head_shape_comparison_retains_exact_and_finite_differences() {
+        let left = [1.0, -2.0, f32::NEG_INFINITY, 4.0];
+        let right = [1.0, -1.5, f32::NEG_INFINITY, 3.0];
+        let difference = compare_logit_vectors(&left, &right).unwrap();
+        assert_eq!(difference.exact_bits_equal, 2);
+        assert_eq!(difference.differing, 2);
+        assert_eq!(difference.nonfinite_mismatches, 0);
+        assert_eq!(difference.max_finite_abs_diff, 1.0);
+        assert_eq!(difference.max_finite_abs_diff_token_id, 3);
+        assert!((difference.mean_finite_abs_diff - 0.5).abs() < 1e-12);
+        assert!(compare_logit_vectors(&[], &[]).is_err());
+        assert!(compare_logit_vectors(&[1.0], &[1.0, 2.0]).is_err());
+        assert!(compare_logit_vectors(&[f32::NAN], &[1.0]).is_err());
+        assert!(compare_logit_vectors(&[f32::NEG_INFINITY], &[f32::NEG_INFINITY]).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
     fn teacher_mode_requires_single_json_prompt_and_exact_targets() {
         let base = [
             "--model-dir",
@@ -4196,6 +4351,19 @@ mod tests {
         );
         with_prefill.push("--teacher-prefill-last-logits");
         assert!(parse_args_from(with_prefill).is_err());
+        let mut with_shape = base.to_vec();
+        with_shape.push("--teacher-prefill-last-logits");
+        with_shape.push("--teacher-lm-head-shape-probe");
+        assert!(
+            parse_args_from(with_shape.clone())
+                .unwrap()
+                .teacher_lm_head_shape_probe
+        );
+        with_shape.push("--teacher-lm-head-shape-probe");
+        assert!(parse_args_from(with_shape).is_err());
+        let mut without_prefill = base.to_vec();
+        without_prefill.push("--teacher-lm-head-shape-probe");
+        assert!(parse_args_from(without_prefill).is_err());
         let no_teacher = [
             "--model-dir",
             "/tmp/model",

@@ -101,3 +101,37 @@ LM-head projection or softcap, while keeping the selected production route
 unchanged. A direct same-residual M304-versus-M1 LM-head check would also
 separate shape-dependent projection rounding from the prefill/decode model
 path. None of these data establish checkpoint-wide quality or speed.
+
+## Predeclared same-residual LM-head shape trial
+
+The next default-off Rust diagnostic requests logits in a fixed
+`M=1 → M=304 → M=1` sequence **after the ordinary prefill and before decode**.
+It compares row zero from all three passes. Row zero reads the same residual
+and model weights; the intervening full-row pass changes the LM-head GEMM
+shape. The repeated one-row pass checks whether the full-row readback visibly
+changes the later one-row result. The program records bitwise-equal and
+different vocabulary counts, nonfinite mismatches, maximum and mean finite
+absolute logit differences, and the token ID with maximum finite difference.
+It also retains the prior row-303 prefill-final target score and one-step
+decode score. Every timing field in these jobs is invalid as speed evidence.
+
+This can establish whether an M-dependent LM-head result exists on row zero;
+it cannot automatically transfer that finding to row 303 or identify the
+first differing hidden-state operation. A positive difference might involve
+the M-dependent LM-head arithmetic or an unobserved readback side effect;
+the short/full/short repeat helps check the latter but does not prove all
+scratch state unchanged. A negative row-zero difference does not exonerate
+tail-row arithmetic.
+
+The two immutable queue IDs are
+`prefill26-lm-head-shape-m304-off-20260927` and dependent
+`prefill26-lm-head-shape-m304-combined-20260927`. They pin the original M304
+prompt, model and metallibs, new CLI source SHA-256
+`c091c7069ad563271ae2d46361190c0f8f451f521abfe41d7d30b749c4fbdf04`,
+and separate release executable SHA-256
+`23a662ad72dcc4357458d8d8720e0a228b357c3940fbc8ad15b1bf1d2de45463`.
+Feature host tests passed 17/17 and default host tests 11/11; six ignored
+feature device tests were not run. The manifests are
+`lm-head-shape-m304-off-job.json` and
+`lm-head-shape-m304-combined-job.json`. No device result existed when this
+trial was specified. Retain failed and successful receipts without replay.
