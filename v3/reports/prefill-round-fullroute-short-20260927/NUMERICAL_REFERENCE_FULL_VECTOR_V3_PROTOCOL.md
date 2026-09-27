@@ -74,3 +74,17 @@ and synchronization. CPU Transformers version and BF16 arithmetic may differ
 from Metal. Two synthetic first-target positions cannot establish quality,
 checkpoint-wide agreement, first internal arithmetic error, speed, or kernel
 promotion.
+
+## Generator checkpoint (still no submission)
+
+The separate safe-Rust `rvllm_gemma4_full_vector_job_gen` source SHA-256 is
+`36acac1144a53470d8e173a4f03225c912a2a70d7b928631482aab0d44e8f912`.
+Two focused host tests and a build passed. It seals the v3 source, tokenizer,
+three exact v2 manifest templates, new Metal source and executable, and
+rejects changed token identities or an existing output directory. An actual
+generation pass produced the six expected dependent manifests and two prompt
+JSONLs under the **unsent** `numerical-reference-full-vector-v3-dry-run/`
+directory. Those files remain local and unsubmitted; their paths must not be
+used as final queue artifacts. Before generating an authoritative fresh
+directory, finish the separate full-vector referee and review every resulting
+manifest and output path. No v3 queue job has been submitted.
