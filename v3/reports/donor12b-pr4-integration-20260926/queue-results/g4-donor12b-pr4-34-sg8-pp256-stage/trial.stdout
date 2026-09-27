@@ -1,0 +1,5348 @@
+{
+  "arena_bytes": 24716913184,
+  "claim": "Apple Metal text inference workflow; not production-ready until acceptance gates pass",
+  "command_buffer_wait_ns": 23889775500,
+  "command_buffers": 2,
+  "cpu_encode_ns": 37129125,
+  "cpu_wall_ns": 23926904625,
+  "debug_sync": false,
+  "decode_ms": 270.524292,
+  "diagnostic_top_logits": [],
+  "embedding_encoders": 2,
+  "encoder_counts_by_kernel_family": {
+    "embedding": 2,
+    "final_logits_diagnostic": 0,
+    "final_sample": 3,
+    "layer_body": 1056,
+    "layer_scale_fused": 96,
+    "ple_input": 0
+  },
+  "encoders": 1061,
+  "final_logits_encoders": 0,
+  "final_sample_encoders": 3,
+  "finish_reason": "length",
+  "forced_waits": 2,
+  "generated_text": "1",
+  "generated_token_ids": [
+    236770
+  ],
+  "hf_reference": null,
+  "large_model_opt_in": true,
+  "last_step_command_buffer_wait_ns": 252384750,
+  "last_step_command_buffers": 1,
+  "last_step_cpu_encode_ns": 18053125,
+  "last_step_cpu_wall_ns": 270437875,
+  "last_step_encoders": 580,
+  "last_step_forced_waits": 1,
+  "last_step_gpu_execution_ns": 247501541,
+  "last_step_tokens": 1,
+  "layer_encoders": 1056,
+  "layer_scale_encoder_fusions": 96,
+  "library_compiles": 1,
+  "max_new_tokens": 1,
+  "max_supported_total_tokens": 257,
+  "metal_compute_dtype": "bfloat16",
+  "metal_moe_router_weight_dtype": "bfloat16",
+  "metal_prefill_stage_timing": {
+    "barriered": false,
+    "caveats": [
+      "qkv includes fused Q/K normalization, RoPE, and cache writes when selected",
+      "o_projection may include fused post-attention normalization",
+      "o_projection also includes the attention residual and pre-FFN normalization boundary",
+      "ffn_down may include fused post-FFN normalization",
+      "MoE routing, expert gate/up, expert down, and normalization are inseparable and reported under ffn_down",
+      "lm_head includes final normalization and sampling/logit finalization"
+    ],
+    "clock": "MTLCommonCounterSetTimestamp",
+    "invalid_span_count": 337,
+    "sampling_point": "compute_stage_boundary",
+    "schema": "rvllm.metal_stage_timing.v1",
+    "stages": [
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "embedding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      }
+    ],
+    "status": "unsupported",
+    "totals_gpu_duration_ns": {},
+    "valid_span_count": 0
+  },
+  "metal_stage_timing": {
+    "barriered": false,
+    "caveats": [
+      "qkv includes fused Q/K normalization, RoPE, and cache writes when selected",
+      "o_projection may include fused post-attention normalization",
+      "o_projection also includes the attention residual and pre-FFN normalization boundary",
+      "ffn_down may include fused post-FFN normalization",
+      "MoE routing, expert gate/up, expert down, and normalization are inseparable and reported under ffn_down",
+      "lm_head includes final normalization and sampling/logit finalization"
+    ],
+    "clock": "MTLCommonCounterSetTimestamp",
+    "invalid_span_count": 338,
+    "sampling_point": "compute_stage_boundary",
+    "schema": "rvllm.metal_stage_timing.v1",
+    "stages": [
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "embedding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_sliding"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "qkv_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "attention_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "o_projection_full"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_gate_up_activation"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "ffn_down"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "norm_residual"
+      },
+      {
+        "gpu_duration_ns": null,
+        "invalid_reason": "zero_timestamp",
+        "raw_end_timestamp": 0,
+        "raw_start_timestamp": 0,
+        "stage": "lm_head"
+      }
+    ],
+    "status": "unsupported",
+    "totals_gpu_duration_ns": {},
+    "valid_span_count": 0
+  },
+  "metal_weight_dtype": "bfloat16",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "output_text": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a 1",
+  "output_token_ids": [
+    236746,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    236743,
+    236770
+  ],
+  "pipeline_state_compiles": 70,
+  "ple_encoders": 0,
+  "prefill_ms": 23656.567792,
+  "prepare_ms": 18514.113166000003,
+  "prompt": "a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a ",
+  "prompt_token_ids": [
+    236746,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    496,
+    236743
+  ],
+  "research_dispatch": {
+    "counts": {
+      "research_donor12b_sg8_global_attention": 8,
+      "research_donor12b_sg8_local_attention": 40,
+      "research_donor12b_sg8_native_gate": 48,
+      "research_donor12b_sg8_native_projection": 144
+    },
+    "overflowed": false,
+    "schema": "rvllm.metal.research-dispatch.v5"
+  },
+  "schema": "rvllm.apple_metal_text_infer.v1",
+  "tok_per_s": 3.696525707939012
+}

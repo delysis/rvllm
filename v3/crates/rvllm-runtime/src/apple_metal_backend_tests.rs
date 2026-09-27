@@ -165,6 +165,23 @@ fn layer_encoder_count_tracks_low_bit_projection_branches_exactly() {
 static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn route_trace_controls_parse_without_enabling_snapshot_trace() {
+    let guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+    ]);
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV, "0, 7, 47");
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV, "1024");
+    guard.remove(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV);
+    assert_eq!(metal_debug_route_trace_layers(), [0, 7, 47]);
+    assert_eq!(metal_debug_route_trace_position(), Some(1024));
+    assert!(metal_debug_trace_layers().is_empty());
+    assert!(metal_debug_layer_controls_enabled());
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Clone)]
 struct SharedModelMetalBackend {
     inner: std::rc::Rc<std::cell::RefCell<ModelMetalBackend>>,
@@ -692,6 +709,34 @@ fn metal_numeric_abi_fingerprint_separates_dtype_and_kv_format() {
     assert_ne!(f16_native, packaged_a);
     assert_ne!(packaged_a, packaged_b);
     assert_ne!(packaged_a, replace_native);
+}
+
+#[cfg(all(
+    feature = "apple",
+    feature = "donor-route-attribution",
+    target_os = "macos"
+))]
+#[test]
+fn donor_component_mask_changes_numeric_abi_identity() {
+    use rvllm_apple_metal::options::DonorRouteMask;
+
+    let fingerprint = |mask| {
+        metal_numeric_abi_fingerprint_impl(
+            MetalFloatType::Bf16,
+            false,
+            false,
+            None,
+            None,
+            MetalLowBitResidencyPolicy::HybridFallback,
+            rvllm_apple_metal::MetalKernelOptions {
+                donor_route_mask: mask,
+                ..rvllm_apple_metal::MetalKernelOptions::default()
+            },
+        )
+    };
+    let all: DonorRouteMask = "all".parse().unwrap();
+    let none: DonorRouteMask = "none".parse().unwrap();
+    assert_ne!(fingerprint(all), fingerprint(none));
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -2238,6 +2283,86 @@ fn tiny_one_layer_noop_model_backend_decodes_token_2_to_3() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
 
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
+fn tiny_one_layer_route_trace_reads_existing_buffers_and_refuses_overwrite() {
+    let dir = write_tiny_one_layer_noop_fixture();
+    let trace_path = dir.join("route-layer0.json");
+    let guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_JSON_ENV,
+    ]);
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV, "0");
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV, "0");
+    guard.set(RVLLM_METAL_DEBUG_TRACE_JSON_ENV, &trace_path);
+    guard.remove(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV);
+
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    backend
+        .prepare(&one_layer_plan(dir.clone()))
+        .expect("prepare one-layer tiny model");
+    let handoff = HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+    let output = backend.collect(ticket).expect("collect rollout");
+    assert_eq!(output[0].token_id, TokenId(3));
+    let traced_residual = backend
+        .debug_read_residual_f32(1)
+        .expect("read traced residual");
+    let trace: Value = serde_json::from_slice(&fs::read(&trace_path).expect("read route trace"))
+        .expect("parse route trace");
+    assert_eq!(
+        trace["observation_mode"],
+        "post_layer_existing_buffers_per_layer_sync"
+    );
+    assert_eq!(trace["phase"], "decode");
+    assert_eq!(trace["layer"], 0);
+    assert_eq!(trace["kv_cache_rows"], 1);
+    assert_eq!(
+        trace["summaries"]["attention_output"]["sha256_le_u16"]
+            .as_str()
+            .map(str::len),
+        Some(64)
+    );
+    assert_eq!(
+        trace["summaries"]["attention_output"]["raw_u16_hex"]
+            .as_str()
+            .map(str::len),
+        trace["summaries"]["attention_output"]["shape"][1]
+            .as_u64()
+            .map(|width| width as usize * 4)
+    );
+    assert!(backend.launch_rollout(&handoff, None).is_err());
+    assert!(trace_path.exists(), "original trace must remain intact");
+
+    guard.remove(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV);
+    guard.remove(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV);
+    guard.remove(RVLLM_METAL_DEBUG_TRACE_JSON_ENV);
+    let mut baseline = ModelMetalBackend::new(dir.clone());
+    baseline
+        .prepare(&one_layer_plan(dir.clone()))
+        .expect("prepare untraced baseline");
+    let ticket = baseline
+        .launch_rollout(&handoff, None)
+        .expect("run baseline");
+    let baseline_output = baseline.collect(ticket).expect("collect baseline");
+    let baseline_residual = baseline
+        .debug_read_residual_f32(1)
+        .expect("read baseline residual");
+    assert_eq!(output[0].token_id, baseline_output[0].token_id);
+    assert_eq!(traced_residual, baseline_residual);
     let _ = fs::remove_dir_all(dir);
 }
 

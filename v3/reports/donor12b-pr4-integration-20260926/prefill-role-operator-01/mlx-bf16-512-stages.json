@@ -1,0 +1,847 @@
+{
+  "cases": [
+    {
+      "category": "embedding",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.embedding.Embedding",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "token lookup including Gemma embed_scale; storage format recorded as observed",
+      "timing": {
+        "mean_ms": 0.44300957990344614,
+        "total_ms": 44.300957990344614
+      },
+      "variant": null
+    },
+    {
+      "category": "qkv",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null,
+        null,
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "linear projections before Q/K/V normalization and RoPE",
+      "timing": {
+        "mean_ms": 2.9785399994580075,
+        "total_ms": 297.85399994580075
+      },
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "qkv",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null,
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "linear projections before Q/K/V normalization and RoPE",
+      "timing": {
+        "mean_ms": 3.0016579100629315,
+        "total_ms": 300.16579100629315
+      },
+      "variant": "full_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "implementation_path": "mlx_lm.models.base.scaled_dot_product_attention",
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [],
+      "operator_weight_bits": [],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 1.5926137496717274,
+        "total_ms": 159.26137496717274
+      },
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "implementation_path": "mlx_lm.models.base.scaled_dot_product_attention",
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [],
+      "operator_weight_bits": [],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 1.9473483302863315,
+        "total_ms": 194.73483302863315
+      },
+      "variant": "full_attention"
+    },
+    {
+      "category": "o_projection",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 1.524186659953557,
+        "total_ms": 152.4186659953557
+      },
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "o_projection",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 2.8823191695846617,
+        "total_ms": 288.2319169584662
+      },
+      "variant": "full_attention"
+    },
+    {
+      "category": "ffn_gate_up_activation",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null,
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 9.88968499994371,
+        "total_ms": 988.9684999943711
+      },
+      "variant": null
+    },
+    {
+      "category": "ffn_down",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 5.772302079712972,
+        "total_ms": 577.2302079712972
+      },
+      "variant": null
+    },
+    {
+      "category": "rmsnorm_residual",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.normalization.RMSNorm",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "representative post-attention RMSNorm plus residual add",
+      "timing": {
+        "mean_ms": 0.3434287500567734,
+        "total_ms": 34.34287500567734
+      },
+      "variant": null
+    },
+    {
+      "category": "lm_head",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        512,
+        3840
+      ],
+      "mode": "prefill",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.embedding.Embedding",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "tied embedding as_linear projection plus logit softcap; shared storage format recorded as observed",
+      "timing": {
+        "mean_ms": 80.45207916991785,
+        "total_ms": 8045.207916991785
+      },
+      "variant": null
+    },
+    {
+      "category": "embedding",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.embedding.Embedding",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "token lookup including Gemma embed_scale; storage format recorded as observed",
+      "timing": {
+        "mean_ms": 0.31691207957919687,
+        "total_ms": 31.691207957919687
+      },
+      "variant": null
+    },
+    {
+      "category": "qkv",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null,
+        null,
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "linear projections before Q/K/V normalization and RoPE",
+      "timing": {
+        "mean_ms": 0.4267979197902605,
+        "total_ms": 42.67979197902605
+      },
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "qkv",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null,
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "linear projections before Q/K/V normalization and RoPE",
+      "timing": {
+        "mean_ms": 0.3733066702261567,
+        "total_ms": 37.33066702261567
+      },
+      "variant": "full_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "implementation_path": "mlx_lm.models.base.scaled_dot_product_attention",
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [],
+      "operator_weight_bits": [],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 0.17992541019339114,
+        "total_ms": 17.992541019339114
+      },
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "implementation_path": "mlx_lm.models.base.scaled_dot_product_attention",
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [],
+      "operator_weight_bits": [],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 0.28688125021290034,
+        "total_ms": 28.688125021290034
+      },
+      "variant": "full_attention"
+    },
+    {
+      "category": "o_projection",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 0.26363125012721866,
+        "total_ms": 26.363125012721866
+      },
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "o_projection",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 0.3732812497764826,
+        "total_ms": 37.32812497764826
+      },
+      "variant": "full_attention"
+    },
+    {
+      "category": "ffn_gate_up_activation",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        },
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null,
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 0.7479133299784735,
+        "total_ms": 74.79133299784735
+      },
+      "variant": null
+    },
+    {
+      "category": "ffn_down",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.linear.Linear",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": null,
+      "timing": {
+        "mean_ms": 0.4772395797772333,
+        "total_ms": 47.72395797772333
+      },
+      "variant": null
+    },
+    {
+      "category": "rmsnorm_residual",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.normalization.RMSNorm",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "representative post-attention RMSNorm plus residual add",
+      "timing": {
+        "mean_ms": 0.16632375016342849,
+        "total_ms": 16.63237501634285
+      },
+      "variant": null
+    },
+    {
+      "category": "lm_head",
+      "implementation_path": null,
+      "input_shape": [
+        1,
+        1,
+        3840
+      ],
+      "mode": "decode",
+      "operator_modules": [
+        {
+          "bits": null,
+          "class": "mlx.nn.layers.embedding.Embedding",
+          "group_size": null,
+          "mode": null,
+          "weight_storage_dtype": "mlx.core.bfloat16"
+        }
+      ],
+      "operator_weight_bits": [
+        null
+      ],
+      "prompt_or_context_tokens": 512,
+      "scope": "tied embedding as_linear projection plus logit softcap; shared storage format recorded as observed",
+      "timing": {
+        "mean_ms": 5.1020470896037295,
+        "total_ms": 510.20470896037295
+      },
+      "variant": null
+    }
+  ],
+  "epistemic_label": "Isolated mx.eval-synchronized operator timings are diagnostic microbenchmarks. They are not end-to-end normal-route prefill or decode timings and do not by themselves qualify a framework or kernel performance claim.",
+  "mlx_lm_source": {
+    "commit": "87b7b583a697537aa68f47130b40884700b5f55f",
+    "end_to_end_benchmark_path": "mlx_lm/benchmark.py",
+    "end_to_end_benchmark_sha256": "0ef83adbe09c75873fd69435cdeef559656a85f4dae5d607927931edba1d16b3",
+    "referenced_path": "mlx_lm/models/gemma4_text.py",
+    "referenced_path_sha256": "73ffa75e9069ce7b2f864ccd8f0267bb80c5b5d4e2b73102b8a2a93fe03f936d",
+    "repository": "https://github.com/ml-explore/mlx-lm",
+    "source_root": "/Users/george/.cache/rvllm-mlx-lm-87b7b583",
+    "working_tree_matches_commit": true
+  },
+  "mlx_protocol_source": {
+    "commit": "c215b6f88cf0fee0b0895623e4046cda797ef397",
+    "referenced_path": "benchmarks/python/time_utils.py",
+    "referenced_path_sha256": "599c0b6998a422a6de5f07b4d21ff245edf477f5370b5b71ea7fe70c8ecb9dd8",
+    "repository": "https://github.com/ml-explore/mlx",
+    "source_root": "/Users/george/osaurus/Packages/swift_convert/.build/checkouts/mlx-swift/Source/Cmlx/mlx",
+    "working_tree_matches_commit": true
+  },
+  "model": {
+    "config_exposed_weight_bits": 16,
+    "config_sha256": "95ac51f934f85c9243f970e6077ad5ff6056b50de7bb4c4be866205f4a7901b6",
+    "model_index_sha256": "5a2037525ab516767d2a213bf7cb74f7d05940bbccb64e1de281f93b40953577",
+    "model_type": "gemma4_unified",
+    "path": "/Users/george/.cache/huggingface/hub/models--mlx-community--gemma-4-12B-bf16/snapshots/e61ef6842dc9407c3ceba8800b7200c0b07f816f",
+    "quantization": null,
+    "requested_weight_bits": 16
+  },
+  "planned_cases": [
+    {
+      "category": "embedding",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "qkv",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "qkv",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": "full_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": "full_attention"
+    },
+    {
+      "category": "o_projection",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "o_projection",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": "full_attention"
+    },
+    {
+      "category": "ffn_gate_up_activation",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "ffn_down",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "rmsnorm_residual",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "lm_head",
+      "mode": "prefill",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "embedding",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "qkv",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "qkv",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": "full_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "attention_core_sdpa",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": "full_attention"
+    },
+    {
+      "category": "o_projection",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": "sliding_attention"
+    },
+    {
+      "category": "o_projection",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": "full_attention"
+    },
+    {
+      "category": "ffn_gate_up_activation",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "ffn_down",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "rmsnorm_residual",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    },
+    {
+      "category": "lm_head",
+      "mode": "decode",
+      "prompt_or_context_tokens": 512,
+      "variant": null
+    }
+  ],
+  "protocol": {
+    "aggregation": "one enclosing timer for 100 synchronized iterations; report total and mean",
+    "input_policy": "operator inputs are materialized before warmup and excluded from timing",
+    "iterations": 100,
+    "synchronization": "mx.eval(operator()) once per warmup and timed iteration",
+    "timer": "time.perf_counter",
+    "warmups": 5
+  },
+  "representative_layers": {
+    "full_attention": 5,
+    "sliding_attention": 0
+  },
+  "runtime": {
+    "mlx_lm_version": "0.30.3.dev268",
+    "platform": "macOS-15.6-arm64-arm-64bit-Mach-O",
+    "python": "3.14.5 (main, May 10 2026, 10:21:34) [Clang 17.0.0 (clang-1700.6.4.2)]"
+  },
+  "schema": "rvllm.mlx_gemma4_stage_microbenchmark.v1",
+  "status": "measured_microbenchmark_not_normal_route"
+}

@@ -168,7 +168,23 @@ const RVLLM_METAL_DEBUG_CHECK_FINITE_LAYERS_ENV: &str = "RVLLM_METAL_DEBUG_CHECK
 const RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_STOP_AFTER_LAYER";
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_LAYER";
-#[cfg(all(test, feature = "apple", target_os = "macos"))]
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
+const RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV: &str = "RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER";
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
+const RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV: &str = "RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION";
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
 const RVLLM_METAL_DEBUG_TRACE_JSON_ENV: &str = "RVLLM_METAL_DEBUG_TRACE_JSON";
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 const RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS_ENV: &str = "RVLLM_METAL_DEBUG_SKIP_FINAL_LOGITS";
@@ -363,6 +379,11 @@ fn metal_numeric_abi_fingerprint_impl(
     hasher.update(b"projection.lm-head=apple9-batch8-argmax-weight-reuse-v1\0");
     hasher.update(b"projection.gemma4-12b-bf16-mma32=");
     hasher.update([u8::from(kernel_options.prefill_mma32)]);
+    #[cfg(feature = "donor-route-attribution")]
+    {
+        hasher.update(b"donor12b.diagnostic-component-mask=");
+        hasher.update([kernel_options.donor_route_mask.bits()]);
+    }
     hasher.update(b"kv.page-tokens=");
     hasher.update((APPLE_KV_PAGE_TOKENS as u32).to_le_bytes());
     hasher.update(b"\0bf16.accumulation=");
@@ -460,6 +481,8 @@ struct MetalProbePerfCounters {
     last_step_gpu_execution_ns: Cell<Option<u64>>,
     #[cfg(feature = "metal-stage-instrumentation")]
     last_stage_timing_receipt: RefCell<Option<serde_json::Value>>,
+    #[cfg(feature = "metal-stage-instrumentation")]
+    last_prefill_stage_timing_receipt: RefCell<Option<serde_json::Value>>,
 }
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
@@ -490,6 +513,8 @@ impl MetalProbePerfCounters {
         self.last_step_gpu_execution_ns.set(None);
         #[cfg(feature = "metal-stage-instrumentation")]
         self.last_stage_timing_receipt.borrow_mut().take();
+        #[cfg(feature = "metal-stage-instrumentation")]
+        self.last_prefill_stage_timing_receipt.borrow_mut().take();
     }
 
     fn snapshot(&self) -> MetalProbePerfStats {
@@ -785,7 +810,43 @@ fn metal_debug_stop_after_layer() -> Option<usize> {
 
 #[cfg(all(test, feature = "apple", target_os = "macos"))]
 fn metal_debug_trace_layers() -> Vec<usize> {
-    std::env::var(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV)
+    metal_debug_parse_layer_list(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV)
+}
+
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
+fn metal_debug_route_trace_layers() -> Vec<usize> {
+    metal_debug_parse_layer_list(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV)
+}
+
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
+fn metal_debug_route_trace_position() -> Option<i32> {
+    let raw = std::env::var(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV).ok()?;
+    match raw.parse() {
+        Ok(position) => Some(position),
+        Err(err) => {
+            eprintln!(
+                "metal debug trace: ignoring invalid {RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV}={raw:?}: {err}"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
+fn metal_debug_parse_layer_list(name: &str) -> Vec<usize> {
+    std::env::var(name)
         .ok()
         .map(|raw| {
             raw.split(',')
@@ -798,7 +859,7 @@ fn metal_debug_trace_layers() -> Vec<usize> {
                         Ok(layer_idx) => Some(layer_idx),
                         Err(err) => {
                             eprintln!(
-                                "metal debug trace: ignoring invalid trace layer {part:?}: {err}"
+                                "metal debug trace: ignoring invalid {name} layer {part:?}: {err}"
                             );
                             None
                         }
@@ -809,14 +870,22 @@ fn metal_debug_trace_layers() -> Vec<usize> {
         .unwrap_or_default()
 }
 
-#[cfg(all(test, feature = "apple", target_os = "macos"))]
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
 fn metal_debug_trace_json_path() -> Option<PathBuf> {
     std::env::var_os(RVLLM_METAL_DEBUG_TRACE_JSON_ENV)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
 }
 
-#[cfg(all(test, feature = "apple", target_os = "macos"))]
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
 fn metal_debug_trace_json_path_for_layer(path: &std::path::Path, layer_idx: usize) -> PathBuf {
     let raw = path.to_string_lossy();
     if raw.contains("{layer}") {
@@ -863,11 +932,19 @@ fn metal_debug_layer_controls_enabled() -> bool {
     metal_debug_finite_layers_enabled()
         || metal_debug_stop_after_layer().is_some()
         || !metal_debug_trace_layers().is_empty()
+        || !metal_debug_route_trace_layers().is_empty()
 }
 
 #[cfg(all(not(test), feature = "apple", target_os = "macos"))]
 fn metal_debug_layer_controls_enabled() -> bool {
-    false
+    #[cfg(feature = "metal-route-diagnostics")]
+    {
+        !metal_debug_route_trace_layers().is_empty()
+    }
+    #[cfg(not(feature = "metal-route-diagnostics"))]
+    {
+        false
+    }
 }
 
 #[cfg(all(not(test), feature = "apple", target_os = "ios"))]
@@ -875,13 +952,18 @@ fn metal_debug_layer_controls_enabled() -> bool {
     false
 }
 
-#[cfg(all(test, feature = "apple", target_os = "macos"))]
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
 fn debug_print_f16_region_token_stats(
     arena: &MetalBufferArena,
     label: &str,
     offset: usize,
     num_tokens: usize,
     elems_per_token: usize,
+    float_type: MetalFloatType,
 ) -> usize {
     let elem_count = num_tokens.saturating_mul(elems_per_token);
     let region = MetalRegion {
@@ -898,7 +980,7 @@ fn debug_print_f16_region_token_stats(
         let mut nonfinite = 0usize;
         let mut max_abs = 0.0f32;
         for raw in &bits[start..end] {
-            let value = f16::from_bits(*raw).to_f32();
+            let value = metal_u16_to_f32(*raw, float_type);
             if value.is_finite() {
                 max_abs = max_abs.max(value.abs());
             } else {
@@ -913,13 +995,18 @@ fn debug_print_f16_region_token_stats(
     total_nonfinite
 }
 
-#[cfg(all(test, feature = "apple", target_os = "macos"))]
-fn debug_f16_summary_json(
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
+fn debug_half_summary_json(
     arena: &MetalBufferArena,
     label: &str,
     offset: usize,
     num_tokens: usize,
     elems_per_token: usize,
+    float_type: MetalFloatType,
 ) -> String {
     let elem_count = num_tokens.saturating_mul(elems_per_token);
     let region = MetalRegion {
@@ -933,13 +1020,15 @@ fn debug_f16_summary_json(
     let mut first_nonfinite_index = None;
     let mut max_abs = 0.0f32;
     let mut abs_sum = 0.0f64;
+    let mut digest = Sha256::new();
     let mut first_values = String::new();
     let mut selected_values = Vec::new();
     const SELECTED_TRACE_INDICES: &[usize] = &[
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 16, 32, 64, 128, 256, 512, 1024, 1535,
     ];
     for (idx, raw) in bits.iter().enumerate() {
-        let value = f16::from_bits(*raw).to_f32();
+        digest.update(raw.to_le_bytes());
+        let value = metal_u16_to_f32(*raw, float_type);
         if idx < 16 {
             if idx > 0 {
                 first_values.push(',');
@@ -973,17 +1062,36 @@ fn debug_f16_summary_json(
     };
     let first_nonfinite =
         first_nonfinite_index.map_or_else(|| "null".to_owned(), |idx| idx.to_string());
+    let sha256_le_u16 = format!("{:x}", digest.finalize());
+    let raw_u16 = if num_tokens == 1
+        && elem_count <= 8192
+        && matches!(label, "attention_output" | "final_residual_after_layer")
+    {
+        use std::fmt::Write as _;
+        let mut hex = String::with_capacity(elem_count * 4);
+        for raw in bits {
+            write!(&mut hex, "{raw:04x}").expect("writing to String cannot fail");
+        }
+        format!(",\"raw_u16_hex\":\"{hex}\"")
+    } else {
+        String::new()
+    };
     format!(
-        "\"{label}\":{{\"shape\":[{num_tokens},{elems_per_token}],\"total_count\":{elem_count},\"finite_count\":{finite_count},\"max_abs\":{max_abs:.9e},\"mean_abs\":{mean_abs:.9e},\"first_nonfinite_index\":{first_nonfinite},\"first_values\":[{first_values}],\"selected\":[{}]}}",
+        "\"{label}\":{{\"shape\":[{num_tokens},{elems_per_token}],\"sha256_le_u16\":\"{sha256_le_u16}\"{raw_u16},\"total_count\":{elem_count},\"finite_count\":{finite_count},\"max_abs\":{max_abs:.9e},\"mean_abs\":{mean_abs:.9e},\"first_nonfinite_index\":{first_nonfinite},\"first_values\":[{first_values}],\"selected\":[{}]}}",
         selected_values.join(",")
     )
 }
 
-#[cfg(all(test, feature = "apple", target_os = "macos"))]
+#[cfg(all(
+    any(test, feature = "metal-route-diagnostics"),
+    feature = "apple",
+    target_os = "macos"
+))]
 #[allow(clippy::too_many_arguments)]
 fn debug_write_layer_trace_json(
     arena: &MetalBufferArena,
     path: &std::path::Path,
+    float_type: MetalFloatType,
     op: &'static str,
     phase: MetalPhase,
     layer_idx: usize,
@@ -1007,134 +1115,142 @@ fn debug_write_layer_trace_json(
     attention_kv_cache_v_offset: usize,
     shared_kv_source_layer: Option<usize>,
     trace: Option<&MetalLayerTraceState>,
+    route_observation: bool,
 ) -> Result<()> {
     let phase_name = match phase {
         MetalPhase::Decode => "decode",
         MetalPhase::Prefill { .. } => "prefill",
     };
+    let float_type_name = match float_type {
+        MetalFloatType::F16 => "f16",
+        MetalFloatType::Bf16 => "bf16",
+    };
+    let summarize_half = |arena, label, offset, tokens, elements| {
+        debug_half_summary_json(arena, label, offset, tokens, elements, float_type)
+    };
     let mut summaries = Vec::new();
     if let Some(trace) = trace {
         summaries.extend([
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "input_to_layer",
                 trace.input_to_layer.offset,
                 num_tokens,
                 hidden,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_input_layernorm",
                 trace.after_input_layernorm.offset,
                 num_tokens,
                 hidden,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "q_projection",
                 trace.q_projection.offset,
                 num_tokens,
                 q_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "k_projection",
                 trace.k_projection.offset,
                 num_tokens,
                 kv_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "v_projection",
                 trace.v_projection.offset,
                 num_tokens,
                 kv_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_q_norm",
                 trace.after_q_norm.offset,
                 num_tokens,
                 q_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_k_norm",
                 trace.after_k_norm.offset,
                 num_tokens,
                 kv_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_v_norm",
                 trace.after_v_norm.offset,
                 num_tokens,
                 kv_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_rope_q",
                 trace.after_rope_q.offset,
                 num_tokens,
                 q_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_rope_k",
                 trace.after_rope_k.offset,
                 num_tokens,
                 kv_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "attention_output",
                 trace.attention_output.offset,
                 num_tokens,
                 q_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_o_proj",
                 trace.after_o_proj.offset,
                 num_tokens,
                 hidden,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_post_attention_layernorm",
                 trace.after_post_attention_layernorm.offset,
                 num_tokens,
                 hidden,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_pre_feedforward_layernorm",
                 trace.after_pre_feedforward_layernorm.offset,
                 num_tokens,
                 hidden,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "gate_up_out",
                 trace.gate_up_out.offset,
                 num_tokens,
                 intermediate.saturating_mul(2),
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "ffn_activation",
                 trace.ffn_activation.offset,
                 num_tokens,
                 intermediate,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_ffn_branch",
                 trace.after_ffn_branch.offset,
                 num_tokens,
                 hidden,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "after_post_feedforward_layernorm",
                 trace.after_post_feedforward_layernorm.offset,
@@ -1143,7 +1259,7 @@ fn debug_write_layer_trace_json(
             ),
         ]);
         if let Some(region) = &trace.per_layer_input {
-            summaries.push(debug_f16_summary_json(
+            summaries.push(summarize_half(
                 arena,
                 "per_layer_input",
                 region.offset,
@@ -1152,7 +1268,7 @@ fn debug_write_layer_trace_json(
             ));
         }
         if let Some(region) = &trace.per_layer_input_gate {
-            summaries.push(debug_f16_summary_json(
+            summaries.push(summarize_half(
                 arena,
                 "per_layer_input_gate",
                 region.offset,
@@ -1161,7 +1277,7 @@ fn debug_write_layer_trace_json(
             ));
         }
         if let Some(region) = &trace.per_layer_projection {
-            summaries.push(debug_f16_summary_json(
+            summaries.push(summarize_half(
                 arena,
                 "per_layer_projection",
                 region.offset,
@@ -1170,7 +1286,7 @@ fn debug_write_layer_trace_json(
             ));
         }
         if let Some(region) = &trace.post_per_layer_input_norm {
-            summaries.push(debug_f16_summary_json(
+            summaries.push(summarize_half(
                 arena,
                 "post_per_layer_input_norm",
                 region.offset,
@@ -1180,24 +1296,24 @@ fn debug_write_layer_trace_json(
         }
     } else {
         summaries.extend([
-            debug_f16_summary_json(arena, "after_rope_q", q_offset, num_tokens, q_dim),
-            debug_f16_summary_json(arena, "after_rope_k", k_offset, num_tokens, kv_dim),
-            debug_f16_summary_json(arena, "after_v_norm", v_offset, num_tokens, kv_dim),
-            debug_f16_summary_json(
+            summarize_half(arena, "after_rope_q", q_offset, num_tokens, q_dim),
+            summarize_half(arena, "after_rope_k", k_offset, num_tokens, kv_dim),
+            summarize_half(arena, "after_v_norm", v_offset, num_tokens, kv_dim),
+            summarize_half(
                 arena,
                 "attention_output",
                 attn_out_offset,
                 num_tokens,
                 q_dim,
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "gate_up_out",
                 gate_up_out_offset,
                 num_tokens,
                 intermediate.saturating_mul(2),
             ),
-            debug_f16_summary_json(
+            summarize_half(
                 arena,
                 "ffn_activation",
                 activated_offset,
@@ -1206,7 +1322,7 @@ fn debug_write_layer_trace_json(
             ),
         ]);
     }
-    summaries.push(debug_f16_summary_json(
+    summaries.push(summarize_half(
         arena,
         "final_residual_after_layer",
         residual_offset,
@@ -1214,28 +1330,28 @@ fn debug_write_layer_trace_json(
         hidden,
     ));
     summaries.extend([
-        debug_f16_summary_json(
+        summarize_half(
             arena,
             "local_kv_cache_k",
             local_kv_cache_k_offset,
             kv_cache_rows,
             kv_dim,
         ),
-        debug_f16_summary_json(
+        summarize_half(
             arena,
             "local_kv_cache_v",
             local_kv_cache_v_offset,
             kv_cache_rows,
             kv_dim,
         ),
-        debug_f16_summary_json(
+        summarize_half(
             arena,
             "attention_kv_cache_k",
             attention_kv_cache_k_offset,
             kv_cache_rows,
             kv_dim,
         ),
-        debug_f16_summary_json(
+        summarize_half(
             arena,
             "attention_kv_cache_v",
             attention_kv_cache_v_offset,
@@ -1246,11 +1362,26 @@ fn debug_write_layer_trace_json(
     let shared_kv_source_layer_json = shared_kv_source_layer
         .map(|layer| layer.to_string())
         .unwrap_or_else(|| "null".to_owned());
+    let observation_mode = if route_observation {
+        "post_layer_existing_buffers_per_layer_sync"
+    } else {
+        "instrumented_tensor_snapshots"
+    };
     let json = format!(
-        "{{\"schema\":\"rvllm.gemma4_metal_layer_trace.v1\",\"op\":\"{op}\",\"phase\":\"{phase_name}\",\"layer\":{layer_idx},\"shared_kv_source_layer\":{shared_kv_source_layer_json},\"num_tokens\":{num_tokens},\"kv_cache_rows\":{kv_cache_rows},\"summaries\":{{{}}},\"claim\":\"rvLLM Metal layer debug summary only; no final logits, ANE, or production claim.\"}}\n",
+        "{{\"schema\":\"rvllm.gemma4_metal_layer_trace.v1\",\"observation_mode\":\"{observation_mode}\",\"float_type\":\"{float_type_name}\",\"op\":\"{op}\",\"phase\":\"{phase_name}\",\"layer\":{layer_idx},\"shared_kv_source_layer\":{shared_kv_source_layer_json},\"num_tokens\":{num_tokens},\"kv_cache_rows\":{kv_cache_rows},\"summaries\":{{{}}},\"claim\":\"rvLLM Metal layer debug summary only; per-layer synchronization changes scheduling and this is not a timing, final-logit, ANE, or production claim.\"}}\n",
         summaries.join(",")
     );
-    std::fs::write(path, json).map_err(|_| {
+    let write_result = if route_observation {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .and_then(|mut file| file.write_all(json.as_bytes()))
+    } else {
+        std::fs::write(path, json)
+    };
+    write_result.map_err(|_| {
         RvllmError::apple(
             AppleError::InvalidWeightBlob {
                 reason: "failed to write Metal layer trace JSON",
@@ -1468,6 +1599,9 @@ impl ModelGpuSubmission {
                     model_ctx("resolve_stage_timing"),
                 )
             })?;
+            if !self.is_decode {
+                *perf.last_prefill_stage_timing_receipt.borrow_mut() = Some(receipt.clone());
+            }
             *perf.last_stage_timing_receipt.borrow_mut() = Some(receipt);
         }
 
@@ -1848,6 +1982,19 @@ fn preflight_low_bit_replacement_descriptors_with_options(
 
 #[cfg(all(feature = "apple", any(target_os = "macos", target_os = "ios")))]
 impl ModelMetalBackend {
+    /// Explicit diagnostic capture of this backend's Metal device.
+    #[cfg(all(feature = "metal-gpu-capture", target_os = "macos"))]
+    pub fn start_gpu_capture(
+        &self,
+        path: &std::path::Path,
+    ) -> std::result::Result<rvllm_apple_metal::gpu_capture::MetalGpuCapture, String> {
+        let context = self
+            .ctx
+            .as_ref()
+            .ok_or_else(|| "Metal backend is not prepared for GPU capture".to_owned())?;
+        rvllm_apple_metal::gpu_capture::MetalGpuCapture::start(context, path)
+    }
+
     #[must_use]
     pub fn new(model_dir: PathBuf) -> Self {
         Self {
@@ -1967,6 +2114,11 @@ impl ModelMetalBackend {
         self.perf.last_stage_timing_receipt.borrow().clone()
     }
 
+    #[cfg(feature = "metal-stage-instrumentation")]
+    pub fn last_prefill_stage_timing_receipt(&self) -> Option<serde_json::Value> {
+        self.perf.last_prefill_stage_timing_receipt.borrow().clone()
+    }
+
     /// Encoded research dispatches, not proof of GPU completion or accuracy.
     #[must_use]
     pub fn probe_research_dispatches(
@@ -1975,6 +2127,18 @@ impl ModelMetalBackend {
         self.pipelines
             .as_ref()
             .map(PipelineCache::research_dispatch_snapshot)
+    }
+
+    /// Diagnostic-only encoded work in the selected ordinary prefill families.
+    /// Sample outside active encoding and after collect for completed work.
+    #[cfg(feature = "metal-route-diagnostics")]
+    #[must_use]
+    pub fn probe_ordinary_prefill_dispatches(
+        &self,
+    ) -> Option<rvllm_apple_metal::pipeline::OrdinaryPrefillDispatchSnapshot> {
+        self.pipelines
+            .as_ref()
+            .map(PipelineCache::ordinary_prefill_dispatch_snapshot)
     }
 
     #[must_use]
@@ -3989,12 +4153,39 @@ impl ModelMetalBackend {
         } else {
             Vec::new()
         };
-        #[cfg(test)]
+        #[cfg(all(target_os = "macos", any(test, feature = "metal-route-diagnostics")))]
+        let route_trace_layers = if self.explicit_options.is_none() {
+            metal_debug_route_trace_layers()
+        } else {
+            Vec::new()
+        };
+        #[cfg(all(target_os = "macos", any(test, feature = "metal-route-diagnostics")))]
+        let route_trace_position = metal_debug_route_trace_position();
+        #[cfg(all(target_os = "macos", any(test, feature = "metal-route-diagnostics")))]
         let trace_json_path = self
             .explicit_options
             .is_none()
             .then(metal_debug_trace_json_path)
             .flatten();
+        #[cfg(all(test, target_os = "macos"))]
+        let route_trace_overlaps_detailed = route_trace_layers
+            .iter()
+            .any(|idx| trace_layers.contains(idx));
+        #[cfg(all(not(test), target_os = "macos", feature = "metal-route-diagnostics"))]
+        let route_trace_overlaps_detailed = false;
+        #[cfg(all(target_os = "macos", any(test, feature = "metal-route-diagnostics")))]
+        if !route_trace_layers.is_empty()
+            && (route_trace_position.is_none()
+                || trace_json_path.is_none()
+                || route_trace_overlaps_detailed)
+        {
+            return Err(RvllmError::apple(
+                AppleError::InvalidWeightBlob {
+                    reason: "route trace requires position and JSON path, with no detailed trace overlap",
+                },
+                model_ctx(op),
+            ));
+        }
         #[cfg(test)]
         let shared_kv_skip_mode = if self.explicit_options.is_none() {
             metal_debug_shared_kv_skip_mode()
@@ -4003,12 +4194,18 @@ impl ModelMetalBackend {
         };
         #[cfg(not(test))]
         let shared_kv_skip_mode = MetalDebugSharedKvSkipMode::None;
-        #[cfg(test)]
+        #[cfg(all(test, target_os = "macos"))]
         let debug_layer_checks = (self.explicit_options.is_none()
             && metal_debug_finite_layers_enabled())
             || stop_after_layer.is_some()
-            || !trace_layers.is_empty();
-        #[cfg(not(test))]
+            || !trace_layers.is_empty()
+            || !route_trace_layers.is_empty();
+        #[cfg(all(not(test), target_os = "macos", feature = "metal-route-diagnostics"))]
+        let debug_layer_checks = !route_trace_layers.is_empty();
+        #[cfg(any(
+            all(not(test), not(feature = "metal-route-diagnostics")),
+            all(not(test), target_os = "ios")
+        ))]
         let debug_layer_checks = false;
 
         let owned_cmd_buf =
@@ -4296,10 +4493,21 @@ impl ModelMetalBackend {
             }
 
             #[cfg(test)]
-            if (self.explicit_options.is_none() && metal_debug_finite_layers_enabled())
+            let detailed_debug_this_layer = (self.explicit_options.is_none()
+                && metal_debug_finite_layers_enabled())
                 || stop_after_layer.is_some()
-                || trace_layers.contains(&one.layer_idx)
-            {
+                || trace_layers.contains(&one.layer_idx);
+            #[cfg(all(not(test), target_os = "macos", feature = "metal-route-diagnostics"))]
+            let detailed_debug_this_layer = false;
+            #[cfg(all(target_os = "macos", any(test, feature = "metal-route-diagnostics")))]
+            let route_trace_this_layer = route_trace_layers.contains(&one.layer_idx)
+                && route_trace_position.is_some_and(|position| {
+                    let region = &one.positions;
+                    let ptr = unsafe { arena.host_ptr(region) as *const i32 };
+                    unsafe { ptr.read() == position }
+                });
+            #[cfg(all(target_os = "macos", any(test, feature = "metal-route-diagnostics")))]
+            if detailed_debug_this_layer || route_trace_this_layer {
                 self.wait_for_metal_queue("debug_layer_finite")?;
                 let residual_nonfinite = debug_print_f16_region_token_stats(
                     arena,
@@ -4307,6 +4515,7 @@ impl ModelMetalBackend {
                     state.residual.offset,
                     num_tokens,
                     state.hidden_size,
+                    state.float_type,
                 );
                 if residual_nonfinite > 0 {
                     let q_dim = one.dims.q_dim;
@@ -4317,13 +4526,21 @@ impl ModelMetalBackend {
                         one.layer_idx,
                         num_tokens.saturating_mul(state.hidden_size)
                     );
-                    debug_print_f16_region_token_stats(arena, "q", one.q.offset, num_tokens, q_dim);
+                    debug_print_f16_region_token_stats(
+                        arena,
+                        "q",
+                        one.q.offset,
+                        num_tokens,
+                        q_dim,
+                        state.float_type,
+                    );
                     debug_print_f16_region_token_stats(
                         arena,
                         "k",
                         one.k.offset,
                         num_tokens,
                         kv_dim,
+                        state.float_type,
                     );
                     debug_print_f16_region_token_stats(
                         arena,
@@ -4331,6 +4548,7 @@ impl ModelMetalBackend {
                         one.v.offset,
                         num_tokens,
                         kv_dim,
+                        state.float_type,
                     );
                     debug_print_f16_region_token_stats(
                         arena,
@@ -4338,6 +4556,7 @@ impl ModelMetalBackend {
                         one.attn_out.offset,
                         num_tokens,
                         q_dim,
+                        state.float_type,
                     );
                     debug_print_f16_region_token_stats(
                         arena,
@@ -4345,6 +4564,7 @@ impl ModelMetalBackend {
                         one.gate_up_out.offset,
                         num_tokens,
                         two_intermediate,
+                        state.float_type,
                     );
                     debug_print_f16_region_token_stats(
                         arena,
@@ -4352,6 +4572,7 @@ impl ModelMetalBackend {
                         one.activated.offset,
                         num_tokens,
                         intermediate,
+                        state.float_type,
                     );
                     debug_print_f16_region_token_stats(
                         arena,
@@ -4359,6 +4580,7 @@ impl ModelMetalBackend {
                         one.mlp_out.offset,
                         num_tokens,
                         state.hidden_size,
+                        state.float_type,
                     );
                     return Err(RvllmError::apple(
                         AppleError::InvalidWeightBlob {
@@ -4367,6 +4589,7 @@ impl ModelMetalBackend {
                         model_ctx("debug_layer_finite"),
                     ));
                 }
+                #[cfg(test)]
                 if trace_layers.contains(&one.layer_idx) {
                     if let Some(path) = trace_json_path.as_deref() {
                         let layer_path = metal_debug_trace_json_path_for_layer(path, one.layer_idx);
@@ -4375,6 +4598,7 @@ impl ModelMetalBackend {
                         debug_write_layer_trace_json(
                             arena,
                             &layer_path,
+                            state.float_type,
                             op,
                             phase,
                             one.layer_idx,
@@ -4398,6 +4622,7 @@ impl ModelMetalBackend {
                             attention_kv_cache_v_offset,
                             one.shared_kv_source_layer,
                             layer_trace_state,
+                            false,
                         )?;
                         eprintln!(
                             "metal debug trace: wrote layer {} summary to {}",
@@ -4405,6 +4630,52 @@ impl ModelMetalBackend {
                             layer_path.display()
                         );
                     }
+                }
+                if route_trace_this_layer {
+                    let path = trace_json_path
+                        .as_deref()
+                        .expect("validated route trace path");
+                    let layer_path = metal_debug_trace_json_path_for_layer(path, one.layer_idx);
+                    let active_kv_rows = route_trace_position
+                        .and_then(|position| usize::try_from(position).ok())
+                        .and_then(|position| position.checked_add(num_tokens))
+                        .map_or(state.max_probe_tokens, |rows| {
+                            rows.min(state.max_probe_tokens)
+                        });
+                    debug_write_layer_trace_json(
+                        arena,
+                        &layer_path,
+                        state.float_type,
+                        op,
+                        phase,
+                        one.layer_idx,
+                        num_tokens,
+                        state.hidden_size,
+                        one.dims.q_dim,
+                        one.dims.kv_dim,
+                        intermediate,
+                        state.residual.offset,
+                        one.q.offset,
+                        one.k.offset,
+                        one.v.offset,
+                        one.attn_out.offset,
+                        one.gate_up_out.offset,
+                        one.activated.offset,
+                        state.ple.as_ref().map_or(0, |ple| ple.ple_dim),
+                        active_kv_rows,
+                        one.kv_cache_k.offset,
+                        one.kv_cache_v.offset,
+                        attention_kv_cache_k_offset,
+                        attention_kv_cache_v_offset,
+                        one.shared_kv_source_layer,
+                        None,
+                        true,
+                    )?;
+                    eprintln!(
+                        "metal debug route trace: wrote dispatch-preserving layer {} summary to {}",
+                        one.layer_idx,
+                        layer_path.display()
+                    );
                 }
             }
 

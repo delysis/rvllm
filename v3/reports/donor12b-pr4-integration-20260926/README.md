@@ -1,5 +1,19 @@
 # Donor12B Metal candidates on PR #4 — integration screen
 
+Latest follow-up evidence: [`SG8_MECHANISMS_AND_PREFILL.md`](SG8_MECHANISMS_AND_PREFILL.md)
+separates observed speed from mechanism hypotheses;
+[`component-screen-01/README.md`](component-screen-01/README.md) records the
+real-weight donor component screen; and
+[`prefill512-01/README.md`](prefill512-01/README.md) records the paired
+512-token prefill-off/on/on/off comparison;
+[`global1024-01/README.md`](global1024-01/README.md) isolates SG8 global
+attention at 1024 tokens;
+[`global1024-64-01/README.md`](global1024-64-01/README.md) extends that
+component toggle to 64 sustained decode steps; and
+[`prefill512-64-01/README.md`](prefill512-64-01/README.md) finds the first
+64-token continuation differences for each prefill switch. These default-off
+diagnostic experiments do not promote a kernel or establish quality.
+
 Source integration commit `cab070ffeb9b83b2b4e182b3fe5769a2d58b65d8` is based on
 PR #4 checkpoint `645a963f0fcdd76b3edc2e689bd1b796a60fd11f`. The two
 pre-existing donor QMV dispatch slots 60–61 are preserved; the new SG8/SG4
@@ -249,6 +263,25 @@ reported total package-route preparation counters of one library compile and
 70 pipeline-state compiles; these are not a zero-compile package receipt.
 Neither W4 nor W8 is promoted from a two-token probe.
 
+The queue later extended the same one-layer W4 package and same-binary SG8
+native-BF16 source control to a requested 64-token continuation of the same
+short prompt (jobs 42–43). Both exited successfully with eligible observed
+conditions and stopped at EOS after **23 generated tokens**; all 23 token IDs
+matched, as did the prompt-token IDs. The package route recorded one
+`research_donor12b_sg8_batch_w4` prefill dispatch and 23
+`research_donor12b_sg8_w4` decode dispatches. Its native projection count was
+24 lower than the source route's, consistent with replacing that one down
+projection at each of those 24 sites. The final re-finalized top logit was
+token 106 at 27.25 in both routes; lower-ranked logits differed. Reported
+preparation totals were one library and 70 pipeline compiles in each process,
+not a zero-compile package or actual Metal API-call proof. Single-process
+decode rates were 15.708 tok/s for source and 13.823 tok/s for W4; these are
+**not** a qualified speed comparison. This is stronger continuation evidence
+for one W4 projection but remains one prompt, one layer, and a shared SG8
+route—not a checkpoint-wide NLL/logit-quality gate or W4 promotion. The
+manifests and complete queue outputs/conditions are in
+`queue-results/g4-donor12b-pr4-{42,43}-*/`.
+
 ## Hosted CI repair on the integration branch
 
 PR #4's starting checkpoint had host-side fixtures pinned to its old
@@ -316,6 +349,17 @@ exited successfully. Thus the numerical difference is repeatable in two
 independent processes per arm; the second timing pair remains diagnostic,
 not a qualified promotion ratio. Its raw manifests, outputs, condition
 samples, and queue reports are in `queue-results/g4-donor12b-pr4-{29,30}-*/`.
+Two further queued single-prompt probes (31–32) re-used the exact same 256
+prompt-token IDs and reproduced the complete 64-token outputs while reading
+the final top ten logits. Both queue condition strata were eligible. SG8
+ranked token `236761` first at `17.375`, ahead of `236770` at `16.625`;
+selector-off ranked `236770` first at `17.5`, ahead of `236761` at `17.375`.
+The diagnostic re-finalizes the last residual into the logits buffer, adding
+one native projection dispatch on SG8; these are FP16-buffer diagnostic
+logits, not an independent FP64 oracle or a direct tap of the sampled value.
+They show a material change in ranking and margin at the exact divergent
+step, not merely an unobserved sampler tie. Receipts are in
+`queue-results/g4-donor12b-pr4-{31,32}-*/`.
 Until the discrepancy is understood or bounded by a
 checkpoint-quality criterion, SG8 remains the BF16 performance leader but
 not the production default. W4/W8 package quality is evaluated separately
@@ -338,8 +382,123 @@ overstate a cross-framework result in a changing host state. The exact
 original MLX/rvLLM comparison and limitations are
 in `../gemma4-rvllm-good-enough-matrix-20260924/README.md`.
 
+The next serial sustained screen used a 512-token prompt with 64 decode
+steps. SG8 and selector-off both passed the queue's observed-condition check
+with zero inference compiles, but this is one arm per route, not ABBA. SG8
+reported prefill `22,553.54 ms`, decode `4,685.89 ms` (`13.658 tok/s`);
+selector-off reported prefill `22,707.15 ms`, decode `55,590.12 ms`
+(`1.151 tok/s`). The descriptive control/SG8 decode ratio is `11.86×`,
+while prefill is essentially unchanged. Both consumed identical prompt
+token IDs. Their generated IDs first differ at zero-based index 36 and at
+seven of 64 positions in total, so this is **not** a numerical qualification
+or promotion ratio. Same-host MLX-LM BF16 512/64 jobs and two first-divergent-
+step top-logit probes followed this pair. They use the retained MLX
+checkpoint/benchmark implementation, which is not the same source-file
+identity or necessarily the same prompt-token values as the rvLLM run; any
+ratio remains an exploratory framework comparison. Raw queue results are in
+`queue-results/g4-donor12b-pr4-{36,37}-*/`.
+
+The first same-host MLX-LM BF16 512/64 arm completed all seven trials and
+reported generation rates `5.448, 4.829, 4.599, 5.331, 4.912, 3.703,
+5.524 tok/s` (printed arithmetic average `4.907 tok/s`), plus average
+prompt throughput `187.622 tok/s`. Its process exited zero, but the queue
+labeled the job `rejected` solely because one power-observer sample exceeded
+freshness; the complete output and conditions remain in
+`queue-results/g4-donor12b-pr4-38-mlx-bf16-pp512-64/`. Compared with SG8's
+single 512/64 process at `13.658 tok/s`, this suggests a large decode lead,
+but **not** a qualified cross-framework ratio: the MLX condition stratum was
+ineligible, checkpoint/token-workload identities differ, and generated
+continuations are not matched. The roughly 7.6–8.3× rvLLM/MLX prefill gap
+across these MLX averages remains the clearer bottleneck. An independent MLX
+rerun used zero stability dwell and unchanged inputs; no trial from job 38 was
+pruned. Job 41 completed all
+seven trials, exited zero, and passed the queue condition check. Its generation
+rates were `5.999, 5.339, 5.442, 5.085, 4.772, 5.650, 5.360 tok/s`
+(printed arithmetic average `5.378 tok/s`); prompt average was
+`173.051 tok/s`. The single SG8 512/64 observation divided by this second
+MLX average is 2.54×, while the previous condition-ineligible MLX average
+was `4.907 tok/s`. Both MLX trial sets are retained. Because exact
+checkpoint, prompt-token, and output identities are not shared, this is a
+same-host exploratory throughput comparison, **not** an admitted head-to-head
+kernel or model-quality win. The second receipt is in
+`queue-results/g4-donor12b-pr4-41-mlx-bf16-pp512-64-r2/`.
+
+The two 512-token first-divergence probes (jobs 39–40) both passed their queue
+condition checks. They used identical 512 prompt-token IDs and generated the
+same first 36 tokens. At generated index 36, SG8 selected `236761` and
+selector-off selected `236770`. Diagnostic re-finalized top logits ranked
+`236761` 16.375 versus `236770` 16.25 for SG8, and `236770` 16.75 versus
+`236761` 16.625 for selector-off. Each margin is 0.125 in the opposite
+direction. These are FP16-buffer diagnostic logits with an added finalization
+dispatch, not a direct sampled-logit tap or independent high-precision oracle.
+They localize the full-route disagreement and give the next numerical trial
+an exact point to investigate. The complete outputs and conditions are in
+`queue-results/g4-donor12b-pr4-{39,40}-*/`.
+
+## Opt-in Metal prefill-stage diagnostic: unsupported counters on this host
+
+An instrumentation-feature-only change retains the completed prefill stage
+receipt separately from the last decode receipt. It is absent from production
+builds and does not insert a hot-path branch there. The feature build passed
+its 11 CLI tests (six existing device tests ignored), and the five targeted
+stage-instrumentation tests passed. This is source/host coverage, not a
+measurement.
+
+Queue job 33 is intentionally retained as a quarantined pre-execution error:
+the single-prompt CLI rejected `--report`, which is session-only. Corrected
+job 34 used executable SHA-256
+`1784f4f5da50e2aa1d68ac4456f9a688a72f8b169ce0d51308780464bc5ce79b`;
+it completed the real BF16 256-token route but all 337 prefill and 338 decode
+GPU timestamp spans were `zero_timestamp`, so the receipt correctly reports
+`unsupported` and no stage totals. A diagnostic build temporarily preferred
+dispatch-boundary sampling (SHA-256
+`e1534a2eba4f00d39271e798bd0e2886cb8469230116daa7b3f11e4b09f5aa22`),
+but job 35 still selected stage-boundary sampling and returned all-zero
+timestamps. Both successful jobs had eligible observed queue conditions.
+The ineffective sampling-preference edit was reverted; no per-stage time is
+asserted. The CLI/queue totals still show roughly 21.6–23.7 seconds of
+prefill, but cannot apportion it among projections, FFN, attention, and
+runtime from these counter receipts. A trace or separately bounded stage
+isolation experiment is required. Raw jobs, stderr/stdout, conditions, and
+the failed quarantine receipt are preserved beside this report.
+
 Remaining gates: real-weight W4/W8 sidecar correctness, per-layer
 and KV comparison, dedicated long-context attention correctness/timing,
 checkpoint logits/continuation quality, and paired end-to-end timing against
 both the default rvLLM route and MLX. Long-context BF16 continuation alone
 does not close any of these numerical or comparison gates.
+
+## Later prefill-route localization
+
+The opt-in, feature-independent phase receipt and ordinary-dispatch ledger
+supersede the unsupported GPU-timestamp attempt for **route attribution**, not
+for per-kernel GPU time. See [the four-arm dispatch screen](prefill-route-ledger-01/README.md)
+and [the fused-kernel follow-up](prefill-fused-ledger-01/README.md), each with
+normal-route reports and raw queue receipts. The follow-up counted 96 default
+`gemm_rmsnorm_f16` dispatches (O and FFN down across 48 layers), replaced by
+tiled MMA GEMM plus separate normalization in the opt-in route. In one
+same-stratum real BF16 512-token pair, prefill was 21.334 s default versus
+4.392 s MMA-only (4.858× exploratory). This localizes the slow path to a
+specific dispatch substitution, but does not yet apportion GPU time among
+roles or establish numerical quality; prior longer continuations diverged.
+
+The subsequent [exact-token MLX comparison](mlx-exact-prompt-01/README.md)
+uses the same 512 input token IDs and a 64-token continuation. Nearby MLX
+trials averaged 546.029 prompt tok/s and 18.979 generation tok/s; the rvLLM
+SG8+MMA arm took 4.821 s prefill and 13.346 tok/s decode. These imply an
+exploratory roughly 5.14× MLX prompt-phase and 1.42× generation advantage,
+but the MLX queue condition sample was freshness-ineligible, the checkpoint
+bytes are not matched, and the second output ID differs. The older random-
+token MLX baseline of 173.051 prompt tok/s is not a settled comparator.
+Two additional serial arms completed the MLX–rvLLM–rvLLM–MLX bracket. The
+second pair was condition-eligible and gave similar rates; four-arm
+descriptive means imply about 5.20× MLX prompt-phase and 1.40× generation
+orientation. The first MLX arm remains condition-ineligible, and neither
+timing boundaries nor checkpoint/output identities are fully matched, so the
+bracket is still exploratory rather than a strict qualification.
+
+A bounded [normal-route Metal System Trace diagnostic](prefill-metal-trace-01/README.md)
+captured the exact 512-token opt-in route twice, but exported zero GPU
+interval rows even after directly targeting the inference executable. Its
+application/driver rows do not provide per-kernel GPU time; the raw queue
+receipts are retained and no role-duration claim is made from this attempt.

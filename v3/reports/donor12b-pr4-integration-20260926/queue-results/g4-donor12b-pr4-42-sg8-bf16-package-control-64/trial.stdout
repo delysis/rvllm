@@ -1,0 +1,168 @@
+{
+  "arena_bytes": 23965211504,
+  "claim": "Apple Metal text inference workflow; not production-ready until acceptance gates pass",
+  "command_buffer_wait_ns": 2693655623,
+  "command_buffers": 25,
+  "cpu_encode_ns": 129376334,
+  "cpu_wall_ns": 2823031957,
+  "debug_sync": false,
+  "decode_ms": 1464.208125,
+  "diagnostic_top_logits": [
+    {
+      "logit": 27.25,
+      "token_id": 106
+    },
+    {
+      "logit": 17.25,
+      "token_id": 1030
+    },
+    {
+      "logit": 16.0,
+      "token_id": 236779
+    },
+    {
+      "logit": 15.5,
+      "token_id": 236743
+    },
+    {
+      "logit": 14.8125,
+      "token_id": 108
+    },
+    {
+      "logit": 14.625,
+      "token_id": 1340
+    },
+    {
+      "logit": 14.25,
+      "token_id": 7178
+    },
+    {
+      "logit": 14.0,
+      "token_id": 11675
+    },
+    {
+      "logit": 13.9375,
+      "token_id": 2408
+    },
+    {
+      "logit": 13.875,
+      "token_id": 20882
+    }
+  ],
+  "embedding_encoders": 24,
+  "encoder_counts_by_kernel_family": {
+    "embedding": 24,
+    "final_logits_diagnostic": 3,
+    "final_sample": 69,
+    "layer_body": 13872,
+    "layer_scale_fused": 1152,
+    "ple_input": 0
+  },
+  "encoders": 13968,
+  "final_logits_encoders": 3,
+  "final_sample_encoders": 69,
+  "finish_reason": "eos",
+  "forced_waits": 25,
+  "generated_text": " Paris.\nthought\nThat is correct. Paris is the capital and most populous city of France.",
+  "generated_token_ids": [
+    9079,
+    236761,
+    107,
+    100,
+    45518,
+    107,
+    101,
+    6372,
+    563,
+    4338,
+    236761,
+    9079,
+    563,
+    506,
+    5279,
+    532,
+    1346,
+    129093,
+    3207,
+    529,
+    7001,
+    236761,
+    106
+  ],
+  "hf_reference": null,
+  "large_model_opt_in": true,
+  "last_step_command_buffer_wait_ns": 58764583,
+  "last_step_command_buffers": 1,
+  "last_step_cpu_encode_ns": 4228333,
+  "last_step_cpu_wall_ns": 62992916,
+  "last_step_encoders": 580,
+  "last_step_forced_waits": 1,
+  "last_step_gpu_execution_ns": 58169000,
+  "last_step_tokens": 1,
+  "layer_encoders": 13872,
+  "layer_scale_encoder_fusions": 1152,
+  "library_compiles": 1,
+  "max_new_tokens": 64,
+  "max_supported_total_tokens": 256,
+  "metal_compute_dtype": "bfloat16",
+  "metal_moe_router_weight_dtype": "bfloat16",
+  "metal_weight_dtype": "bfloat16",
+  "model_dir": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+  "output_text": "The capital of France is Paris.\nthought\nThat is correct. Paris is the capital and most populous city of France.",
+  "output_token_ids": [
+    2,
+    818,
+    5279,
+    529,
+    7001,
+    563,
+    9079,
+    236761,
+    107,
+    100,
+    45518,
+    107,
+    101,
+    6372,
+    563,
+    4338,
+    236761,
+    9079,
+    563,
+    506,
+    5279,
+    532,
+    1346,
+    129093,
+    3207,
+    529,
+    7001,
+    236761,
+    106
+  ],
+  "pipeline_state_compiles": 70,
+  "ple_encoders": 0,
+  "prefill_ms": 1359.136959,
+  "prepare_ms": 16820.384208,
+  "prompt": "The capital of France is",
+  "prompt_token_ids": [
+    2,
+    818,
+    5279,
+    529,
+    7001,
+    563
+  ],
+  "research_dispatch": {
+    "counts": {
+      "research_donor12b_sg8_global_attention": 184,
+      "research_donor12b_sg8_local_attention": 920,
+      "research_donor12b_sg8_native_gate": 1104,
+      "research_donor12b_sg8_native_projection": 3505
+    },
+    "overflowed": false,
+    "schema": "rvllm.metal.research-dispatch.v5"
+  },
+  "schema": "rvllm.apple_metal_text_infer.v1",
+  "tok_per_s": 15.70814941352685
+}
