@@ -31,7 +31,12 @@ fn json_new_or_identical(path: &Path, value: &Value) -> Result {
             Ok(())
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            if read(path)? == *value {
+            // The artifact was written from these exact bytes. Re-parsing a
+            // floating-point number can change its last bit under some
+            // serde_json feature sets; comparing Values then rejects an
+            // unchanged, immutable screen. Byte equality is also stricter:
+            // it never admits a changed spelling or reordered object.
+            if std::fs::read(path)? == bytes {
                 Ok(())
             } else {
                 Err(format!("immutable artifact differs: {}", path.display()).into())
@@ -1586,6 +1591,32 @@ mod tests {
         json_new_or_identical(&path, &value).unwrap();
         json_new_or_identical(&path, &value).unwrap();
         assert!(json_new_or_identical(&path, &json!({"selected":["b"]})).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn immutable_json_recovery_compares_original_float_bytes() {
+        let directory = temp_directory("float-recovery");
+        let path = directory.join("screen.json");
+        let value = json!({"statistics": {
+            "abba_median_speedup": 63.930206781609876,
+            "paired_block_ratios": [63.930206781609876, 61.945044365304796]
+        }});
+        json_new_or_identical(&path, &value).unwrap();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            serde_json::to_vec_pretty(&value).unwrap()
+        );
+        json_new_or_identical(&path, &value).unwrap();
+        assert!(json_new_or_identical(
+            &path,
+            &json!({"statistics": {
+                "abba_median_speedup": 63.93020678160987,
+                "paired_block_ratios": [63.930206781609876, 61.945044365304796]
+            }})
+        )
+        .is_err());
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
     }
