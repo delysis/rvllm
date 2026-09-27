@@ -114,3 +114,11 @@ They have dependency order and distinct report paths. This is a variance
 screen, **not** the required within-job ABBA/BAAB qualification: its arms are
 not interleaved and no favorable sample may be selected. The 5% drift and
 independent confirmation gates remain necessary before any speed verdict.
+The safe-Rust `rvllm-prefill-route-profile-summary` offline referee takes the
+five completed queue-result directories in that order. It requires all 30
+case samples, exact prompt and output IDs, expected actual dispatches, zero
+inference compilation and identical input/executable identities, then reports
+every timing observation, sampled power stratum and within-arm/bracketing
+control drift. It refuses a missing, failed, fallback or changed-work receipt.
+Mixed or stale condition samples remain visible but cannot pass its diagnostic
+eligibility flag; even a favorable report remains non-ABBA evidence.
