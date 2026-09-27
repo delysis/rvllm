@@ -409,3 +409,37 @@ and source SHA-256 is
 `a45eb2b8d55323b633bcdc6c5e2dd4b2d3f2586b2d0466a752a7a22736f98c43`.
 No speed or quality result is asserted before the terminal queue receipt.
 This job does not replay or rewrite any completed run.
+
+## Same-checkpoint MLX comparison: 304-token prompt
+
+The pinned `prefill26-mlx-it-bf16-m304-g64-20260927` job succeeded with one
+warmup and all three 64-token MLX-LM trials. It used the same original
+12B-it safetensor and exact 304 prompt token IDs as the rvLLM reversed-order
+M304-first case. All three MLX trials produced the **same full 64 generated
+IDs** as the rvLLM control and combined-route children at that prompt. This
+is cross-framework output-ID agreement, not a tensor/logit oracle.
+
+| Framework / workload position | Prompt-phase observation | Decode observation |
+| --- | ---: | ---: |
+| MLX-LM BF16, M304 alone, three-trial mean | 659.799 ms inferred from first-token throughput | 18.489 generated tok/s |
+| rvLLM combined Metal, M304 **first** in two-prompt ABBA, four measured children | 2314.706 ms reported prefill | 2.743 tok/s computed from 64 tokens / mean reported decode time |
+
+The descriptive MLX advantage is **3.508× in prompt phase** and **6.739×
+in decode** against the closest available M304-first rvLLM data. These are
+planning-grade, not a strict paired verdict: MLX runs the prompt alone,
+rvLLM's M304 was first of two cases in each process, MLX infers prompt phase
+from first-token throughput, rvLLM reports prefill separately, and decode
+denominators may differ at the first generated step. The queued singleton
+rvLLM M304 ABBA job will remove the two-case position difference, but not
+the timer-boundary or process-interleaving differences.
+
+The MLX queue job exited 0 with no kernel failure but was marked sampled-
+condition **ineligible solely for one stale power-observer sample** (age
+3.480 s). Its observed controls were AC / power mode 2 / thermal state 0,
+with no sampled competitor; no thermal dwell or favorable rerun occurred.
+The complete MLX JSON `mlx-it-m304-g64-report.json` has SHA-256
+`0fd61d1eb42268047ea753f57304ec6e1870fe05e4eb7c9657681fd55b14d621`.
+The immutable outer queue receipt, including its freshness violation,
+conditions, manifest and stdout/stderr, is
+`mlx-it-m304-g64-queue-result.tar.gz`, SHA-256
+`df993c5b4ea10326418b031227de7d5e72437a4f0d84156213e9a96020134abc`.
