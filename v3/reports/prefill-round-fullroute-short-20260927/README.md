@@ -277,3 +277,34 @@ conditions journal, manifest and stdout/stderr, is
 `f18e2a2fd860039ecaf6b801df703e5e047df1d0f5db2c53fd09ac6b3ea6b68a`.
 The dependent M304 MLX job and independent rvLLM confirmation were still
 queued when this M101 result was archived; neither result is inferred here.
+
+## Prompt-order confound probe (submitted, not scored)
+
+The M304 prompt was the **second** case in every child of the first
+counterbalanced run. That position can benefit from within-process model,
+command-buffer, or cache warmup, and the remarkably low M304 candidate time
+must not automatically be generalized to an M304-first workload. To isolate
+this confound, the safe-Rust ABBA driver now accepts only the two explicitly
+sealed expected-length orders `[101, 304]` and `[304, 101]`. Its legacy
+default remains `[101, 304]`, so the frozen first and second jobs retain their
+original work. The receipt still rejects changed token counts, output IDs,
+dispatch, inference compilation, and an overwritten output directory. Focused
+driver tests passed 3/3, including acceptance of the reversed valid case and
+rejection of a mismatched declared order; the release binary built locally.
+
+The new immutable queue job
+`prefill26-fullroute-abba-combined-03-reversed-20260927` was accepted with a
+fresh output path. Its reversed prompt JSONL SHA-256 is
+`152ba16b32f0b5f9b73f61678e78f5d5af7dc978f0c4613e920c24c92142e992`,
+its config SHA-256 is
+`5c57c25dd31ab6f623936a6aed6f5b02f8d7cca23fcc735359370a94c7a0aa88`,
+and its frozen driver executable SHA-256 is
+`5112cbdd5265c8af0a9b9ed252d34dbf9c7148d00e7008de682909ed7ab6ac36`.
+The driver source SHA-256 is
+`6932185e815a27ed4e3ad2c19cea7530612c30588a4b012fb0739f91e07342d9`.
+The same original weights, inference executable, metallibs, 64-token
+continuation, fixed warmups, ABBA/BAAB measurement order, 5% drift threshold,
+and queue condition observation remain in force. This is a predeclared
+**order-sensitivity test**, not evidence of a speed result until its terminal
+receipt and all 12 children are inspected. It does not replay any completed
+job or alter a production default.

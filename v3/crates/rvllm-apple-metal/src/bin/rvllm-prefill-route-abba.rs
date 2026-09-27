@@ -60,7 +60,13 @@ struct Config {
     control_metallib: Pin,
     candidate_metallib: Pin,
     candidate_name: String,
+    #[serde(default = "default_prompt_lengths")]
+    expected_prompt_lengths: [usize; 2],
     output_dir: PathBuf,
+}
+
+fn default_prompt_lengths() -> [usize; 2] {
+    [101, 304]
 }
 
 fn sha256(path: &Path) -> Result<String> {
@@ -130,7 +136,12 @@ fn expected_dispatch(candidate_name: &str) -> &'static [(&'static str, u64)] {
     }
 }
 
-fn check_output(report: &Value, arm: Arm, candidate_name: &str) -> Result<Value> {
+fn check_output(
+    report: &Value,
+    arm: Arm,
+    candidate_name: &str,
+    expected_prompt_lengths: [usize; 2],
+) -> Result<Value> {
     if report["schema"] != "rvllm.apple_metal_text_session.v1"
         || report["status"] != "pass"
         || report["backend"] != "direct"
@@ -144,7 +155,7 @@ fn check_output(report: &Value, arm: Arm, candidate_name: &str) -> Result<Value>
     }
     let mut compact = Vec::new();
     for (index, case) in cases.iter().enumerate() {
-        let expected_prompt_len = [101, 304][index];
+        let expected_prompt_len = expected_prompt_lengths[index];
         let prompt = case["prompt_token_ids"]
             .as_array()
             .ok_or("missing prompt IDs")?;
@@ -256,7 +267,12 @@ fn run_child(config: &Config, arm: Arm, ordinal: usize) -> Result<Value> {
     }
     let report: Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("child {ordinal} report: {e}"))?;
-    let compact = check_output(&report, arm, &config.candidate_name)?;
+    let compact = check_output(
+        &report,
+        arm,
+        &config.candidate_name,
+        config.expected_prompt_lengths,
+    )?;
     write_new(
         &config.output_dir.join(format!("{prefix}.validated.json")),
         &serde_json::to_vec_pretty(&compact).map_err(|e| e.to_string())?,
@@ -277,6 +293,7 @@ fn run() -> Result<()> {
     let config: Config = serde_json::from_slice(&config_bytes).map_err(|e| e.to_string())?;
     if config.schema != "rvllm.prefill_route_abba_config.v1"
         || expected_dispatch(&config.candidate_name).is_empty()
+        || !matches!(config.expected_prompt_lengths, [101, 304] | [304, 101])
         || !config.model_dir.is_dir()
         || !config.prompts_jsonl.is_file()
     {
@@ -351,6 +368,7 @@ fn run() -> Result<()> {
         "claim": "counterbalanced full-route speed screen only; queue conditions, independent confirmation and numerical reference remain separate",
         "config_sha256": format!("{:x}", Sha256::digest(&config_bytes)),
         "candidate": config.candidate_name,
+        "expected_prompt_lengths": config.expected_prompt_lengths,
         "samples": samples,
         "scores": scores,
     });
@@ -431,23 +449,51 @@ mod tests {
             "metal_compute_dtype": "bfloat16",
             "cases": cases,
         });
-        assert!(check_output(&report, Arm::Candidate, "metal-prefill-pipeline32x64").is_ok());
+        assert!(check_output(
+            &report,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            [101, 304]
+        )
+        .is_ok());
+        let mut reversed = report.clone();
+        reversed["cases"].as_array_mut().unwrap().reverse();
+        assert!(check_output(
+            &reversed,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            [304, 101]
+        )
+        .is_ok());
+        assert!(check_output(
+            &reversed,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            [101, 304]
+        )
+        .is_err());
         report["cases"][0]["research_dispatch"]["counts"] = json!({});
-        assert!(
-            check_output(&report, Arm::Candidate, "metal-prefill-pipeline32x64")
-                .unwrap_err()
-                .contains("fallback")
-        );
+        assert!(check_output(
+            &report,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            [101, 304]
+        )
+        .unwrap_err()
+        .contains("fallback"));
         report["cases"][0]["research_dispatch"]["counts"] =
             json!(expected_dispatch("metal-prefill-pipeline32x64")
                 .iter()
                 .copied()
                 .collect::<std::collections::BTreeMap<_, _>>());
         report["cases"][0]["pipeline_state_compiles"] = json!(1);
-        assert!(
-            check_output(&report, Arm::Candidate, "metal-prefill-pipeline32x64")
-                .unwrap_err()
-                .contains("compile")
-        );
+        assert!(check_output(
+            &report,
+            Arm::Candidate,
+            "metal-prefill-pipeline32x64",
+            [101, 304]
+        )
+        .unwrap_err()
+        .contains("compile"));
     }
 }
