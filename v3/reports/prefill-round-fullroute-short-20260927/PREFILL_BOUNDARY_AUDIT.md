@@ -135,3 +135,50 @@ feature device tests were not run. The manifests are
 `lm-head-shape-m304-off-job.json` and
 `lm-head-shape-m304-combined-job.json`. No device result existed when this
 trial was specified. Retain failed and successful receipts without replay.
+
+## Terminal same-residual shape result
+
+Both immutable shape jobs succeeded with exit code zero, unchanged pinned
+inputs, eligible sampled conditions, and no violations. Both observed AC
+power, power mode 2, thermal state 0, and low-power mode off; no thermal
+stability wait was used. Their exact 304 prompt IDs and generated token 107
+matched. The control recorded no research dispatch. The combined route
+actually dispatched 48 GEMMs, 48 QKV projections, 96 raw projections, 96 raw
+normalizations, 40 D256 and eight D512 Q4K16 attention kernels.
+
+On the same stored residual **row zero**, the `M=1` versus `M=304` LM-head
+readbacks differed at 47 of 262,144 vocabulary logits in each route. The
+maximum finite absolute difference was 0.0625 at token 261463; the mean
+finite absolute difference was 0.0000035628809200716205. There were no
+nonfinite mismatches. The second `M=1` readback was bit-for-bit identical
+to the first over all 262,144 logits in each route. The two jobs reported
+identical summary statistics, not an archived element-by-element comparison
+of their full logit vectors.
+
+The prefill-final target and first post-decode teacher-step records in each
+job are byte-identical, after selecting those fields, to its respective
+earlier boundary job. This checks that the extra shape readbacks did not
+visibly alter those particular one-step results. It does not establish
+unchanged later continuations, scratch state, or timings. All timing in the
+shape jobs is invalid as speed evidence.
+
+This establishes a small M-dependent LM-head *output difference on row
+zero*. The stable short/full/short sequence argues against a visible
+readback-order effect on that row, but does not identify the responsible
+kernel instruction, rounding boundary, or first differing internal tensor.
+In particular, the result cannot be transferred automatically to the
+final prompt row 303 and cannot explain the CPU-versus-Metal target-NLL gap
+without equivalent-boundary reference tensors. It is not a quality or
+promotion verdict.
+
+The complete ten-file outer queue receipt archive is
+`lm-head-shape-m304-queue-results.tar.gz`, SHA-256
+`5f389eceb9d62b3dd8a56fb0f11cd67ec7865bebbecefc9bd90b479bed7a0051`.
+Both manifests pin CLI source
+`c091c7069ad563271ae2d46361190c0f8f451f521abfe41d7d30b749c4fbdf04`,
+research executable
+`23a662ad72dcc4357458d8d8720e0a228b357c3940fbc8ad15b1bf1d2de45463`,
+original safetensor
+`5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d`,
+and normal/combined metallibs with the same hashes stated in the preceding
+boundary result. Neither job was replayed.

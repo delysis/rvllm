@@ -742,3 +742,15 @@ differ in opposite directions across the two routes. This does not isolate
 the first arithmetic difference: the full-prompt and one-row LM-head GEMM
 shapes differ as well. No timing, checkpoint-wide quality or promotion claim
 follows from the probe.
+
+The follow-up same-residual LM-head shape jobs also both succeeded with
+eligible conditions and unchanged pins. For stored residual row zero,
+`M=1` versus `M=304` differed at 47/262,144 vocabulary logits in both
+routes (maximum finite absolute difference 0.0625), while the repeated
+`M=1` result was bit-for-bit stable. This establishes a small shape-dependent
+output difference on row zero, not its cause or a result for final row 303.
+Their complete ten-file queue archive is
+`lm-head-shape-m304-queue-results.tar.gz` (SHA-256
+`5f389eceb9d62b3dd8a56fb0f11cd67ec7865bebbecefc9bd90b479bed7a0051`);
+`PREFILL_BOUNDARY_AUDIT.md` contains the pinned identities, actual dispatch
+and limitations. All probe timings are invalid as speed evidence.
