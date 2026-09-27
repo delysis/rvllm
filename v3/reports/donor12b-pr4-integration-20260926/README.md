@@ -496,3 +496,9 @@ descriptive means imply about 5.20× MLX prompt-phase and 1.40× generation
 orientation. The first MLX arm remains condition-ineligible, and neither
 timing boundaries nor checkpoint/output identities are fully matched, so the
 bracket is still exploratory rather than a strict qualification.
+
+A bounded [normal-route Metal System Trace diagnostic](prefill-metal-trace-01/README.md)
+captured the exact 512-token opt-in route twice, but exported zero GPU
+interval rows even after directly targeting the inference executable. Its
+application/driver rows do not provide per-kernel GPU time; the raw queue
+receipts are retained and no role-duration claim is made from this attempt.
