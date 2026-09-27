@@ -138,3 +138,19 @@ quality checks remain separate. Its config and queue manifest are
 `abba-combined-01-config.json` and `abba-combined-01-job.json`; the queue pins
 the 23.9-GB model file rather than copying it into Git. No result was present
 when this job was submitted.
+
+Two same-checkpoint MLX-LM jobs are also queued through the **same serial
+referee**: `prefill26-mlx-it-bf16-m101-g64-20260927` and
+`prefill26-mlx-it-bf16-m304-g64-20260927`. Their one-case source files
+`mlx-source-m101.json` and `mlx-source-m304.json` retain the exact prompt IDs
+from the original passing off-route report (SHA-256
+`39d4c2f5a425aefb533a5c7bc80d0d8dcd86e15506e7f27e363b9aa883e69d78`);
+the two token-ID arrays were checked element-for-element against that report.
+The jobs pin the original 12B-it safetensor, the previously qualified MLX-LM
+source and benchmark script from PR #6, and run one warmup plus three full
+64-token trials per prompt. M101 depends on the final repeat-profile control,
+not on success of the new ABBA arm; M304 depends on M101. The MLX prompt
+phase is inferred from first-token throughput and therefore **does not share
+rvLLM's prefill timing boundary**. Any resulting ratio will be labeled
+planning-grade until those boundaries are reconciled. No MLX result was
+present when these jobs were submitted.
