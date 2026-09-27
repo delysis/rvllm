@@ -550,12 +550,28 @@ internal-tensor/reference comparison and broader checkpoint-specific prompts,
 not promotion from token agreement or this truncated top-logit comparison.
 
 The existing original-12B-it CPU/Hugging Face 16-step reference for the short
-six-token capital prompt is now queued as two fresh, independent correctness
+six-token capital prompt was checked in two new, independent correctness
 jobs: `prefill26-hf-capital16-off-20260927` and
-`prefill26-hf-capital16-combined-20260927`. Each pins the same checked-in
+`prefill26-hf-capital16-combined-20260927`. Each pinned the same checked-in
 reference, executable and checkpoint, with its respective metallib and
-selector. The CLI checks all 16 generated IDs against that CPU reference;
-this is stronger than candidate/control agreement but still only one short
-prompt, not a long-context or checkpoint-wide quality gate. Both jobs were
-submitted to the serial referee without a thermal-stability wait. Their
-results and actual dispatch will be reported only after terminal receipts.
+selector. Both queue jobs succeeded with exit 0, unchanged pinned files,
+eligible sampled AC / power-mode-2 / thermal-state-0 conditions, and no
+violations. The exact prompt IDs were `[2, 818, 5279, 529, 7001, 563]`.
+Both routes generated all **16 IDs exactly as the independently recorded
+CPU/HF reference**, and both reported `hf_reference.matched=true` with no
+mismatches.
+
+The control research-dispatch ledger was empty. The combined selector's
+actual ledger recorded tiled GEMM 144, QKV 48, D256 attention 40 and D512
+attention 8, without overflow. It did **not** dispatch combined raw
+projection or raw norm on this tiny prompt; thus the result does not
+independently validate those important M101/M304 prefill components. The
+checked-in reference comparison asserts token IDs only, not logits or
+internal tensors. This is a useful independent short-route token check, not
+long-context or checkpoint-wide numerical quality, and not speed evidence.
+Neither job was replayed or held for thermal stability.
+
+The complete compact outer receipts, including both manifests, conditions,
+stdout/stderr and terminal reports, are in
+`hf-capital16-queue-results.tar.gz`, SHA-256
+`85bf379b904ee11a5e98eb98d597f98b11de9db739d312b331d8dfd8a2cd3a69`.
