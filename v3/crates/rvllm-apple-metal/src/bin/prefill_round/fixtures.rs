@@ -698,7 +698,16 @@ pub fn attention(arm: &str, role: &str, m: usize, kind: &str) -> Result<Fixture>
 }
 
 impl Fixture {
-    pub fn write(&mut self, dir: &Path, library: &Path, source_digest: &str) -> Result<Value> {
+    pub fn write(
+        &mut self,
+        dir: &Path,
+        library: &Path,
+        source_digest: &str,
+        warmup: usize,
+    ) -> Result<Value> {
+        if ![2, 20].contains(&warmup) {
+            return Err("unpublished fixed warmup count".into());
+        }
         fs::create_dir_all(dir)?;
         let id = 31; // identity kernel output; outside all operation binding indices
         self.buffers.push(buffer(id, vec![0xff; 32], false));
@@ -722,7 +731,7 @@ impl Fixture {
         );
         let job = json!({"schema":"rvllm.prefill-round.driver.v1","library":library,
             "buffers":specs,"preflight":[preflight],"sourceBodySha256":source_digest,
-            "passes":self.passes,"warmup":2,"repeats":9});
+            "passes":self.passes,"warmup":warmup,"repeats":9});
         fs::write(dir.join("job.json"), serde_json::to_vec_pretty(&job)?)?;
         fs::write(
             dir.join("inputs.json"),

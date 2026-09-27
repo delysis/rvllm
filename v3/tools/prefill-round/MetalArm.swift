@@ -40,7 +40,7 @@ final class Arm {
         try need(job.schema == "rvllm.prefill-round.driver.v1", "wrong schema")
         try need(!job.passes.isEmpty && job.passes.count <= 8 && job.preflight.count == 1,
                  "one bounded operator and one source identity preflight required")
-        try need((0...4).contains(job.warmup) && (1...31).contains(job.repeats), "unbounded repeats")
+        try need((0...20).contains(job.warmup) && (1...31).contains(job.repeats), "unbounded repeats")
     }
     func prepare() throws {
         // Counters wrap the actual API calls made by this driver. A library load

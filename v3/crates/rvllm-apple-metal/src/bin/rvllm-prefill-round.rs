@@ -253,6 +253,7 @@ fn cell(
     driver: &Path,
     libdir: &Path,
     out: &Path,
+    warmup: usize,
 ) -> Result<Value> {
     fs::create_dir(out)?;
     let result = (|| -> Result<Value> {
@@ -265,7 +266,7 @@ fn cell(
         };
         let inputs = out.join("inputs");
         fs::create_dir(&inputs)?;
-        let job = f.write(&inputs, &lib, &id)?;
+        let job = f.write(&inputs, &lib, &id, warmup)?;
         child(driver, &inputs.join("job.json"), out)?;
         let raw = load(&out.join("driver.json"))?;
         admit_driver(&raw, &job, &f)?;
@@ -302,6 +303,7 @@ fn cell(
             "job_sha256":hash(&inputs.join("job.json"))?,"oracle":oracle,
             "output_buffer_id":f.output,"output_file":out.join(format!("buffer-{}-first.bin",f.output)),
             "timer_valid":timer_valid,"samples":raw["samples"],"device":raw["device"],
+            "warmup":warmup,"repeats":9,
             "conditions":raw["conditions"],"production_promotion":false}),
         )
     })();
@@ -352,7 +354,7 @@ fn screen(arm: &str, role: &str, limit: u32, driver: &Path, libdir: &Path, out: 
     for m in plan::RUNGS.into_iter().filter(|m| *m <= limit) {
         for kind in kinds(arm, role, m) {
             let dir = out.join(format!("m{m}-{kind}"));
-            match cell(arm,role,m as usize,kind,driver,libdir,&dir) {
+            match cell(arm,role,m as usize,kind,driver,libdir,&dir,2) {
                 Ok(_)=>completed.push(json!({"m":m,"fixture":kind,"path":dir.join("cell.json"),"sha256":hash(&dir.join("cell.json"))?})),
                 Err(e)=>{report["status"]=json!("failed");report["error"]=json!(e.to_string());report["completed"]=json!(completed);save(&out.join("screen.json"),&report)?;return Err(e);}
             }
@@ -448,7 +450,7 @@ fn compare(
     // Eight independent driver processes. Both orders retained, never pick a favorable pair.
     for (i, arm) in [a, b, b, a, b, a, a, b].into_iter().enumerate() {
         let dir = out.join(format!("{i:02}-{arm}"));
-        let receipt = cell(arm, role, m as usize, "structured", driver, libs, &dir)?;
+        let receipt = cell(arm, role, m as usize, "structured", driver, libs, &dir, 20)?;
         if receipt["timer_valid"] != true {
             return Err(
                 "invalid GPU timer: correctness retained, timing comparison rejected".into(),
@@ -524,6 +526,7 @@ fn run() -> Result {
                 &driver,
                 &libs,
                 &abs(&a[7])?,
+                20,
             )?;
             if receipt["timer_valid"] != true {
                 return Err("invalid GPU timer; raw correctness receipt retained".into());
