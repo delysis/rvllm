@@ -693,7 +693,7 @@ checkpoint-wide quality, and none of these readback jobs supplies speed
 evidence. Next localize the internal difference and evaluate predeclared
 held-out targets before any promotion.
 
-## Prefill-final versus decode-replay boundary probe: queued
+## Prefill-final versus decode-replay boundary probe: completed
 
 The existing single-prompt Metal route prefills all prompt tokens, then
 reprocesses the final prompt token at position `M-1` in its first decode step.
@@ -728,7 +728,17 @@ and `boundary-m304-combined-job.json` (SHA-256
 `832fe84814b8bcbe5ab18dd253f41051dafa17d20ca138110b61360d5a3cf679`).
 Both request one target token 107, recording prefill-last and post-decode
 target logits/NLL on the same route. The manifests also pin the CPU full
-logits, source, metallib and model bytes. There is **no device result yet**;
-neither job should be replayed. On completion, inspect terminal queue
-receipts, actual dispatch, token IDs and both distributions before deciding
-whether the decode replay explains any of the CPU gap.
+logits, source, metallib and model bytes. Both terminal jobs succeeded,
+were sampled eligible in the same AC/power-mode-2/thermal-state-0 stratum,
+and retained all pinned inputs unchanged. Candidate actual dispatch includes
+all 48 layers' projection and attention research kernels. The numerical
+results, source-route audit, exact caveats and complete ten-file queue
+archive are in `PREFILL_BOUNDARY_AUDIT.md` and
+`boundary-m304-queue-results.tar.gz` (SHA-256
+`ec4a981d87706c8b2a9348d32360041956ff56ea81c9a528ddabc74b815f3ea8`).
+Neither job should be replayed. Both post-decode target steps exactly match
+their earlier unprobed teacher runs, but prefill-final and decode-replay NLL
+differ in opposite directions across the two routes. This does not isolate
+the first arithmetic difference: the full-prompt and one-row LM-head GEMM
+shapes differ as well. No timing, checkpoint-wide quality or promotion claim
+follows from the probe.
