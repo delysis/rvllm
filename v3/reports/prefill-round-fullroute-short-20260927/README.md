@@ -42,11 +42,34 @@ Next: compare longer, varied prompts and continuations with exact dispatch,
 independent numerical/logit evidence, and an explicit counterbalanced timing
 protocol. Only then consider any full-route speed or quality claim.
 
-The next correctness-only pair is queued, not adjudicated:
+The next correctness-only pair completed:
 `prefill26-fullroute-varied-off-20260927` and
 `prefill26-fullroute-varied-q4k16-20260927`. It uses the pinned
 `varied-prompts.jsonl` (SHA-256
 `cba2a6830503e5e95e37f1c677197dd3d93a26e0dcf33c501be973ec0cedc483`),
-which contains two non-repetitive prompts with up to 64 generated tokens each.
-The candidate job depends on successful completion of the control. Neither
-job is a timing qualification; no result is claimed before queue receipts.
+which contains two non-repetitive prompts of 101 and 304 actual tokens. Both
+queue jobs succeeded with zero violations and eligible sampled conditions in
+the same AC / power-mode-2 / thermal-state-0 stratum. Each produced 64 tokens
+per prompt, with the **entire 128-token generated-ID sequence exactly equal**
+between control and candidate. The Q4K16 arm actually dispatched D256 40 times
+and D512 eight times in *each* case; the control dispatched no research kernel.
+Both cases in both arms reported zero library and pipeline-state compiles during
+inference. This is stronger route-preserving continuation evidence than the
+two-token screen, but it is neither an independent tensor/logit oracle nor a
+checkpoint-wide quality gate.
+
+| Prompt | Off prefill / decode | Q4K16 prefill / decode |
+| --- | --- | --- |
+| 101-token ledger | 5988.558 / 13808.087 ms | 5836.678 / 13685.334 ms |
+| 304-token observatory | 12234.214 / 23306.755 ms | 11674.683 / 23184.596 ms |
+
+These are one unpaired process per arm, with different library/pipeline
+preparations and no ABBA drift check. They are descriptive only, not a speed
+result. The compact raw `varied-queue-receipts.tar.gz` archive has SHA-256
+`ce72fba7cf1ddd1ce2fea45cb2f64b7f35a1f340dc63dfe67737e4815ddf5624`.
+It retains both manifests, queue reports, full stdout/stderr and condition
+journals. Neither the model nor compiled binary is included.
+
+Next: obtain independent tensor/logit/reference quality evidence and run a
+predeclared counterbalanced, same-workload full-route timing comparison. The
+isolated Q4K16 operator gains cannot be promoted from these route screens.
