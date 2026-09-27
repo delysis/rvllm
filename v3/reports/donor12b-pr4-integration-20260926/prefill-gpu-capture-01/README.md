@@ -32,6 +32,19 @@ does **not** yet provide labeled per-kernel GPU times. Do not infer role times
 from the capture's existence or its perturbed wall time. Analyze it in a
 supported GPU debugger, or obtain a separate bounded operator timing capture.
 
+Follow-up on Xcode 26.2: the GPU debugger opened and replayed the trace,
+showing one captured command buffer with **577 compute dispatches**. With
+`Profile after replay` selected, Xcode reached its background GPU profiling
+phase, then crashed with `EXC_BAD_ACCESS` / `SIGSEGV` before producing a
+performance table. The local crash report is
+`/Users/george/Library/Logs/DiagnosticReports/Xcode-2026-09-26-222038.ips`
+(SHA-256 `5d1bbfb4408516b96dfd898ed20cb0676002b2cf59c7126fc5eb158a45ad1c24`).
+It is not committed because it contains host diagnostic data. This failure
+does not invalidate the normal-route queue receipt or the trace, but it
+prevents claiming a per-kernel GPU-time breakdown from this replay. Do not
+repeat the large profiling replay as a timing trial; use bounded operator
+measurement or a smaller capture with independently checked results.
+
 The source and exact job manifests are reviewable here. Complete small queue
 receipts, including the two no-capture routing mistakes, are preserved in
 `queue-results.tar.gz` (SHA-256
