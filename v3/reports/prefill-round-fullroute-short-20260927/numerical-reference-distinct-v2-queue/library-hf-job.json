@@ -1,0 +1,94 @@
+{
+  "after": [
+    "prefill26-prefill-ref-distinct-v2-observatory-combined-20260927"
+  ],
+  "command": {
+    "args": [
+      "scripts/dump_gemma4_hf_reference_logits.py",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--prompt-token-ids",
+      "2,236776,34387,9427,15033,496,5663,7623,85503,532,496,7732,5177,23191,236761,562,2260,563,4542,8323,1056,506,15348,15298,21500,625,532,11005,506,85503,236764,1581,768,506,5177,23191,563,10448,3209,236761,2154,8492,236764,496,11863,8323,496,2604,86334,657,236743,236771,236819,236787,236770,236771,532,496,3730,2135,8214,657,236743,236771,236819,236787,236778,236810,236761,669,15348,15298,10227,1800,16227,6842,236761,562,3707,95068,30334,23191,12496,3097,37170,236761,3026,2509,8323,236764,506,15298,10708,506,3730,8214,1171,532,506,2604,86334,1855,236764,834,506,23191,236789,236751,4610,99885,14416,506,1900,529,506,5663,7623,236761,669,11863,4733,837,4188,691,8323,1171,1547,496,11317,51622,9796,580,506,1900,529,5396,15348,19971,236764,711,580,1262,7234,236761,669,15298,15593,506,10227,85503,532,10778,600,13637,4188,1053,1010,2378,528,614,128035,7266,3673,236761,669,5194,99885,4595,6684,573,100818,506,24701,23191,12496,236764,840,901,776,711,9883,506,10227,19971,2782,236761,25685,607,506,1171,8323,4188,532,506,4914,600,49405,506,1900,236761,107,7925,236787",
+      "--decode-steps",
+      "1",
+      "--top-k",
+      "16",
+      "--selected-token-ids",
+      "506",
+      "--full-logits",
+      "--device",
+      "cpu",
+      "--output",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/numerical-reference-distinct-v2-queue/library-hf-reference.json"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/mpc/audio_tools/sam-audio-env/bin/python",
+      "sha256": "d049fa6d31f8075e3fcb76517ddaaa666fc2344768d6e7698d3263f79b49db8f"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "python",
+      "rvllm_metal_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "prefill26-prefill-ref-distinct-v2-library-hf-20260927",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/scripts/dump_gemma4_hf_reference_logits.py",
+      "sha256": "ee667350686acfb6f6110f07153bbd4a1e2af8170d0446d1b30052a86bd276e0"
+    },
+    {
+      "path": "/Users/george/mpc/audio_tools/sam-audio-env/lib/python3.12/site-packages/transformers/models/gemma4_unified/modeling_gemma4_unified.py",
+      "sha256": "b4bb559c381800e34c2d62b94d540a9e1662ff22ac2b790514daa89b9f205e1e"
+    },
+    {
+      "path": "/Users/george/mpc/audio_tools/sam-audio-env/lib/python3.12/site-packages/transformers/models/gemma4_unified/configuration_gemma4_unified.py",
+      "sha256": "1f7b42dcebd3dca2850a8e7f1072b6b9549c4852a6b44feb323f7387255564eb"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/numerical-reference-distinct-v2-source.json",
+      "sha256": "2f212a4b1c316e49b52b78fc80e33a62c35772f0028e4da7d52ee7268c3d008a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/numerical-reference-distinct-v2-queue/library-prompt.jsonl",
+      "sha256": "9d6febddc587c769cb0562735758d010d6b15afc3c76e689670633a167cf014d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_gemma4_distinct_reference_job_gen.rs",
+      "sha256": "defd8dcdf4e70768178dba27a5ad30d4e4d02d7f791376df48acc12c3f5843dc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-prefill-reference-v1-queue/logic-hf-job.json",
+      "sha256": "144965b1c3dc4967b3d828c66b404921e94631f269760e21aa6512c6d3fab4db"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

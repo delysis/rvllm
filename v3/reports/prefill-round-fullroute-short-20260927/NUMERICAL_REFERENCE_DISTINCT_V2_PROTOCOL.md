@@ -60,3 +60,29 @@ their deltas from HF, plus exact hashes and condition strata. There is no
 post-hoc threshold, favorable-case selection, timing claim, arithmetic-cause
 claim, or promotion. All probe timings are invalid because readback and an
 M-row LM head add synchronization and work.
+
+## Generator checkpoint (no queue submission)
+
+The new safe-Rust `rvllm_gemma4_distinct_reference_job_gen` is separate from
+the frozen v1 generator. Its source SHA-256 is
+`defd8dcdf4e70768178dba27a5ad30d4e4d02d7f791376df48acc12c3f5843dc`;
+two focused tests and a host build passed. It generated fresh, unopened
+`numerical-reference-distinct-v2-queue/` artifacts without altering v1:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| observatory prompt JSONL | `6f5b0bf37acd7b0cc2f60c547c2f413bffc7f491b30fcc673686d8cd561d822d` |
+| library prompt JSONL | `9d6febddc587c769cb0562735758d010d6b15afc3c76e689670633a167cf014d` |
+| observatory HF job | `e39d87c30533067c35065ae745469ce48aa49a53a2b550fab8d89193fbec8382` |
+| observatory control job | `c30da8b58dcc01c377707475985a74f3f732576dc8b55b887efe2f255b628079` |
+| observatory combined job | `d85cc3b0f6fdf8a06a194dd683060bc897bba94b774bde61a2fc6da2d8589b4e` |
+| library HF job | `e5addab1cab7c4bac3cbab4b2df467cc58a44332545a2fb382967af5d4564390` |
+| library control job | `79b6d2e5fd858058e520c55a70d7ec668f79f2f535d193166e771a85dc1c491c` |
+| library combined job | `361c7bd1b9b3c0caf7a0f470aa3249f9225319f24cfc5e4b8231d734a5020ccf` |
+
+All six generated manifests have `purpose=correctness`, distinct immutable
+IDs, the expected serial dependency chain, unchanged original checkpoint and
+reference/Metal executable pins, correct new prompt/first-target IDs, and
+`--teacher-prefill-last-logits` on Metal arms. The old MMLU source, dataset,
+prompt and generator pins are absent. The manifests are **not submitted**:
+the separate numerical-only referee and its negative tests remain required.
