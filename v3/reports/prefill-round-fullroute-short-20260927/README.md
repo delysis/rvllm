@@ -343,3 +343,42 @@ All 12 inner child receipts, config and summary are in
 `abba-combined-02-children.tar.gz`, SHA-256
 `9618e8457991d135ce18544076df7899513f84d02401101fe7fbc2cb15a75ccf`.
 No completed job was replayed or modified.
+
+## Reversed prompt order: position materially changes the ratio
+
+The predeclared `prefill26-fullroute-abba-combined-03-reversed-20260927`
+probe completed successfully (exit 0, no violations, eligible sampled AC /
+power-mode-2 / thermal-state-0 stratum). It ran **M304 first and M101
+second**, with the same model/inference/metallib identities, fixed four
+warmups, ABBA/BAAB arm order, 64-token continuations and 5% drift gate. All
+12 children retained the expected full generated-ID trajectories, actual
+control/candidate dispatch, and zero inference-case compiles. Independent
+recalculation from all eight measured children reproduced both ratios.
+
+| Prompt position | Control prefill samples (ms) | Combined prefill samples (ms) | ABBA / BAAB ratio | Five-percent within-arm drift |
+| --- | --- | --- | --- | --- |
+| M304 **first** | 13679.860, 13699.610, 13855.205, 13813.848 | 2278.586, 2328.255, 2335.224, 2316.758 | 5.943× / 5.948× | **Pass**: control 1.282%, candidate 2.486% |
+| M101 **second** | 4569.423, 4571.355, 4570.747, 4588.049 | 261.863, 262.639, 261.959, 261.870 | 17.428× / 17.484× | **Pass**: control 0.408%, candidate 0.297% |
+
+This **changes the interpretation** of the two same-order M304 results:
+their ~19× ratio is repeatable for M304 *as the second case*, but not a
+shape-general M304 speedup. With M304 first, the observed gain is ~5.95×.
+Conversely, M101 moved from a noisy ~3.3–3.5× first-case signal to a stable
+~17.5× second-case signal. This is strong evidence for a prompt-position
+interaction, especially in the candidate route. It does **not** identify its
+mechanism: within-process cache state, residency, scheduling, or another
+warmup effect remain hypotheses, not measured per-kernel attribution. The
+control also changes with position, so a simple candidate-only cache story
+would overstate the evidence. Future comparisons must specify workload order
+or measure each prompt in isolation; the reversed run does not retroactively
+pass either first-case M101 drift failure.
+
+The reversed raw summary SHA-256 is
+`32a49c766f04be3f1dac11bc936e45659710fcd39304da284f02d29d6dd958d2`.
+The outer queue receipt `abba-combined-03-reversed-queue-result.tar.gz` has
+SHA-256 `9a97dda3027ea9c0e217e4fdd28aba3e956a1e82d18e79837658ab790eb077cc`.
+All 12 inner children, config and summary are retained in
+`abba-combined-03-reversed-children.tar.gz`, SHA-256
+`4651f706264617ef4453c143f6bad5285868a58b4ab710f75214c3331aff82ea`.
+This remains a research route, **not** a production promotion or an
+independent tensor/logit/reference quality gate.
