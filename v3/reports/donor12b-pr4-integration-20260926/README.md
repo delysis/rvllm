@@ -490,3 +490,9 @@ exploratory roughly 5.14× MLX prompt-phase and 1.42× generation advantage,
 but the MLX queue condition sample was freshness-ineligible, the checkpoint
 bytes are not matched, and the second output ID differs. The older random-
 token MLX baseline of 173.051 prompt tok/s is not a settled comparator.
+Two additional serial arms completed the MLX–rvLLM–rvLLM–MLX bracket. The
+second pair was condition-eligible and gave similar rates; four-arm
+descriptive means imply about 5.20× MLX prompt-phase and 1.40× generation
+orientation. The first MLX arm remains condition-ineligible, and neither
+timing boundaries nor checkpoint/output identities are fully matched, so the
+bracket is still exploratory rather than a strict qualification.

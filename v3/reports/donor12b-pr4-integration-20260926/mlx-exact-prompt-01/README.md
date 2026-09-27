@@ -29,6 +29,27 @@ power-mode 2, thermal-state 0 in available host samples; these readings do
 not normalize GPU clocks or eliminate changing conditions. No stability wait
 was used.
 
+## Bracketed continuation
+
+The queue then ran one more rvLLM arm followed by one more MLX arm, yielding
+the serial order MLX–rvLLM–rvLLM–MLX without replaying either completed first
+arm. The second rvLLM run measured 4,973.052 ms prefill and 13.399 decode
+tok/s. The last MLX run's three trials averaged 540.856 prompt tok/s
+(946.700 ms derived first-token phase) and 18.469 generation tok/s. Both new
+jobs passed the queue's sampled-condition check and preserved their complete
+receipts in `queue-results-abba-tail.tar.gz`; the first MLX arm remains
+freshness-ineligible and is not silently discarded.
+
+Across the two arms per framework, the descriptive means are 4,896.834 ms
+rvLLM prefill versus 942.223 ms MLX first-token phase, and 13.373 versus
+18.724 generation tok/s. That is roughly **5.20× MLX prompt-phase** and
+**1.40× MLX generation** orientation. The low within-pair movement is useful,
+but the boundary/checkpoint/output/first-condition caveats above still prevent
+strict ABBA qualification or a model-quality claim. The fresh last MLX arm
+alone is also substantially faster than the old random-prompt baseline;
+measurement design and prompt distribution must be examined before assigning
+the cause.
+
 The two-token MLX control used the same exact IDs and averaged 547.583 prompt
 tok/s, consistent with the 64-token run's prompt phase. Its two-token decode
 rate is not a sustained-decode estimate. The older, seven-trial *random-token*
@@ -60,3 +81,10 @@ two-token MLX report
 `b0b1e292cb15d97c8ccf62f8d3bfc6270d67045047e4c298630701a422d94627`;
 64-token rvLLM report
 `689a5874991fa61bbf81bc8a26623443f70f81397197a60a61ad52860097a0d2`.
+
+Bracket-tail SHA-256: `queue-results-abba-tail.tar.gz`
+`cde3509fc41376d11e741446811a64894d7565a2b4e3039d4731a0cef2269c89`;
+rvLLM repeat report
+`02ead4dd4267c6ecc9f7fe04d01f7d9cd0db44ba20e8e193c7be2c12c5f77a2a`;
+MLX repeat report
+`e71caecf3f96fefa9a159295e1a4ed97785c117fcd4019ad3003aedd61451667`.
