@@ -83,6 +83,7 @@ struct InferReport {
     metal_stage_timing: Option<serde_json::Value>,
     #[cfg(feature = "metal-stage-instrumentation")]
     metal_prefill_stage_timing: Option<serde_json::Value>,
+    prefill_phase: serde_json::Value,
     research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
@@ -675,6 +676,7 @@ fn report_value(
         "library_compiles": report.library_compiles,
         "pipeline_state_compiles": report.pipeline_state_compiles,
         "last_step_gpu_execution_ns": report.last_step_gpu_execution_ns,
+        "prefill_phase": report.prefill_phase,
         "research_dispatch": report.research_dispatch,
         "command_buffers": report.command_buffers,
         "encoders": report.encoders,
@@ -839,6 +841,7 @@ struct SessionCaseReport {
     library_compiles: u64,
     pipeline_state_compiles: u64,
     last_step_gpu_execution_ns: Option<u64>,
+    prefill_phase: serde_json::Value,
     research_dispatch: serde_json::Value,
     command_buffers: u64,
     encoders: u64,
@@ -1279,6 +1282,31 @@ fn research_dispatch_value(
     })
 }
 
+#[cfg(all(feature = "apple", target_os = "macos"))]
+fn prefill_phase_value(
+    stats: rvllm_runtime::apple_metal_backend::MetalProbePerfStats,
+    research_dispatch: serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schema": "rvllm.metal_prefill_phase.v1",
+        "boundary": "before_prefill_launch_to_after_prefill_collect",
+        "research_dispatch": research_dispatch,
+        "prefill_steps": stats.prefill_steps,
+        "decode_steps": stats.decode_steps,
+        "command_buffers": stats.command_buffers,
+        "encoders": stats.encoders,
+        "embedding_encoders": stats.embedding_encoders,
+        "ple_encoders": stats.ple_encoders,
+        "layer_encoders": stats.layer_encoders,
+        "forced_waits": stats.forced_waits,
+        "cpu_wall_ns": stats.cpu_wall_ns,
+        "cpu_encode_ns": stats.cpu_encode_ns,
+        "command_buffer_wait_ns": stats.command_buffer_wait_ns,
+        "library_compiles": stats.library_compiles,
+        "pipeline_state_compiles": stats.pipeline_state_compiles,
+    })
+}
+
 fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
     let status = match &report.comparison {
         Some(comparison) if !comparison.matched => "fail",
@@ -1301,6 +1329,7 @@ fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
         "library_compiles": report.library_compiles,
         "pipeline_state_compiles": report.pipeline_state_compiles,
         "last_step_gpu_execution_ns": report.last_step_gpu_execution_ns,
+        "prefill_phase": report.prefill_phase,
         "research_dispatch": report.research_dispatch,
         "command_buffers": report.command_buffers,
         "encoders": report.encoders,
@@ -1637,6 +1666,19 @@ fn run_direct_session(
         }
         check_case_timeout(args, &case.spec.name, case_start)?;
         let prefill_ms = ms(prefill_start.elapsed());
+        let prefill_stats = stats_delta(before, backend.probe_perf_stats());
+        let prefill_dispatch = backend
+            .probe_research_dispatches()
+            .ok_or_else(|| {
+                format!(
+                    "session case {} prefill research counters unavailable",
+                    case.spec.name
+                )
+            })?
+            .checked_since(dispatch_before)
+            .map(research_dispatch_value)
+            .map_err(|error| format!("session case {} prefill: {error}", case.spec.name))?;
+        let prefill_phase = prefill_phase_value(prefill_stats, prefill_dispatch);
 
         let mut current = *prompt_tokens.last().expect("prompt token");
         let mut generated_token_ids = Vec::with_capacity(case.spec.max_new_tokens);
@@ -1726,6 +1768,7 @@ fn run_direct_session(
             library_compiles: delta.library_compiles,
             pipeline_state_compiles: delta.pipeline_state_compiles,
             last_step_gpu_execution_ns: delta.last_step_gpu_execution_ns,
+            prefill_phase,
             research_dispatch,
             command_buffers: delta.command_buffers,
             encoders: delta.encoders,
@@ -2106,6 +2149,7 @@ fn run_engine_session(
             library_compiles: 0,
             pipeline_state_compiles: 0,
             last_step_gpu_execution_ns: None,
+            prefill_phase: serde_json::Value::Null,
             research_dispatch: serde_json::Value::Null,
             command_buffers: 0,
             encoders: 0,
@@ -2554,6 +2598,8 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         vec![(prompt_len - 1) as u32],
         vec![prompt_len as u32],
     );
+    let prefill_stats_before = backend.probe_perf_stats();
+    let prefill_dispatch_before = backend.probe_research_dispatches();
     let prefill_start = std::time::Instant::now();
     let prefill_ticket = backend
         .launch_prefill(&prefill)
@@ -2568,6 +2614,15 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         ));
     }
     let prefill_ms = ms(prefill_start.elapsed());
+    let prefill_stats = stats_delta(prefill_stats_before, backend.probe_perf_stats());
+    let prefill_dispatch = prefill_dispatch_before
+        .zip(backend.probe_research_dispatches())
+        .map(|(before, after)| after.checked_since(before))
+        .transpose()
+        .map_err(|error| format!("prefill research dispatch: {error}"))?
+        .map(research_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
+    let prefill_phase = prefill_phase_value(prefill_stats, prefill_dispatch);
 
     let mut current = *prompt_tokens.last().expect("prompt token");
     let mut generated_token_ids = Vec::with_capacity(args.max_new_tokens);
@@ -2661,6 +2716,7 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         metal_stage_timing: backend.last_stage_timing_receipt(),
         #[cfg(feature = "metal-stage-instrumentation")]
         metal_prefill_stage_timing: backend.last_prefill_stage_timing_receipt(),
+        prefill_phase,
         research_dispatch,
         command_buffers: stats.command_buffers,
         encoders: stats.encoders,
@@ -2743,6 +2799,32 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(feature = "apple", target_os = "macos"))]
+    #[test]
+    fn prefill_phase_receipt_keeps_dispatch_and_wait_boundaries() {
+        let stats = rvllm_runtime::apple_metal_backend::MetalProbePerfStats {
+            command_buffers: 2,
+            encoders: 48,
+            cpu_encode_ns: 123,
+            command_buffer_wait_ns: 456,
+            ..Default::default()
+        };
+        let dispatch = serde_json::json!({"counts": {"research_gemm_mma16x64": 7}});
+        let receipt = prefill_phase_value(stats, dispatch);
+        assert_eq!(
+            receipt["boundary"],
+            "before_prefill_launch_to_after_prefill_collect"
+        );
+        assert_eq!(receipt["command_buffers"], 2);
+        assert_eq!(receipt["encoders"], 48);
+        assert_eq!(receipt["cpu_encode_ns"], 123);
+        assert_eq!(receipt["command_buffer_wait_ns"], 456);
+        assert_eq!(
+            receipt["research_dispatch"]["counts"]["research_gemm_mma16x64"],
+            7
+        );
+    }
 
     fn unique_tmp_path(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -3189,6 +3271,7 @@ mod tests {
                 "schema": "rvllm.metal_stage_timing.v1",
                 "phase": "prefill"
             })),
+            prefill_phase: serde_json::json!({"schema": "rvllm.metal_prefill_phase.v1"}),
             research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
@@ -3238,6 +3321,10 @@ mod tests {
         #[cfg(feature = "metal-stage-instrumentation")]
         assert_eq!(value["metal_prefill_stage_timing"]["phase"], "prefill");
         assert_eq!(value["research_dispatch"]["schema"], "test");
+        assert_eq!(
+            value["prefill_phase"]["schema"],
+            "rvllm.metal_prefill_phase.v1"
+        );
         assert_eq!(value["hf_reference"]["matched"].as_bool(), Some(true));
         assert_eq!(
             value["max_supported_total_tokens"].as_u64(),
@@ -3269,6 +3356,7 @@ mod tests {
             metal_stage_timing: None,
             #[cfg(feature = "metal-stage-instrumentation")]
             metal_prefill_stage_timing: None,
+            prefill_phase: serde_json::Value::Null,
             research_dispatch: serde_json::json!({"schema":"test"}),
             command_buffers: 6,
             encoders: 7,
