@@ -790,3 +790,21 @@ queue receipts in `mmlu-natural-queue-results-v1.tar.gz`. The Codex-authored
 wrapper, possible training contamination, lack of an independent same-boundary
 reference and readback-distorted timing rule out a benchmark, quality,
 performance or promotion claim.
+
+## Distinct-input full-vocabulary prefill diagnostic, v3: completed
+
+Six immutable original-BF16-12B-it correctness jobs on two new
+**Codex-authored synthetic** prompts all succeeded. The predeclared
+safe-Rust referee accepted exact pinned inputs, full 262,144-logit HF and
+Metal vectors, scalar reconstructions, actual combined raw projection/norm
+and Q4 dispatch, and complete condition/receipt hashes. Both HF arms were
+timing-ineligible solely for stale power-observer samples and are retained
+only as prospectively allowed numerical observations; all four Metal arms
+were eligible. Across the two first-target positions, all routes chose the
+same greedy ID, but exact-vector agreement with HF was sparse and the
+combined route was not uniformly closer to HF. The complete scores and
+vector metrics are in `NUMERICAL_REFERENCE_FULL_VECTOR_V3_RESULTS.md` and
+`numerical-reference-full-vector-v3-summary-01.json`; all 30 queue receipt
+files and six separate full-vector outputs are archived alongside them.
+All probe timing is invalid. This is not a checkpoint-quality, numerical
+parity, speed, or promotion result.
