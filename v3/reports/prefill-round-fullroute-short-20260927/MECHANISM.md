@@ -94,3 +94,29 @@ coalescing, register residency, pipeline overlap, or occupancy from the
 source alone. The next decision should use the complete five-arm referee,
 counterbalanced full-route timing, exact-token MLX comparison with labeled
 timing boundaries, and route-preserving tensor/logit/reference checks.
+
+## Prompt-position timing boundary
+
+The first two-prompt ABBA jobs put M101 before M304. A sealed reversed-order
+job found that the large ~19× control-to-combined ratio followed the **second
+case**, not the M304 shape: M304-first was ~5.95× and M101-second was ~17.5×,
+both with passing drift. The ratio's dependence on position is measured;
+cache residency or a particular kernel-time mechanism is not.
+
+The normal Metal session route in
+`crates/rvllm-runtime/src/bin/rvllm_metal_infer.rs` prepares one backend and
+runtime plan before its case loop, then reuses that backend for every case.
+Each case's `prefill_ms` starts immediately before `launch_prefill` and ends
+after `collect`; `decode_ms` separately surrounds repeated rollout launch
+and collect. Backend preparation is outside these case timers. A second case
+can therefore inherit state from the first inside the **same process**—for
+example resident model pages or driver/cache state—even though both cases
+report zero library and pipeline-state compilation. Which such state, if any,
+dominates is unmeasured. The ABBA driver's outer warmups are separate child
+processes and do not remove this within-child case-order distinction.
+
+For an MLX comparison, report the M304-first and the pending M304-only rvLLM
+arms separately. MLX's first-token-derived prompt phase still differs from
+rvLLM's launch-and-collect prefill boundary. Neither comparison is a
+per-kernel GPU-time measurement, and the older M304-second ~19× ratio should
+not be used as a shape-general projection or attention claim.
