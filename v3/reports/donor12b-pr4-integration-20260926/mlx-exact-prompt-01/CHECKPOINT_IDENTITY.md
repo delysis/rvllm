@@ -56,5 +56,15 @@ arm. The first stage arm failed in the harness identity collector before
 device loading because it required a sharded index; this checkpoint has a
 single safetensor. Both original manifests and the failed stage receipt are
 preserved. A focused single-file identity repair passed 10/10 Python tests;
-new stage and dependent exact-token arms use IDs ending `-02`. Their results
-are pending and must not inherit the earlier base-checkpoint claims.
+new stage and dependent exact-token arms use IDs ending `-02`. The stage arm
+loaded the exact original safetensor and completed all 22 isolated cases;
+see `../prefill-role-operator-01/README.md`. The `-02` exact-token arm ran
+its MLX generation trials but then failed while writing its report because
+this second reporter still assumed a sharded index. No complete trial report
+was written; its immutable queue receipt is preserved as
+`mlx-it-bf16-512-g64-failed-queue-results.tar.gz`, SHA-256
+`335b88955567ef9f027826ae5b8ac3bee4c422ceb5447d040b0eafc40d789a66`.
+The reporter now validates and seals either weight layout *before* generation;
+three focused tests passed. A new `-03` exact-token job was submitted with
+a distinct report path and source hash. It must not inherit timing or output
+claims from the failed attempt.

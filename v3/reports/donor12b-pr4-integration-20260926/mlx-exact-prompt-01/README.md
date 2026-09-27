@@ -70,6 +70,16 @@ job used a new ID and source hash; no failed receipt was overwritten. Both
 corrected MLX jobs and the rvLLM job are retained in the archive, including
 conditions and stdout/stderr.
 
+A later attempt to run MLX-LM directly on the **same original 12B-it
+checkpoint** also completed generation trials but failed at receipt writing:
+the reporter assumed a sharded safetensors index, while this checkpoint is
+single-file. That new failure is retained separately in
+`mlx-it-bf16-512-g64-failed-queue-results.tar.gz` (see
+`CHECKPOINT_IDENTITY.md`). A repaired reporter validates the weight layout
+before timing and uses a new immutable `-03` job/report identity; its result
+is pending. Do not interpret the failed attempt's process wall time as model
+throughput.
+
 Next comparisons should use the **same 12B-it checkpoint** for both frameworks,
 bracket arms under the same workload, and collect repeated samples without
 requiring thermal stability. True

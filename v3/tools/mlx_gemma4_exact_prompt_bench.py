@@ -19,6 +19,21 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def model_weight_identity(model_dir: Path) -> dict[str, str]:
+    index = model_dir / "model.safetensors.index.json"
+    single = model_dir / "model.safetensors"
+    if index.is_file():
+        return {"weight_layout": "sharded_index", "model_index_sha256": sha256(index)}
+    if single.is_file():
+        return {
+            "weight_layout": "single_safetensor",
+            "model_safetensors_sha256": sha256(single),
+        }
+    raise FileNotFoundError(
+        f"neither a safetensors index nor model.safetensors exists in {model_dir}"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
@@ -38,6 +53,7 @@ def main() -> None:
         parser.error("rvLLM prompt token IDs are missing or invalid")
     if args.report.exists():
         parser.error("output report exists; never overwrite a prior receipt")
+    weight_identity = model_weight_identity(args.model)
 
     import mlx.core as mx
     from mlx_lm import load, stream_generate
@@ -84,10 +100,10 @@ def main() -> None:
     samples = [trial() for _ in range(args.trials)]
     report = {
         "schema": "rvllm.mlx_exact_prompt_bench.v1",
-        "claim": "matched prompt token IDs and length only; checkpoints and timing boundaries differ",
+        "claim": "matched prompt token IDs and length; checkpoint identity recorded, timing boundaries differ; output equivalence is not assumed",
         "model_dir": str(args.model.resolve()),
         "model_config_sha256": sha256(args.model / "config.json"),
-        "model_index_sha256": sha256(args.model / "model.safetensors.index.json"),
+        **weight_identity,
         "rvllm_report": str(args.rvllm_report.resolve()),
         "rvllm_report_sha256": sha256(args.rvllm_report),
         "mlx_generate_source_sha256": sha256(Path(stream_generate.__code__.co_filename)),
