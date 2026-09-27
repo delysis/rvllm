@@ -38,11 +38,15 @@ original model/tokenizer/source/fixture, package manifest and assets,
 frozen inference executable/source, metallibs, prompt and target IDs. The
 native control must use the same donor SG8 BF16 library as the package.
 Require a clean terminal result, unchanged pins, exact prompt/target IDs and
-actual named W4 low-bit **decode** dispatch for each candidate, with no
-unexplained native fallback. The frozen CLI does not separately count generic
-low-bit prefill kernels, so neither prefill kernel attribution nor speed
-follows from its named decode ledger. Per-step logit readback invalidates
-all trial timing.
+actual named W4 low-bit **decode** dispatch for projection, gate/up and QKV
+(`research_donor12b_sg8_w4`, `research_donor12b_sg8_gate_w4`, and
+`research_donor12b_sg8_qkv_w4`) for each candidate. Require the donor SG8
+attention dispatch and reject any W8 dispatch. Retain all native-dispatch
+counts; their interpretation requires a source-bound explanation rather than
+an assumption that every native count is fallback. The frozen CLI does not
+separately count generic low-bit prefill kernels, so neither prefill kernel
+attribution nor speed follows from its named decode ledger. Per-step logit
+readback invalidates all trial timing.
 
 Before submission, implement and test a separate fail-closed safe-Rust
 offline referee for these four manifests. It must verify package identity,
