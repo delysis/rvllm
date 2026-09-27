@@ -27,8 +27,19 @@ the exact counts. All six complete outer result directories, including
 `trial.stderr` for each, are preserved in
 `mmlu-prefill-reference-queue-results-v1.tar.gz` (30 files; SHA-256
 `db76ef52bbd61116e2ed8a8c85a9d08440f89fa4506b09c849bf6dfbc1f728db`).
-The HF stdout retains its full-vocabulary logits; the frozen Metal probe
-records only target logit, target rank, target NLL and sampled greedy ID.
+The HF stdout records only the output-file location and generated token.
+The two separately written, full-vocabulary HF JSON files are retained in
+the supplemental `mmlu-prefill-reference-hf-outputs-v1.tar.gz` (SHA-256
+`e3f1287a55e00e322aa531c091d39042244e069dbb9bac3dfdbdb327977657be`).
+The formal-logic JSON SHA-256 is
+`38bf3e5e4520ce627b9a20db7c432ff856e440b9534205c6d09c4d3d944242a0`;
+the computer-science JSON SHA-256 is
+`30e4b96624d582641e685e81c339408ef2095a4919622ceaa2af639b0b14a688`.
+Each records the exact 230/254 prompt IDs, one selected first target,
+generated token 107 and 262144 full logits. This supplemental archive fixes
+an evidence-packaging omission without modifying the original queue archive
+or either HF output. The frozen Metal probe records only target logit,
+target rank, target NLL and sampled greedy ID.
 
 The original fail-closed safe-Rust
 `rvllm_gemma4_prefill_reference_summary` source (SHA-256
