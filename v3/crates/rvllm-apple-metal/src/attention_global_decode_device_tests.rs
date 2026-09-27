@@ -106,6 +106,7 @@ impl Setup {
         if candidate.global_decode_tile().is_none()
             && candidate.split_global_decode_tile().is_none()
             && !candidate.decode_round_operator()
+            && crate::donor12b::simdgroups(candidate).is_none()
         {
             return Err("explicit global decode candidate required".into());
         }
@@ -120,7 +121,10 @@ impl Setup {
         };
         let core = crate::kernels::kernel_source_with_options(MetalFloatType::Bf16, options);
         let mut expected = core.as_bytes().to_vec();
-        if oracle && !candidate.decode_round_operator() {
+        if oracle
+            && !candidate.decode_round_operator()
+            && crate::donor12b::simdgroups(candidate).is_none()
+        {
             expected.push(b'\n');
             expected.extend_from_slice(include_bytes!(
                 "research_shaders/global_decode_oracle.metal"
@@ -169,6 +173,10 @@ impl Setup {
                 json!([HEADS / tile.rows, 1, 1]),
                 0,
             )
+        } else if let Some(groups) = crate::donor12b::simdgroups(candidate) {
+            // This family has shape-specific launches; each operator receipt
+            // records the actual grid rather than inventing one family grid.
+            (4, 0, 8, (groups * 32) as u32, false, Value::Null, 0)
         } else if candidate.decode_round_operator() {
             let (rows, threads, grid) = operator_launch_identity(candidate)?;
             (rows, 1, 32, threads, false, json!([grid, 1, 1]), 0)

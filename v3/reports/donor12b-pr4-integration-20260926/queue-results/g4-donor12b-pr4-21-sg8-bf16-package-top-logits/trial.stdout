@@ -1,0 +1,126 @@
+{
+  "arena_bytes": 24027880304,
+  "claim": "Apple Metal text inference workflow; not production-ready until acceptance gates pass",
+  "command_buffer_wait_ns": 1114400209,
+  "command_buffers": 3,
+  "cpu_encode_ns": 20109750,
+  "cpu_wall_ns": 1134509959,
+  "debug_sync": false,
+  "decode_ms": 65.628042,
+  "diagnostic_top_logits": [
+    {
+      "logit": 20.375,
+      "token_id": 496
+    },
+    {
+      "logit": 20.375,
+      "token_id": 9079
+    },
+    {
+      "logit": 16.25,
+      "token_id": 49533
+    },
+    {
+      "logit": 15.1875,
+      "token_id": 99267
+    },
+    {
+      "logit": 14.9375,
+      "token_id": 107
+    },
+    {
+      "logit": 14.8125,
+      "token_id": 506
+    },
+    {
+      "logit": 14.375,
+      "token_id": 711
+    },
+    {
+      "logit": 14.1875,
+      "token_id": 236743
+    },
+    {
+      "logit": 13.9375,
+      "token_id": 159353
+    },
+    {
+      "logit": 13.4375,
+      "token_id": 5213
+    }
+  ],
+  "embedding_encoders": 2,
+  "encoder_counts_by_kernel_family": {
+    "embedding": 2,
+    "final_logits_diagnostic": 3,
+    "final_sample": 3,
+    "layer_body": 1200,
+    "layer_scale_fused": 96,
+    "ple_input": 0
+  },
+  "encoders": 1208,
+  "final_logits_encoders": 3,
+  "final_sample_encoders": 3,
+  "finish_reason": "length",
+  "forced_waits": 3,
+  "generated_text": " a",
+  "generated_token_ids": [
+    496
+  ],
+  "hf_reference": null,
+  "large_model_opt_in": true,
+  "last_step_command_buffer_wait_ns": 61903167,
+  "last_step_command_buffers": 1,
+  "last_step_cpu_encode_ns": 3713208,
+  "last_step_cpu_wall_ns": 65616375,
+  "last_step_encoders": 580,
+  "last_step_forced_waits": 1,
+  "last_step_gpu_execution_ns": 61325124,
+  "last_step_tokens": 1,
+  "layer_encoders": 1200,
+  "layer_scale_encoder_fusions": 96,
+  "library_compiles": 1,
+  "max_new_tokens": 1,
+  "max_supported_total_tokens": 256,
+  "metal_compute_dtype": "bfloat16",
+  "metal_moe_router_weight_dtype": "bfloat16",
+  "metal_weight_dtype": "bfloat16",
+  "model_dir": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/target/donor12b-bf16-one-w8.rvllm",
+  "output_text": "The capital of France is a",
+  "output_token_ids": [
+    2,
+    818,
+    5279,
+    529,
+    7001,
+    563,
+    496
+  ],
+  "pipeline_state_compiles": 70,
+  "ple_encoders": 0,
+  "prefill_ms": 1068.900167,
+  "prepare_ms": 14938.732167,
+  "prompt": "The capital of France is",
+  "prompt_token_ids": [
+    2,
+    818,
+    5279,
+    529,
+    7001,
+    563
+  ],
+  "research_dispatch": {
+    "counts": {
+      "research_donor12b_sg8_batch_w8": 1,
+      "research_donor12b_sg8_global_attention": 8,
+      "research_donor12b_sg8_local_attention": 40,
+      "research_donor12b_sg8_native_gate": 48,
+      "research_donor12b_sg8_native_projection": 335,
+      "research_donor12b_sg8_w8": 1
+    },
+    "overflowed": false,
+    "schema": "rvllm.metal.research-dispatch.v5"
+  },
+  "schema": "rvllm.apple_metal_text_infer.v1",
+  "tok_per_s": 15.237388919815709
+}

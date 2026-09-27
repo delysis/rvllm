@@ -32,8 +32,8 @@ class UnifiedIntegrationTests(unittest.TestCase):
         self.assertIn('--catalog',s);self.assertIn('catalog_json()',s)
         self.assertNotIn('MetalContext',s)
         c=json.loads((ROOT/'tools/gemma4_metal_catalog.json').read_text())
-        self.assertEqual(len(c['candidates']),11)
-        self.assertEqual(sum(len(x['kernels']) for x in c['candidates']),17)
+        self.assertEqual(len(c['candidates']),48)
+        self.assertEqual(sum(len(x['kernels']) for x in c['candidates']),86)
         self.assertEqual(c['default'],'off');self.assertIs(c['device_qualified'],False)
     def test_shared_plan_and_device_limit_boundary_both_used(self):
         s=(METAL/'layer_forward.rs').read_text();p=(METAL/'pipeline.rs').read_text()

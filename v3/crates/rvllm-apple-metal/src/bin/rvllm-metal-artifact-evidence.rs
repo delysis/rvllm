@@ -4,7 +4,9 @@
 //! metadata without interpreting either as proof of register allocation,
 //! occupancy, or a particular machine-instruction lowering.
 
+#[cfg(target_os = "macos")]
 use objc2_metal::{MTLComputePipelineState, MTLDevice};
+#[cfg(target_os = "macos")]
 use rvllm_apple_metal::MetalContext;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -97,6 +99,12 @@ fn usage() -> String {
     "usage: rvllm-metal-artifact-evidence <SOURCE.metal> <OUTPUT-DIR> <KERNEL>...".to_owned()
 }
 
+#[cfg(not(target_os = "macos"))]
+fn main() -> Result<(), String> {
+    Err("Metal artifact evidence requires macOS".to_owned())
+}
+
+#[cfg(target_os = "macos")]
 fn main() -> Result<(), String> {
     let mut args = std::env::args_os().skip(1);
     let source = PathBuf::from(args.next().ok_or_else(usage)?);

@@ -60,7 +60,7 @@ jobs:
         run: |
           cargo test --locked -p rvllm-runtime kernel_game::tests:: -- --nocapture \
             2>&1 | tee "$RUNNER_TEMP/gemma4-candidate-host/kernel-game-tests.log"
-      - name: Run exact reviewed public Rust tests and twenty-two source exports
+      - name: Run exact reviewed public Rust tests and all candidate source exports
         run: |
           "$RUNNER_TEMP/gemma4-candidate-venv/bin/python" tools/run_gemma4_candidate_ci.py \
             --output "$RUNNER_TEMP/gemma4-candidate-host/rust-and-export" \

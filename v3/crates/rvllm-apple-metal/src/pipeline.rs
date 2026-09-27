@@ -17,6 +17,48 @@ use rvllm_core::Result;
 use std::cell::Cell;
 use std::collections::HashMap;
 
+#[cfg(feature = "metal-route-diagnostics")]
+pub const ORDINARY_PREFILL_KERNEL_NAMES: [&str; 12] = [
+    "qkv_project_f32_mma32",
+    "gemm_f16_mma32",
+    "qkv_project_f32_batch8",
+    "gemm_f16_batch8",
+    "gemm_f16_vec8",
+    "gemm_f16_tiled16",
+    "gemm_f16",
+    "attention_prefill_simdgroup_f16",
+    "attention_prefill_f16",
+    "qkv_projected_rmsnorm_rope_cache_f16",
+    "qkv_headwise_rmsnorm_rope_cache_f16",
+    "gemm_rmsnorm_f16",
+];
+
+#[cfg(feature = "metal-route-diagnostics")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrdinaryPrefillDispatchSnapshot {
+    pub counts: [u64; ORDINARY_PREFILL_KERNEL_NAMES.len()],
+    pub overflowed: bool,
+}
+
+#[cfg(feature = "metal-route-diagnostics")]
+impl OrdinaryPrefillDispatchSnapshot {
+    pub fn checked_since(self, earlier: Self) -> core::result::Result<Self, &'static str> {
+        if self.overflowed || earlier.overflowed {
+            return Err("ordinary prefill dispatch counter overflow");
+        }
+        let mut counts = [0; ORDINARY_PREFILL_KERNEL_NAMES.len()];
+        for (index, count) in counts.iter_mut().enumerate() {
+            *count = self.counts[index]
+                .checked_sub(earlier.counts[index])
+                .ok_or("ordinary prefill dispatch counters reset within a request")?;
+        }
+        Ok(Self {
+            counts,
+            overflowed: false,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LowBitDispatchSnapshot {
     pub counts: [u64; AppleLowBitTensorRole::COUNT * 2],
@@ -90,6 +132,13 @@ pub struct PipelineCache {
     research_dispatches: ResearchDispatchCounters,
     low_bit_dispatches: Cell<[u64; AppleLowBitTensorRole::COUNT * 2]>,
     low_bit_dispatch_overflowed: Cell<bool>,
+    // Physical encoder correction for the current synchronously encoded layer.
+    // Only the explicit donor family writes this; no atomics or allocation.
+    donor_layer_encoder_correction: Cell<i64>,
+    #[cfg(feature = "metal-route-diagnostics")]
+    ordinary_prefill_dispatches: Cell<[u64; ORDINARY_PREFILL_KERNEL_NAMES.len()]>,
+    #[cfg(feature = "metal-route-diagnostics")]
+    ordinary_prefill_dispatch_overflowed: Cell<bool>,
 }
 
 impl PipelineCache {
@@ -108,6 +157,11 @@ impl PipelineCache {
             research_dispatches: ResearchDispatchCounters::default(),
             low_bit_dispatches: Cell::new([0; AppleLowBitTensorRole::COUNT * 2]),
             low_bit_dispatch_overflowed: Cell::new(false),
+            donor_layer_encoder_correction: Cell::new(0),
+            #[cfg(feature = "metal-route-diagnostics")]
+            ordinary_prefill_dispatches: Cell::new([0; ORDINARY_PREFILL_KERNEL_NAMES.len()]),
+            #[cfg(feature = "metal-route-diagnostics")]
+            ordinary_prefill_dispatch_overflowed: Cell::new(false),
         }
     }
 
@@ -121,6 +175,51 @@ impl PipelineCache {
     #[must_use]
     pub fn research_dispatch_snapshot(&self) -> ResearchDispatchSnapshot {
         self.research_dispatches.snapshot()
+    }
+
+    #[cfg(feature = "metal-route-diagnostics")]
+    pub fn ordinary_prefill_dispatch_snapshot(&self) -> OrdinaryPrefillDispatchSnapshot {
+        OrdinaryPrefillDispatchSnapshot {
+            counts: self.ordinary_prefill_dispatches.get(),
+            overflowed: self.ordinary_prefill_dispatch_overflowed.get(),
+        }
+    }
+
+    /// Call only after dispatch and endEncoding. The caller samples at a
+    /// quiescent boundary and checks command-buffer completion separately.
+    #[cfg(feature = "metal-route-diagnostics")]
+    pub(crate) fn record_ordinary_prefill_dispatch(&self, name: &'static str) {
+        let index = ORDINARY_PREFILL_KERNEL_NAMES
+            .iter()
+            .position(|candidate| *candidate == name)
+            .expect("ordinary prefill diagnostic site must use a declared kernel");
+        let mut counts = self.ordinary_prefill_dispatches.get();
+        if let Some(next) = counts[index].checked_add(1) {
+            counts[index] = next;
+            self.ordinary_prefill_dispatches.set(counts);
+        } else {
+            self.ordinary_prefill_dispatch_overflowed.set(true);
+        }
+    }
+
+    pub(crate) fn reset_donor_layer_encoder_correction(&self) {
+        self.donor_layer_encoder_correction.set(0);
+    }
+
+    pub(crate) fn add_donor_layer_encoder_correction(&self, delta: i64) {
+        // Bounded to a handful of encoders per layer; reset before encoding.
+        self.donor_layer_encoder_correction
+            .set(self.donor_layer_encoder_correction.get() + delta);
+    }
+
+    /// Adjustment to the legacy logical encoder estimator, for the just
+    /// encoded layer only. This is not a GPU-completion or timing receipt.
+    pub fn donor_layer_encoder_correction(&self) -> i64 {
+        if crate::donor12b::simdgroups(self.kernel_options.research).is_some() {
+            self.donor_layer_encoder_correction.get()
+        } else {
+            0
+        }
     }
 
     pub(crate) fn record_research_dispatch(&self, kernel: ResearchKernel) {
@@ -291,6 +390,30 @@ impl std::fmt::Debug for PipelineCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "metal-route-diagnostics")]
+    #[test]
+    fn ordinary_prefill_ledger_is_phase_bounded_and_fails_closed() {
+        let cache = PipelineCache::default();
+        cache.record_ordinary_prefill_dispatch("gemm_f16_batch8");
+        let before = cache.ordinary_prefill_dispatch_snapshot();
+        cache.record_ordinary_prefill_dispatch("gemm_f16_mma32");
+        cache.record_ordinary_prefill_dispatch("attention_prefill_simdgroup_f16");
+        let after = cache.ordinary_prefill_dispatch_snapshot();
+        let delta = after.checked_since(before).expect("monotone counters");
+        assert_eq!(delta.counts[1], 1);
+        assert_eq!(delta.counts[7], 1);
+        assert_eq!(delta.counts[3], 0);
+        assert!(before.checked_since(after).is_err());
+        cache
+            .ordinary_prefill_dispatches
+            .set([u64::MAX; ORDINARY_PREFILL_KERNEL_NAMES.len()]);
+        cache.record_ordinary_prefill_dispatch("gemm_f16_mma32");
+        assert!(cache
+            .ordinary_prefill_dispatch_snapshot()
+            .checked_since(after)
+            .is_err());
+    }
 
     #[test]
     fn low_bit_dispatch_ledger_separates_roles_and_formats() {

@@ -54,6 +54,8 @@ pub enum MetalResearchCandidate {
     GlobalD512ShortR4T128,
     QmvW4G32R4Sg8K8,
     QmvW8G32R4Sg8K8,
+    Donor12bSg8,
+    Donor12bSg4,
 }
 
 impl MetalResearchCandidate {
@@ -135,6 +137,8 @@ impl MetalResearchCandidate {
                 | Self::GlobalD512ShortR4T128
                 | Self::QmvW4G32R4Sg8K8
                 | Self::QmvW8G32R4Sg8K8
+                | Self::Donor12bSg8
+                | Self::Donor12bSg4
         )
     }
 
@@ -217,7 +221,7 @@ pub fn launch_fits(
     planned_bytes: usize,
 ) -> bool {
     execution_width == 32
-        && matches!(threads, 32 | 64 | 128 | 256)
+        && matches!(threads, 32 | 64 | 128 | 256 | 512)
         && maximum_threads >= threads
         && device_bytes >= planned_bytes
         && device_bytes >= static_bytes

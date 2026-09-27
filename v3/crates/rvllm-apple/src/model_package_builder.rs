@@ -80,7 +80,7 @@ pub struct AppleModelPackageBuildConfig {
     pub weight_format: Option<AppleWeightFormat>,
     /// Explicit tensor-level hybrid exports. Roles are inferred from exact
     /// canonical dense-projection suffixes; native weights remain packaged.
-    pub low_bit_down_projections: Vec<AppleLowBitExportRequest>,
+    pub low_bit_projections: Vec<AppleLowBitExportRequest>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -196,11 +196,8 @@ pub fn build_apple_model_package(
         });
     }
 
-    let low_bit_tensors = export_low_bit_down_projections(
-        &config.low_bit_down_projections,
-        &inspected,
-        staging.path(),
-    )?;
+    let low_bit_tensors =
+        export_low_bit_projections(&config.low_bit_projections, &inspected, staging.path())?;
     let metal_libraries = copy_and_validate_metal_libraries(&config.metallib_root, staging.path())?;
     let tokenizer_fingerprint =
         fingerprint_assets(b"rvllm.apple.tokenizer-assets.v2\0", tokenizer_files.iter());
@@ -679,7 +676,7 @@ fn select_weight_format(
     }
 }
 
-fn export_low_bit_down_projections(
+fn export_low_bit_projections(
     requests: &[AppleLowBitExportRequest],
     inspected: &InspectedWeights,
     output_root: &Path,
@@ -687,13 +684,6 @@ fn export_low_bit_down_projections(
     if requests.is_empty() {
         return Ok(Vec::new());
     }
-    if inspected.dtype != NativeWeightDtype::F16 {
-        return Err(
-            "hybrid W4A16/W8A16 sidecars currently require a uniform F16 source checkpoint"
-                .to_owned(),
-        );
-    }
-
     let mut requests = requests.to_vec();
     requests.sort_by(|left, right| {
         left.tensor_name
@@ -740,9 +730,9 @@ fn export_low_bit_down_projections(
                 request.tensor_name
             )
         })?;
-        if tensor.dtype != NativeWeightDtype::F16 || tensor.shape.len() != 2 {
+        if tensor.dtype != inspected.dtype || tensor.shape.len() != 2 {
             return Err(format!(
-                "low-bit down-projection tensor {:?} must be a two-dimensional F16 tensor",
+                "low-bit projection tensor {:?} must be a two-dimensional tensor matching the native checkpoint dtype",
                 request.tensor_name
             ));
         }
@@ -815,8 +805,11 @@ fn export_low_bit_down_projections(
                 )
             })?;
             for (column, bytes) in source_row.chunks_exact(2).enumerate() {
-                source_f32[column] =
-                    half::f16::from_bits(u16::from_le_bytes([bytes[0], bytes[1]])).to_f32();
+                let bits = u16::from_le_bytes([bytes[0], bytes[1]]);
+                source_f32[column] = match inspected.dtype {
+                    NativeWeightDtype::F16 => half::f16::from_bits(bits).to_f32(),
+                    NativeWeightDtype::Bf16 => half::bf16::from_bits(bits).to_f32(),
+                };
             }
             let packed = quantize_apple_low_bit_reference(request.format, 1, k, &source_f32)
                 .map_err(|error| {
@@ -850,7 +843,10 @@ fn export_low_bit_down_projections(
             abi_version: APPLE_LOW_BIT_WEIGHT_ABI_VERSION,
             group_size: u16::try_from(APPLE_LOW_BIT_GROUP_SIZE)
                 .map_err(|_| "Apple low-bit group size exceeds u16".to_owned())?,
-            activation_float_type: ApplePackageFloatType::F16,
+            activation_float_type: match inspected.dtype {
+                NativeWeightDtype::F16 => ApplePackageFloatType::F16,
+                NativeWeightDtype::Bf16 => ApplePackageFloatType::Bf16,
+            },
             shape: [rows_u32, k_u32],
             packed_values: describe_asset(output_root, &values_relative)?,
             scales: describe_asset(output_root, &scales_relative)?,
@@ -1075,21 +1071,31 @@ mod tests {
         fs::write(path, bytes).expect("write safetensors");
     }
 
-    fn write_f16_matrix_safetensors(
+    fn write_matrix_safetensors(
         path: &Path,
         tensor: &str,
         rows: usize,
         k: usize,
         values: &[f32],
+        dtype: NativeWeightDtype,
     ) {
         assert_eq!(values.len(), rows * k);
         let payload = values
             .iter()
-            .flat_map(|value| half::f16::from_f32(*value).to_bits().to_le_bytes())
+            .flat_map(|value| {
+                let bits = match dtype {
+                    NativeWeightDtype::F16 => half::f16::from_f32(*value).to_bits(),
+                    NativeWeightDtype::Bf16 => half::bf16::from_f32(*value).to_bits(),
+                };
+                bits.to_le_bytes()
+            })
             .collect::<Vec<_>>();
         let header = serde_json::json!({
             tensor: {
-                "dtype": "F16",
+                "dtype": match dtype {
+                    NativeWeightDtype::F16 => "F16",
+                    NativeWeightDtype::Bf16 => "BF16",
+                },
                 "shape": [rows, k],
                 "data_offsets": [0, payload.len()]
             }
@@ -1143,7 +1149,7 @@ mod tests {
             output_dir: root.join("package"),
             package_id: "tiny-test".to_owned(),
             weight_format: None,
-            low_bit_down_projections: Vec::new(),
+            low_bit_projections: Vec::new(),
         };
         (root, config)
     }
@@ -1206,14 +1212,19 @@ mod tests {
             .map(|index| index as f32 / 9.0 - 3.5)
             .collect::<Vec<_>>();
         let source_path = config.model_dir.join("model.safetensors");
-        write_f16_matrix_safetensors(&source_path, tensor_name, 2, 33, &source_values);
+        write_matrix_safetensors(
+            &source_path,
+            tensor_name,
+            2,
+            33,
+            &source_values,
+            NativeWeightDtype::F16,
+        );
         let source_before = fs::read(&source_path).expect("read source before export");
-        config
-            .low_bit_down_projections
-            .push(AppleLowBitExportRequest {
-                tensor_name: tensor_name.to_owned(),
-                format: AppleLowBitWeightFormat::W4A16,
-            });
+        config.low_bit_projections.push(AppleLowBitExportRequest {
+            tensor_name: tensor_name.to_owned(),
+            format: AppleLowBitWeightFormat::W4A16,
+        });
 
         let report = build_apple_model_package(&config).expect("build hybrid package");
         assert_eq!(report.weight_format, AppleWeightFormat::F16);
@@ -1264,26 +1275,80 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_export_rejects_non_projection_and_bf16_sources() {
+    fn exports_authenticated_bf16_hybrid_projection() {
+        let (root, mut config) = fixture("bf16-hybrid");
+        let tensor_name = "model.layers.0.mlp.down_proj.weight";
+        let source_values = (0..66)
+            .map(|index| index as f32 / 9.0 - 3.5)
+            .collect::<Vec<_>>();
+        let source_path = config.model_dir.join("model.safetensors");
+        write_matrix_safetensors(
+            &source_path,
+            tensor_name,
+            2,
+            33,
+            &source_values,
+            NativeWeightDtype::Bf16,
+        );
+        let source_before = fs::read(&source_path).expect("read source before export");
+        config.low_bit_projections.push(AppleLowBitExportRequest {
+            tensor_name: tensor_name.to_owned(),
+            format: AppleLowBitWeightFormat::W8A16,
+        });
+
+        let report = build_apple_model_package(&config).expect("build BF16 hybrid package");
+        assert_eq!(report.weight_format, AppleWeightFormat::Bf16);
+        assert_eq!(report.low_bit_tensors, 1);
+        assert_eq!(fs::read(&source_path).expect("read source"), source_before);
+        let package = AppleModelPackage::open(&config.output_dir).expect("open BF16 package");
+        let descriptor = package.low_bit_tensor(tensor_name).expect("find sidecar");
+        assert_eq!(
+            descriptor.activation_float_type,
+            ApplePackageFloatType::Bf16
+        );
+        let rounded = source_values
+            .iter()
+            .map(|value| half::bf16::from_f32(*value).to_f32())
+            .collect::<Vec<_>>();
+        let expected =
+            quantize_apple_low_bit_reference(AppleLowBitWeightFormat::W8A16, 2, 33, &rounded)
+                .expect("quantize BF16 source");
+        assert_eq!(
+            fs::read(config.output_dir.join(&descriptor.packed_values.path))
+                .expect("read packed sidecar"),
+            expected.packed_values()
+        );
+        let expected_scales = expected
+            .scales()
+            .iter()
+            .flat_map(|scale| scale.to_bits().to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fs::read(config.output_dir.join(&descriptor.scales.path)).expect("read scales"),
+            expected_scales
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn hybrid_export_rejects_non_projection_and_bad_rank() {
         let (root, mut config) = fixture("hybrid-rejections");
-        config
-            .low_bit_down_projections
-            .push(AppleLowBitExportRequest {
-                tensor_name: "weight".to_owned(),
-                format: AppleLowBitWeightFormat::W8A16,
-            });
+        config.low_bit_projections.push(AppleLowBitExportRequest {
+            tensor_name: "weight".to_owned(),
+            format: AppleLowBitWeightFormat::W8A16,
+        });
         let error = build_apple_model_package(&config).expect_err("non-down projection fails");
         assert!(error.contains("not a supported dense projection"));
 
-        config.low_bit_down_projections[0].tensor_name =
+        config.low_bit_projections[0].tensor_name =
             "model.layers.0.mlp.down_proj.weight".to_owned();
         write_safetensors(
             &config.model_dir.join("model.safetensors"),
             "BF16",
             "model.layers.0.mlp.down_proj.weight",
         );
-        let error = build_apple_model_package(&config).expect_err("BF16 hybrid export fails");
-        assert!(error.contains("uniform F16 source checkpoint"));
+        let error = build_apple_model_package(&config).expect_err("rank-one source fails");
+        assert!(error.contains("two-dimensional tensor"));
         fs::remove_dir_all(root).expect("remove fixture");
     }
 

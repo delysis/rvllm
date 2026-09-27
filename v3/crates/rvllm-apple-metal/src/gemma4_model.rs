@@ -387,6 +387,39 @@ pub struct MetalLayerTraceState {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 impl Gemma4MetalState {
+    /// Resolve raw-K-as-V once, after authenticated package installation and
+    /// before cloning execution slots. Normed/rotated K and cached V remain
+    /// distinct. Equal names here originate in the validated checkpoint plan,
+    /// not an inferred head shape or an untrusted package role label.
+    pub fn resolve_low_bit_projection_aliases(&mut self) -> Result<()> {
+        for layer in &mut self.layers {
+            if layer.k_proj_name != layer.v_proj_name {
+                continue;
+            }
+            let Some(key) = layer.low_bit_k_proj else {
+                if layer.low_bit_v_proj.is_some() {
+                    return Err(invalid_low_bit_replacement(
+                        "tied V has no authenticated K source",
+                    ));
+                }
+                continue;
+            };
+            let value = key.key_as_value_alias().ok_or_else(|| {
+                invalid_low_bit_replacement("tied V source is not a key projection")
+            })?;
+            if layer
+                .low_bit_v_proj
+                .is_some_and(|existing| existing != value)
+            {
+                return Err(invalid_low_bit_replacement(
+                    "tied V conflicts with authenticated K",
+                ));
+            }
+            layer.low_bit_v_proj = Some(value);
+        }
+        Ok(())
+    }
+
     /// Materialize a descriptor-only view for one preallocated execution
     /// slot. This is intended to run during backend preparation, never in the
     /// launch path.
@@ -2017,7 +2050,11 @@ impl ProbeModelPlan {
             let roles = [
                 has(&layer.q_name),
                 has(&layer.k_name),
-                !layer.v_uses_k_proj && has(&layer.v_name),
+                if layer.v_uses_k_proj {
+                    has(&layer.k_name)
+                } else {
+                    has(&layer.v_name)
+                },
                 has(&layer.o_proj_name),
                 has(&layer.gate_name),
                 has(&layer.up_name),
@@ -3107,7 +3144,12 @@ impl Gemma4MetalState {
                 layer_idx,
                 q_proj_name: layer_names.q_name.clone(),
                 k_proj_name: layer_names.k_name.clone(),
-                v_proj_name: layer_names.v_name.clone(),
+                // Keep the validated RAW projection identity, not a fabricated V tensor.
+                v_proj_name: if layer_names.v_uses_k_proj {
+                    layer_names.k_name.clone()
+                } else {
+                    layer_names.v_name.clone()
+                },
                 o_proj_name: layer_names.o_proj_name.clone(),
                 gate_proj_name: layer_names.gate_name.clone(),
                 up_proj_name: layer_names.up_name.clone(),
@@ -4610,6 +4652,71 @@ mod tests {
         assert!(validation.layers[1].v_uses_k_proj);
         assert_eq!(validation.layers[1].v_proj, None);
 
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn donor_global_complete_set_has_six_physical_sidecars_and_no_fake_v() {
+        let dir =
+            write_dry_run_full_gemma_style_fixture(false, true, false, Some(1), None, None, false);
+        let plan = ProbeModelPlan::new(&dir).expect("global K-as-V plan");
+        let layer = &plan.layer_names[1];
+        assert!(layer.v_uses_k_proj);
+        let h = plan.arch.hidden_size;
+        let i = layer.intermediate_size;
+        let format = rvllm_apple::AppleLowBitWeightFormat::W4A16;
+        let specs = [
+            (
+                &layer.q_name,
+                AppleLowBitTensorRole::QueryProjection,
+                [layer.dims.q_dim, h],
+            ),
+            (
+                &layer.k_name,
+                AppleLowBitTensorRole::KeyProjection,
+                [layer.dims.kv_dim, h],
+            ),
+            (
+                &layer.o_proj_name,
+                AppleLowBitTensorRole::OutputProjection,
+                [h, layer.dims.q_dim],
+            ),
+            (
+                &layer.gate_name,
+                AppleLowBitTensorRole::DenseGateProjection,
+                [i, h],
+            ),
+            (
+                &layer.up_name,
+                AppleLowBitTensorRole::DenseUpProjection,
+                [i, h],
+            ),
+            (
+                &layer.down_proj_name,
+                AppleLowBitTensorRole::DenseDownProjection,
+                [h, i],
+            ),
+        ];
+        let replacements: Vec<_> = specs
+            .into_iter()
+            .map(|(name, role, shape)| low_bit_role_replacement(name, role, format, shape))
+            .collect();
+        for missing in 0..6 {
+            let partial: Vec<_> = replacements
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != missing)
+                .map(|(_, value)| value.clone())
+                .collect();
+            assert!(ProbeModelPlan::new(&dir)
+                .unwrap()
+                .with_low_bit_replacements(&partial)
+                .is_err());
+        }
+        let planned = plan
+            .with_low_bit_replacements(&replacements)
+            .expect("six physical tensors suffice");
+        assert_eq!(planned.low_bit_replacements.len(), 6);
         let _ = fs::remove_dir_all(dir);
     }
 

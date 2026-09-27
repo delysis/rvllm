@@ -17,6 +17,13 @@ authors.workspace = true
 [features]
 default = []
 metal-stage-instrumentation = []
+# Encode-completed ordinary prefill route ledger for diagnostic binaries only.
+metal-route-diagnostics = []
+# Explicit one-prefill GPU capture in diagnostic binaries only.
+metal-gpu-capture = []
+# Compile-time-only full-route donor component attribution. Normal builds
+# contain no component mask, environment read, or encoder-side branch.
+donor-route-attribution = []
 # Explicit operator experiments; never part of the shipping selector.
 attention-atlas-research = ["dep:serde"]
 # Opt-in, device-only referee for authenticated real checkpoint projection
@@ -51,6 +58,7 @@ objc2-metal = { version = "0.3", features = [
     "MTLTexture",
     "MTLPixelFormat",
     "MTLCounters",
+    "MTLCaptureManager",
     "std",
     "objc2-io-surface",
 ] }
@@ -84,3 +92,7 @@ path = "src/bin/rvllm-low-bit-direct-summary.rs"
 name = "rvllm-prefill-receipt-validate"
 path = "src/bin/rvllm-prefill-receipt-validate.rs"
 required-features = ["attention-atlas-research"]
+
+[[bin]]
+name = "rvllm-donor12b-source"
+path = "src/bin/rvllm-donor12b-source.rs"

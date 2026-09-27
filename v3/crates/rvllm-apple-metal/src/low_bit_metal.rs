@@ -148,6 +148,16 @@ pub struct MetalLowBitProjectionOffsets {
 }
 
 impl MetalLowBitProjectionOffsets {
+    /// Crate-private alias constructor for the checkpoint-validated K=V
+    /// projection relationship. All authenticated byte ranges are unchanged;
+    /// this does not alias the separately normalized K/V activations or caches.
+    pub(crate) fn key_as_value_alias(self) -> Option<Self> {
+        (self.role == AppleLowBitTensorRole::KeyProjection).then_some(Self {
+            role: AppleLowBitTensorRole::ValueProjection,
+            ..self
+        })
+    }
+
     /// Validate the exact group-32 storage layout selected for an arena.
     pub fn new(
         format: AppleLowBitWeightFormat,
@@ -1295,5 +1305,43 @@ mod tests {
             })
         ));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod donor_alias_tests {
+    use super::*;
+    #[test]
+    fn key_as_value_alias_keeps_every_authenticated_storage_byte() {
+        for format in [
+            AppleLowBitWeightFormat::W4A16,
+            AppleLowBitWeightFormat::W8A16,
+        ] {
+            let bytes = 512 * 3840
+                / if format == AppleLowBitWeightFormat::W4A16 {
+                    2
+                } else {
+                    1
+                };
+            let key = MetalLowBitProjectionOffsets::new_for_role(
+                AppleLowBitTensorRole::KeyProjection,
+                format,
+                512,
+                3840,
+                64,
+                bytes,
+                64 + bytes,
+                512 * 120 * 2,
+            )
+            .unwrap();
+            let value = key.key_as_value_alias().unwrap();
+            assert_eq!(value.role(), AppleLowBitTensorRole::ValueProjection);
+            assert_eq!(value.shape(), key.shape());
+            assert_eq!(value.format(), key.format());
+            assert_eq!(value.packed_values_offset(), key.packed_values_offset());
+            assert_eq!(value.scales_offset(), key.scales_offset());
+            assert_eq!(value.resident_bytes(), key.resident_bytes());
+            assert!(value.key_as_value_alias().is_none());
+        }
     }
 }

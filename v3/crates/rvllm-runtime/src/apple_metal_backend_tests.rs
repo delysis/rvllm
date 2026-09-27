@@ -165,6 +165,23 @@ fn layer_encoder_count_tracks_low_bit_projection_branches_exactly() {
 static METAL_DEBUG_SYNC_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+fn route_trace_controls_parse_without_enabling_snapshot_trace() {
+    let guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+    ]);
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV, "0, 7, 47");
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV, "1024");
+    guard.remove(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV);
+    assert_eq!(metal_debug_route_trace_layers(), [0, 7, 47]);
+    assert_eq!(metal_debug_route_trace_position(), Some(1024));
+    assert!(metal_debug_trace_layers().is_empty());
+    assert!(metal_debug_layer_controls_enabled());
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
 #[derive(Clone)]
 struct SharedModelMetalBackend {
     inner: std::rc::Rc<std::cell::RefCell<ModelMetalBackend>>,
@@ -692,6 +709,34 @@ fn metal_numeric_abi_fingerprint_separates_dtype_and_kv_format() {
     assert_ne!(f16_native, packaged_a);
     assert_ne!(packaged_a, packaged_b);
     assert_ne!(packaged_a, replace_native);
+}
+
+#[cfg(all(
+    feature = "apple",
+    feature = "donor-route-attribution",
+    target_os = "macos"
+))]
+#[test]
+fn donor_component_mask_changes_numeric_abi_identity() {
+    use rvllm_apple_metal::options::DonorRouteMask;
+
+    let fingerprint = |mask| {
+        metal_numeric_abi_fingerprint_impl(
+            MetalFloatType::Bf16,
+            false,
+            false,
+            None,
+            None,
+            MetalLowBitResidencyPolicy::HybridFallback,
+            rvllm_apple_metal::MetalKernelOptions {
+                donor_route_mask: mask,
+                ..rvllm_apple_metal::MetalKernelOptions::default()
+            },
+        )
+    };
+    let all: DonorRouteMask = "all".parse().unwrap();
+    let none: DonorRouteMask = "none".parse().unwrap();
+    assert_ne!(fingerprint(all), fingerprint(none));
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -2238,6 +2283,86 @@ fn tiny_one_layer_noop_model_backend_decodes_token_2_to_3() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].token_id, rvllm_core::TokenId(3));
 
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires Apple Silicon Metal device"]
+fn tiny_one_layer_route_trace_reads_existing_buffers_and_refuses_overwrite() {
+    let dir = write_tiny_one_layer_noop_fixture();
+    let trace_path = dir.join("route-layer0.json");
+    let guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_JSON_ENV,
+    ]);
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV, "0");
+    guard.set(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV, "0");
+    guard.set(RVLLM_METAL_DEBUG_TRACE_JSON_ENV, &trace_path);
+    guard.remove(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV);
+
+    let mut backend = ModelMetalBackend::new(dir.clone());
+    backend
+        .prepare(&one_layer_plan(dir.clone()))
+        .expect("prepare one-layer tiny model");
+    let handoff = HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        vec![TokenId(2)],
+        vec![0, 1],
+        vec![0],
+        vec![1],
+    );
+    let ticket = backend.launch_rollout(&handoff, None).expect("run rollout");
+    let output = backend.collect(ticket).expect("collect rollout");
+    assert_eq!(output[0].token_id, TokenId(3));
+    let traced_residual = backend
+        .debug_read_residual_f32(1)
+        .expect("read traced residual");
+    let trace: Value = serde_json::from_slice(&fs::read(&trace_path).expect("read route trace"))
+        .expect("parse route trace");
+    assert_eq!(
+        trace["observation_mode"],
+        "post_layer_existing_buffers_per_layer_sync"
+    );
+    assert_eq!(trace["phase"], "decode");
+    assert_eq!(trace["layer"], 0);
+    assert_eq!(trace["kv_cache_rows"], 1);
+    assert_eq!(
+        trace["summaries"]["attention_output"]["sha256_le_u16"]
+            .as_str()
+            .map(str::len),
+        Some(64)
+    );
+    assert_eq!(
+        trace["summaries"]["attention_output"]["raw_u16_hex"]
+            .as_str()
+            .map(str::len),
+        trace["summaries"]["attention_output"]["shape"][1]
+            .as_u64()
+            .map(|width| width as usize * 4)
+    );
+    assert!(backend.launch_rollout(&handoff, None).is_err());
+    assert!(trace_path.exists(), "original trace must remain intact");
+
+    guard.remove(RVLLM_METAL_DEBUG_ROUTE_TRACE_LAYER_ENV);
+    guard.remove(RVLLM_METAL_DEBUG_ROUTE_TRACE_POSITION_ENV);
+    guard.remove(RVLLM_METAL_DEBUG_TRACE_JSON_ENV);
+    let mut baseline = ModelMetalBackend::new(dir.clone());
+    baseline
+        .prepare(&one_layer_plan(dir.clone()))
+        .expect("prepare untraced baseline");
+    let ticket = baseline
+        .launch_rollout(&handoff, None)
+        .expect("run baseline");
+    let baseline_output = baseline.collect(ticket).expect("collect baseline");
+    let baseline_residual = baseline
+        .debug_read_residual_f32(1)
+        .expect("read baseline residual");
+    assert_eq!(output[0].token_id, baseline_output[0].token_id);
+    assert_eq!(traced_residual, baseline_residual);
     let _ = fs::remove_dir_all(dir);
 }
 
@@ -9276,7 +9401,7 @@ fn schema_v3_w4_w8_down_proj_sidecars_are_selected_and_execute_real_layer() {
             output_dir: package_root.clone(),
             package_id: format!("tiny-one-layer-{}", format.name()),
             weight_format: None,
-            low_bit_down_projections: vec![AppleLowBitExportRequest {
+            low_bit_projections: vec![AppleLowBitExportRequest {
                 tensor_name: "model.layers.0.mlp.down_proj.weight".to_owned(),
                 format,
             }],
@@ -9487,7 +9612,7 @@ fn schema_v3_complete_dense_low_bit_layer_installs_and_dispatches_every_role() {
             output_dir: package_root.clone(),
             package_id: format!("tiny-complete-{}", format.name()),
             weight_format: None,
-            low_bit_down_projections: names
+            low_bit_projections: names
                 .iter()
                 .map(|name| AppleLowBitExportRequest {
                     tensor_name: (*name).to_owned(),
@@ -9588,7 +9713,7 @@ fn schema_v3_two_layer_mixed_low_bit_package_replaces_both_native_projections() 
         weight_format: None,
         // Deliberately reverse manifest input order. Runtime preflight and
         // arena installation must use canonical tensor-name order.
-        low_bit_down_projections: vec![
+        low_bit_projections: vec![
             AppleLowBitExportRequest {
                 tensor_name: "model.layers.1.mlp.down_proj.weight".to_owned(),
                 format: AppleLowBitWeightFormat::W8A16,
@@ -10238,6 +10363,74 @@ fn real_gemma4_e2b_batch_two_prefill_layers_0_to_4_residuals_are_finite() {
         assert_eq!(summary.finite_count, summary.total_count);
     }
     env_guard.remove(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV);
+}
+
+#[cfg(all(feature = "apple", target_os = "macos"))]
+#[test]
+#[ignore = "requires real Gemma 4 12B weights, one-sidecar package, and explicit trace paths"]
+fn real_gemma4_12b_layer0_low_bit_trace_probe() {
+    let model_dir = std::path::PathBuf::from(
+        std::env::var_os("RVLLM_DONOR12B_TRACE_MODEL_DIR").expect("source model directory"),
+    );
+    let package_dir = std::path::PathBuf::from(
+        std::env::var_os("RVLLM_DONOR12B_TRACE_PACKAGE_DIR").expect("package directory"),
+    );
+    let output_dir = std::path::PathBuf::from(
+        std::env::var_os("RVLLM_DONOR12B_TRACE_OUTPUT_DIR").expect("trace output directory"),
+    );
+    fs::create_dir_all(&output_dir).expect("create trace directory");
+
+    let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&model_dir)
+        .expect("real Gemma 4 12B architecture");
+    assert_eq!(arch.num_hidden_layers, 48);
+    assert_eq!(arch.hidden_size, 3840);
+
+    let env_guard = MetalDebugEnvGuard::new(&[
+        RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV,
+        RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_LAYER_ENV,
+        RVLLM_METAL_DEBUG_TRACE_JSON_ENV,
+    ]);
+    env_guard.set(RVLLM_METAL_ALLOW_LARGE_GEMMA4_PROBE_ENV, "1");
+    env_guard.set(RVLLM_METAL_DEBUG_STOP_AFTER_LAYER_ENV, "0");
+    env_guard.set(RVLLM_METAL_DEBUG_TRACE_LAYER_ENV, "0");
+
+    let tokens = [2_u32, 818, 5279, 529, 7001, 563];
+    let prefill = rvllm_apple::HandoffCapsule::new(
+        rvllm_apple::HandoffKind::MetalPrefillToMetalDecode,
+        vec![rvllm_core::ReqId(1)],
+        tokens.iter().copied().map(rvllm_core::TokenId).collect(),
+        vec![0, tokens.len() as u32],
+        vec![(tokens.len() - 1) as u32],
+        vec![tokens.len() as u32],
+    );
+    for (label, path) in [("source", &model_dir), ("one-w8-package", &package_dir)] {
+        let trace_path = output_dir.join(format!("{label}-layer0.json"));
+        assert!(!trace_path.exists(), "refuse to overwrite a prior trace");
+        env_guard.set(RVLLM_METAL_DEBUG_TRACE_JSON_ENV, &trace_path);
+        let mut plan = n_layer_plan(path.clone(), arch.num_hidden_layers);
+        plan.ane_hidden_size = arch.hidden_size;
+        plan.ane_intermediate_size = arch.intermediate_size;
+        let mut backend = if label == "source" {
+            ModelMetalBackend::new(path.clone())
+        } else {
+            ModelMetalBackend::from_model_package_path(path.clone())
+                .expect("open authenticated one-sidecar package")
+        };
+        backend
+            .prepare(&plan)
+            .expect("prepare real model for layer trace");
+        let ticket = backend
+            .launch_prefill(&prefill)
+            .expect("trace layer-zero prefill");
+        let output = backend.collect(ticket).expect("collect stopped trace");
+        assert!(output.is_empty(), "stopped trace must not sample logits");
+        assert!(trace_path.exists(), "layer trace was not written");
+        eprintln!(
+            "real donor12b layer-zero trace {label}: {}",
+            trace_path.display()
+        );
+    }
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]

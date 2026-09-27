@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "\
 Usage:
-  rvllm_apple_package build --model-dir DIR --metallib-root DIR --output DIR [--package-id ID] [--weight-format auto|f16|bf16] [--low-bit-down-proj TENSOR=w4a16-group32|w8a16-group32]...
+  rvllm_apple_package build --model-dir DIR --metallib-root DIR --output DIR [--package-id ID] [--weight-format auto|f16|bf16] [--low-bit-proj TENSOR=w4a16-group32|w8a16-group32]...
   rvllm_apple_package validate PACKAGE_DIR
 
 The build command never modifies the Hugging Face source directory and refuses
@@ -45,7 +45,7 @@ fn build(arguments: Vec<String>) -> Result<(), String> {
     let mut output_dir = None;
     let mut package_id = None;
     let mut weight_format = None;
-    let mut low_bit_down_projections = Vec::new();
+    let mut low_bit_projections = Vec::new();
     let mut arguments = arguments.into_iter();
     while let Some(flag) = arguments.next() {
         let value = arguments
@@ -74,8 +74,8 @@ fn build(arguments: Vec<String>) -> Result<(), String> {
                 }
                 weight_format = Some(parsed);
             }
-            "--low-bit-down-proj" => {
-                low_bit_down_projections.push(parse_low_bit_down_projection(&value)?);
+            "--low-bit-proj" | "--low-bit-down-proj" => {
+                low_bit_projections.push(parse_low_bit_projection(&value)?);
             }
             _ => return Err(format!("unknown build option {flag:?}")),
         }
@@ -97,7 +97,7 @@ fn build(arguments: Vec<String>) -> Result<(), String> {
         output_dir,
         package_id,
         weight_format: weight_format.unwrap_or(None),
-        low_bit_down_projections,
+        low_bit_projections,
     })?;
     println!("Apple model package built and validated");
     println!("path: {}", report.output_dir.display());
@@ -113,21 +113,17 @@ fn build(arguments: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_low_bit_down_projection(value: &str) -> Result<AppleLowBitExportRequest, String> {
+fn parse_low_bit_projection(value: &str) -> Result<AppleLowBitExportRequest, String> {
     let (tensor_name, format) = value.split_once('=').ok_or_else(|| {
-        "--low-bit-down-proj requires TENSOR=w4a16-group32 or TENSOR=w8a16-group32".to_owned()
+        "--low-bit-proj requires TENSOR=w4a16-group32 or TENSOR=w8a16-group32".to_owned()
     })?;
     if tensor_name.trim().is_empty() {
-        return Err("--low-bit-down-proj tensor name must not be empty".to_owned());
+        return Err("--low-bit-proj tensor name must not be empty".to_owned());
     }
     let format = match format {
         "w4a16-group32" => AppleLowBitWeightFormat::W4A16,
         "w8a16-group32" => AppleLowBitWeightFormat::W8A16,
-        _ => {
-            return Err(format!(
-                "unsupported low-bit down-projection format {format:?}"
-            ))
-        }
+        _ => return Err(format!("unsupported low-bit projection format {format:?}")),
     };
     Ok(AppleLowBitExportRequest {
         tensor_name: tensor_name.to_owned(),
@@ -198,13 +194,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_explicit_tensor_level_low_bit_down_projection() {
-        let request =
-            parse_low_bit_down_projection("model.layers.0.mlp.down_proj.weight=w4a16-group32")
-                .expect("parse low-bit sidecar request");
+    fn parses_explicit_tensor_level_low_bit_projection() {
+        let request = parse_low_bit_projection("model.layers.0.mlp.down_proj.weight=w4a16-group32")
+            .expect("parse low-bit sidecar request");
         assert_eq!(request.tensor_name, "model.layers.0.mlp.down_proj.weight");
         assert_eq!(request.format, AppleLowBitWeightFormat::W4A16);
-        assert!(parse_low_bit_down_projection("model.layers.0.mlp.down_proj.weight=w4").is_err());
-        assert!(parse_low_bit_down_projection("=w8a16-group32").is_err());
+        assert!(parse_low_bit_projection("model.layers.0.mlp.down_proj.weight=w4").is_err());
+        assert!(parse_low_bit_projection("=w8a16-group32").is_err());
     }
 }

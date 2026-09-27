@@ -1,0 +1,23 @@
+[loader] Gemma 4: 48 layers (40 sliding + 8 full), head_dim=256/512, kv_heads=8/1, rope=10000/Some(1000000.0), partial_rot=Some(0.25), sw=Some(1024), softcap=Some(30.0), act=Some("gelu_pytorch_tanh"), tied=true
+[loader] Gemma 4: 48 layers (40 sliding + 8 full), head_dim=256/512, kv_heads=8/1, rope=10000/Some(1000000.0), partial_rot=Some(0.25), sw=Some(1024), softcap=Some(30.0), act=Some("gelu_pytorch_tanh"), tied=true
+metal debug finite: region=residual token=0 nonfinite=0/3840 max_abs=2.8691406e0
+metal debug finite: region=residual token=1 nonfinite=0/3840 max_abs=2.7167969e0
+metal debug finite: region=residual token=2 nonfinite=0/3840 max_abs=2.8203125e0
+metal debug finite: region=residual token=3 nonfinite=0/3840 max_abs=2.6894531e0
+metal debug finite: region=residual token=4 nonfinite=0/3840 max_abs=2.7558594e0
+metal debug finite: region=residual token=5 nonfinite=0/3840 max_abs=2.7304688e0
+metal debug trace: wrote layer 0 summary to /Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-bf16-one-w8-layer0-trace/source-layer0.json
+metal debug finite: op=launch_prefill stopped after layer=0
+real donor12b layer-zero trace source: /Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-bf16-one-w8-layer0-trace/source-layer0.json
+[loader] Gemma 4: 48 layers (40 sliding + 8 full), head_dim=256/512, kv_heads=8/1, rope=10000/Some(1000000.0), partial_rot=Some(0.25), sw=Some(1024), softcap=Some(30.0), act=Some("gelu_pytorch_tanh"), tied=true
+[loader] Gemma 4: 48 layers (40 sliding + 8 full), head_dim=256/512, kv_heads=8/1, rope=10000/Some(1000000.0), partial_rot=Some(0.25), sw=Some(1024), softcap=Some(30.0), act=Some("gelu_pytorch_tanh"), tied=true
+[loader] Gemma 4: 48 layers (40 sliding + 8 full), head_dim=256/512, kv_heads=8/1, rope=10000/Some(1000000.0), partial_rot=Some(0.25), sw=Some(1024), softcap=Some(30.0), act=Some("gelu_pytorch_tanh"), tied=true
+metal debug finite: region=residual token=0 nonfinite=0/3840 max_abs=2.8691406e0
+metal debug finite: region=residual token=1 nonfinite=0/3840 max_abs=2.7167969e0
+metal debug finite: region=residual token=2 nonfinite=0/3840 max_abs=2.8203125e0
+metal debug finite: region=residual token=3 nonfinite=0/3840 max_abs=2.6894531e0
+metal debug finite: region=residual token=4 nonfinite=0/3840 max_abs=2.7558594e0
+metal debug finite: region=residual token=5 nonfinite=0/3840 max_abs=2.7304688e0
+metal debug trace: wrote layer 0 summary to /Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-bf16-one-w8-layer0-trace/one-w8-package-layer0.json
+metal debug finite: op=launch_prefill stopped after layer=0
+real donor12b layer-zero trace one-w8-package: /Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-bf16-one-w8-layer0-trace/one-w8-package-layer0.json
