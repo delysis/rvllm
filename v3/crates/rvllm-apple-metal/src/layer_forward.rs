@@ -2035,6 +2035,11 @@ pub unsafe fn metal_encode_forward_layer(
             let use_research = research_pso.is_some();
             let use_simd =
                 trace.is_none() && supports_gemma4_prefill_simd_attention(pipelines, dims);
+            let ordinary_name = if use_simd {
+                "attention_prefill_simdgroup_f16"
+            } else {
+                "attention_prefill_f16"
+            };
             let pso = if let Some(pso) = research_pso {
                 encoder.setLabel(Some(&objc2_foundation::NSString::from_str(research_name)));
                 tracing::debug!(
@@ -2045,11 +2050,7 @@ pub unsafe fn metal_encode_forward_layer(
                 );
                 pso
             } else {
-                pipelines.get(if use_simd {
-                    "attention_prefill_simdgroup_f16"
-                } else {
-                    "attention_prefill_f16"
-                })?
+                pipelines.get(ordinary_name)?
             };
             encoder.setComputePipelineState(pso);
             encoder.setBuffer_offset_atIndex(Some(buf), scratch.q_offset, 0);
@@ -2150,6 +2151,10 @@ pub unsafe fn metal_encode_forward_layer(
                 encoder.dispatchThreads_threadsPerThreadgroup(groups, tpg);
             }
             encoder.endEncoding();
+            #[cfg(feature = "metal-route-diagnostics")]
+            if !use_research {
+                pipelines.record_ordinary_prefill_dispatch(ordinary_name);
+            }
             if use_research {
                 use crate::research_evidence::ResearchKernel;
                 pipelines.record_research_dispatch(match (temporal, dims.head_dim) {
@@ -4100,11 +4105,12 @@ unsafe fn encode_qkv_headwise_rmsnorm_rope_cache(
             },
         )
     })?;
-    let pso = pipelines.get(if projected_f32 {
+    let ordinary_name = if projected_f32 {
         "qkv_projected_rmsnorm_rope_cache_f16"
     } else {
         "qkv_headwise_rmsnorm_rope_cache_f16"
-    })?;
+    };
+    let pso = pipelines.get(ordinary_name)?;
     encoder.setComputePipelineState(pso);
     encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
     encoder.setBuffer_offset_atIndex(Some(buf), b_offset, 1);
@@ -4188,6 +4194,8 @@ unsafe fn encode_qkv_headwise_rmsnorm_rope_cache(
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
+    #[cfg(feature = "metal-route-diagnostics")]
+    pipelines.record_ordinary_prefill_dispatch(ordinary_name);
     Ok(())
 }
 
@@ -6604,6 +6612,21 @@ unsafe fn encode_gemm_with_output(
     let use_vec = !use_research && !use_mma && !use_batch8 && supports_vec_gemm(m, n, k);
     let use_tiled =
         !use_research && !use_mma && !use_batch8 && !use_vec && supports_tiled_gemm(m, n, k);
+    let ordinary_name = if use_mma && output_f32 {
+        "qkv_project_f32_mma32"
+    } else if use_mma {
+        "gemm_f16_mma32"
+    } else if output_f32 {
+        "qkv_project_f32_batch8"
+    } else if use_batch8 {
+        "gemm_f16_batch8"
+    } else if use_vec {
+        "gemm_f16_vec8"
+    } else if use_tiled {
+        "gemm_f16_tiled16"
+    } else {
+        "gemm_f16"
+    };
     let pso = if let Some((plan, pso)) = research {
         encoder.setLabel(Some(&objc2_foundation::NSString::from_str(
             plan.kernel.name(),
@@ -6619,21 +6642,7 @@ unsafe fn encode_gemm_with_output(
         );
         pso
     } else {
-        pipelines.get(if use_mma && output_f32 {
-            "qkv_project_f32_mma32"
-        } else if use_mma {
-            "gemm_f16_mma32"
-        } else if output_f32 {
-            "qkv_project_f32_batch8"
-        } else if use_batch8 {
-            "gemm_f16_batch8"
-        } else if use_vec {
-            "gemm_f16_vec8"
-        } else if use_tiled {
-            "gemm_f16_tiled16"
-        } else {
-            "gemm_f16"
-        })?
+        pipelines.get(ordinary_name)?
     };
     encoder.setComputePipelineState(pso);
     encoder.setBuffer_offset_atIndex(Some(buf), a_offset, 0);
@@ -6735,6 +6744,10 @@ unsafe fn encode_gemm_with_output(
     };
     encoder.dispatchThreadgroups_threadsPerThreadgroup(groups, tpg);
     encoder.endEncoding();
+    #[cfg(feature = "metal-route-diagnostics")]
+    if !use_research {
+        pipelines.record_ordinary_prefill_dispatch(ordinary_name);
+    }
     if let Some((plan, _)) = research {
         pipelines.record_research_dispatch(plan.kernel);
     }

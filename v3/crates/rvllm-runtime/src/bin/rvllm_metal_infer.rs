@@ -1282,12 +1282,31 @@ fn research_dispatch_value(
     })
 }
 
+#[cfg(all(feature = "metal-route-diagnostics", target_os = "macos"))]
+fn ordinary_prefill_dispatch_value(
+    snapshot: rvllm_apple_metal::pipeline::OrdinaryPrefillDispatchSnapshot,
+) -> serde_json::Value {
+    let counts = rvllm_apple_metal::pipeline::ORDINARY_PREFILL_KERNEL_NAMES
+        .into_iter()
+        .zip(snapshot.counts)
+        .filter(|(_, count)| *count != 0)
+        .collect::<std::collections::BTreeMap<_, _>>();
+    serde_json::json!({
+        "schema": "rvllm.metal_ordinary_prefill_dispatch.v1",
+        "coverage": "core_gemm_qkv_fused_and_prefill_attention_only",
+        "counts": counts,
+        "overflowed": snapshot.overflowed,
+    })
+}
+
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn prefill_phase_value(
     stats: rvllm_runtime::apple_metal_backend::MetalProbePerfStats,
     research_dispatch: serde_json::Value,
+    #[cfg(feature = "metal-route-diagnostics")] ordinary_dispatch: serde_json::Value,
 ) -> serde_json::Value {
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut value = serde_json::json!({
         "schema": "rvllm.metal_prefill_phase.v1",
         "boundary": "before_prefill_launch_to_after_prefill_collect",
         "research_dispatch": research_dispatch,
@@ -1304,7 +1323,12 @@ fn prefill_phase_value(
         "command_buffer_wait_ns": stats.command_buffer_wait_ns,
         "library_compiles": stats.library_compiles,
         "pipeline_state_compiles": stats.pipeline_state_compiles,
-    })
+    });
+    #[cfg(feature = "metal-route-diagnostics")]
+    {
+        value["ordinary_dispatch"] = ordinary_dispatch;
+    }
+    value
 }
 
 fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
@@ -1634,6 +1658,13 @@ fn run_direct_session(
                 case.spec.name
             )
         })?;
+        #[cfg(feature = "metal-route-diagnostics")]
+        let ordinary_before = backend.probe_ordinary_prefill_dispatches().ok_or_else(|| {
+            format!(
+                "session case {} ordinary prefill counters unavailable",
+                case.spec.name
+            )
+        })?;
         let req_id = ReqId((idx + 1) as u64);
         let prompt_tokens = case
             .prompt_token_ids
@@ -1678,7 +1709,24 @@ fn run_direct_session(
             .checked_since(dispatch_before)
             .map(research_dispatch_value)
             .map_err(|error| format!("session case {} prefill: {error}", case.spec.name))?;
-        let prefill_phase = prefill_phase_value(prefill_stats, prefill_dispatch);
+        #[cfg(feature = "metal-route-diagnostics")]
+        let ordinary_dispatch = backend
+            .probe_ordinary_prefill_dispatches()
+            .ok_or_else(|| {
+                format!(
+                    "session case {} ordinary prefill counters unavailable",
+                    case.spec.name
+                )
+            })?
+            .checked_since(ordinary_before)
+            .map(ordinary_prefill_dispatch_value)
+            .map_err(|error| format!("session case {} prefill: {error}", case.spec.name))?;
+        let prefill_phase = prefill_phase_value(
+            prefill_stats,
+            prefill_dispatch,
+            #[cfg(feature = "metal-route-diagnostics")]
+            ordinary_dispatch,
+        );
 
         let mut current = *prompt_tokens.last().expect("prompt token");
         let mut generated_token_ids = Vec::with_capacity(case.spec.max_new_tokens);
@@ -2600,6 +2648,8 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     );
     let prefill_stats_before = backend.probe_perf_stats();
     let prefill_dispatch_before = backend.probe_research_dispatches();
+    #[cfg(feature = "metal-route-diagnostics")]
+    let ordinary_before = backend.probe_ordinary_prefill_dispatches();
     let prefill_start = std::time::Instant::now();
     let prefill_ticket = backend
         .launch_prefill(&prefill)
@@ -2622,7 +2672,20 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         .map_err(|error| format!("prefill research dispatch: {error}"))?
         .map(research_dispatch_value)
         .unwrap_or(serde_json::Value::Null);
-    let prefill_phase = prefill_phase_value(prefill_stats, prefill_dispatch);
+    #[cfg(feature = "metal-route-diagnostics")]
+    let ordinary_dispatch = ordinary_before
+        .zip(backend.probe_ordinary_prefill_dispatches())
+        .map(|(before, after)| after.checked_since(before))
+        .transpose()
+        .map_err(|error| format!("ordinary prefill dispatch: {error}"))?
+        .map(ordinary_prefill_dispatch_value)
+        .unwrap_or(serde_json::Value::Null);
+    let prefill_phase = prefill_phase_value(
+        prefill_stats,
+        prefill_dispatch,
+        #[cfg(feature = "metal-route-diagnostics")]
+        ordinary_dispatch,
+    );
 
     let mut current = *prompt_tokens.last().expect("prompt token");
     let mut generated_token_ids = Vec::with_capacity(args.max_new_tokens);
@@ -2811,7 +2874,12 @@ mod tests {
             ..Default::default()
         };
         let dispatch = serde_json::json!({"counts": {"research_gemm_mma16x64": 7}});
-        let receipt = prefill_phase_value(stats, dispatch);
+        let receipt = prefill_phase_value(
+            stats,
+            dispatch,
+            #[cfg(feature = "metal-route-diagnostics")]
+            serde_json::json!({"schema": "rvllm.metal_ordinary_prefill_dispatch.v1"}),
+        );
         assert_eq!(
             receipt["boundary"],
             "before_prefill_launch_to_after_prefill_collect"
@@ -2823,6 +2891,11 @@ mod tests {
         assert_eq!(
             receipt["research_dispatch"]["counts"]["research_gemm_mma16x64"],
             7
+        );
+        #[cfg(feature = "metal-route-diagnostics")]
+        assert_eq!(
+            receipt["ordinary_dispatch"]["schema"],
+            "rvllm.metal_ordinary_prefill_dispatch.v1"
         );
     }
 

@@ -1994,6 +1994,18 @@ impl ModelMetalBackend {
             .map(PipelineCache::research_dispatch_snapshot)
     }
 
+    /// Diagnostic-only encoded work in the selected ordinary prefill families.
+    /// Sample outside active encoding and after collect for completed work.
+    #[cfg(feature = "metal-route-diagnostics")]
+    #[must_use]
+    pub fn probe_ordinary_prefill_dispatches(
+        &self,
+    ) -> Option<rvllm_apple_metal::pipeline::OrdinaryPrefillDispatchSnapshot> {
+        self.pipelines
+            .as_ref()
+            .map(PipelineCache::ordinary_prefill_dispatch_snapshot)
+    }
+
     #[must_use]
     pub fn probe_arena_stats(&self) -> Option<MetalProbeArenaStats> {
         self.arena.as_ref().map(|arena| MetalProbeArenaStats {
