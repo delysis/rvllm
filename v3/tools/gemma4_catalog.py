@@ -32,8 +32,13 @@ NAMES=('off','metal-short-mma16x64','metal-rounded-gate32','metal-gqa-kv8',
        'metal-ffn-bf16-r4-sg2','metal-qmv-w4-g32-r8-sg2',
        'metal-qmv-w8-g32-r8-sg2','metal-global-d512-short-r4t128',
        'metal-qmv-w4-g32-r4-sg8-k8','metal-qmv-w8-g32-r4-sg8-k8',
-       'metal-donor12b-sg8','metal-donor12b-sg4')
+       'metal-donor12b-sg8','metal-donor12b-sg4',
+       'metal-prefill-load4-control','metal-prefill-pipeline32x64',
+       'metal-prefill-q4k16','metal-prefill-pipeline32x64-q4k16')
 SUPPORT_SOURCES=(
+    'crates/rvllm-apple-metal/src/research_shaders/prefill_projection_common.metal',
+    'crates/rvllm-apple-metal/src/research_shaders/prefill_postnorm_common.metal',
+    'crates/rvllm-apple-metal/src/research_shaders/prefill_attention_common.metal',
     'crates/rvllm-apple-metal/src/research_shaders/load4_tiled_common.metal',
     'crates/rvllm-apple-metal/src/research_shaders/global_decode_common.metal',
     'crates/rvllm-apple-metal/src/research_shaders/global_decode_split_common.metal',
@@ -43,7 +48,11 @@ SUPPORT_SOURCES=(
     'crates/rvllm-apple-metal/src/research_shaders/decode_round_common.metal',
     'crates/rvllm-apple-metal/src/research_shaders/qmv_g32_r8_sg2_common.metal',
 )
-CONTRACTS={'baseline','storage-boundaries-preserved','fp32-online-softmax',
+CONTRACTS={'native-storage-ascending-k8-mma-materialized-boundaries',
+           'native-storage-register-lookahead-ascending-k8-mma-materialized-boundaries',
+           'bf16-paged-absolute-position-fp32-tile-online-softmax-once-rounded',
+           'native-storage-register-lookahead-mma-and-fp32-paged-tile-softmax',
+           'baseline','storage-boundaries-preserved','fp32-online-softmax',
            'same-contraction-order','reduction-order-change','operand-lowering-change',
            'layout-only-bitwise-fp32-gate',
            'bf16-fp32-fixed64-tree-online-once-rounded',
@@ -73,7 +82,7 @@ def decode(text: str) -> dict:
 def validate(value: dict) -> dict:
     if (type(value) is not dict or set(value)!={'schema','dispatch_schema','default','device_qualified','candidates'}
         or value['schema']!='rvllm.metal.research-catalog.v1'
-        or value['dispatch_schema']!='rvllm.metal.research-dispatch.v5'
+        or value['dispatch_schema']!='rvllm.metal.research-dispatch.v6'
         or value['default']!='off' or value['device_qualified'] is not False):
         raise ValueError('unrecognized catalog contract')
     candidates=value['candidates']
@@ -86,7 +95,7 @@ def validate(value: dict) -> dict:
         if type(row['window_independent']) is not bool or row['numerical_contract'] not in CONTRACTS:
             raise ValueError('unknown numerical/window contract')
         lo,hi=row['min_tokens'],row['max_tokens']
-        if type(lo) is not int or type(hi) is not int or not 0<=lo<=hi<=1024:raise ValueError('invalid token bounds')
+        if type(lo) is not int or type(hi) is not int or not 0<=lo<=hi<=(2048 if expected in NAMES[48:] else 1024):raise ValueError('invalid token bounds')
         ks=row['kernels'];bs=row['budgets']
         if type(ks) is not list or type(bs) is not list or len(ks)!=len(bs) or len(ks)>12:
             raise ValueError('kernel budget count')
@@ -106,7 +115,7 @@ def validate(value: dict) -> dict:
                 or budget['kernel']!=kernel or type(budget['threads']) is not int or budget['threads'] not in (32,64,128,256,512)
                 or type(budget['source_shared_bytes']) is not int or not 0<=budget['source_shared_bytes']<=32768
                 or budget['source_shared_bytes']%4):raise ValueError('invalid source resource budget')
-    if len(all_kernels)!=86:raise ValueError('incomplete append-only entry registry')
+    if len(all_kernels)!=102:raise ValueError('incomplete append-only entry registry')
     return value
 
 def load(path: Path=PATH) -> dict:

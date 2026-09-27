@@ -73,6 +73,7 @@ pub mod gemma4_model;
 pub mod kernels;
 pub mod options;
 pub mod prefill_attention_candidate;
+pub mod prefill_round;
 pub mod research;
 pub mod research_catalog;
 pub mod research_decode;
