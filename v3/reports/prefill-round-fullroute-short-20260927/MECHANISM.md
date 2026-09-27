@@ -17,8 +17,8 @@ normalization calls, and 40 D256 plus eight D512 tiled attention calls per
 case. This rules out a fallback-only explanation for the observed gain. It
 does **not** establish internal tensor/logit agreement or independent quality.
 
-The separate-process repeat profiles, before final control adjudication,
-showed these unselected prefill samples (milliseconds):
+The complete separate-process repeat profiles showed these unselected
+prefill samples (milliseconds):
 
 | Arm | M101: all three samples | M304: all three samples |
 | --- | --- | --- |
@@ -26,13 +26,16 @@ showed these unselected prefill samples (milliseconds):
 | Projection-only | 1781.855, 2496.823, 2264.970 | 1195.633, 1190.606, 1194.070 |
 | Control B | 6042.635, 6317.738, 6103.494 | 12241.509, 12262.068, 12467.582 |
 | Combined | 1851.792, 1874.072, 1694.209 | 640.614, 657.418, 641.769 |
+| Control C | 6208.468, 5997.220, 6061.356 | 12284.107, 12273.125, 12313.707 |
 
-All four completed jobs were queue-eligible in sampled AC/power-mode-2/
-thermal-0 conditions, with no violations. The M101 control-A, projection,
-and combined series fail the 5% within-arm drift rule. These profiles are
-**not interleaved** and cannot be converted into a strict speed verdict by
-selecting their stable M304 rows. The final control and within-job ABBA/BAAB
-remain necessary. Full-case counters also include decode: both arms used 65
+All five jobs were queue-eligible in sampled AC/power-mode-2/thermal-0
+conditions, with no violations. The M101 control-A, projection, and combined
+series fail the 5% within-arm drift rule. The M304 profiles pass that drift
+rule and descriptively favor projection by 10.257× and combined by 19.132×
+against their bracketed controls. These profiles are **not interleaved** and
+cannot be converted into strict speed verdicts by selecting their stable
+M304 rows. Within-job ABBA/BAAB remains necessary. Full-case counters also
+include decode: both arms used 65
 command buffers/case, while the projection route used 144 more encoders than
 control. The gain is therefore not evidenced as fewer command buffers or
 fewer kernel launches. No named normal-route per-kernel GPU-time receipt is

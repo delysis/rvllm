@@ -157,3 +157,32 @@ phase is inferred from first-token throughput and therefore **does not share
 rvLLM's prefill timing boundary**. Any resulting ratio will be labeled
 planning-grade until those boundaries are reconciled. No MLX result was
 present when these jobs were submitted.
+
+## Five-arm repeat-profile adjudication
+
+The final control completed, and the frozen
+`rvllm-prefill-route-profile-summary` accepted **all 30 cases** from
+`off-a → pipeline → off-b → combined → off-c`. Each of the five queue jobs
+succeeded with no violations, eligible sampled conditions in the same AC /
+power-mode-2 / thermal-state-0 stratum, exact shared model/executable/prompt
+pins, exact 64-token outputs, required actual candidate dispatch, and zero
+inference-case compiles. The machine was not held for a stable thermal state.
+Every prefill and decode sample remains in `profile-summary-01.json` and the
+five complete raw queue result directories are in
+`profile-queue-results-01.tar.gz` (25 source files). Their SHA-256 values are
+respectively `5551ea7892ec9ab0fdce467c8382b8238d2d64c44f3c5293e4c342e4787a5fb9`
+and `2f0e8d6f72b46a7924e1fb6813866cd619e69583c6c2f9b7cb477ea470022051`.
+
+| Prompt | Projection-only: bracketed control / candidate median | Combined: bracketed control / candidate median | Five-percent profile drift |
+| --- | ---: | ---: | --- |
+| 101 tokens | 6086.894 / 2264.970 ms; descriptive 2.687× | 6082.425 / 1851.792 ms; descriptive 3.285× | **Fail both**: projection's maximum within-arm drift 40.125%; combined's 8.510% |
+| 304 tokens | 12247.118 / 1194.070 ms; descriptive 10.257× | 12278.616 / 641.769 ms; descriptive 19.132× | Pass both: maximum within-arm drift 1.847% / 2.623%; bracket-control drift 0.133% / 0.180% |
+
+The 101-token failures are preserved and no sample or arm was removed. The
+304-token profile is a strong, condition-observed **prospective** signal, but
+the arms ran in separate processes. Its drift pass is **not** within-job
+ABBA/BAAB speed qualification, independent confirmation, checkpoint-quality
+acceptance, or promotion. The separately queued counterbalanced full-route
+job is now the next speed gate; the exact-token same-checkpoint MLX jobs will
+subsequently show where the new route stands relative to MLX, with their
+different timing boundary explicitly labeled.

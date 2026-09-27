@@ -1,0 +1,338 @@
+{
+  "cases": [
+    {
+      "arms": [
+        {
+          "arm": "off-a",
+          "decode_ms": [
+            13785.88575,
+            13742.028125,
+            13817.794083
+          ],
+          "prefill_median_ms": 6070.294,
+          "prefill_ms": [
+            5885.211541000001,
+            6070.294,
+            6221.67975
+          ],
+          "prefill_within_arm_drift": 0.05717181220351305
+        },
+        {
+          "arm": "pipeline",
+          "decode_ms": [
+            13714.989583,
+            13872.005291,
+            13893.918583
+          ],
+          "prefill_median_ms": 2264.9701250000003,
+          "prefill_ms": [
+            1781.854625,
+            2496.82325,
+            2264.9701250000003
+          ],
+          "prefill_within_arm_drift": 0.4012496951034936
+        },
+        {
+          "arm": "off-b",
+          "decode_ms": [
+            13720.165125,
+            13773.678791,
+            13785.884458
+          ],
+          "prefill_median_ms": 6103.494042,
+          "prefill_ms": [
+            6042.63525,
+            6317.738375,
+            6103.494042
+          ],
+          "prefill_within_arm_drift": 0.04552701157992279
+        },
+        {
+          "arm": "combined",
+          "decode_ms": [
+            13684.924209,
+            13829.820542,
+            13731.316417
+          ],
+          "prefill_median_ms": 1851.791625,
+          "prefill_ms": [
+            1851.791625,
+            1874.07225,
+            1694.209416
+          ],
+          "prefill_within_arm_drift": 0.08509716043240025
+        },
+        {
+          "arm": "off-c",
+          "decode_ms": [
+            13784.137666,
+            13840.513667,
+            13860.102209
+          ],
+          "prefill_median_ms": 6061.355875,
+          "prefill_ms": [
+            6208.467667,
+            5997.220417,
+            6061.355875
+          ],
+          "prefill_within_arm_drift": 0.03402566644952448
+        }
+      ],
+      "combined": {
+        "bracket_control_drift": 0.006903941694713637,
+        "candidate_median_ms": 1851.791625,
+        "conditions_eligible": true,
+        "control_median_ms": 6082.4249585,
+        "descriptive_ratio": 3.2846163015236662,
+        "five_percent_drift_pass": false,
+        "maximum_within_arm_drift": 0.08509716043240025
+      },
+      "generated_ids_sha256": "b495784e459f6298ed8a2f14e054c0f89700c1df57a8039dfafe6ef1cbacb4d0",
+      "generated_tokens": 64,
+      "name": "ledger-reasoning-64",
+      "pipeline": {
+        "bracket_control_drift": 0.005469264256393577,
+        "candidate_median_ms": 2264.9701250000003,
+        "conditions_eligible": true,
+        "control_median_ms": 6086.894021,
+        "descriptive_ratio": 2.6874058751657923,
+        "five_percent_drift_pass": false,
+        "maximum_within_arm_drift": 0.4012496951034936
+      },
+      "prompt_ids_sha256": "422f10a502bd82e2f345fc0172dbd641c3132821751b055cd0a3b74c829e2777",
+      "prompt_tokens": 101
+    },
+    {
+      "arms": [
+        {
+          "arm": "off-a",
+          "decode_ms": [
+            23160.988166,
+            23110.89875,
+            23149.233583
+          ],
+          "prefill_median_ms": 12245.788917,
+          "prefill_ms": [
+            12243.135959,
+            12245.788917,
+            12248.446292
+          ],
+          "prefill_within_arm_drift": 0.00043373960869050126
+        },
+        {
+          "arm": "pipeline",
+          "decode_ms": [
+            23142.906292,
+            23208.3955,
+            23109.598709
+          ],
+          "prefill_median_ms": 1194.069791,
+          "prefill_ms": [
+            1195.633334,
+            1190.606,
+            1194.069791
+          ],
+          "prefill_within_arm_drift": 0.004204745599707502
+        },
+        {
+          "arm": "off-b",
+          "decode_ms": [
+            23062.183584,
+            23273.027209,
+            23201.371084
+          ],
+          "prefill_median_ms": 12262.067625,
+          "prefill_ms": [
+            12241.508916,
+            12262.067625,
+            12467.582167
+          ],
+          "prefill_within_arm_drift": 0.018467760188003918
+        },
+        {
+          "arm": "combined",
+          "decode_ms": [
+            23143.371125,
+            23120.190833999997,
+            23169.089083
+          ],
+          "prefill_median_ms": 641.7694590000001,
+          "prefill_ms": [
+            640.613958,
+            657.417542,
+            641.7694590000001
+          ],
+          "prefill_within_arm_drift": 0.026230436895975345
+        },
+        {
+          "arm": "off-c",
+          "decode_ms": [
+            23184.423042,
+            23137.132417,
+            23184.233208
+          ],
+          "prefill_median_ms": 12284.106584,
+          "prefill_ms": [
+            12284.106584,
+            12273.124625,
+            12313.707333
+          ],
+          "prefill_within_arm_drift": 0.002409678619897026
+        }
+      ],
+      "combined": {
+        "bracket_control_drift": 0.0017973281239345247,
+        "candidate_median_ms": 641.7694590000001,
+        "conditions_eligible": true,
+        "control_median_ms": 12278.615604499999,
+        "descriptive_ratio": 19.13243990082114,
+        "five_percent_drift_pass": true,
+        "maximum_within_arm_drift": 0.026230436895975345
+      },
+      "generated_ids_sha256": "3f1f7e952505db7d4148fdcfa9851ba2d2603ef65600458223e31c605e8ab7e2",
+      "generated_tokens": 64,
+      "name": "observatory-context-64",
+      "pipeline": {
+        "bracket_control_drift": 0.0013293310958023452,
+        "candidate_median_ms": 1194.069791,
+        "conditions_eligible": true,
+        "control_median_ms": 12247.1176045,
+        "descriptive_ratio": 10.256617910284275,
+        "five_percent_drift_pass": true,
+        "maximum_within_arm_drift": 0.018467760188003918
+      },
+      "prompt_ids_sha256": "c1933b224ba791a860dd98c6290d1ce0db193029ddc055b10a5b5527d96cc360",
+      "prompt_tokens": 304
+    }
+  ],
+  "claim": "diagnostic independent-process profile only; not ABBA/BAAB or promotion",
+  "common_input_pins": [
+    [
+      "config.json",
+      "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    ],
+    [
+      "model.safetensors",
+      "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    ],
+    [
+      "tokenizer.json",
+      "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    ],
+    [
+      "varied-prompts.jsonl",
+      "cba2a6830503e5e95e37f1c677197dd3d93a26e0dcf33c501be973ec0cedc483"
+    ]
+  ],
+  "executable_sha256": "7b6487471816cfe71999bf9d54631589105dcf88cb4f569e924c28c048cc1e20",
+  "observed_conditions": [
+    {
+      "arm": "off-a",
+      "sampled_conditions_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": false,
+        "pmset_power_mode": 2,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      }
+    },
+    {
+      "arm": "pipeline",
+      "sampled_conditions_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": false,
+        "pmset_power_mode": 2,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      }
+    },
+    {
+      "arm": "off-b",
+      "sampled_conditions_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": false,
+        "pmset_power_mode": 2,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      }
+    },
+    {
+      "arm": "combined",
+      "sampled_conditions_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": false,
+        "pmset_power_mode": 2,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      }
+    },
+    {
+      "arm": "off-c",
+      "sampled_conditions_eligible": true,
+      "stratum": {
+        "available_cpus": null,
+        "cpu_speed_limit_percent": null,
+        "low_power_mode": false,
+        "pmset_power_mode": 2,
+        "power_source": "ac",
+        "scheduler_limit_percent": null,
+        "thermal_state": 0
+      }
+    }
+  ],
+  "receipts": [
+    {
+      "arm": "off-a",
+      "sha256": {
+        "job": "a90bd910d744dfca16fd1303518035cea47f91e64a4e35bfd9685b520e8164ed",
+        "profile_stdout": "aecea24108e0b52ea57e42583f43f0c4704553f57ac36ff22226a234778a2ea3",
+        "queue_report": "b76d1eb0af4b09ca9b64764efa47e6d54306728f6022b55daede2f289aa6c1b8"
+      }
+    },
+    {
+      "arm": "pipeline",
+      "sha256": {
+        "job": "58bf66585a2a62d5e1d96f5ee381566649d0677b280f6482ee71833dcc6c0e55",
+        "profile_stdout": "b878055ce670388feea27fb3daae930009f7bd3c38199e1685ccd0177ad8effa",
+        "queue_report": "97781ffc8cc1d415bf1dd1d57540092e5796eee34be808ffd7c1c0459cb993b7"
+      }
+    },
+    {
+      "arm": "off-b",
+      "sha256": {
+        "job": "297d8dbb16d368400966a8c233332a5df91f8da26af793d5f69489c24e0e5330",
+        "profile_stdout": "76edbcc2b836bac33e840075d0fb49482c1a6eb896d7961f4c98d5ce7dced6e2",
+        "queue_report": "c7c2d90a3cfe730333a07e5d9ac95177d0016cfde02efaae451f06a563b48569"
+      }
+    },
+    {
+      "arm": "combined",
+      "sha256": {
+        "job": "f14d0fd269db0ee3d4a24bd76b606b00628fb1f98d0e29de1ec8d52b0109b92e",
+        "profile_stdout": "176b99f97baaeb5361a44489b9960e72e386d4104df5114c42c1e39de136cc4f",
+        "queue_report": "bda990b21b2cdbb0e8423ca0bcee31b0f5d8b59e434b6dd770c3a51607a5a525"
+      }
+    },
+    {
+      "arm": "off-c",
+      "sha256": {
+        "job": "90ba2095fc3a91965aa4cd1ed80cbbc1a8af933f640cf98561e9429ac6aac1ab",
+        "profile_stdout": "fa8028d7798ef57e74f9cd724125c76699ad8ef043c13702c94b35aa4f8de01d",
+        "queue_report": "bd573516fa03dbff5eafc1295003f192b9833ef947eec1579e9abd66fc7acddb"
+      }
+    }
+  ],
+  "schema": "rvllm.prefill_route_profile_summary.v1"
+}
