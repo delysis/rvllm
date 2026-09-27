@@ -692,3 +692,43 @@ boundaries are not proved identical. This is one position, not held-out or
 checkpoint-wide quality, and none of these readback jobs supplies speed
 evidence. Next localize the internal difference and evaluate predeclared
 held-out targets before any promotion.
+
+## Prefill-final versus decode-replay boundary probe: queued
+
+The existing single-prompt Metal route prefills all prompt tokens, then
+reprocesses the final prompt token at position `M-1` in its first decode step.
+The CPU reference reads logits at the final row of a full-prompt forward. The
+two are intended to predict the same next token, but the Metal decode replay
+could itself contribute to the observed distribution gap. Source audit alone
+does not establish that it does.
+
+A new default-off `metal-quality-research` flag,
+`--teacher-prefill-last-logits`, scores the last residual row **immediately
+after the ordinary full prefill**, before that decode replay. It uses the
+existing backend logits-finalization readback for all `M` rows and selects
+only row `M-1`; no kernel selection or production default is changed. The
+probe writes logits/sampling scratch and inserts a blocking full-prompt LM
+head pass, so its later decode output must be checked for probe side effects,
+and **no timing field is speed evidence**. The Rust CLI forbids unsafe code.
+Its feature-enabled host tests passed 16/16 (six device tests ignored),
+default host tests passed 11/11, and the Apple-feature release executable
+built. Frozen source SHA-256 is
+`abc49131e49e2dff5f1e6aa6c83e4542d375dd79f906cf2bc57eecaf0cf9309d`;
+the separate executable is
+`a228847fe667e5aad50de1b8c36b96744cb4636809ac687fa2fc9fe055f6b705`.
+The previous teacher executable is not overwritten.
+
+Two immutable, serial correctness jobs were submitted on the exact M304
+prompt and original 12B-it checkpoint: control
+`prefill26-boundary-m304-off-20260927`, then dependent combined candidate
+`prefill26-boundary-m304-combined-20260927`. Their pinned manifests are
+`boundary-m304-off-job.json` (SHA-256
+`f31206fce73fdd169a788d8c40e500cc82dd4fec128836eb406d364d786457b3`)
+and `boundary-m304-combined-job.json` (SHA-256
+`832fe84814b8bcbe5ab18dd253f41051dafa17d20ca138110b61360d5a3cf679`).
+Both request one target token 107, recording prefill-last and post-decode
+target logits/NLL on the same route. The manifests also pin the CPU full
+logits, source, metallib and model bytes. There is **no device result yet**;
+neither job should be replayed. On completion, inspect terminal queue
+receipts, actual dispatch, token IDs and both distributions before deciding
+whether the decode replay explains any of the CPU gap.

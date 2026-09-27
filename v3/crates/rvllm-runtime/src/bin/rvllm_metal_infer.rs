@@ -45,6 +45,8 @@ struct CliArgs {
     top_logits: usize,
     #[cfg(feature = "metal-quality-research")]
     teacher_token_ids: Option<Vec<u32>>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_prefill_last_logits: bool,
     json_output: bool,
 }
 
@@ -133,6 +135,8 @@ struct TeacherStep {
 struct TeacherReport {
     schema: &'static str,
     claim: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefill_last_step: Option<TeacherStep>,
     steps: Vec<TeacherStep>,
     total_negative_log_likelihood: f64,
     mean_negative_log_likelihood: f64,
@@ -236,6 +240,8 @@ where
     let mut top_logits = 0usize;
     #[cfg(feature = "metal-quality-research")]
     let mut teacher_token_ids = None;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_prefill_last_logits = false;
     let mut json_output = false;
 
     let mut iter = args.into_iter().map(Into::into).peekable();
@@ -376,6 +382,15 @@ where
                 }
                 teacher_token_ids = Some(parse_token_ids("--teacher-token-ids", &value)?);
             }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-prefill-last-logits" => {
+                if teacher_prefill_last_logits {
+                    return Err(
+                        "--teacher-prefill-last-logits may be specified only once".to_owned()
+                    );
+                }
+                teacher_prefill_last_logits = true;
+            }
             "--json" => {
                 json_output = true;
             }
@@ -427,6 +442,10 @@ where
             return Err("--teacher-token-ids requires one JSON prompt, exactly --max-new-tokens targets, and no HF reference, EOS list or top-logit probe".to_owned());
         }
     }
+    #[cfg(feature = "metal-quality-research")]
+    if teacher_prefill_last_logits && teacher_token_ids.is_none() {
+        return Err("--teacher-prefill-last-logits requires --teacher-token-ids".to_owned());
+    }
 
     Ok(CliArgs {
         model_dir: model_dir.ok_or_else(|| "--model-dir is required".to_owned())?,
@@ -447,6 +466,8 @@ where
         top_logits,
         #[cfg(feature = "metal-quality-research")]
         teacher_token_ids,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_prefill_last_logits,
         json_output,
     })
 }
@@ -460,7 +481,7 @@ fn usage() -> String {
      [--profile-report <JSON>] [--top-logits N] [--json]"
         .to_owned();
     #[cfg(feature = "metal-quality-research")]
-    usage.push_str("\nresearch-only: --teacher-prompt-jsonl PATH --teacher-token-ids ID,ID,... --json (single prompt; never timing evidence)");
+    usage.push_str("\nresearch-only: --teacher-prompt-jsonl PATH --teacher-token-ids ID,ID,... [--teacher-prefill-last-logits] --json (single prompt; never timing evidence)");
     usage
 }
 
@@ -2726,6 +2747,24 @@ fn score_teacher_step(
     })
 }
 
+#[cfg(feature = "metal-quality-research")]
+fn score_prefill_last_logits(
+    logits: &[f32],
+    prompt_len: usize,
+    target_token_id: u32,
+) -> Result<TeacherStep, String> {
+    if prompt_len == 0 || logits.is_empty() || logits.len() % prompt_len != 0 {
+        return Err("final prefill logits have an invalid token stride".to_owned());
+    }
+    let vocab_size = logits.len() / prompt_len;
+    let final_logits = &logits[(prompt_len - 1) * vocab_size..];
+    let sampled_token_id = select_top_logits(final_logits, 1)
+        .first()
+        .ok_or("final prefill logits have no finite token")?
+        .token_id;
+    score_teacher_step(final_logits, target_token_id, sampled_token_id)
+}
+
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     use rvllm_apple::{AppleBackend, HandoffCapsule, HandoffKind};
@@ -2861,6 +2900,23 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         ordinary_dispatch,
     );
 
+    // Research-only: score the final prompt position before the usual decode
+    // replay of its token. This adds a full-prompt logits pass and a blocking
+    // readback, so neither this run nor its continuation can be timed.
+    #[cfg(feature = "metal-quality-research")]
+    let prefill_last_step = if args.teacher_prefill_last_logits {
+        let logits = backend
+            .probe_read_decode_logits_f32(prompt_len)
+            .map_err(|err| format!("read final prefill logits: {err}"))?;
+        let target = args
+            .teacher_token_ids
+            .as_ref()
+            .expect("prefill probe requires teacher target IDs")[0];
+        Some(score_prefill_last_logits(&logits, prompt_len, target)?)
+    } else {
+        None
+    };
+
     let mut current = *prompt_tokens.last().expect("prompt token");
     let mut generated_token_ids = Vec::with_capacity(args.max_new_tokens);
     #[cfg(feature = "metal-quality-research")]
@@ -2946,6 +3002,7 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         Ok(TeacherReport {
             schema: "rvllm.metal_teacher_forced_quality.v1",
             claim: "research-only teacher-forced decode loss after normal-route prefill; readback adds synchronization and is never timing or independent numerical-reference evidence",
+            prefill_last_step,
             steps: teacher_steps,
             total_negative_log_likelihood,
             mean_negative_log_likelihood,
@@ -3141,6 +3198,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
             json_output: true,
         }
     }
@@ -3606,6 +3665,7 @@ mod tests {
             report.teacher_forced = Some(TeacherReport {
                 schema: "rvllm.metal_teacher_forced_quality.v1",
                 claim: "test research diagnostic",
+                prefill_last_step: None,
                 steps: vec![score_teacher_step(&[0.0, 1.0], 1, 1).unwrap()],
                 total_negative_log_likelihood: 0.313_261_687_518_222_8,
                 mean_negative_log_likelihood: 0.313_261_687_518_222_8,
@@ -3741,6 +3801,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
             json_output: true,
         };
         let report = run_infer(&args).expect("run E2B Metal text inference");
@@ -3788,6 +3850,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
             json_output: true,
         };
         let report = run_infer(&args).expect("run configured-context E2B Metal text inference");
@@ -3870,6 +3934,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
             json_output: true,
         };
         let reference = parse_hf_reference(reference_path).expect("parse HF text reference");
@@ -3951,6 +4017,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
             json_output: true,
         };
         let prompt_token_ids =
@@ -4054,6 +4122,19 @@ mod tests {
 
     #[cfg(feature = "metal-quality-research")]
     #[test]
+    fn prefill_last_score_selects_only_the_final_prompt_row() {
+        let step = score_prefill_last_logits(&[9.0, 0.0, 0.0, 0.0, 1.0, 2.0], 2, 1)
+            .expect("score final row");
+        assert_eq!(step.target_token_id, 1);
+        assert_eq!(step.sampled_token_id, 2);
+        assert_eq!(step.target_rank, 2);
+        assert!(score_prefill_last_logits(&[1.0, 2.0], 0, 1).is_err());
+        assert!(score_prefill_last_logits(&[1.0, 2.0, 3.0], 2, 1).is_err());
+        assert!(score_prefill_last_logits(&[f32::NAN, f32::NAN], 1, 1).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
     fn teacher_mode_requires_single_json_prompt_and_exact_targets() {
         let base = [
             "--model-dir",
@@ -4105,6 +4186,25 @@ mod tests {
             "--json",
         ];
         assert!(parse_args_from(empty_id).is_err());
+
+        let mut with_prefill = base.to_vec();
+        with_prefill.push("--teacher-prefill-last-logits");
+        assert!(
+            parse_args_from(with_prefill.clone())
+                .unwrap()
+                .teacher_prefill_last_logits
+        );
+        with_prefill.push("--teacher-prefill-last-logits");
+        assert!(parse_args_from(with_prefill).is_err());
+        let no_teacher = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--teacher-prefill-last-logits",
+            "--json",
+        ];
+        assert!(parse_args_from(no_teacher).is_err());
     }
 
     #[cfg(feature = "metal-quality-research")]
