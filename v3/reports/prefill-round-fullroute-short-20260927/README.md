@@ -1,5 +1,8 @@
 # Q4K16 short real-weight route triage (2026-09-27)
 
+See `MECHANISM.md` for a source-and-dispatch account of the prospective
+prefill gain and the compiler/timing claims it does **not** establish.
+
 This is a default-off BF16 Gemma 4 12B-it *route and correctness screen*, not
 a speed qualification or a production selection. The serial experiment queue
 ran both arms against the original `google/gemma-4-12B-it` safetensor, with the
