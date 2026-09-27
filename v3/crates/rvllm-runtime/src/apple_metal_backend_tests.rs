@@ -694,6 +694,34 @@ fn metal_numeric_abi_fingerprint_separates_dtype_and_kv_format() {
     assert_ne!(packaged_a, replace_native);
 }
 
+#[cfg(all(
+    feature = "apple",
+    feature = "donor-route-attribution",
+    target_os = "macos"
+))]
+#[test]
+fn donor_component_mask_changes_numeric_abi_identity() {
+    use rvllm_apple_metal::options::DonorRouteMask;
+
+    let fingerprint = |mask| {
+        metal_numeric_abi_fingerprint_impl(
+            MetalFloatType::Bf16,
+            false,
+            false,
+            None,
+            None,
+            MetalLowBitResidencyPolicy::HybridFallback,
+            rvllm_apple_metal::MetalKernelOptions {
+                donor_route_mask: mask,
+                ..rvllm_apple_metal::MetalKernelOptions::default()
+            },
+        )
+    };
+    let all: DonorRouteMask = "all".parse().unwrap();
+    let none: DonorRouteMask = "none".parse().unwrap();
+    assert_ne!(fingerprint(all), fingerprint(none));
+}
+
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn runtime_low_bit_replacement(
     tensor_name: impl Into<String>,

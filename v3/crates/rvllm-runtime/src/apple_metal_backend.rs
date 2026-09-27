@@ -363,6 +363,11 @@ fn metal_numeric_abi_fingerprint_impl(
     hasher.update(b"projection.lm-head=apple9-batch8-argmax-weight-reuse-v1\0");
     hasher.update(b"projection.gemma4-12b-bf16-mma32=");
     hasher.update([u8::from(kernel_options.prefill_mma32)]);
+    #[cfg(feature = "donor-route-attribution")]
+    {
+        hasher.update(b"donor12b.diagnostic-component-mask=");
+        hasher.update([kernel_options.donor_route_mask.bits()]);
+    }
     hasher.update(b"kv.page-tokens=");
     hasher.update((APPLE_KV_PAGE_TOKENS as u32).to_le_bytes());
     hasher.update(b"\0bf16.accumulation=");

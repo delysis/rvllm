@@ -45,6 +45,18 @@ cause of the BF16 full-route improvement.
 | Decode attention | One threadgroup per head; local uses 16 SIMD groups and global 8, with strided independent online-softmax scans and one within-group sufficient-statistics merge. | More parallelism across a growing KV context, without an extra merge launch. Needs complete-attention A/B timing and per-context correctness, especially newest K/V. |
 | Low-bit M8 batch | Weights are dequantized once for eight tokens, two rows per SIMD group. | Amortizes weight work at small prompt microbatches; no evidence of benefit for a 512-token prefill. |
 
+One source-level contrast is now unusually clear. The incumbent
+`supports_attention_decode_online` requires `head_dim <= 256`; Gemma 4 12B's
+global layers have D512, so selector-off reaches `attention_decode_f16` with
+**one thread per head** (`tpg.width = 1`). That shader serially loops over
+visible KV tokens and all 512 head elements for its dot and output update.
+The donor global attention uses eight SIMD groups (256 threads) per head and
+strides the token scan across them before a within-threadgroup merge. This
+is a concrete architecture-level reason for expecting a large, context-growing
+global-attention advantage. The current full-route component screen below
+tests whether that mechanism actually dominates; source inspection alone
+still cannot assign an exact number of milliseconds to it.
+
 Sources: `v3/crates/rvllm-apple-metal/src/research_shaders/donor12b_common.metal`,
 `donor12b_sg8.metal`, `donor12b.rs`, `donor12b_metal.rs`,
 `layer_forward.rs`, and the incumbent N4 kernels in `kernels.rs`.
