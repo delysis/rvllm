@@ -38,6 +38,23 @@ capture, complete consumed-state inspection/teacher-forced logits, and a
 same-input independent reference are required before interpreting quality or
 changing the production selector.
 
+The source gives a bounded list of **candidate arithmetic sites**, not an
+attribution. The selector-off D512 fallback in `kernels.rs` accumulates each
+512-element Q·K dot in one thread in dimension order, scans visible KV tokens
+serially with online softmax and `exp`, then stores the weighted sum using a
+reciprocal multiply. `donor12b_common.metal` partitions each Q·K across a
+32-lane SIMD group with `simd_sum`; eight groups scan strided KV positions,
+each maintaining online statistics with `precise::exp`, then merge those
+statistics in group order and store `value / z`. BF16 compilation changes the
+incumbent storage type and final store, but does not make these FP32 reduction
+orders identical. Any one or several of dot order, KV scan/merge order,
+exponential implementation, and final divide-versus-reciprocal rounding could
+produce a one-ULP BF16 difference. The retained trace lacks full Q and active
+K/V values, so it cannot test these candidates against an independent
+same-input reference. Do not alter donor arithmetic based on this source list
+or treat bitwise equality of the stored layer-5 residual as proof that the
+subsequent layer-6 state is equal.
+
 Jobs: `g4-donor-route-trace-12b-bf16-on-03` and
 `g4-donor-route-trace-12b-bf16-off-03`. The trace executable SHA-256 is
 `eec866e924c5e3f053b2b6374e67f9156c0ac187a3697b68d4f6153ad4e8f12b`;
