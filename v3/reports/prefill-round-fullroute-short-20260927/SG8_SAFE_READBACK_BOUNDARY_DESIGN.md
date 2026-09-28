@@ -32,6 +32,8 @@ The desired caller-facing API is a default-off, feature-gated `CapturePlan` plus
 
 This is an *interface design*, not an implementation claim. Encoding a Metal blit and turning `MTLBuffer::contents()` into owned bytes currently require unsafe FFI in this repository. Under the safe-Rust-only rule, do not add those calls to the referee or hide them in a nominally safe wrapper. The concrete transport is blocked until an existing reviewed safe platform abstraction can supply a completed, owned byte snapshot with documented lifetimes and bounds. If no such abstraction exists, stop and request an explicit decision about a separately audited platform-boundary exception; do not silently relax the rule. The existing safe KV page API remains usable within its idle-state contract meanwhile.
 
+The pinned `objc2-metal` 0.3.2 binding confirms this boundary: `MTLBuffer::contents()` yields a raw `NonNull<c_void>`, not an owned byte slice, and `MTLBlitCommandEncoder::copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size` is explicitly `unsafe` with caller obligations for synchronization, lifetimes and bounds. Neither method is a safe snapshot primitive. No current-tree `MetalBufferArena` method discharges those obligations for transient Q.
+
 ## Fail-closed referee contract
 
 The pure Rust verifier can be built and host-tested independently of transport, with `#![forbid(unsafe_code)]`:
