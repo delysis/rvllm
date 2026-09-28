@@ -19,6 +19,14 @@ BF16 SG8 donor and frozen executable. The generator's focused tests and
 Apple build passed; the separate referee's four focused tests and build
 passed, including all 32 authoritative manifest hashes.
 
+The prior W4 and BF16 teacher *process* measurements are not end-to-end
+queue durations: complete earlier pairs took roughly 25–27 minutes after
+package/checkpoint pin verification. This was recognized after submission;
+the eight immutable manifests were not changed. The queue starts a job's
+condition-wait clock only when its dependencies are ready. Preserve and
+review the first wave before deciding whether to submit a smaller fraction
+of each later four-pair wave at a time.
+
 No trial receipt or numerical result existed at submission. Do not resubmit
 these IDs, overwrite their outputs, score a partial set, or submit the next
 wave until all eight are terminal and their conditions and failures are

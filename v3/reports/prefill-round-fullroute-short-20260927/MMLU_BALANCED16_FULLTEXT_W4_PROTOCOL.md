@@ -59,11 +59,16 @@ teacher CLI requires **one JSON prompt and one target list per process**;
 it cannot score four cases in one job. Without a separately implemented and
 tested safe-Rust multi-case teacher route, this trial requires 32 fresh
 jobs, paired BF16 donor then W4 for each of the 16 cases, never simultaneous
-accelerator work. Two prior clean W4 teacher jobs took 408–457 seconds each,
-and their BF16 controls 33–36 seconds each. A simple 16-pair extrapolation
-is roughly 118–132 minutes before queue gaps or variable-length effects,
-not a guaranteed duration. Because the existing job template's maximum
-wait is 7200 seconds, do **not** submit a single dependent 32-job chain.
+accelerator work. Two prior clean W4 teacher *process measurements* took
+408–457 seconds each, and their BF16 controls 33–36 seconds each. Those
+figures exclude the queue's input/output hash verification. The prior two
+complete pairs took about 27 and 25 minutes respectively from submission
+to terminal receipt, so a naive 16-pair end-to-end extrapolation is closer
+to seven hours before variable case length and queue gaps; it is not an ETA.
+The queue source starts each job's 7200-second condition-wait clock only
+after its dependencies become ready. Staging waves is therefore for
+bounded evidence review and resource control, **not** a workaround for a
+32-job dependency chain expiring while its predecessors run.
 The manifests define fixed waves of four case-pairs, beginning at q00, q04,
 q08 and q12, with no dependency between waves. Submit each wave only after
 the previous wave is terminal; no completed ID is replayed. If the new
