@@ -1,10 +1,14 @@
 # Prospective full-text-projection W4 continuation diagnostic
 
-This protocol is sealed while the one-package W4 preparation job
-`prefill26-lowbit-fulltext-w4-package-build-v1-20260927` is running. No
-inference job has been submitted. Package success and identity must be
-verified before creating any immutable inference manifest. Do not use this
-protocol to replay a prior job or to reinterpret the one-layer W4 trial.
+This protocol was sealed before the one-package W4 preparation job
+`prefill26-lowbit-fulltext-w4-package-build-v1-20260927` completed. That job
+subsequently succeeded with clean queue conditions; the authenticated package
+manifest SHA-256 is
+`abcd5b043322efe1756b6ac81e805f0aee9da5b04c9e10a77ae391532f026ce3`.
+The builder's separate read-only validation also succeeded, but is not an
+independent validator implementation. No inference job has yet been submitted.
+Do not use this protocol to replay a prior job or reinterpret the one-layer
+W4 trial.
 
 The two source cases in `lowbit-fulltext-w4-quality-source-v1.json` are
 **Codex-authored synthetic diagnostics**, not a human-authored or independent
@@ -56,3 +60,19 @@ projection W4 leaves embeddings and multimodal tensors BF16, two synthetic
 cases are not a checkpoint-wide corpus, and the BF16 donor is not an
 independent numerical oracle. Token agreement or lower NLL alone does not
 qualify quality, speed or promotion.
+
+The separate safe-Rust generator source SHA-256 is
+`2bb3ef19e24e129103fd70fdcf26560bfebc18e39dd0eb851f74dc1fadc24a74`.
+It authenticated the exact package and sealed four fresh dependent jobs and
+two prompt JSONLs in `lowbit-fulltext-w4-quality-v1-queue/`. The immutable
+manifest SHA-256s in order estuary-native, estuary-W4, textile-native,
+textile-W4 are `ecee5e07697c9797c55510f8aec3084538a2c55ddd707a2c2ffd4d18e21e3f66`,
+`048907938601caa94b0655fe6d2833be0ad45b074bd0656ecdc6b4415e5a0e61`,
+`3aaa30f95d374ca1cce6e0c8af340bea687097a1859b6a1f247ae139db354643`,
+and `4a7d23367f99addcd342cf8dd81cc6a48a27efefd48320d28fbb0625cd4ce0f4`.
+W4 manifests pin all 675 package files, including 656 low-bit sidecar files,
+plus source and experiment inputs. The frozen referee source SHA-256 is
+`b2ff574ef41b6959057605bf9f488bd1c2b12b05584e0f873a7d3aae9fefb738`;
+its five focused tests include all four tracked manifest hashes and negative
+dispatch, score, and seal cases. Generation and tests are host-side only;
+submission and all numerical observations remain pending.
