@@ -6,9 +6,9 @@ subsequently succeeded with clean queue conditions; the authenticated package
 manifest SHA-256 is
 `abcd5b043322efe1756b6ac81e805f0aee9da5b04c9e10a77ae391532f026ce3`.
 The builder's separate read-only validation also succeeded, but is not an
-independent validator implementation. No inference job has yet been submitted.
-Do not use this protocol to replay a prior job or reinterpret the one-layer
-W4 trial.
+independent validator implementation. At protocol sealing no inference job
+had been submitted. Do not use this protocol to replay a prior job or
+reinterpret the one-layer W4 trial.
 
 The two source cases in `lowbit-fulltext-w4-quality-source-v1.json` are
 **Codex-authored synthetic diagnostics**, not a human-authored or independent
@@ -75,4 +75,7 @@ plus source and experiment inputs. The frozen referee source SHA-256 is
 `b2ff574ef41b6959057605bf9f488bd1c2b12b05584e0f873a7d3aae9fefb738`;
 its five focused tests include all four tracked manifest hashes and negative
 dispatch, score, and seal cases. Generation and tests are host-side only;
-submission and all numerical observations remain pending.
+the numerical observations remain pending. At approximately 2026-09-28
+01:29 UTC, the four exact manifests were accepted **once** through the
+existing serial queue in their declared dependency order. Do not resubmit
+them. A queued or running state is not a correctness or quality result.
