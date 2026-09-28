@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
-pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v6";
-pub const RESEARCH_KERNEL_COUNT: usize = 102;
+pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v7";
+pub const RESEARCH_KERNEL_COUNT: usize = 118;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -111,6 +111,22 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_prefill_pipeline_raw_norm",
     "research_prefill_combined_raw_norm_projection",
     "research_prefill_combined_raw_norm",
+    "research_prefill27_wide64_gemm",
+    "research_prefill27_wide64_qkv",
+    "research_prefill27_wide64_raw",
+    "research_prefill27_wide64_norm",
+    "research_prefill27_wide128_gemm",
+    "research_prefill27_wide128_qkv",
+    "research_prefill27_wide128_raw",
+    "research_prefill27_wide128_norm",
+    "research_prefill27_mma8k32_d256",
+    "research_prefill27_mma8k32_d512",
+    "research_prefill27_wide64_mma8k32_gemm",
+    "research_prefill27_wide64_mma8k32_qkv",
+    "research_prefill27_wide64_mma8k32_raw",
+    "research_prefill27_wide64_mma8k32_norm",
+    "research_prefill27_wide64_mma8k32_d256",
+    "research_prefill27_wide64_mma8k32_d512",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -218,6 +234,22 @@ pub enum ResearchKernel {
     PrefillPipelineNorm = 99,
     PrefillCombinedRaw = 100,
     PrefillCombinedNorm = 101,
+    Wide64Gemm = 102,
+    Wide64Qkv = 103,
+    Wide64Raw = 104,
+    Wide64Norm = 105,
+    Wide128Gemm = 106,
+    Wide128Qkv = 107,
+    Wide128Raw = 108,
+    Wide128Norm = 109,
+    Mma8K32D256 = 110,
+    Mma8K32D512 = 111,
+    Wide64Mma8K32Gemm = 112,
+    Wide64Mma8K32Qkv = 113,
+    Wide64Mma8K32Raw = 114,
+    Wide64Mma8K32Norm = 115,
+    Wide64Mma8K32D256 = 116,
+    Wide64Mma8K32D512 = 117,
 }
 
 impl ResearchKernel {
@@ -235,6 +267,22 @@ impl ResearchKernel {
     /// Source budgets, checked in addition to queried PSO/device limits.
     pub const fn limits(self) -> (usize, usize) {
         match self {
+            Self::Wide64Gemm => (128, 10240),
+            Self::Wide64Qkv => (128, 10240),
+            Self::Wide64Raw => (128, 10240),
+            Self::Wide64Norm => (256, 1024),
+            Self::Wide128Gemm => (128, 12800),
+            Self::Wide128Qkv => (128, 12800),
+            Self::Wide128Raw => (128, 12800),
+            Self::Wide128Norm => (256, 1024),
+            Self::Mma8K32D256 => (128, 5392),
+            Self::Mma8K32D512 => (128, 9488),
+            Self::Wide64Mma8K32Gemm => (128, 10240),
+            Self::Wide64Mma8K32Qkv => (128, 10240),
+            Self::Wide64Mma8K32Raw => (128, 10240),
+            Self::Wide64Mma8K32Norm => (256, 1024),
+            Self::Wide64Mma8K32D256 => (128, 5392),
+            Self::Wide64Mma8K32D512 => (128, 9488),
             Self::PrefillControlRaw => (128, 8192),
             Self::PrefillControlNorm => (256, 1024),
             Self::PrefillPipelineRaw => (128, 8192),
@@ -337,6 +385,22 @@ impl ResearchKernel {
     pub const fn owner(self) -> crate::research::MetalResearchCandidate {
         use crate::research::MetalResearchCandidate;
         match self {
+            Self::Wide64Gemm => MetalResearchCandidate::PrefillWide64,
+            Self::Wide64Qkv => MetalResearchCandidate::PrefillWide64,
+            Self::Wide64Raw => MetalResearchCandidate::PrefillWide64,
+            Self::Wide64Norm => MetalResearchCandidate::PrefillWide64,
+            Self::Wide128Gemm => MetalResearchCandidate::PrefillWide128,
+            Self::Wide128Qkv => MetalResearchCandidate::PrefillWide128,
+            Self::Wide128Raw => MetalResearchCandidate::PrefillWide128,
+            Self::Wide128Norm => MetalResearchCandidate::PrefillWide128,
+            Self::Mma8K32D256 => MetalResearchCandidate::PrefillMma8K32,
+            Self::Mma8K32D512 => MetalResearchCandidate::PrefillMma8K32,
+            Self::Wide64Mma8K32Gemm => MetalResearchCandidate::PrefillWide64Mma8K32,
+            Self::Wide64Mma8K32Qkv => MetalResearchCandidate::PrefillWide64Mma8K32,
+            Self::Wide64Mma8K32Raw => MetalResearchCandidate::PrefillWide64Mma8K32,
+            Self::Wide64Mma8K32Norm => MetalResearchCandidate::PrefillWide64Mma8K32,
+            Self::Wide64Mma8K32D256 => MetalResearchCandidate::PrefillWide64Mma8K32,
+            Self::Wide64Mma8K32D512 => MetalResearchCandidate::PrefillWide64Mma8K32,
             Self::PrefillControlRaw => crate::MetalResearchCandidate::PrefillLoad4Control,
             Self::PrefillControlNorm => crate::MetalResearchCandidate::PrefillLoad4Control,
             Self::PrefillPipelineRaw => crate::MetalResearchCandidate::PrefillPipeline32x64,

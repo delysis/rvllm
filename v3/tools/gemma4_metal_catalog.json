@@ -1233,10 +1233,154 @@
       "numerical_contract": "native-storage-register-lookahead-mma-and-fp32-paged-tile-softmax",
       "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill_pipeline32x64_q4k16.metal",
       "window_independent": false
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill27_wide64_gemm",
+          "source_shared_bytes": 10240,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide64_qkv",
+          "source_shared_bytes": 10240,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide64_raw",
+          "source_shared_bytes": 10240,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide64_norm",
+          "source_shared_bytes": 1024,
+          "threads": 256
+        }
+      ],
+      "kernels": [
+        "research_prefill27_wide64_gemm",
+        "research_prefill27_wide64_qkv",
+        "research_prefill27_wide64_raw",
+        "research_prefill27_wide64_norm"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-wide64",
+      "numerical_contract": "bf16-k8-wide-fragment-store",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_wide64.metal",
+      "window_independent": true
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill27_wide128_gemm",
+          "source_shared_bytes": 12800,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide128_qkv",
+          "source_shared_bytes": 12800,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide128_raw",
+          "source_shared_bytes": 12800,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide128_norm",
+          "source_shared_bytes": 1024,
+          "threads": 256
+        }
+      ],
+      "kernels": [
+        "research_prefill27_wide128_gemm",
+        "research_prefill27_wide128_qkv",
+        "research_prefill27_wide128_raw",
+        "research_prefill27_wide128_norm"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-wide128",
+      "numerical_contract": "bf16-k8-wide-fragment-store",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_wide128.metal",
+      "window_independent": true
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill27_mma8k32_d256",
+          "source_shared_bytes": 5392,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_mma8k32_d512",
+          "source_shared_bytes": 9488,
+          "threads": 128
+        }
+      ],
+      "kernels": [
+        "research_prefill27_mma8k32_d256",
+        "research_prefill27_mma8k32_d512"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-mma8k32",
+      "numerical_contract": "bf16-fp32-mma-q8k32-paged",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_mma8k32.metal",
+      "window_independent": false
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_gemm",
+          "source_shared_bytes": 10240,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_qkv",
+          "source_shared_bytes": 10240,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_raw",
+          "source_shared_bytes": 10240,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_norm",
+          "source_shared_bytes": 1024,
+          "threads": 256
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_d256",
+          "source_shared_bytes": 5392,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_d512",
+          "source_shared_bytes": 9488,
+          "threads": 128
+        }
+      ],
+      "kernels": [
+        "research_prefill27_wide64_mma8k32_gemm",
+        "research_prefill27_wide64_mma8k32_qkv",
+        "research_prefill27_wide64_mma8k32_raw",
+        "research_prefill27_wide64_mma8k32_norm",
+        "research_prefill27_wide64_mma8k32_d256",
+        "research_prefill27_wide64_mma8k32_d512"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-wide64-mma8k32",
+      "numerical_contract": "bf16-fp32-mma-q8k32-paged",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_wide64_mma8k32.metal",
+      "window_independent": false
     }
   ],
   "default": "off",
   "device_qualified": false,
-  "dispatch_schema": "rvllm.metal.research-dispatch.v6",
+  "dispatch_schema": "rvllm.metal.research-dispatch.v7",
   "schema": "rvllm.metal.research-catalog.v1"
 }

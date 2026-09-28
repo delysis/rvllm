@@ -1,0 +1,84 @@
+{
+  "schema": "rvllm.prefill-next.queue-config.v1",
+  "campaign": "prefill27-screen",
+  "root": "/ABS/NEW_CAMPAIGN",
+  "referee": "/ABS/rvllm/v3/target/release/rvllm-prefill-next",
+  "driver": "/ABS/strict-build/MetalArm",
+  "libraries": "/ABS/strict-build",
+  "referee_lock": "/ABS/queue/prefill-referee.lock",
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": false,
+    "pmset_power_mode": 2,
+    "thermal_state": 0,
+    "minimum_free_bytes": 68719476736,
+    "disk_path": "/",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "MetalArm",
+      "rvllm_metal_infer",
+      "python3"
+    ]
+  },
+  "limit": 256,
+  "selections": [
+    {
+      "arm": "metal-prefill-pipeline32x64",
+      "role": "qkv-local"
+    },
+    {
+      "arm": "metal-prefill-pipeline32x64",
+      "role": "qkv-global"
+    },
+    {
+      "arm": "metal-prefill-pipeline32x64",
+      "role": "gate-gelu"
+    },
+    {
+      "arm": "metal-prefill-pipeline32x64",
+      "role": "down-norm"
+    },
+    {
+      "arm": "metal-prefill-wide64",
+      "role": "qkv-local"
+    },
+    {
+      "arm": "metal-prefill-wide64",
+      "role": "qkv-global"
+    },
+    {
+      "arm": "metal-prefill-wide64",
+      "role": "gate-gelu"
+    },
+    {
+      "arm": "metal-prefill-wide64",
+      "role": "down-norm"
+    },
+    {
+      "arm": "metal-prefill-wide128",
+      "role": "gate-gelu"
+    },
+    {
+      "arm": "metal-prefill-wide128",
+      "role": "down-norm"
+    },
+    {
+      "arm": "metal-prefill-q4k16",
+      "role": "attention-local"
+    },
+    {
+      "arm": "metal-prefill-q4k16",
+      "role": "attention-global"
+    },
+    {
+      "arm": "metal-prefill-mma8k32",
+      "role": "attention-local"
+    },
+    {
+      "arm": "metal-prefill-mma8k32",
+      "role": "attention-global"
+    }
+  ]
+}

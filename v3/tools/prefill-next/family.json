@@ -1,0 +1,150 @@
+{
+  "base": "c009497bee8125d456e4aee26f0b35836d79c231",
+  "new": [
+    {
+      "name": "metal-prefill-wide64",
+      "kernels": [
+        "research_prefill27_wide64_gemm",
+        "research_prefill27_wide64_qkv",
+        "research_prefill27_wide64_raw",
+        "research_prefill27_wide64_norm"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_wide64.metal",
+      "min_tokens": 6,
+      "max_tokens": 2048,
+      "window_independent": true,
+      "numerical_contract": "bf16-k8-wide-fragment-store",
+      "budgets": [
+        {
+          "kernel": "research_prefill27_wide64_gemm",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        },
+        {
+          "kernel": "research_prefill27_wide64_qkv",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        },
+        {
+          "kernel": "research_prefill27_wide64_raw",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        },
+        {
+          "kernel": "research_prefill27_wide64_norm",
+          "threads": 256,
+          "source_shared_bytes": 1024
+        }
+      ]
+    },
+    {
+      "name": "metal-prefill-wide128",
+      "kernels": [
+        "research_prefill27_wide128_gemm",
+        "research_prefill27_wide128_qkv",
+        "research_prefill27_wide128_raw",
+        "research_prefill27_wide128_norm"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_wide128.metal",
+      "min_tokens": 6,
+      "max_tokens": 2048,
+      "window_independent": true,
+      "numerical_contract": "bf16-k8-wide-fragment-store",
+      "budgets": [
+        {
+          "kernel": "research_prefill27_wide128_gemm",
+          "threads": 128,
+          "source_shared_bytes": 12800
+        },
+        {
+          "kernel": "research_prefill27_wide128_qkv",
+          "threads": 128,
+          "source_shared_bytes": 12800
+        },
+        {
+          "kernel": "research_prefill27_wide128_raw",
+          "threads": 128,
+          "source_shared_bytes": 12800
+        },
+        {
+          "kernel": "research_prefill27_wide128_norm",
+          "threads": 256,
+          "source_shared_bytes": 1024
+        }
+      ]
+    },
+    {
+      "name": "metal-prefill-mma8k32",
+      "kernels": [
+        "research_prefill27_mma8k32_d256",
+        "research_prefill27_mma8k32_d512"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_mma8k32.metal",
+      "min_tokens": 6,
+      "max_tokens": 2048,
+      "window_independent": false,
+      "numerical_contract": "bf16-fp32-mma-q8k32-paged",
+      "budgets": [
+        {
+          "kernel": "research_prefill27_mma8k32_d256",
+          "threads": 128,
+          "source_shared_bytes": 5392
+        },
+        {
+          "kernel": "research_prefill27_mma8k32_d512",
+          "threads": 128,
+          "source_shared_bytes": 9488
+        }
+      ]
+    },
+    {
+      "name": "metal-prefill-wide64-mma8k32",
+      "kernels": [
+        "research_prefill27_wide64_mma8k32_gemm",
+        "research_prefill27_wide64_mma8k32_qkv",
+        "research_prefill27_wide64_mma8k32_raw",
+        "research_prefill27_wide64_mma8k32_norm",
+        "research_prefill27_wide64_mma8k32_d256",
+        "research_prefill27_wide64_mma8k32_d512"
+      ],
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill27_wide64_mma8k32.metal",
+      "min_tokens": 6,
+      "max_tokens": 2048,
+      "window_independent": false,
+      "numerical_contract": "bf16-fp32-mma-q8k32-paged",
+      "budgets": [
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_gemm",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_qkv",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_raw",
+          "threads": 128,
+          "source_shared_bytes": 10240
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_norm",
+          "threads": 256,
+          "source_shared_bytes": 1024
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_d256",
+          "threads": 128,
+          "source_shared_bytes": 5392
+        },
+        {
+          "kernel": "research_prefill27_wide64_mma8k32_d512",
+          "threads": 128,
+          "source_shared_bytes": 9488
+        }
+      ]
+    }
+  ],
+  "device_qualified": false
+}

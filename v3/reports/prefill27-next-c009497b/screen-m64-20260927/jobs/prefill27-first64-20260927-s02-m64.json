@@ -1,0 +1,63 @@
+{
+  "after": [
+    "prefill27-first64-20260927-s01-m64"
+  ],
+  "command": {
+    "args": [
+      "screen",
+      "metal-prefill-q4k16",
+      "attention-local",
+      "64",
+      "/tmp/rvllm-prefill27-strict-build-20260927/MetalArm",
+      "/tmp/rvllm-prefill27-strict-build-20260927",
+      "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/reports/prefill27-next-c009497b/screen-m64-20260927/screens/prefill27-first64-20260927-s02-m64",
+      "/tmp/rvllm-prefill27-inner-20260927.lock"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/reports/prefill27-next-c009497b/screen-m64-20260927",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/target/release/rvllm-prefill-next",
+      "sha256": "e60c1c20dc60b3b4f8846e2f59122e8927c8110850de82c2d5a1a564a00f86d0"
+    }
+  },
+  "conditions": {
+    "disk_path": "/",
+    "low_power_mode": false,
+    "minimum_free_bytes": 68719476736,
+    "pmset_power_mode": 2,
+    "power_source": "ac",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "MetalArm",
+      "rvllm_metal_infer",
+      "python3"
+    ],
+    "thermal_state": 0
+  },
+  "id": "prefill27-first64-20260927-s02-m64",
+  "inputs": [
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/MetalArm",
+      "sha256": "eb9cbdabac712c0006b5b096e3163272d1467ee44f3a20cd99d4c88bd8080fba"
+    },
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/metal-prefill-q4k16.metal",
+      "sha256": "bd9e9cc71976529b4474cec4d2a8aa01607895b512826af912c0a333f2206205"
+    },
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/metal-prefill-q4k16.source.json",
+      "sha256": "ce8e4440cc5659d68dd5431ec74a121359f33a1bab88a4c6077d101e907638bf"
+    },
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/metal-prefill-q4k16.metallib",
+      "sha256": "83ef6c0fbc06dbd545164a03cc3e19fcb262daef51127fc60991b314708b9a1b"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

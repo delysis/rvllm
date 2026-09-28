@@ -60,6 +60,10 @@ pub enum MetalResearchCandidate {
     PrefillPipeline32x64,
     PrefillQ4K16,
     PrefillPipeline32x64Q4K16,
+    PrefillWide64,
+    PrefillWide128,
+    PrefillMma8K32,
+    PrefillWide64Mma8K32,
 }
 
 impl MetalResearchCandidate {

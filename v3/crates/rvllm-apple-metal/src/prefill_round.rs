@@ -8,6 +8,9 @@ use crate::research_evidence::ResearchKernel;
 use crate::research_projection::{FallbackReason, ProjectionPlan, ProjectionRequest};
 use std::ops::Range;
 
+#[path = "prefill_next.rs"]
+pub mod next;
+
 pub const MIN_M: u32 = 6;
 pub const MAX_M: u32 = 2048;
 pub const MAX_CONTEXT_CAPACITY: u32 = 4096;
@@ -26,7 +29,7 @@ pub const fn projection_kernels(c: MetalResearchCandidate) -> Option<[ResearchKe
         C::PrefillLoad4Control => Some([K::PrefillControlGemm, K::PrefillControlQkv]),
         C::PrefillPipeline32x64 => Some([K::PrefillPipelineGemm, K::PrefillPipelineQkv]),
         C::PrefillPipeline32x64Q4K16 => Some([K::PrefillCombinedGemm, K::PrefillCombinedQkv]),
-        _ => None,
+        _ => next::projection_kernels(c),
     }
 }
 
@@ -39,7 +42,7 @@ pub const fn postnorm_kernels(c: MetalResearchCandidate) -> Option<[ResearchKern
         C::PrefillLoad4Control => Some([K::PrefillControlRaw, K::PrefillControlNorm]),
         C::PrefillPipeline32x64 => Some([K::PrefillPipelineRaw, K::PrefillPipelineNorm]),
         C::PrefillPipeline32x64Q4K16 => Some([K::PrefillCombinedRaw, K::PrefillCombinedNorm]),
-        _ => None,
+        _ => next::postnorm_kernels(c),
     }
 }
 pub fn raw_norm_projection_shape(m: u32, n: u32, k: u32) -> bool {
@@ -99,7 +102,7 @@ pub const fn attention_kernel(c: MetalResearchCandidate, dim: u32) -> Option<Res
         (C::PrefillQ4K16, 512) => Some(K::PrefillQ4K16D512),
         (C::PrefillPipeline32x64Q4K16, 256) => Some(K::PrefillCombinedD256),
         (C::PrefillPipeline32x64Q4K16, 512) => Some(K::PrefillCombinedD512),
-        _ => None,
+        _ => next::attention_kernel(c, dim),
     }
 }
 
@@ -148,8 +151,8 @@ pub fn projection_plan(r: ProjectionRequest) -> Result<ProjectionPlan, FallbackR
         } else {
             gemm
         },
-        tile_m: 32,
-        tile_n: 64,
+        tile_m: next::projection_tile(r.candidate).unwrap_or([32, 64])[0],
+        tile_n: next::projection_tile(r.candidate).unwrap_or([32, 64])[1],
     })
 }
 
@@ -222,6 +225,9 @@ impl AttentionRequest {
         if capacity < self.model.tokens || capacity > MAX_CONTEXT_CAPACITY {
             return Err(FallbackReason::Shape);
         }
+        if next::query_tile(self.candidate).is_some() && self.offsets[0] % 8 != 0 {
+            return Err(FallbackReason::Alignment);
+        }
         let shape = GqaBufferShape {
             tokens: self.model.tokens,
             kv_heads: self.model.kv_heads,
@@ -254,7 +260,11 @@ impl AttentionRequest {
         }
         Ok(AttentionPlan {
             kernel,
-            grid: [(self.model.tokens as usize).div_ceil(4), 16, 1],
+            grid: [
+                (self.model.tokens as usize).div_ceil(next::query_tile(self.candidate).unwrap_or(4)),
+                16,
+                1,
+            ],
         })
     }
 }
@@ -318,7 +328,7 @@ pub fn projection_flops(m: u32, n: u32, k: u32) -> Option<u64> {
 /// Decode never contributes to these counters. Any fallback invalidates this
 /// full-route coverage claim, even when a process otherwise returns success.
 pub fn expected_prefill_dispatches(c: MetalResearchCandidate) -> Option<Vec<(&'static str, u64)>> {
-    if !FAMILY.contains(&c) {
+    if !FAMILY.contains(&c) && !next::FAMILY.contains(&c) {
         return None;
     }
     let mut out = Vec::new();

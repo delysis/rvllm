@@ -1,0 +1,25 @@
+{
+  "schema": "rvllm.prefill-next.queue-config.v1",
+  "campaign": "prefill27-first2048-20260927",
+  "root": "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/reports/prefill27-next-c009497b/screen-m2048-20260927",
+  "referee": "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/target/release/rvllm-prefill-next",
+  "driver": "/tmp/rvllm-prefill27-strict-build-20260927/MetalArm",
+  "libraries": "/tmp/rvllm-prefill27-strict-build-20260927",
+  "referee_lock": "/tmp/rvllm-prefill27-inner-20260927.lock",
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": false,
+    "pmset_power_mode": 2,
+    "thermal_state": 0,
+    "minimum_free_bytes": 68719476736,
+    "disk_path": "/",
+    "quiet_process_names": ["cargo", "rustc", "llama-server", "MetalArm", "rvllm_metal_infer", "python3"]
+  },
+  "limit": 2048,
+  "selections": [
+    {"arm": "metal-prefill-pipeline32x64", "role": "down-norm"},
+    {"arm": "metal-prefill-wide64", "role": "down-norm"},
+    {"arm": "metal-prefill-q4k16", "role": "attention-local"},
+    {"arm": "metal-prefill-mma8k32", "role": "attention-local"}
+  ]
+}

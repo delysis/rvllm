@@ -1,0 +1,63 @@
+{
+  "after": [
+    "prefill27-first2048-20260927-s02-m2048"
+  ],
+  "command": {
+    "args": [
+      "screen",
+      "metal-prefill-mma8k32",
+      "attention-local",
+      "2048",
+      "/tmp/rvllm-prefill27-strict-build-20260927/MetalArm",
+      "/tmp/rvllm-prefill27-strict-build-20260927",
+      "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/reports/prefill27-next-c009497b/screen-m2048-20260927/screens/prefill27-first2048-20260927-s03-m2048",
+      "/tmp/rvllm-prefill27-inner-20260927.lock"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/reports/prefill27-next-c009497b/screen-m2048-20260927",
+    "env": {},
+    "executable": {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill27-candidate-20260927/v3/target/release/rvllm-prefill-next",
+      "sha256": "e60c1c20dc60b3b4f8846e2f59122e8927c8110850de82c2d5a1a564a00f86d0"
+    }
+  },
+  "conditions": {
+    "disk_path": "/",
+    "low_power_mode": false,
+    "minimum_free_bytes": 68719476736,
+    "pmset_power_mode": 2,
+    "power_source": "ac",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "MetalArm",
+      "rvllm_metal_infer",
+      "python3"
+    ],
+    "thermal_state": 0
+  },
+  "id": "prefill27-first2048-20260927-s03-m2048",
+  "inputs": [
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/MetalArm",
+      "sha256": "eb9cbdabac712c0006b5b096e3163272d1467ee44f3a20cd99d4c88bd8080fba"
+    },
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/metal-prefill-mma8k32.metal",
+      "sha256": "04cb0abdfac6f80932cd138e55f6c1377e3dc61f5e89f92b53cd4d48a52467bb"
+    },
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/metal-prefill-mma8k32.source.json",
+      "sha256": "b2502d76693c5fa09833bd6620f2876d05171b5bd2d72a6692112d1da6ad4c76"
+    },
+    {
+      "path": "/private/tmp/rvllm-prefill27-strict-build-20260927/metal-prefill-mma8k32.metallib",
+      "sha256": "d4d67bd8df5e809314d0074893619fca7be5353374e151f0d3a60671bbef80bb"
+    }
+  ],
+  "max_run_seconds": 3600,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

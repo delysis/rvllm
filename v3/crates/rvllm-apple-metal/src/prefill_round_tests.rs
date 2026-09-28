@@ -69,7 +69,7 @@ fn prefill_round_is_default_off_and_append_only() {
         MetalResearchCandidate::default(),
         MetalResearchCandidate::Off
     );
-    assert_eq!(crate::research_evidence::RESEARCH_KERNEL_COUNT, 102);
+    assert_eq!(crate::research_evidence::RESEARCH_KERNEL_COUNT, 118);
     assert_eq!(ResearchKernel::DonorSg4GlobalAttention as usize, 85);
     assert_eq!(ResearchKernel::PrefillControlGemm as usize, 86);
     assert_eq!(ResearchKernel::PrefillCombinedD512 as usize, 95);

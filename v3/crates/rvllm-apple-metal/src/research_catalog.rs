@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 52] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 56] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -69,6 +69,10 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 52] = [
     MetalResearchCandidate::PrefillPipeline32x64,
     MetalResearchCandidate::PrefillQ4K16,
     MetalResearchCandidate::PrefillPipeline32x64Q4K16,
+    MetalResearchCandidate::PrefillWide64,
+    MetalResearchCandidate::PrefillWide128,
+    MetalResearchCandidate::PrefillMma8K32,
+    MetalResearchCandidate::PrefillWide64Mma8K32,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -235,6 +239,10 @@ impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
         match self {
+            Self::PrefillWide64 => crate::prefill_round::next::spec(self),
+            Self::PrefillWide128 => crate::prefill_round::next::spec(self),
+            Self::PrefillMma8K32 => crate::prefill_round::next::spec(self),
+            Self::PrefillWide64Mma8K32 => crate::prefill_round::next::spec(self),
             Self::PrefillLoad4Control => CandidateSpec {
                 name: "metal-prefill-load4-control",
                 kernels: &[PrefillControlGemm, PrefillControlQkv, PrefillControlRaw, PrefillControlNorm],
@@ -665,9 +673,10 @@ mod tests {
         let runtime = catalog_json();
         assert_eq!(reviewed, runtime);
         let all = runtime["candidates"].as_array().unwrap();
-        assert_eq!(all.len(), 52);
+        assert_eq!(all.len(), 56);
         assert_eq!(all[46..48].len(), 2);
-        assert_eq!(all[48..].len(), 4);
+        assert_eq!(all[48..52].len(), 4);
+        assert_eq!(all[52..].len(), 4);
         assert_eq!(
             all[44..46]
                 .iter()

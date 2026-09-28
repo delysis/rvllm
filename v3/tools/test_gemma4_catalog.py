@@ -7,9 +7,9 @@ class CatalogTests(unittest.TestCase):
     def setUp(self):self.value=json.loads((TOOLS/'gemma4_metal_catalog.json').read_text())
     def test_complete_catalog_and_entrypoint_map(self):
         got=catalog.validate(self.value)
-        self.assertEqual(len(got['candidates']),52)
-        self.assertEqual(len(catalog.exports(got)),52)
-        self.assertEqual(len(catalog.sources(got)),62)
+        self.assertEqual(len(got['candidates']),56)
+        self.assertEqual(len(catalog.exports(got)),56)
+        self.assertEqual(len(catalog.sources(got)),69)
         self.assertEqual(catalog.exports(got)['metal-mma32-load4'],('wave2_gemm_mma32_load4','wave2_qkv_mma32_load4'))
         self.assertEqual(len(catalog.exports(got)['metal-donor12b-sg8']),12)
     def test_only_new_prefill_family_can_admit_2048(self):

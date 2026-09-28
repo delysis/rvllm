@@ -1,0 +1,31 @@
+{
+  "schema": "rvllm.prefill-next.queue-config.v1",
+  "campaign": "prefill27-timing",
+  "root": "/ABS/NEW_CAMPAIGN",
+  "referee": "/ABS/rvllm/v3/target/release/rvllm-prefill-next",
+  "driver": "/ABS/strict-build/MetalArm",
+  "libraries": "/ABS/strict-build",
+  "referee_lock": "/ABS/queue/prefill-referee.lock",
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": false,
+    "pmset_power_mode": 2,
+    "thermal_state": 0,
+    "minimum_free_bytes": 68719476736,
+    "disk_path": "/",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "MetalArm",
+      "rvllm_metal_infer",
+      "python3"
+    ]
+  },
+  "a": "metal-prefill-pipeline32x64",
+  "b": "metal-prefill-wide64",
+  "role": "down-norm",
+  "m": 256,
+  "screen_a": "/ABS/completed-pr26-down/screen.json",
+  "screen_b": "/ABS/completed-wide64-down/screen.json"
+}
