@@ -5,6 +5,7 @@ use rvllm_runtime::kernel_game::{parse_strict_json, Sha256Digest};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::env;
+use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -172,7 +173,7 @@ fn pinned(job: &Value, name: &str, sha: &str) -> Result<()> {
         .filter(|input| {
             input["path"]
                 .as_str()
-                .is_some_and(|path| path.ends_with(name))
+                .is_some_and(|path| Path::new(path).file_name() == Some(OsStr::new(name)))
         })
         .collect::<Vec<_>>();
     if matches.is_empty() || matches.iter().any(|entry| entry["sha256"] != sha) {
@@ -656,6 +657,26 @@ mod tests {
         for (_, _, name, sha) in ARMS {
             assert_eq!(digest(&dir.join(name)).unwrap(), sha);
         }
+    }
+
+    #[test]
+    fn input_pin_requires_exact_basename_without_suffix_collision() {
+        let job = json!({"inputs": [
+            {"path": "/model/config.json", "sha256": "expected"},
+            {"path": "/model/generation_config.json", "sha256": "other"}
+        ]});
+        assert!(pinned(&job, "config.json", "expected").is_ok());
+        assert!(pinned(&job, "config.json", "other").is_err());
+        let duplicate_same_content = json!({"inputs": [
+            {"path": "/model/config.json", "sha256": "expected"},
+            {"path": "/another/config.json", "sha256": "expected"}
+        ]});
+        assert!(pinned(&duplicate_same_content, "config.json", "expected").is_ok());
+        let duplicate_changed = json!({"inputs": [
+            {"path": "/model/config.json", "sha256": "expected"},
+            {"path": "/another/config.json", "sha256": "other"}
+        ]});
+        assert!(pinned(&duplicate_changed, "config.json", "expected").is_err());
     }
 
     #[test]
