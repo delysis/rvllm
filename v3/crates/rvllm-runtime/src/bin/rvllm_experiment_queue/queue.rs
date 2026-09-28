@@ -6,6 +6,7 @@ use rvllm_runtime::kernel_game::{parse_strict_json, SealedSubmission};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Read, Write};
@@ -624,19 +625,26 @@ fn purpose_accepts_ineligible(purpose: Purpose) -> bool {
     )
 }
 
+#[derive(Debug, PartialEq)]
+enum ExecuteOutcome {
+    Deferred,
+    Finished(bool),
+    ExpiredBeforeLaunch,
+}
+
 fn execute(
     job: &Job,
     queue: &Path,
     monitor: &PowerMonitor,
     stop: &AtomicBool,
     wait_started: Instant,
-) -> Result<Option<bool>> {
+) -> Result<ExecuteOutcome> {
+    let expired = Cell::new(false);
+    let expired_message = format!("job {} expired before launch; no trial started", job.id);
     let mut observe = || -> std::result::Result<bool, String> {
         if wait_started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
-            return Err(format!(
-                "job {} expired before launch; no trial started",
-                job.id
-            ));
+            expired.set(true);
+            return Err(expired_message.clone());
         }
         if stopped(queue, stop) {
             return Ok(false);
@@ -648,21 +656,26 @@ fn execute(
             return Ok(false);
         }
         if wait_started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
-            return Err(format!(
-                "job {} expired before launch; no trial started",
-                job.id
-            ));
+            expired.set(true);
+            return Err(expired_message.clone());
         }
         Ok(current["ready"] == true)
     };
     // Hashing can exceed the observation freshness budget. Keep sampling
     // readiness while the scoped verifier runs, then join it. No condition
     // dwell is required; every sampled transition remains in the receipts.
-    if !super::prelaunch::verify(
+    let verified = match super::prelaunch::verify(
         || job.verify_files().map_err(|e| e.to_string()),
         &mut observe,
-    )? {
-        return Ok(None);
+    ) {
+        Ok(verified) => verified,
+        Err(error) if expired.get() && error == expired_message => {
+            return Ok(ExecuteOutcome::ExpiredBeforeLaunch);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    if !verified {
+        return Ok(ExecuteOutcome::Deferred);
     }
     let output = queue.join("results").join(&job.id);
     fs::create_dir(&output)?; // Never replay an existing/incomplete attempt.
@@ -768,7 +781,7 @@ fn execute(
         "claim":"Preparation and exploratory-timing success do not qualify performance promotion. Exploratory timing may succeed when sampled_conditions_eligible is false; retain and stratify all observations. Outer process duration includes startup and is not token throughput. CPU counters belong to the queue, excluding its child. Backend reports/validators establish numerical correctness and phase timing. Sampled conditions cannot prove fixed clocks or absence of all competing work."});
     atomic_json(&output.join("report.json"), &report)?;
     eprintln!("experiment {}: {}", job.id, report["status"]);
-    Ok(Some(accepted || rejected))
+    Ok(ExecuteOutcome::Finished(accepted || rejected))
 }
 
 fn manifest_paths(queue: &Path) -> Result<Vec<PathBuf>> {
@@ -792,6 +805,16 @@ enum DependencyState {
 
 fn dependency_state(job: &Job, queue: &Path) -> Result<DependencyState> {
     for dependency in &job.after {
+        // An expired prelaunch wait has no result directory. Its preserved
+        // quarantine manifest is still a terminal failure for dependents.
+        let quarantined = queue.join("quarantined-jobs");
+        if quarantined.join(format!("{dependency}.json")).exists()
+            || quarantined
+                .join(format!("{dependency}.receipt.json"))
+                .exists()
+        {
+            return Ok(DependencyState::Failed(dependency.clone()));
+        }
         let report = queue.join("results").join(dependency).join("report.json");
         if !report.exists() {
             return Ok(DependencyState::Waiting);
@@ -832,6 +855,22 @@ fn quarantine_manifest(queue: &Path, path: &Path, job: &Job, reason: &str) -> Re
         }),
     )?;
     Ok(())
+}
+
+fn expire_wait(queue: &Path, path: &Path, job: &Job, idle_seconds: Option<u64>) -> Result<()> {
+    if idle_seconds.is_some() {
+        return Err(format!(
+            "job {} expired waiting for conditions; no trial started",
+            job.id
+        )
+        .into());
+    }
+    quarantine_manifest(
+        queue,
+        path,
+        job,
+        "condition wait expired before launch; no trial started",
+    )
 }
 
 fn quarantine_receipts(queue: &Path) -> Result<Vec<Value>> {
@@ -951,11 +990,9 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
             }
             let started = waiting.entry(job.id.clone()).or_insert_with(Instant::now);
             if started.elapsed() > Duration::from_secs(job.max_wait_seconds) {
-                return Err(format!(
-                    "job {} expired waiting for conditions; no trial started",
-                    job.id
-                )
-                .into());
+                expire_wait(queue, &path, &job, idle_seconds)?;
+                waiting.remove(&job.id);
+                continue;
             }
             if monitor.is_none() {
                 let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
@@ -999,7 +1036,7 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                 &stop,
                 *wait_started,
             )? {
-                Some(false) => {
+                ExecuteOutcome::Finished(false) => {
                     if idle_seconds.is_none() {
                         quarantine_manifest(
                             queue,
@@ -1014,10 +1051,19 @@ fn run_owned(queue: &Path, accelerator_lock: &Path, idle_seconds: Option<u64>) -
                         format!("job {} failed; queue stopped without retry", job.id).into(),
                     );
                 }
-                Some(true) => {
+                ExecuteOutcome::Finished(true) => {
                     waiting.remove(&job.id);
                 }
-                None => {}
+                ExecuteOutcome::Deferred => {}
+                ExecuteOutcome::ExpiredBeforeLaunch => {
+                    expire_wait(
+                        queue,
+                        &queue.join("jobs").join(format!("{}.json", job.id)),
+                        &job,
+                        idle_seconds,
+                    )?;
+                    waiting.remove(&job.id);
+                }
             }
         } else {
             let status = if pending.is_empty() {
@@ -1377,6 +1423,65 @@ mod tests {
             dependency_state(&job, dir.path()).unwrap(),
             DependencyState::Failed("first".into())
         );
+    }
+
+    #[test]
+    fn expired_daemon_wait_is_durable_and_blocks_dependents() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("jobs")).unwrap();
+        let first = Job {
+            schema: SCHEMA.into(),
+            id: "first".into(),
+            purpose: Purpose::Correctness,
+            command: Invocation {
+                executable: Pin {
+                    path: "/unused".into(),
+                    sha256: "0".repeat(64),
+                },
+                cwd: "/".into(),
+                args: vec![],
+                env: BTreeMap::new(),
+            },
+            validator: None,
+            inputs: vec![],
+            kernel_game_submission: None,
+            after: vec![],
+            conditions: conditions(),
+            stable_seconds: 0,
+            max_wait_seconds: 10,
+            max_run_seconds: 10,
+        };
+        let manifest = dir.path().join("jobs/first.json");
+        atomic_json(&manifest, &serde_json::to_value(&first).unwrap()).unwrap();
+        let original_sha = digest(&manifest).unwrap();
+        let mut second = first.clone();
+        second.id = "second".into();
+        second.after = vec![first.id.clone()];
+
+        assert!(expire_wait(dir.path(), &manifest, &first, Some(1)).is_err());
+        assert!(manifest.is_file());
+        assert_eq!(
+            dependency_state(&second, dir.path()).unwrap(),
+            DependencyState::Waiting
+        );
+
+        expire_wait(dir.path(), &manifest, &first, None).unwrap();
+        assert!(!manifest.exists());
+        let quarantined = dir.path().join("quarantined-jobs/first.json");
+        assert_eq!(digest(&quarantined).unwrap(), original_sha);
+        let receipt = read_json(&dir.path().join("quarantined-jobs/first.receipt.json")).unwrap();
+        assert_eq!(receipt["id"], "first");
+        assert_eq!(receipt["report"], Value::Null);
+        assert_eq!(receipt["manifest"]["sha256"], original_sha);
+        assert_eq!(
+            receipt["reason"],
+            "condition wait expired before launch; no trial started"
+        );
+        assert_eq!(
+            dependency_state(&second, dir.path()).unwrap(),
+            DependencyState::Failed("first".into())
+        );
+        assert!(expire_wait(dir.path(), &quarantined, &first, None).is_err());
     }
 
     #[test]
