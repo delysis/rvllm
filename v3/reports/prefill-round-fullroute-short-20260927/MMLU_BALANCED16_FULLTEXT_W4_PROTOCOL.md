@@ -48,9 +48,21 @@ The next step is **not yet authorized for queue submission by this protocol
 alone**. First implement/test a separate safe-Rust fail-closed generator and
 referee, seal fresh immutable manifests and output paths, verify the 328
 dense-text-projection W4 package identity and same BF16 SG8 donor, and
-estimate the queue runtime/resource budget from prior clean jobs. A possible
-serial layout is four fixed batches of four cases, with a BF16 donor and W4
-arm per batch; never run simultaneous accelerator jobs. Each arm must pin
+estimate the queue runtime/resource budget from prior clean jobs. The frozen
+teacher CLI requires **one JSON prompt and one target list per process**;
+it cannot score four cases in one job. Without a separately implemented and
+tested safe-Rust multi-case teacher route, this trial requires 32 fresh
+jobs, paired BF16 donor then W4 for each of the 16 cases, never simultaneous
+accelerator work. Two prior clean W4 teacher jobs took 408–457 seconds each,
+and their BF16 controls 33–36 seconds each. A simple 16-pair extrapolation
+is roughly 118–132 minutes before queue gaps or variable-length effects,
+not a guaranteed duration. Because the existing job template's maximum
+wait is 7200 seconds, do **not** submit a single dependent 32-job chain.
+Seal fixed waves of at most four case-pairs and submit each wave only after
+the previous wave is terminal; no completed ID is replayed. If the new
+generator/referee or resource review cannot make this safe, stop before
+submission rather than changing the selected cases or weakening the gate.
+Each arm must pin
 the original model/config/tokenizer, this source and token fixture, package
 assets, exact executable/metallibs, prompt/target IDs and all required
 queue conditions. No thermal-stability wait. Preserve terminal failures and
