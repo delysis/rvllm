@@ -48,10 +48,10 @@ The source-bound safe-Rust generator and separate fail-closed referee are
 stored in `v3/crates/rvllm-runtime/src/bin/`. The authoritative create-new
 `mmlu-balanced16-w4-queue/` directory has 32 immutable manifests and 16
 single-prompt JSONL files. The referee freezes the SHA-256 of each manifest
-in case/route order and its host tests check all 32 files. This is a host
-preparation result, **not queue submission or numerical evidence**. Before
-submitting even the first wave, independently review its manifests and
-output paths, check the live serial queue and disk budget, and retain the
+in case/route order and its host tests check all 32 files. Sealing these
+files is host preparation, **not numerical evidence**. Before submitting
+each wave, independently review its manifests and output paths, check the
+live serial queue and disk budget, and retain the
 separate unsubmitted `mmlu-balanced16-w4-queue-dry-run/` directory.
 
 The frozen
