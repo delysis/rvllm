@@ -39,6 +39,21 @@ remain in Git history. A separately identified amended-policy referee must
 verify mixed historical/amended lineage and re-evaluate the original q01
 condition journal explicitly before any 32 GiB aggregate admission.
 
+The temporary STOP marker was then removed, and the existing queue supervisor
+started a new daemon process. Its first read-only state showed q02-native
+waiting with 53,299,462,144 bytes free—above 32 GiB—but not ready because the
+machine was on battery in low-power mode. The AC requirement was not changed;
+no q02/q03 trial had started at that snapshot.
+
+That historical re-evaluation cannot establish full eligibility from the
+existing q01-W4 receipt: 332 of its 367 journal entries were below the old
+64 GiB guard, and the queue consequently recorded `activity_sampled=false`
+for exactly those 332 entries. None was below 32 GiB, but the missing process
+activity observations cannot be reconstructed by changing a threshold. A
+fail-closed amended referee must retain q01-W4 as condition-ineligible; it
+may report those positions descriptively, not call the 16-case aggregate
+accepted.
+
 No completed job was replayed or overwritten. The old q01-W4 report and
 five-file receipt archive remain authoritative for what the original queue
 recorded. The amended policy cannot create evidence of unobserved hardware

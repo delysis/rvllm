@@ -1,8 +1,8 @@
 //! Fail-closed, all-position referee for the sealed balanced-16 W4 trial.
 #![forbid(unsafe_code)]
 
-use rvllm_runtime::kernel_game::{Sha256Digest, parse_strict_json};
-use serde_json::{Value, json};
+use rvllm_runtime::kernel_game::{parse_strict_json, Sha256Digest};
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, OpenOptions};
@@ -41,40 +41,41 @@ const CASES: [(&str, &str); 16] = [
 ];
 
 // Exact authoritative manifests in q00-native, q00-w4, ... q15-w4 order.
-// A changed job requires fresh IDs and a new referee, never reinterpretation.
+// The user-authorized 32 GiB amendment is archived with before/after hashes;
+// completed q00/q01 manifests and receipts remain at their original policy.
 const MANIFEST_SHA: [&str; 32] = [
     "042c30550f15fde48af070a843538f1d78b41a941f3f868fdda1fb67ae499d3f",
     "73df8445f7307c78cb05c082089be530ebb999f83ab44217b818a51b4532874f",
     "301307b2b8183ce910d9ef48e6dc8438357e97546c12bbf43eaadb5560432ab3",
     "04a0ee3047896613df16336f5363951e9dcbb980861624ae5920c5787111b795",
-    "0f025f0d660dabfeccd33820d8dca8b2fedcd8f5274d7f1cfba3cec0cbda2ca1",
-    "7b7a62cf5fd398dd1048583b8129b4eddf2b06fd5714d219008111427c5425dc",
-    "ce1837aa7b6acf5872036f5baeab4f7b2f52a9a53f65f2f92a852be579467cf4",
-    "762825b8a84438477482227a1af8f929c9570ca53387d9c6796bb026634863bd",
-    "85a5bd2fbdbc933b109e55fa032455dfb1166d44eb3bdf067e0cc024b5338852",
-    "8cd042de29cad338f0f6630ba97c9b8b32e515b1876b96f0914f8635a632adbb",
-    "49968095fcd6a0ecdbfb08541e61ee1d9384dce5b307d086e51ba56fc5633317",
-    "15e7b7566c390d9afe972c6485a6b85211a623e594087be5fba3c165f72fb8d3",
-    "1a460dcffe4bc7550c2d6bc264e76a83703ff432d46a65718bfa857996628816",
-    "9c4c1aa244e1ed37f4d0042bcc3ae70779b6ca9576edb94a64ac4bd0a92fdcb9",
-    "0850b2cb7406e01ce8f2f5e21049f0a2874acf76e3853ca5bafba25a07c0c121",
-    "223d6d764f35f5b50ba12761c0dfe92c2b4dac17f2b89fd8b3d6477abfa97bc0",
-    "c76147e47fcc2872ac1732b50d54ef592998b9cd3eec8461e2b1ed0b8a4767fa",
-    "86eecefdd40588383bd22d2a3ae6ba626cad14985f0a0e2907de0303966c1c27",
-    "475ba928f3ab7e3846a51c50b6b64bb0f357fa551328b8fdaeef9670ba34e355",
-    "bd4e41f41ba53fc2fb29f22ce0aafe015aab9432619f0bcb666efb72253517bd",
-    "342e27129fb1a919472d0aa8fd14898b644347408e33f6f74f74ff07594d15d0",
-    "52d8a23aa439eaa31e16b6722dd8def3f8fa63374b77333dd9b26f751382fbc0",
-    "1c03828c4efd088b768e710927f7393d1d74b4f5ab7566076f101515d1e3434f",
-    "7495e6c7bbd84dc364a4108ea6e8442eb1f9b91090a9d22a58b8effb918243d3",
-    "ec172815c2124c23f27ff6d3784d93c20fa209458000a3ebfd24946eac6be157",
-    "351c7cf8d5c708aa09a0ca95ed68c88e8d39155bcd44fe6b15a7c020293cf79f",
-    "32449dda6a3cdc1d6b479c2da1ea403cdf7ae112bd494e18e1861042a1ce6fe3",
-    "4fc853adcfe7ba241913283c2085d683dfb05f7cd06359114fca5552a3d17181",
-    "5f8c14a7bf11439a50277e7d109634c72f19db582e3e4278ca8dfd50fb96270d",
-    "58cec15246890575fa523583b9f66bef36000ba3bed948c213967951ac5ff59d",
-    "ca7a509c14495fd658f7928ea81767154fa3185eeae0633b21415e2bc31c265e",
-    "29e8fcb336869c655c4bdb615fbfcdde0eb77297bfdbcdffd64e0fbf0fa7345e",
+    "ffc06a910224a1ea79ad4499a616627dd4b5c3cd85858c13a7f8c9d7339c075c",
+    "018ae4ce4f881ece2f1f102d971e6a5ef6a25723c1520b841071f91b824f827b",
+    "7ea839c5d09dc73ed18611ebab263540a3ce77e7180fc0366547ec010bc3051b",
+    "3c60e17e55d7d73f2978f00318ee588a2ef44873ad6856204a0ecb7defbd6c77",
+    "b1846b9687f5172b91d5b83d4eb9a00a41bd149023e0fb93b1729826f6de2b98",
+    "7a5c8d72e7fd21afa3d661b523f0ad6a4166c17bfa296c96373ea2e943dbd90a",
+    "bc3ca5b5745bb8212b81de7f3aaca0e7e05e31fc5de896672e89fa49ff8cc587",
+    "4340c2589e9829fae1b047fe0250a3c3c79640bdb47728dc5699b3ccb92b53e2",
+    "f49644da186e2ae0e110c04492c76b4b1dd98e4c090d50d910e9e37e74337e3c",
+    "1af0a8e176dfda04ac3e0dc1ce4c27b66807b4257c98381dddb5656f5cda7001",
+    "30dc93428a00adca378f4f6363fda2257de2857e27208dca2c5e57e01f0c0421",
+    "24beeb3a5d18e10b1f1f4223add8d599e42b408d2bef632f9fba21c3483a6bd3",
+    "af63cba648e83f98b132bd78b1d35185710542902c033bd9adc0b47274b8f1d9",
+    "4cff7d9e9a084f11878346304093f290e108492a38582ba9338d9afe614e68ac",
+    "7d0ff02e285a89e235856243eefaf9f491933ea5512149cbf2e869c950a9c222",
+    "9a244a51b145c5e4b573c5a410749d3de487cf57c11fa92649b4d7c957648337",
+    "04d2be6577e60daed6454036a12fca0706d12badb8cb02d9daf9376c3c3bf994",
+    "d879035c054041ae02ba78682491d83b9584badea55f7ec0ea19f66a6b2d9544",
+    "dd2726586b70bad780a9edf42f9464e7fc4da627f98cc1b62e2c4da962766432",
+    "fc611ac4cae3bebbd3d803bc76ebf7cdd5c7bce837ceb10d2cf6f0333bb35260",
+    "4c06b98424791c9f0f8c4853978ad51f8eeb7dbfbe943cb2870e373af3b70f55",
+    "beed3f4f733e11cfc07cbe3d6f3d06387087e6d7f1eb23329505896be416448d",
+    "540c330fb75bcf588992ee69b06f4311d47b357a37326f7d237737e730efdab1",
+    "b8c89ea8035eb5feabf7a2a24c8a6092f9133da57efa43604f5d820debdfe6ed",
+    "51d22ee5e5dccb04c1fe36dc5b3d95b1ddc203e6c18a926e794f50ac58ef2406",
+    "912a77ab9aeecaa3a953ea201cac9e3b9b222a9da837285f38251cfde6af9f71",
+    "e5796b89e39fd9f4bfa5550f1dd87f1c5dbf05ced2a61f69e676b7ac435de932",
+    "320d6a10062809af11196fff74a3ef755933b421f07b00b286d21dbe1a9d8826",
 ];
 
 struct Arm {
@@ -386,23 +387,12 @@ fn read_arm(
         || report["files_unchanged"] != true
         || report["overdue"] != false
         || report["signal_or_missing_exit_code"] != false
-        || report["sampled_conditions_eligible"] != true
-        || !report["violations"].as_array().is_some_and(Vec::is_empty)
     {
-        return Err(format!("{id}: queue receipt is not clean and eligible"));
+        return Err(format!("{id}: queue receipt is not clean"));
     }
     let journal_path = dir.join("conditions.jsonl");
     let journal = fs::read_to_string(&journal_path).map_err(|e| e.to_string())?;
-    if journal.lines().next().is_none() {
-        return Err(format!("{id}: empty conditions journal"));
-    }
-    for (index, line) in journal.lines().enumerate() {
-        let condition: Value = parse_strict_json(line.as_bytes())
-            .map_err(|e| format!("{id}: condition line {}: {e}", index + 1))?;
-        if condition["ready"] != true {
-            return Err(format!("{id}: condition line {} not ready", index + 1));
-        }
-    }
+    verify_conditions(&report, &journal, id)?;
     let trial_path = dir.join("trial.stdout");
     let trial = read(&trial_path)?;
     if trial["schema"] != "rvllm.apple_metal_text_infer.v1"
@@ -430,6 +420,28 @@ fn read_arm(
     .map(|(name, path)| digest(&path).map(|sha| (name, sha)))
     .collect::<Result<_>>()?;
     Ok(Arm { trial, receipts })
+}
+
+fn verify_conditions(report: &Value, journal: &str, id: &str) -> Result<()> {
+    if report["sampled_conditions_eligible"] != true
+        || !report["violations"].as_array().is_some_and(Vec::is_empty)
+    {
+        return Err(format!("{id}: queue conditions are ineligible"));
+    }
+    if journal.lines().next().is_none() {
+        return Err(format!("{id}: empty conditions journal"));
+    }
+    for (index, line) in journal.lines().enumerate() {
+        let condition: Value = parse_strict_json(line.as_bytes())
+            .map_err(|e| format!("{id}: condition line {}: {e}", index + 1))?;
+        if condition["ready"] != true || condition["activity_sampled"] != true {
+            return Err(format!(
+                "{id}: condition line {} not fully sampled and ready",
+                index + 1
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn scored(arm: &Arm, prompt: &[u32], targets: &[u32]) -> Result<(Vec<Value>, f64)> {
@@ -606,7 +618,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn authoritative_manifests_match_all_frozen_hashes() {
+    fn authoritative_manifests_match_amended_hashes() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-w4-queue");
         for (index, (slug, _)) in CASES.iter().enumerate() {
@@ -615,6 +627,17 @@ mod tests {
                 assert_eq!(digest(&path).unwrap(), MANIFEST_SHA[index * 2 + offset]);
             }
         }
+    }
+
+    #[test]
+    fn lower_disk_guard_cannot_reconstruct_skipped_activity_samples() {
+        let report = json!({"sampled_conditions_eligible":true,"violations":[]});
+        let unsampled = "{\"ready\":true,\"activity_sampled\":false,\"free_bytes\":49231007744}\n";
+        assert!(verify_conditions(&report, unsampled, "q01-w4").is_err());
+        let ready = "{\"ready\":true,\"activity_sampled\":true,\"free_bytes\":49231007744}\n";
+        assert!(verify_conditions(&report, ready, "other-arm").is_ok());
+        let ineligible = json!({"sampled_conditions_eligible":false,"violations":[{}]});
+        assert!(verify_conditions(&ineligible, ready, "q01-w4").is_err());
     }
 
     #[test]
