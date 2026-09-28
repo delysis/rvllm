@@ -1,0 +1,2792 @@
+{
+  "after": [
+    "prefill26-mmlu-balanced16-w4-q15-native-v1-20260928"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm",
+      "--teacher-prompt-jsonl",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-w4-queue/q15-prompt.jsonl",
+      "--teacher-token-ids",
+      "622,236761,15005,236779,6427,578,236743,236778",
+      "--max-new-tokens",
+      "8",
+      "--max-total-tokens",
+      "1024",
+      "--large-model-opt-in",
+      "--json"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "env": {
+      "RVLLM_METAL_RESEARCH": "metal-donor12b-sg8"
+    },
+    "executable": {
+      "path": "/private/tmp/rvllm-prefill-full-vector-artifacts-20260927/rvllm_metal_infer",
+      "sha256": "1f9cfedd5c1a91f4a1046e2930e13071847fc0b90c7bafa2f391f3e99b3082c5"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 68719476736,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "prefill26-mmlu-balanced16-w4-q15-w4-v1-20260928",
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/datasets/cais___mmlu/all/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe/mmlu-test.arrow",
+      "sha256": "58769d67ced092719390e496f1d4bbf8b99c43b77bba39d054b9a09aecb63cab"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_gemma4_mmlu_balanced16_w4_job_gen.rs",
+      "sha256": "e295e90927902ec89aa08a49b6bd8838130842ae250f73ed4811de1eaab83479"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_metal_infer.rs",
+      "sha256": "5158928cc2f97381b8943e75657b0485f4cbb76abd55a56867e2cfb9c05277ec"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/lowbit-full-text-selectors-sealed-v1.json",
+      "sha256": "087e5e87f8ef2fd68e6d910af17867ec2cf12ef9344e9b70cf481a6992591d7e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/lowbit-mmlu-v1-queue/logic-native-job.json",
+      "sha256": "8bb718fcfbb59f4701567df8b5c2be581ab75d967494ee210d21ab514a061527"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-fulltext-w4-source-v1.json",
+      "sha256": "c99f34ae929484d019630ada0589ff9fbd7149e86b6109efd513ebf977cd1c22"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-fulltext-w4-tokens-v1.json",
+      "sha256": "ff019f8554630f2c8c6ca5165728109299e17a66d6cc2a8fc5bc8325fbab2b15"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-w4-queue/q15-prompt.jsonl",
+      "sha256": "7970c8759024773b2cc3920bd1157afb05d5fddda92d1307db4062a2b6c2096d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/generation_config.json",
+      "sha256": "a8349d9bd64cc5841297fcb5002f0fdc4749c473c8f1b10ea337f9ce4ee7014e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios-simulator/bf16/pipelines.json",
+      "sha256": "b627b0a202aa80e0d712343aa0801131cab6fcbd2beb9ccbe71a0734792892a1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios-simulator/bf16/rvllm.metallib",
+      "sha256": "58006a7c051e438b01620e9553dfb597dcd67823eb2152e5a87cc5d88f412f44"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios-simulator/f16/pipelines.json",
+      "sha256": "78c312b911bb8007d5d4d4406562d0f0f8a03475373dd93fa1ccfaf1d95366aa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios-simulator/f16/rvllm.metallib",
+      "sha256": "29a5a6b1407eed5a4c2640526988439e6675eb3e4176888a68fec72368d01a57"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios/bf16/pipelines.json",
+      "sha256": "b627b0a202aa80e0d712343aa0801131cab6fcbd2beb9ccbe71a0734792892a1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios/bf16/rvllm.metallib",
+      "sha256": "b0d8cd101b5b1da1f4add748ec1d7fa7dcce1f9d00f1fae0f5310785be0d64c7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios/f16/pipelines.json",
+      "sha256": "78c312b911bb8007d5d4d4406562d0f0f8a03475373dd93fa1ccfaf1d95366aa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/ios/f16/rvllm.metallib",
+      "sha256": "28d69bdcee541e57b00b8f947594aa673f3b1374eba6aff3816654495f715a21"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/macos/bf16/pipelines.json",
+      "sha256": "b627b0a202aa80e0d712343aa0801131cab6fcbd2beb9ccbe71a0734792892a1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/macos/bf16/rvllm.metallib",
+      "sha256": "21d81a66d31075e9307b64b7cb8eb0eea1f1dee74c0865ff3d0fa8125579dd06"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/macos/f16/pipelines.json",
+      "sha256": "78c312b911bb8007d5d4d4406562d0f0f8a03475373dd93fa1ccfaf1d95366aa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/metal/macos/f16/rvllm.metallib",
+      "sha256": "3adf6fcdcd41959d784144a734e297f6cd54cf56feea0f2b881f3959660a6a77"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/processor_config.json",
+      "sha256": "6b938e76555b3e9946890770e1abcd442a4718f34041a58e8139dc8ad34545c9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/rvllm-apple-model.json",
+      "sha256": "abcd5b043322efe1756b6ac81e805f0aee9da5b04c9e10a77ae391532f026ce3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/tokenizer_config.json",
+      "sha256": "a62f4e85a47c0c136edaaa3a4f591fd6783717299a9def47e5ad03a49f6a5eb9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00000-w4a16.scales.f16le",
+      "sha256": "95b97ae914375a61e1e2b4848da79af4f7b6446bf6e0962981cd16da993713c5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00000-w4a16.values.bin",
+      "sha256": "5f25d4d760c4adf0a1e6581a024e3eea2e4b729f85144162c9998c27dbdee00e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00001-w4a16.scales.f16le",
+      "sha256": "77c61aecb6ac97f1528f4f3c67e6b9460abadad2f0a34a8fef6712f035cfa381"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00001-w4a16.values.bin",
+      "sha256": "28752e6fdbd936d70f9b83b238025b73c45bfcb3f4622e50513e76d0258df062"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00002-w4a16.scales.f16le",
+      "sha256": "d3d6bfc7faf3560bf48b36507d3ba941ca44958fda72c4a676c8e76ccd23fe58"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00002-w4a16.values.bin",
+      "sha256": "c15715f2f3b03853c3097f61994445037aa9e3c72083120028add5599fa6287c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00003-w4a16.scales.f16le",
+      "sha256": "69b519b83a28c4a85f2129f85b46c3b5d30b90e04afeefa072ac6a8c53bf7914"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00003-w4a16.values.bin",
+      "sha256": "05eefdbe55734fa70e762ae89c4ac416955aea9d73792bdbccf6033b7256be9f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00004-w4a16.scales.f16le",
+      "sha256": "ee8721eb3eec632f055a93adf600704d43b41cee261b6ce395eb2fb29a7f5be0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00004-w4a16.values.bin",
+      "sha256": "fb6aeae2d2990553616c080e350c0b54e26ed40b4d7126f7898e224392893b3a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00005-w4a16.scales.f16le",
+      "sha256": "1f3c1869918cfa85b420ccd1ffd6d40dee56ca5f25b2452393b63fb5bf9cf06e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00005-w4a16.values.bin",
+      "sha256": "0ece3593a548c164dd0ac38c58b143429f7b802eebca97a7e38088f044dd2b37"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00006-w4a16.scales.f16le",
+      "sha256": "8f8068baad393c81c29a18d9ca2ebba42878e8a116ff5e91b7b31c373b37debc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00006-w4a16.values.bin",
+      "sha256": "f8648ee7047a750185a8205176aaf6792df5efae6e339d9ce385ca2a76fbc1bb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00007-w4a16.scales.f16le",
+      "sha256": "b6582e634a1fcd859bc970ef3936f5ffbec9b5001c102e24e393b69ef80dadaf"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00007-w4a16.values.bin",
+      "sha256": "63d80050883400940ab2e80aa2d20947c129a2ce1505f986e31f512c987033eb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00008-w4a16.scales.f16le",
+      "sha256": "91c89eacf074330dfb6af5c341f116b932444c3656b075e7b5bb468472a1cb3f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00008-w4a16.values.bin",
+      "sha256": "8c27df080f715db33577c8b303d4b146230ff3e2c3e3a14dd1b189b042e09602"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00009-w4a16.scales.f16le",
+      "sha256": "5aebad97fe37a2f4cb3d55e18473c330624c00ff76da467f9f1baca4c0875dc5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00009-w4a16.values.bin",
+      "sha256": "30f1cbcdecbfbad4d122336bc00d1f4291db99df306ae942158c5054a30312b7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00010-w4a16.scales.f16le",
+      "sha256": "7b71775417ec76ba4dbfbede0873d44783b2d8b7e0e4941a4b55571279ff658e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00010-w4a16.values.bin",
+      "sha256": "96f5dc9a30563ab9ad7abafa23b3a53ede5a83180648fa45f5807c7f83c23df3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00011-w4a16.scales.f16le",
+      "sha256": "b18c25f353a0e43c30d833366cb4ccea5c565aad43bffef9e0b63c55fcd023e3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00011-w4a16.values.bin",
+      "sha256": "ccc508568ffb3cb10a93fb7ff7df291405d221d91dfd03bee09b145dc2968e16"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00012-w4a16.scales.f16le",
+      "sha256": "fc5493eda873529428f3c2375ca80a257cbf5f2c2694aa8ef6ec569a64ddcb4b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00012-w4a16.values.bin",
+      "sha256": "730a61f245298a05b5fe71847441482c671e734498e1cb2106ad2ed9188701b1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00013-w4a16.scales.f16le",
+      "sha256": "963eb4d08aa1fdc213f9f7d0f0fceba6643efd728c30fddb128ee507137e9fb1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00013-w4a16.values.bin",
+      "sha256": "984eaff6465579d68219009278a2df44d598ad196cfa94c5eb273023f1f44621"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00014-w4a16.scales.f16le",
+      "sha256": "4cbb75e90146b43cc7b30ac294f27e58c93654a79801cc78cea80d87d1ba2389"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00014-w4a16.values.bin",
+      "sha256": "1935c6206e8b6104b247815ff594c25777df3e1e28bb1273c5f45d559ebadb06"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00015-w4a16.scales.f16le",
+      "sha256": "5d904e92f9f676f24028635b5103ded1b6fb16a90013e268e8b6ba0a810e4c2a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00015-w4a16.values.bin",
+      "sha256": "a8fe5d546432ecbff1eea992959f8d133ee1857d2dfadd6c4170b33acb5b2ea0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00016-w4a16.scales.f16le",
+      "sha256": "6f6017951ada5e8c12f9a3a877ac9b4922f80153a8320481f4578a58ced389e1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00016-w4a16.values.bin",
+      "sha256": "c8afc000642c3577086687772621eb57611405495ecebc3b000e8326416cc255"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00017-w4a16.scales.f16le",
+      "sha256": "26ca0f6dcefb1687040c5e79237e8db8acab89907402463e0984b87a55ee40a0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00017-w4a16.values.bin",
+      "sha256": "58c81739e9ef5e1f13ca5a9aac9ab8b0454f2eb53207d9220d960bde031dc43b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00018-w4a16.scales.f16le",
+      "sha256": "1f1301ad0072ff35edbdeb23ef32c0fd62002c5ce37dd3ffeef1c2393887b662"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00018-w4a16.values.bin",
+      "sha256": "df2d4176c7f1e163a4fe022fec3ce24057a13ffbeb6ac2e8af9e1e023a4364be"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00019-w4a16.scales.f16le",
+      "sha256": "6c447778711e220ad25ed210426373eab253496dc15e5c2e7dd41348c63e4e16"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00019-w4a16.values.bin",
+      "sha256": "cda4ec372160ca1ca34a91a4003602d5cc72c900e579721d316acefc0f258e5d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00020-w4a16.scales.f16le",
+      "sha256": "4d29cd6c0fc82ea1b5f664874932897369fcfa71d2e3052797ca7df404424881"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00020-w4a16.values.bin",
+      "sha256": "207df6047b263d3ade255745e709aaa31d3cf714c0f6cdc2464a895c130a759e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00021-w4a16.scales.f16le",
+      "sha256": "29648f062c11befcd4d10c2000e4f2a2d457d86b700ea6ec983389b8eb2dc2f8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00021-w4a16.values.bin",
+      "sha256": "d4850eb500045bb129e56cb669ad50f0d6fafb5d667f08af5a3c94b0cc5af7ca"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00022-w4a16.scales.f16le",
+      "sha256": "c1a436c6457a5281510382edfda94aa239257bdf770876d8dd6a91cade1745e7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00022-w4a16.values.bin",
+      "sha256": "dba82d350c142d369480324066141c14dd92ea114a6fdce5e5714928064d9085"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00023-w4a16.scales.f16le",
+      "sha256": "241468c03a288b00fe63b7bd4408b108b7d96e5f8b8c84290ac325bfe1f17d7f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00023-w4a16.values.bin",
+      "sha256": "d993d70a4eae2e4661161324bf4641baca06c6bfcfdfb0b98d292bf88bd6d3b9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00024-w4a16.scales.f16le",
+      "sha256": "0f583d5a8d1f1e1f2c33dbe4289b6ba192a8389e953c8990a37e236b1bee670a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00024-w4a16.values.bin",
+      "sha256": "d3c3d45ed9e3ceebd33a535aaf544866c9339da23bd72a361e5050da3e03ece3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00025-w4a16.scales.f16le",
+      "sha256": "0302fe7993bef5fe2bce4b240432e3c59ea21eeba13f52955d1644e4fbbf7640"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00025-w4a16.values.bin",
+      "sha256": "e435108085c0c3634b283bde84739af9402cded4aab95f1990482ad6a53ec68f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00026-w4a16.scales.f16le",
+      "sha256": "403e6738e4910f51fc061af5aa74dbdf0d08af6bfa04eef4495286b2ffd80637"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00026-w4a16.values.bin",
+      "sha256": "c17fe35225facd773c444322b5b4ebfa6fae75591aba8bbc4d90351a453c4f7a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00027-w4a16.scales.f16le",
+      "sha256": "4897d5f87277e9feb364ddc512ce800368730812f5560c5f8989f7d7a20d2755"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00027-w4a16.values.bin",
+      "sha256": "8776647b60df895447f64a1a7c05923518666e768c0faf8262b394210ff7f804"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00028-w4a16.scales.f16le",
+      "sha256": "2c8e02e15caa1d2e7f6fc49d25cdc7123f6e969022cefbb0293248473b89de3e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00028-w4a16.values.bin",
+      "sha256": "531adc14023115f9ed8e25a820312a936c3146d390ca6d2adbc23d6adf40768f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00029-w4a16.scales.f16le",
+      "sha256": "be311acbe909ffb586adf0aa71082d3dd5778a1512a355bd1ac89acda4d14379"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00029-w4a16.values.bin",
+      "sha256": "d66f3139b652f2886b25bc7b4a3ef79db2284d7b9f97f43e83fedd5783bfd8c5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00030-w4a16.scales.f16le",
+      "sha256": "813e50f45a6cced4c143bc0f778e03a2a0df66290e6ec807ed73ff2bbd31c308"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00030-w4a16.values.bin",
+      "sha256": "6a4096a802ce144446d0437d01d27fb1124b7aaf454f01f4dcf466395512b241"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00031-w4a16.scales.f16le",
+      "sha256": "1b94868df654b768eb765a61b7763ba591e0de3f7ab4a154a863d47bf797ab81"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00031-w4a16.values.bin",
+      "sha256": "9b953f36098b8b38e2eb648e91f1ce982c86116d287a36221416a57e0af4eb04"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00032-w4a16.scales.f16le",
+      "sha256": "e6582cd1cf8ec1014ec0383ab7ece6ce0c69f03cb4a08d30dc8c5eb044b0f8a0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00032-w4a16.values.bin",
+      "sha256": "51251e85550c3e4d1bc73bf0dbc7c3c3dfca57b07299882d77917e47fdd631ae"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00033-w4a16.scales.f16le",
+      "sha256": "b6cd55f5d94bc4c585c5425c376428dd3f8e2360ca51af6a9ca4c93b366efd5f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00033-w4a16.values.bin",
+      "sha256": "5f0377b29d443ecf10e5d98dd828a81f6f17a4414bd35d0dde3f4ae32f8cca37"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00034-w4a16.scales.f16le",
+      "sha256": "8f8bbe026c0219f108c5493ac87e3c57d0cc049b6bf10e1bcbfb83c475dd002d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00034-w4a16.values.bin",
+      "sha256": "852ea0b8771040808ac79c2d52a10c62a202108fac41adadc1f8cbb7436e6322"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00035-w4a16.scales.f16le",
+      "sha256": "2c6472718403c4581b0c8b4e993b4873d14c767d6d0994a72c7bd8bf20099313"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00035-w4a16.values.bin",
+      "sha256": "4f54db6d042e9cf48a7e7edb42e3a99618874e08eeeb23a4580afdb29b90fb42"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00036-w4a16.scales.f16le",
+      "sha256": "5581aa54f55668cdb64c887cee767da1ec8a5d3ad22be926dab39bd29311b166"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00036-w4a16.values.bin",
+      "sha256": "4703a710ad3b0a6a39b7f1c2fea90215078321338db0742e37d8025eb45a850b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00037-w4a16.scales.f16le",
+      "sha256": "3c16f0f5e2fd8a86ed8407cfd3bb4ef422701586b2e8730e46e0aa270e7cfcb8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00037-w4a16.values.bin",
+      "sha256": "d2797f7ec81d340923f9356655f7729e7ae3dbd3cf23c68778f775df21829d95"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00038-w4a16.scales.f16le",
+      "sha256": "1d42ff2b2dfe17b01922d9a172d0222a0a31e78aab6456408636a37f4a7dae6c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00038-w4a16.values.bin",
+      "sha256": "a77dcf39e4936441ca53bcc598641b8a17ba7f8511de4a6b9f0479f926267376"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00039-w4a16.scales.f16le",
+      "sha256": "0a549502a8dcbaac683581a0d17dae7d09ea2bc092ef978c473ebf3eb3cd4495"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00039-w4a16.values.bin",
+      "sha256": "d2c2d142c3a5847d685ec1d9f8ac8143c741a562c2aa7068b47ff093a585b7b9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00040-w4a16.scales.f16le",
+      "sha256": "8f0748810b4a87a26557483f474d62616b32c55ef9c7d8579ce737c2f76f97d4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00040-w4a16.values.bin",
+      "sha256": "999e7b161ee655f86cd28498a629f6f9bffc91ca3722c058249dbbdc4017e983"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00041-w4a16.scales.f16le",
+      "sha256": "eee62eeba834438d43abf34a391cc607fa9f9b8d2c7de5391f55b8c730b61e8b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00041-w4a16.values.bin",
+      "sha256": "4a7d03b93b573a3703f5db97015a49ad784380fd0c1412b689071ec0530582b6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00042-w4a16.scales.f16le",
+      "sha256": "145cbeacddced028432f523a5e4022bf3d3bedcd8d4fa3fceb3c0157d92d40fc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00042-w4a16.values.bin",
+      "sha256": "d3fe8916e9c9c43e5fd824d8ce402eb187d9bd7a781ef5f0e7d3fc75bd6864dc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00043-w4a16.scales.f16le",
+      "sha256": "2a71eae5f87d1d98f2fa5a6ca192fdc1bd79da1e98502b3ee045e0fb4a850333"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00043-w4a16.values.bin",
+      "sha256": "acf895a4dec5da5a4726f33201572054a81beeaaf832c11f5b9bbc35e5a5235c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00044-w4a16.scales.f16le",
+      "sha256": "91ffc2f97da6d32a72e11869353b268d0658cef1933c5fc6221d3fcb3fabea49"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00044-w4a16.values.bin",
+      "sha256": "01ff5f6f4ec1c869d644ad0ec730ebcba9dc996917dc5e0baa50a71afec2f7bc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00045-w4a16.scales.f16le",
+      "sha256": "5f4237823e088c98d673b678a8d245d23cad9abb3cf77d6c7aac499471aeab8b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00045-w4a16.values.bin",
+      "sha256": "a659f83896b19b3c517dc13609428eba0fb42bc6fc9fc3614e2977e4d23ba00f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00046-w4a16.scales.f16le",
+      "sha256": "226ca570b3e1f15fe4af631bbefdb297d7440aefc4da5926fbcc5471c44fc133"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00046-w4a16.values.bin",
+      "sha256": "dce7b1126b7d9abc8ab2cdfed5a1687128f1a48ead17268454ad6f52d727295c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00047-w4a16.scales.f16le",
+      "sha256": "3f474b887509c905420d5048237d93271a73f5df4fb1d1b9565a16ecca4bc46a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00047-w4a16.values.bin",
+      "sha256": "5ce9014bf34d42d3901b67872e8fd29d02ec0d89b26f8e29074901cba6633791"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00048-w4a16.scales.f16le",
+      "sha256": "5228f3ff147be7c412f49bfa24c69160f497ee9ec50cde0a3205d44eaafc9763"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00048-w4a16.values.bin",
+      "sha256": "32a182a23b3b07e25462c07ad122620697cfe07747d21eccb02cd0afc3c66918"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00049-w4a16.scales.f16le",
+      "sha256": "4fb124de136bdd2a3f1b175703f8910b74225efc068d54b6a2bc4223a65f4a7f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00049-w4a16.values.bin",
+      "sha256": "c21b17190bd46a08e265151f3b6db59cd4761fe2ec7f33b1ceb0d4bdf25cb996"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00050-w4a16.scales.f16le",
+      "sha256": "d7f6a971e055fad5c8a86ac912443c7f29189bf6d527f3487a1cae647bc68f77"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00050-w4a16.values.bin",
+      "sha256": "6086e3ec4a7a7eabdcd96b1f480d602a862bb2cc4d539b119cd9d4d1dbb67e75"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00051-w4a16.scales.f16le",
+      "sha256": "2b2a8cffdda5a136d426a34a497afa41f9c58e638d5f3cdfe951e41fd6265b7e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00051-w4a16.values.bin",
+      "sha256": "847e4fef3ccbc21042e311fcf55c3308388de8614b7ceb8e95244ad234e9ddc8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00052-w4a16.scales.f16le",
+      "sha256": "e1a88d3cdbf4b0c29eb4a8b36a3166390bb4d281aed69e7870f4fd5346c65beb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00052-w4a16.values.bin",
+      "sha256": "6519a7bf6f502bc99ae89b6805c8fd12323aeb568ebc5df66a89d9fde9dedc41"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00053-w4a16.scales.f16le",
+      "sha256": "ee41693ff0b5ce7eb2aa97e8b3f1dacc90885dd2982e10a49d6bdc70a1ea194f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00053-w4a16.values.bin",
+      "sha256": "f970528aff4925845914bbe07f8d576f0fd5c5720cfa3403fbffb75a5766e63f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00054-w4a16.scales.f16le",
+      "sha256": "aeb72c36af13da80d19b8408eb818c5ab1b05acc9c5a35bc04265ecf6313004e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00054-w4a16.values.bin",
+      "sha256": "f145bc67e5f13a90c1bb751f5bb565a095ff9d01af9387b4be17aee393999b1e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00055-w4a16.scales.f16le",
+      "sha256": "a05bac04355952508fbcf303882d46baf0e8d755243036879bf5253e0a808dcf"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00055-w4a16.values.bin",
+      "sha256": "276c9f009f8ecece455da18a59904226d062384d6536d14135ef88703c2a0535"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00056-w4a16.scales.f16le",
+      "sha256": "cdc32bc308c4b6a9aa356f954f1b2d38b1b6e534770279a6982c9aa0e8f1b093"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00056-w4a16.values.bin",
+      "sha256": "f6d0f6d2971906a948f66fd50e52cd71f703e70af5bab3ee04860de4413d0869"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00057-w4a16.scales.f16le",
+      "sha256": "431c7c64df8a13c08f8c5b1ca884c50fc9c71f12f4d419d8231d97f1d76f8e0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00057-w4a16.values.bin",
+      "sha256": "d02bd80c580765ec4d31d627da0aaa5fef8a37429d1ca37052aeed010ba02b31"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00058-w4a16.scales.f16le",
+      "sha256": "f38bcd7aec43af33e300ecb157cd9c9018b1f49b5f31c011ce6079bbdf9f5562"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00058-w4a16.values.bin",
+      "sha256": "d1c9649796e8cb8577435763674d58198c2f0e164c873e0f4f41b3ccd7da46bb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00059-w4a16.scales.f16le",
+      "sha256": "fa6f73d3b6d3a46c4cd6de745b01d44a0920ad8153d4a4ca009827339598596a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00059-w4a16.values.bin",
+      "sha256": "1a3820480d7f5ee15b3da9b09d89226f23a0ff6a12e61142b320ae97a5183929"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00060-w4a16.scales.f16le",
+      "sha256": "95aeeff702557e6b900980da97c7e434d63a0c05af1a42248ca51a972d219602"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00060-w4a16.values.bin",
+      "sha256": "e248679484336bc068f792bd365ab6e70a169c384df36c062313bd9264b49e68"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00061-w4a16.scales.f16le",
+      "sha256": "097a447347363d65310b661985e31c8e3d322e1fad326d3f6ddba2cbf3df0bbd"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00061-w4a16.values.bin",
+      "sha256": "637972f32031edeb08b5cceeec08b8ea7645d8ecf79965ca1d9be5306b6754d0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00062-w4a16.scales.f16le",
+      "sha256": "8f2b870b77d810a1f537c37d197654b946b1a7b21e6c86478b3f87347fd40ae8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00062-w4a16.values.bin",
+      "sha256": "3d896ef63085f683c29034424764d7a6ebd68d6649fd00d917e30588b50321ab"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00063-w4a16.scales.f16le",
+      "sha256": "add5eb5a4c5d03b82fcc5ebe502bcda940ce9ed0b8454f9e56738247c745fb2a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00063-w4a16.values.bin",
+      "sha256": "75aacd348652b5901cd44865751de128d8cc201ac3014300f36d7bb11ce1bc54"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00064-w4a16.scales.f16le",
+      "sha256": "96996b067dbb7f42ac424bd9d1b6698c02b2fd3e4d77de045d37fb9e05732bd4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00064-w4a16.values.bin",
+      "sha256": "0a6e0094f53c1c769b35e0fe8485032a6f0d643b19e447469c6e1810f4c11ee8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00065-w4a16.scales.f16le",
+      "sha256": "b6315cbc6956a3e1d5e450bfa472f98ddc8a7a963992ae4c2d996973da9052b9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00065-w4a16.values.bin",
+      "sha256": "e366c6c63621f4cda0dd758b7f28de61ee062fe011d2ec2812682f979caa5e5f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00066-w4a16.scales.f16le",
+      "sha256": "d004e31e1c0ef29ace0eb366097006f4e80b02e0ce139624c6254d956ac0b9ba"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00066-w4a16.values.bin",
+      "sha256": "500facb7f700290e28514323fe2dbdac6dfe127bce48668b3f60bf39fc9912b0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00067-w4a16.scales.f16le",
+      "sha256": "35ab89629df698885221b3b49f56f60d845e5a8cfdbb1f3c6e7f0fc4ce90d7d1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00067-w4a16.values.bin",
+      "sha256": "ddf86c304a440de078fe32f60ffdb19cf32b6fed9bf63f7acef1a94f93c6ea05"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00068-w4a16.scales.f16le",
+      "sha256": "9a10f06ce6e07f010b395da2d07ce01ccada27958a23feb8b9a2c053c543db4a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00068-w4a16.values.bin",
+      "sha256": "1ae1670780aaccee6d3dd3b360aa513f8f96966b06792f478c9216d03a302d73"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00069-w4a16.scales.f16le",
+      "sha256": "f140c91c485c65ea22d7496f862a5506acc02ee0fdb9a2a0e28515f6c94ca3cd"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00069-w4a16.values.bin",
+      "sha256": "cf0e723c6f9a4d5bd452c11da0ed01bd0065efde192e3ccefe699c5a89491936"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00070-w4a16.scales.f16le",
+      "sha256": "d5f0c657ed5bfcb7d4c6c353d17eb5f5a2050e60f1690ee4a0246cf39da09ca0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00070-w4a16.values.bin",
+      "sha256": "fad20996f6f94ec219adef4fefff27c2bbc13b921647a173e05c5bf1bf3beea1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00071-w4a16.scales.f16le",
+      "sha256": "96337fe7170d92cd25afb9c6968a4db258e398fe5129f70b429f2675fd4aaf9a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00071-w4a16.values.bin",
+      "sha256": "e3b426a9bd288fb5c35a59604c79a5b8582f8f5f935e3ff96036562ab0487f60"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00072-w4a16.scales.f16le",
+      "sha256": "bd13957160edbdf19f824c577db709baf0ece845204eea1ea93d7dfb0e09df9b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00072-w4a16.values.bin",
+      "sha256": "e59ac0b3de6906329d08879c235e13b8f76ceb32477261a900c9655bd86f77be"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00073-w4a16.scales.f16le",
+      "sha256": "816d997a7b897dbadce42b2bf51c9a67fc64597a3e1cfcc0e59ad45ae410051a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00073-w4a16.values.bin",
+      "sha256": "8d05d6aaabe2e39766b72324351d8f46fd16b02d87eff72b6b440eafd4fbcbec"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00074-w4a16.scales.f16le",
+      "sha256": "16f96d772e8e4be442946cf71a2c8bbeb99cdf7800e9f43e65f4c3d65fe86302"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00074-w4a16.values.bin",
+      "sha256": "f11ec027ce089d2f5fa23e991071555cc1c52ee8ed0d55f0fa5f798cea4f76d3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00075-w4a16.scales.f16le",
+      "sha256": "5e4f1283f160cc63db6edd9dee829809b742108d09eba5b63ca0fe11e77a721f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00075-w4a16.values.bin",
+      "sha256": "fea742d86a907c8ef65137d7be535a059fe8cbc0725cb9851d6b63b215bfe5c5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00076-w4a16.scales.f16le",
+      "sha256": "d809a271acd59816d14b4c2a871de4c5aef04fef4d4716193c751364fd7b8de1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00076-w4a16.values.bin",
+      "sha256": "67a8c0db62dfbd32813b33f1b62ab317c8770597ef1bb9baa6a5414b21782ae5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00077-w4a16.scales.f16le",
+      "sha256": "28d6f57659b708dd2891097d59ce1e27a80efa669b3ae368d38a41fd781bc236"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00077-w4a16.values.bin",
+      "sha256": "f15cd32d24242956fb8a008c28cddab8ef784ab9d4b8cc609c5c4929449ce7e3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00078-w4a16.scales.f16le",
+      "sha256": "570f56b414bd02ae2b0f5213d77a42e8c03b78d8af7826f3405cc3510015435f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00078-w4a16.values.bin",
+      "sha256": "c2a510556ffb4c767b188ae255dda93b6d5fd9f85c98bf1c6bcb302ecc56137b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00079-w4a16.scales.f16le",
+      "sha256": "efcfe340e4496389253cec3cba6b6ce5681159221ac8dea2d3da77dc4de1b0be"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00079-w4a16.values.bin",
+      "sha256": "20e1c64cda2a2d1cb7dac542bfa32f365d269706f46d938c1fa0ead73a10d169"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00080-w4a16.scales.f16le",
+      "sha256": "9a18ca895c4afcf2ac7e595a7d588e2ccd274eba056ca92ef0e0525d6471b9d7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00080-w4a16.values.bin",
+      "sha256": "795d0d50251d2d44115c73d85dc95fa69ef8b112e457a16369793e22c3b80341"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00081-w4a16.scales.f16le",
+      "sha256": "b76d581a041983e6494f6f4890e969a782b033fd425fb121b62f03959214c05d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00081-w4a16.values.bin",
+      "sha256": "c3b2cfe81c639961fa926ff1ee233c67a24588358501a4a12e0f9cf7b8a845aa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00082-w4a16.scales.f16le",
+      "sha256": "7e2bda23d9d406070700c13a5a900853f62da13144dc46e200f8f88f2bf34443"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00082-w4a16.values.bin",
+      "sha256": "91d5ad9bf0fab5252019b674b41229b7b26779e248cee5a25efd9e0cd5f60c0e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00083-w4a16.scales.f16le",
+      "sha256": "08b4784e73d5e508ea306a0185a85c609050a3ee655709b1a79dd9b1cc5272ab"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00083-w4a16.values.bin",
+      "sha256": "ede41589c704c770787354a1c84924577849ebe6a78a15c6e31ec1faf91223e4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00084-w4a16.scales.f16le",
+      "sha256": "2ae8e7df2a6ef3de493ef4629639251e1181ee2f1f6f538a1cbd60bea1494aa4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00084-w4a16.values.bin",
+      "sha256": "ed949f1c6029e78e58c47b8ec17320f7cd7e4b32ed4a69e725fb740eb7974124"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00085-w4a16.scales.f16le",
+      "sha256": "4348928dce16e865653778ab3e07686946491f3a084ca2d1f7bec8075e805967"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00085-w4a16.values.bin",
+      "sha256": "79fcfb1e4cf1b877c8efbaf8db85aa6834ca98d04007783bc54049459053cd5a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00086-w4a16.scales.f16le",
+      "sha256": "1c7c1184870e62513e0d4063979196d6923070b31fdef352809a2c78f328edbb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00086-w4a16.values.bin",
+      "sha256": "7ae17124deea6fd631e16c551f5a82ae7c6b90146bb65c4eeb8e838150c7e5fc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00087-w4a16.scales.f16le",
+      "sha256": "0d5a8dfa480fe31659345d5e10685820aef5197ba5e760c0bccda413f2b09604"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00087-w4a16.values.bin",
+      "sha256": "f8d4cfd58291d8cb13e7595ba228f8bf0c74924aeaa7a78a8db586b9e0e69f1b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00088-w4a16.scales.f16le",
+      "sha256": "0a3591716b8b40d9d460fb1f1e57f833acfa4e04d72c4f76ba668d1258a16d13"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00088-w4a16.values.bin",
+      "sha256": "1e00a420a4eefa0140cbdc2356e0e9e00b785d2e3cc23a9be9a8856862053041"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00089-w4a16.scales.f16le",
+      "sha256": "8b53d764ee2fff3d989cddfadf2e93ee522b203d91a5d40ea146fd65b4adc62d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00089-w4a16.values.bin",
+      "sha256": "7421795131d10671162f74e7e0fb778d59714b3e5906c0adee8d8b8b18fb743e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00090-w4a16.scales.f16le",
+      "sha256": "503088eda0c84e58b4cad670518888596adf8f84f032c2264afb69ea34b14f6f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00090-w4a16.values.bin",
+      "sha256": "b3de656a0bc832081959c9440a063971ea98097e2f8a29e7550b55596da9d434"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00091-w4a16.scales.f16le",
+      "sha256": "9bd35e446375128509ac8175f8430c41c8d2f76dd9f0e7c1a6ad82b560154988"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00091-w4a16.values.bin",
+      "sha256": "cae9a135bc05bed7c795b1aab48f59f160c4b3ecbd008251adca6f4d653fb016"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00092-w4a16.scales.f16le",
+      "sha256": "8fd05412c239399af2cad8b2e2ce146d7a81867b9b9d1683213b0c1870d72d34"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00092-w4a16.values.bin",
+      "sha256": "5fecfb471a53a0eca0bbb78d229080d9721851bed3fdc78a0ea8ee96ceaa93dc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00093-w4a16.scales.f16le",
+      "sha256": "de5ec1523eaa695b90ee4626b8e9b7d4e5c3646fd268cf9f208b4af4cbe521eb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00093-w4a16.values.bin",
+      "sha256": "1f6ae4e6d65a29393c14d7a3b57c58c00a5549f75eabf2dd639bf335be49d6ee"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00094-w4a16.scales.f16le",
+      "sha256": "28c0684077a645d3b4b1eb12875725e9d460408a4fd77d8d428c97f6e37afcd9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00094-w4a16.values.bin",
+      "sha256": "78d1bf6f45b0995a2d6de5e09c608c9f6e017c50f8bd7e1fce639376354b390e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00095-w4a16.scales.f16le",
+      "sha256": "f15d0d9cf1a71ddd3856b1ce9640f7e274d5f6b7d249cd6c982e6971a635d7a5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00095-w4a16.values.bin",
+      "sha256": "3edbc046c9755ffb5706a28e6d7731682e88f54facce15b7c25cc63796c819f7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00096-w4a16.scales.f16le",
+      "sha256": "8fb746f88ee9d480eeeca3290daa27551b85db7c63a2a5c43139eb2a35247792"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00096-w4a16.values.bin",
+      "sha256": "f2555422013fa9f366937a112cac792b59ee30c5eaa4183e7d1d3265adba7160"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00097-w4a16.scales.f16le",
+      "sha256": "5e4bc80f721ae9bf45d7a71baec75ebe5d0400f1334b4e7ff3bfd1b9eaec4aeb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00097-w4a16.values.bin",
+      "sha256": "3a3cd639f3ca0835bbd4c8924822244b444cca108f000fdc3df28e0e6d47a8c4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00098-w4a16.scales.f16le",
+      "sha256": "70fe189ee73936b0a56d8a3a2e30abdf63466d2ffbb2540803ca1b91d5c62aaf"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00098-w4a16.values.bin",
+      "sha256": "5fbb24f61395fd6b3a172dbd1b6fa40a7688cffd14ad9a19bf515a4711871998"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00099-w4a16.scales.f16le",
+      "sha256": "bfb016b8d4be1b5225cea505d6bdc07e9082e448b73b9abe18c50dfc58ab076f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00099-w4a16.values.bin",
+      "sha256": "23b22bfc052b181a1bd3c215ce92c4d50e662897a0545b08fbddd38195eb585f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00100-w4a16.scales.f16le",
+      "sha256": "317fe1ba266f03618161a72824db05a451fd3d7ba379bdd020cb7efd005f97bc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00100-w4a16.values.bin",
+      "sha256": "fb26320fff926ce409c37939f1251865a4303570444bd09df31bf688821c0658"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00101-w4a16.scales.f16le",
+      "sha256": "f76188cafda527c1c45e69decddf732e2d999ba3eccbe95c5e61f11935077a27"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00101-w4a16.values.bin",
+      "sha256": "a54fd1b0ee9f5cefeb4d891d4d902276de01c6724300db7472b3a6d0425fd134"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00102-w4a16.scales.f16le",
+      "sha256": "0646c5225b69f4a61044bbd8ba23cfb10fbb843543732a0bea388d2d86ec8561"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00102-w4a16.values.bin",
+      "sha256": "7bffaf0c2b430bdc7651870ddb76764420a18f909bf31a15f83c8d669b09afd8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00103-w4a16.scales.f16le",
+      "sha256": "beb394b2ec3ff406ab3b6c68c544e6d1058f6c7c2272cedb12d40ef9ee59cf46"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00103-w4a16.values.bin",
+      "sha256": "7607946bb7652a1efe28f41605d6e72b348334a1a71e3030181857913674c486"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00104-w4a16.scales.f16le",
+      "sha256": "e2635fdcfc675e9c1175a276dc954699501962b31d19c39e2ba051435e9f5ee0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00104-w4a16.values.bin",
+      "sha256": "05e66ca1553545b79be86aec20ee3c7e5ca228c80a750e2826302fc58a697743"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00105-w4a16.scales.f16le",
+      "sha256": "5b966fcc506e8f9b0200c815d1af81486646db8ae12410c60c3e81b1460e763e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00105-w4a16.values.bin",
+      "sha256": "c368363c67a8d18c2275f2a635e046b0be8b17c1fb75b0eabac59bbb831ee8de"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00106-w4a16.scales.f16le",
+      "sha256": "fe988dba54579b4167a6e8156ce26ec4cefd9f31c6ac1a7c5d6bc02286f6e545"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00106-w4a16.values.bin",
+      "sha256": "b036bdc0cadefc806be8af642ee0ae064c3aaa99fd395453205b0f15eb069c5d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00107-w4a16.scales.f16le",
+      "sha256": "f3b1763818b9974718b45ea2c2a59fc71959da0cc98ee18e3b1c8891449e2cc4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00107-w4a16.values.bin",
+      "sha256": "8bd649c3ccfbc3c79e8987487fab6f553a6c75604b83ab0bca2c9a0da69c4faf"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00108-w4a16.scales.f16le",
+      "sha256": "0bf0b00bad2079cccf4edb65b04fdef25427ea7e2b4f60e346f61b789ea34f3b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00108-w4a16.values.bin",
+      "sha256": "3eeaf16a225344031220826ad752b456c9b3731295a321d9cab782012fcf35fa"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00109-w4a16.scales.f16le",
+      "sha256": "2ba2c53571abea6924ddcb4fc6f882d28fa52ab222caa1581d9ea264c5b219ee"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00109-w4a16.values.bin",
+      "sha256": "25e518121fa771541bfd66baf96f9cefe6ebf7c3b06928e9af45e5b0785fb13d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00110-w4a16.scales.f16le",
+      "sha256": "860eafe744bb7cdbc25c7cb4d3ee35f9cfdce879e1098ba013ed1d8feb568828"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00110-w4a16.values.bin",
+      "sha256": "805ebc52381d87c74501e6eb93cedb4e607cbf47db297f18383fe5d5b9f8436f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00111-w4a16.scales.f16le",
+      "sha256": "64a50b11ba93f840d4413316a9a9b77df3806947ea2cb063632c9c7b1307e497"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00111-w4a16.values.bin",
+      "sha256": "bf7d30affc319d84d6021392e2caba564326d4cde1ec07e464ff22a02c7ae3e9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00112-w4a16.scales.f16le",
+      "sha256": "3401432d93e97859026202e6589deb0c5e5d2988a9e20efaf838fd8d14dc087e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00112-w4a16.values.bin",
+      "sha256": "4b031d66cf10818cc80a1e72d97786086b1ef3dd291265824714adbba02c38de"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00113-w4a16.scales.f16le",
+      "sha256": "bbf67285a88247a57c4611772cdccdf1273e86af14036f7af9cfa4079d5ee695"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00113-w4a16.values.bin",
+      "sha256": "bd928186904b4c8911a36cb903f2907b0a370870ebc6d8b3c493ac2618376c68"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00114-w4a16.scales.f16le",
+      "sha256": "f2926f27e0c9c4d964436b9005743fc45ed66ee28e7ac7ed8a9b5b7336a7ae65"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00114-w4a16.values.bin",
+      "sha256": "9d8a5f0900dbd66f73977b9c1de40e7d9690f6bb2217809ff267abca6eaba30d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00115-w4a16.scales.f16le",
+      "sha256": "e88ae20e8ccb545744541eab0967c5e21bb4b459d6e59fbda5e6782232740c3b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00115-w4a16.values.bin",
+      "sha256": "334e70317c5cd11dbd17f35c701873648be650b8df79e929386027e414dd1f1b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00116-w4a16.scales.f16le",
+      "sha256": "3c8cdfaa5422f12227c06910e71dc835c576e3a1507b5aa7f827a7a987a39577"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00116-w4a16.values.bin",
+      "sha256": "c0ae999764392c0784fd85caf7aad125d8bcf7961de5c6f1cc5a4196b3ed3fb6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00117-w4a16.scales.f16le",
+      "sha256": "55b9efb76b6e21342508890ac937bf2762bf2897f690fd2207ebc3c102589618"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00117-w4a16.values.bin",
+      "sha256": "e0d75a7766bfd63a9e5a766d8c4cae616652877648618ee23264bf83e88b8efe"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00118-w4a16.scales.f16le",
+      "sha256": "c320a748fb356358cef40daaf80dfb2596e462e81228d73cedda1ebaf38f1e4b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00118-w4a16.values.bin",
+      "sha256": "8a6cab4a56f566064b5f1c4a85e956ff88b7cba73f87c83eb44d3f5ed03603cb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00119-w4a16.scales.f16le",
+      "sha256": "433d87f94f2cb93948e667910d56d72cbc4a669a72d6ffd3a6428249bc0b6018"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00119-w4a16.values.bin",
+      "sha256": "0ccf5e52b6de0f92231cf1b9ee91616a26a0b9b786333f795bd55d5589e3d383"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00120-w4a16.scales.f16le",
+      "sha256": "aa4055740f564843c8d5f549d400e55b7b27af565921c74cd83404a00c4d1de3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00120-w4a16.values.bin",
+      "sha256": "7aa5541df53593d3506e58548761dd073adb016ca9e0b30e96143ca9ae07b4c6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00121-w4a16.scales.f16le",
+      "sha256": "9662836f9612f6bc641a2b739d4b684dbc431825ea94773867f007152d35aab5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00121-w4a16.values.bin",
+      "sha256": "e29b762949a08e4768daeaf407136ace369468224c8dab1f1dc639a31433a4ac"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00122-w4a16.scales.f16le",
+      "sha256": "9234530b807120e0fec053b31bc554db2e437fe23e2d05eb20755a84c6a622a2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00122-w4a16.values.bin",
+      "sha256": "95a23c8b169b94c3f96d9fed4ed2ac2f5f979c5c1bfb5cfdc3ab8307bd5019cf"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00123-w4a16.scales.f16le",
+      "sha256": "7725b18b9e69fcc54d49ee7e2ac8c83307831a94b58edae4568035aa72bf3b25"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00123-w4a16.values.bin",
+      "sha256": "0be743c842919e952c7fc0f8dc2210862f01c9e6054aeaacd4b0efa6cb71beea"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00124-w4a16.scales.f16le",
+      "sha256": "c6c92265d788dfcda5d7cc4d196a520c09949b1ca0014d597553c3592e8e06bb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00124-w4a16.values.bin",
+      "sha256": "61772c5a3a9e25e3341f51ff72b8d994ecd88b937a3fd00b171b3c5f20f2cf6a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00125-w4a16.scales.f16le",
+      "sha256": "8f6024ce4d804f1aa52120813f29f6d6de621ad5ff6ba197ad0e10bb13d02b89"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00125-w4a16.values.bin",
+      "sha256": "1bee7ac6c47fd1ad37771cb6145a5c17be9badbdbebc804892607bcf06ee28f0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00126-w4a16.scales.f16le",
+      "sha256": "718c2206f32e3983ab2bfe0ac232c323be9157aeafd1c9f0ba9b9a1b5528f21e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00126-w4a16.values.bin",
+      "sha256": "2f9671c981e3724bb2b1a7048ba58a5bf66065781ccae4d6276774d02f28f419"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00127-w4a16.scales.f16le",
+      "sha256": "01e97fc7cc75478d92007e8e81c247f9ae8dd3166285d6194826364567c05014"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00127-w4a16.values.bin",
+      "sha256": "0d5fdf09874bc44d2a1883e8fd6ba89fbdb5a2964e5a5b6abbe3adcd55c9691e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00128-w4a16.scales.f16le",
+      "sha256": "8bdbf67f848db286c35d1eba26e74ec47f49dc1bae953ff4b7187a1a161082d4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00128-w4a16.values.bin",
+      "sha256": "030b9ba6d8e8b0389b21c0076a6a57d6493373485cdf7034964ac97099c34047"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00129-w4a16.scales.f16le",
+      "sha256": "650ed6f2c636c999ac915aa468fe0638739ea9d5eeb7ead4570d697da97d0241"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00129-w4a16.values.bin",
+      "sha256": "54f2d901a7197ac1928bd24dd74db8fda952e38dfea190eddd9e4d375bbcab5a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00130-w4a16.scales.f16le",
+      "sha256": "4e2aa2999897d5c0a14f88fcc2bbf232215b6b5322fad30ee9c36e95063a244e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00130-w4a16.values.bin",
+      "sha256": "545140f5c6ab51fc19bbf8ff3d56e6a82306cf0da23046983d8ad6fa6041dd3d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00131-w4a16.scales.f16le",
+      "sha256": "455c7e959ea76a90c7112d8077f625d2df105279e1084451299a04cf04019922"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00131-w4a16.values.bin",
+      "sha256": "bd593b93bfb10a35c025c4f8daad8f5fa7a61c411327c014a61c234051dce80c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00132-w4a16.scales.f16le",
+      "sha256": "52adaf355bc0d331f60ec8036da1be1f53aaacf7c9210f391343a05f659bab2b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00132-w4a16.values.bin",
+      "sha256": "8d2e8235ab0d629b6befd7b468ae298fe300da4108f1ca1568dafce93a9953c4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00133-w4a16.scales.f16le",
+      "sha256": "0e7c81066a94ad5fd152de1a446f74aa2b537941e83031ff68063001a445f7c7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00133-w4a16.values.bin",
+      "sha256": "14281cdfbbda4e5c814df3def56a96effa7931c5f34042bbdb7d16d409c1acd6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00134-w4a16.scales.f16le",
+      "sha256": "e806f87873be49f7ee347f3686cfab59ea441c79bccb4d85a16952cf7ce02712"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00134-w4a16.values.bin",
+      "sha256": "31bc6a945fee27946c725b772871b9029ff4e4e02bf33725b408aaff062e56e3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00135-w4a16.scales.f16le",
+      "sha256": "7be4ee526d160005e3f06085c8f05eb8999d4e190026d6d44143c2a550a1a806"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00135-w4a16.values.bin",
+      "sha256": "9e1f4de9801d33655ee604d9a1164e0aad13009887767a2ced0fbb8f64b92ee8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00136-w4a16.scales.f16le",
+      "sha256": "e9d825f88fc7f6494b19489ded288eb8f12b684f344002b51f9153c4f3bac46c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00136-w4a16.values.bin",
+      "sha256": "d64004c23fd4c02b0c1d3a071cfead003620e3f08a3f6e65045697f772fe8848"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00137-w4a16.scales.f16le",
+      "sha256": "638148d98ad229c4fcaa54c00c56261c00542453a5aecfdc70f153475d195dd2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00137-w4a16.values.bin",
+      "sha256": "1c6ddb9aef2c923fb180d33d228f077342fccde7c0f93d7956704b9720baa191"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00138-w4a16.scales.f16le",
+      "sha256": "b02d74fa2d473de877a176b06a05b8a1793fe4f7f5355120e60cfecae687a36a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00138-w4a16.values.bin",
+      "sha256": "0914df32f712da8482e4bee3e6c749dc39a78e71bb88d81f1994806392a15eeb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00139-w4a16.scales.f16le",
+      "sha256": "923db36acd0f4fcf19355ea8c5061d2d24241f33866a7791d93c166202490192"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00139-w4a16.values.bin",
+      "sha256": "936b296ae1ddcf4698fdb7c5be8fe04b4b7a64b5bff49d2769aab8207b7864ac"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00140-w4a16.scales.f16le",
+      "sha256": "3ec012e1b24bd1246e5b2fbebbf2e7ab7005846a36d1e43b66685cc33f1edc18"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00140-w4a16.values.bin",
+      "sha256": "1d290a0354aac2099df60e79c5930d3760728faefd24f764318bf2734da22c5d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00141-w4a16.scales.f16le",
+      "sha256": "4e63581cb461c9d5c076d6a331ec9ab02234eb0c6b582773bc3cc9e0b7493db4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00141-w4a16.values.bin",
+      "sha256": "3e382e45d169fa714e649143f5ecadc9227c4366de2419c8b1c7b5b4e66412e4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00142-w4a16.scales.f16le",
+      "sha256": "fa65bfeb500806a91454eaf29f7432442789239b25aadd23b31d8a2f6c1bb6f9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00142-w4a16.values.bin",
+      "sha256": "9493aa7734beb69963b2bb7508cc99d4d764b4b4cfe82dbdd3d3637325cbd2d8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00143-w4a16.scales.f16le",
+      "sha256": "2a9ef59167dfc2b22d8f949f084bf789182015c59157fd0ab821ff88b4245f12"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00143-w4a16.values.bin",
+      "sha256": "94d41c510fc9a777bcb1b3ec81a45aa1ccf824a1c0afcb1df447a901896d8048"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00144-w4a16.scales.f16le",
+      "sha256": "0c764681c1535e6316282623309162b6750e124e328284921e186393bdd2f0de"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00144-w4a16.values.bin",
+      "sha256": "a5d81b0a26fb671aa3eeeca354248ec54321081d47aa70e35fd8b68b20f2a56d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00145-w4a16.scales.f16le",
+      "sha256": "0f612b9608a619b3d0de081b1f570ebbf888b65daff19f32053981bd23b3888a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00145-w4a16.values.bin",
+      "sha256": "f079080a15d33050cd6d1377467c43d77dd65f8b79d5d353a51bb57b0152c735"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00146-w4a16.scales.f16le",
+      "sha256": "c6aa7330de6aac8e7964e824032f651ee9f20f54f3ffb1467137cd1b62aeed58"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00146-w4a16.values.bin",
+      "sha256": "41a5201aa1dc68e99d7ccbc73b418fb77cfc13f048971b53f28349db8883df6f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00147-w4a16.scales.f16le",
+      "sha256": "03a2a07ec7cb917434a075861ebbf453c422810330f2c1d27198bfe0e3cc3292"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00147-w4a16.values.bin",
+      "sha256": "3a9439f205a92bf43755cb7e4e470ba12878c19832be0df6ab07b11066d64159"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00148-w4a16.scales.f16le",
+      "sha256": "507d8d985235c79b2ad9e318da8a27b0c0bc01732e99c04ff96be84583aaddb5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00148-w4a16.values.bin",
+      "sha256": "79620329e09c8d27d9e3016a8fa42f5dd98ccae7a1f40ec1eda412c17fcad9e9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00149-w4a16.scales.f16le",
+      "sha256": "e7a42fbec2e820393bd7e7fb4c0a32a9c7d0de8775896ef79c8cae9058aff838"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00149-w4a16.values.bin",
+      "sha256": "357de43bc9f258bc572d9eda9c8dba2f1d8f880b1df0dcd153580351741c79ef"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00150-w4a16.scales.f16le",
+      "sha256": "53166c66c5fdc74a19745b56c5912f6777d817e7d556d092488b87532a432710"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00150-w4a16.values.bin",
+      "sha256": "2967c9d2691e4c7f02ba5912cfe8887a535b6c58ef73bebc60b0410068c1b448"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00151-w4a16.scales.f16le",
+      "sha256": "72e34ecd05be6c00444330a4671d628e239499052f2eb7d52090407a41bcaac6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00151-w4a16.values.bin",
+      "sha256": "a0463101ce90fdf825bb4cc6ae7d1f28864b3a18327e31c10254f4e530d55443"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00152-w4a16.scales.f16le",
+      "sha256": "f3152dfe991f6759919323feb098e2dc77ee5df02c60a1a10e44bbaf95451387"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00152-w4a16.values.bin",
+      "sha256": "75b863e2fe80b19c04bb20d8e76f92d77588c2e02b3b2a93a7cffba7eb44190a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00153-w4a16.scales.f16le",
+      "sha256": "5c8cf9bf99f14e6a61e04bbf5459a2ee0a383b63b076d3e3dd9616b530caa28f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00153-w4a16.values.bin",
+      "sha256": "58fd28c21ea4dc7aa11341da10c575000cfbf637afbcb61024f56611953a1b2c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00154-w4a16.scales.f16le",
+      "sha256": "8fc263d610236affc77b7cf05fe11a0de48520331fd7deb043383e0a1a109960"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00154-w4a16.values.bin",
+      "sha256": "87f70603f633fc74c117a8ff32ac3da2b998751a1cbc757f66cc95d63aa71bea"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00155-w4a16.scales.f16le",
+      "sha256": "63252d8622e1cb2b4da1217e6eaa731a7e38c9eb6a6a9ca7e6980fe688e1bb88"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00155-w4a16.values.bin",
+      "sha256": "99cfb820e41be4386fe15d6f7c5b025625e3c86a153c18e5d01b8e3ac188bbf0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00156-w4a16.scales.f16le",
+      "sha256": "a5337b178644bcb9363f6b7c7cd19ae272c2727027bd27f5b5df3300c4216f3a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00156-w4a16.values.bin",
+      "sha256": "025c451258fd54e8e8196a3125c04854cb93313d1e1535afd4ea080fbcb53391"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00157-w4a16.scales.f16le",
+      "sha256": "43e70782058d58e4c71017e4a77980317b57732b8b7f3d7d475f57ce88f20911"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00157-w4a16.values.bin",
+      "sha256": "6129949b91d9aefa715c4db7b7a78a841b3036569568a36a2e5276aceac66dcf"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00158-w4a16.scales.f16le",
+      "sha256": "cac60afa1f912827a5bb8522ab4a37aac91256a3073834de594d076aa7ac3d29"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00158-w4a16.values.bin",
+      "sha256": "7faff33d81c007bf47b9cc74d34bb737c37477195eb56a7e29a7064b21af6fee"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00159-w4a16.scales.f16le",
+      "sha256": "2db4d5df0347e6c4d7961210809dd8cb9d2d3b424fb224d6f94970d0d392c2e5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00159-w4a16.values.bin",
+      "sha256": "c53f17842f18cef94d07acea96c9c9fe3a34aa7b166fadc097ec5abdf9dff6d1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00160-w4a16.scales.f16le",
+      "sha256": "9bedcb7f1b0d10cafe3665a168fffe9cdc8cf3edb269bef61e72115abed0c0cb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00160-w4a16.values.bin",
+      "sha256": "ad794c1b1773ff33c485545b73a140518a93821408ad5497a38b0fa3b7282cb5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00161-w4a16.scales.f16le",
+      "sha256": "5bd0aeaae966f83b942875af0ceeb35c6cfb79d465748c4942580d1a0620641c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00161-w4a16.values.bin",
+      "sha256": "518a0a561c6219fc8840ac186417e9afc40b787de00eccb7bf130940acf6b479"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00162-w4a16.scales.f16le",
+      "sha256": "e05b7fb09737228953071e317564fdf19caa6235a20402196ba83769fd16dce6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00162-w4a16.values.bin",
+      "sha256": "1cd90b5293e76d6dd70be97477a57afacbadc641e82e4f930668551054473ed8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00163-w4a16.scales.f16le",
+      "sha256": "2f50acd7063624c43c304ac9679406c3c7c76d75219ac5aab007bfa08f501f86"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00163-w4a16.values.bin",
+      "sha256": "153ccee0dc7071df81222fff5d55671e17bdac5285d81b5823ab819e3dc09a1b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00164-w4a16.scales.f16le",
+      "sha256": "385e55bb0557e518731f28fa01b7cb080a870257747e1a62548d1c9bee04bbe0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00164-w4a16.values.bin",
+      "sha256": "f5aca097c52bf3343b4d736ac0f1534bd7ee2906ac7cc48372c9a6c0d4acdb13"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00165-w4a16.scales.f16le",
+      "sha256": "e7d90e75fa8e66fe7e4cc153f4af0bb82247564dc2a0babd40b3d09ba3d51c53"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00165-w4a16.values.bin",
+      "sha256": "66cfefa661efd400f2f7a3040bf23e58fc82aa613f36393faa5b59be12365163"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00166-w4a16.scales.f16le",
+      "sha256": "f738a1e953d0644c24a7b7c87b810341e42b80f7eb83054de96549533d654602"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00166-w4a16.values.bin",
+      "sha256": "e538690ae8f3650bfc79a9c65f2a8c463aef4e0b98de67f518fd0e5eefea61b9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00167-w4a16.scales.f16le",
+      "sha256": "61f1bde7d2c71a8e565108124a89d898bdc213ae4072752b09e4f7f1f5da57ad"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00167-w4a16.values.bin",
+      "sha256": "f9a237de9931f233798f8e6721cf222cd9fadd6af34ce478c5b2729b4bfff824"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00168-w4a16.scales.f16le",
+      "sha256": "80babaa3f22ee4f6dd2bd20cfa38e499145460f5ff1a529734027280e4d99832"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00168-w4a16.values.bin",
+      "sha256": "9818b38471a7579e52cfe3ec09252fced9076e58b19b94e4bace3e9c17dea28e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00169-w4a16.scales.f16le",
+      "sha256": "23a386e7259bcf7ef6e801015d9b48b93226612beae099bad34c6d7633dbe018"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00169-w4a16.values.bin",
+      "sha256": "65e7a43ef9a7765244a7cd726702ef264a3f0ad4ee27c5775921dbbf27f20f91"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00170-w4a16.scales.f16le",
+      "sha256": "ad0e1e4b55568c7c81de971bd699fa6d6caa974161a84a8144a664a202132c90"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00170-w4a16.values.bin",
+      "sha256": "4dbaaec90662c621f7e7a2c43f2e5ff244a5fde764feef144bf641d15732ab7a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00171-w4a16.scales.f16le",
+      "sha256": "ae17e80c59963c58885f774b588b956f9353f2138ceb9e58ac99175ebea11d89"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00171-w4a16.values.bin",
+      "sha256": "8ad0ae0b221de406605759c1d1fdee20fea3d2e9c569377225031be5d6363e25"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00172-w4a16.scales.f16le",
+      "sha256": "f83e6d57a97cc6f6987548ea3bb66607e30108a7cf781a3c3cc5e89fad5c7e94"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00172-w4a16.values.bin",
+      "sha256": "6171904bb3576ad829b7916715f8505de4919d382e57d50ad15b7140f6d06146"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00173-w4a16.scales.f16le",
+      "sha256": "f56f188da7c79c74b3e54b6c8cdc9d4d5846550cb97ac29206b63aa203111d4b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00173-w4a16.values.bin",
+      "sha256": "83fed66b7cf034221b71a004dbec781795268f3c2b66067f7b0e17429bd91444"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00174-w4a16.scales.f16le",
+      "sha256": "5a3e7df2fb066a9928148f0d0e546cded2f054e99a147f7a39b7686a985b9ba1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00174-w4a16.values.bin",
+      "sha256": "7b1c0bb35c209300e7e627f38f21ed0cbf7661b288a32b5b6fbfd7e946703448"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00175-w4a16.scales.f16le",
+      "sha256": "73b979a55d302a99bd24634e5b62f33e194d92ec4cbf9f59e81a2829657e9382"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00175-w4a16.values.bin",
+      "sha256": "e76e10879cb826072c85cd6ae5886a13f7797dae70fe536bad33df5d4d02577b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00176-w4a16.scales.f16le",
+      "sha256": "6fe5b41bd9bd85a235d5784a0f304bec5dcadd1e6232963c7d045fbabf3c70be"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00176-w4a16.values.bin",
+      "sha256": "7262f2d0badbb14d8afe3f44f9bc50c8c99fd810730fabbbb363147425e38945"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00177-w4a16.scales.f16le",
+      "sha256": "64331cd9b97298b1094d24f5836dc86d48d99494df5a7360d06f09c7e156181e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00177-w4a16.values.bin",
+      "sha256": "d13febe23e9108d80acc9179aba7cb221a759e3544604f369b9c8314d60fc1ac"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00178-w4a16.scales.f16le",
+      "sha256": "89fbb46b543ab2862b9f84472a3feab4a935063d6408e169c60ae84c2dac2a5c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00178-w4a16.values.bin",
+      "sha256": "8836feac6cb0e9c52636121c3709f9728cb187471ff45a74d8efc47e17bd1b54"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00179-w4a16.scales.f16le",
+      "sha256": "c5576151fe1a3b084576a0cf912d3b4cf96938f8d6e946382f2b45ec1b262ac6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00179-w4a16.values.bin",
+      "sha256": "f581812c172e4550835d1c91aa0c6b795b92b24f534675f76ad05196b0c6f332"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00180-w4a16.scales.f16le",
+      "sha256": "ea1e23165b6ab1d59b4ca503b49e9a152914df6adbedbb4d0093d06da3d8787f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00180-w4a16.values.bin",
+      "sha256": "57677bddc1c4829b8f4bf7b240ea5b95f968492c8ef31be42099f77c354498e3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00181-w4a16.scales.f16le",
+      "sha256": "cb11863764689db652a488beb3710e849b7664bd93afa6287f9f160f72d58afe"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00181-w4a16.values.bin",
+      "sha256": "fec299fdefb369e34eb9e080fa17969cfee25f2760cd9b6fde353d276a279104"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00182-w4a16.scales.f16le",
+      "sha256": "7ee35707a946ee25ab2183060b5270a0e5b0d09015141c0e91aaf5ee7d004704"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00182-w4a16.values.bin",
+      "sha256": "db4a8cfcf9283d6b7fe26957acdcc3864b045c0422c7c77137ccdb94b3a66a4c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00183-w4a16.scales.f16le",
+      "sha256": "163784f046d814cb2168e1b6fddbb338d4197e087efb72e0c1bcc9fc64aba182"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00183-w4a16.values.bin",
+      "sha256": "40669c32631c3ac829476f98338a15380394ddee0ca95c9e7f07648f460c4afc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00184-w4a16.scales.f16le",
+      "sha256": "24ea88c1f1c8cbb12c7146c31732db710dc6cbba8766e70aadc35954793bf697"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00184-w4a16.values.bin",
+      "sha256": "abe690fcabcda306e16d429461a3cab5ed52be090b42a3748b735e71a788b829"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00185-w4a16.scales.f16le",
+      "sha256": "38e21cd30aa1fb3029f40c7dd2bdca06692564fad20344fb57cbf2af603c2749"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00185-w4a16.values.bin",
+      "sha256": "b77933591352a4ae8611d2d663e9b70d057c15dbd8c1984332cfc5d7334a8079"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00186-w4a16.scales.f16le",
+      "sha256": "0964f61a681f616be7a0ee85c3c1e21bd24361ce44046c8a49810de427073c32"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00186-w4a16.values.bin",
+      "sha256": "2040fcd130fb64968fb1fd10cf6de2ae8e718a0fa7658f1bdeae7cbae321e079"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00187-w4a16.scales.f16le",
+      "sha256": "0ace2307c4853c6e11c76e4e768589dca7e1cc4089db2cee014d905eb95276d6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00187-w4a16.values.bin",
+      "sha256": "529db98c7430561b7181cbab1cf4edcaa379e1dd386cbd38511eb777dd6ba12f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00188-w4a16.scales.f16le",
+      "sha256": "8e7fa8c12eaf831c0766b6ee8c87e15e22e6195434f8d9857189f0f1f1877a14"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00188-w4a16.values.bin",
+      "sha256": "246721abef0c1c5ed37215952a1106b97b121deddfc6dd74eb1b49b9b750872a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00189-w4a16.scales.f16le",
+      "sha256": "123789475be204f02c7f7321cdc14c27f113596fc3cbd40cbc840c7e2630c9ce"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00189-w4a16.values.bin",
+      "sha256": "48ab5d80871a69a49e6e237a7a66054e4491966795000ca5647d1e52e4374d74"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00190-w4a16.scales.f16le",
+      "sha256": "cd5d4513c7b3af8f8e35fb6d06ef49cdbe84d8e21a8eaf3352e8f2d90e5c3a5e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00190-w4a16.values.bin",
+      "sha256": "170f2c7479e1946ca3295b858fb2207db695869e423548bfb0dafa30c6aa525e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00191-w4a16.scales.f16le",
+      "sha256": "eb1e2811d76d0126dd24b6f7bdef9b50c2b235b3bd3c8baadcc4342561c9fff6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00191-w4a16.values.bin",
+      "sha256": "62ccbb0172146b13da87189ca379bd6240a2e4bb690b8d9ce90e3b90eb63ac4a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00192-w4a16.scales.f16le",
+      "sha256": "b9d71b2349dff4e2593bf23b9508b26f5ca5c466d3a01d2efe612dec20944277"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00192-w4a16.values.bin",
+      "sha256": "bc093aece4c9e1c5cc1553cd8a5a302c4f4c8b49b67e5d8562a97e0081dd3036"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00193-w4a16.scales.f16le",
+      "sha256": "78919244ae43c335dd2ff2038fb58c9da55231be2d60375d678164a0e2b890d2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00193-w4a16.values.bin",
+      "sha256": "1b1cdf0f654c3a1f83b5bda4ff4d4ccb3d42913d16e59dca38d6d42c2b52256f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00194-w4a16.scales.f16le",
+      "sha256": "8cda5be6edb392226150e8ed38a89d641166fafa07e402d06d6308d1c137a65c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00194-w4a16.values.bin",
+      "sha256": "8c68a4050f52aad05c6399eb4eb13633657d9c38fa50ce04e6b3678bcfa74e4d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00195-w4a16.scales.f16le",
+      "sha256": "27c38ea6e1f8d5cbc729cf9cb1007ad7ea4351efc57a2586d06c99bca1e80b0d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00195-w4a16.values.bin",
+      "sha256": "6a1ffb4aaecdd3b21238c7d54360b894bf2c02f8797d309f24cc36cf03a89eee"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00196-w4a16.scales.f16le",
+      "sha256": "1ba4a67200117d44f1b97a2af9ceecae7f29340e02da54cc96ff6cb628cef20e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00196-w4a16.values.bin",
+      "sha256": "ce61a709ed88a0a2b362e88e14e5f4dcb7212c2ebec6f5f8ad7b1378da3ce045"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00197-w4a16.scales.f16le",
+      "sha256": "465d866a31300941acbacdd0593c8f40215138f71d79cd0753136ee5512547dc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00197-w4a16.values.bin",
+      "sha256": "656c1be25ed097d42b771d6a5632200af3f84f16373e84a10a5b0ef129e77a54"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00198-w4a16.scales.f16le",
+      "sha256": "817eeddd9781d2320e4e5637a0df6418fb5c210693df07f3323c7c82a4f0c83b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00198-w4a16.values.bin",
+      "sha256": "c3ae3e38e4d65085eae69ae1de6e6002cf074e3a7cba5b3d2577ce5a79e137f3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00199-w4a16.scales.f16le",
+      "sha256": "90ea69834f797d0a5063160f3d1ed6de3e4ea0d718a57a9ad018290b257d2618"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00199-w4a16.values.bin",
+      "sha256": "737d485a64290db63ad028b6e4a8e01f07ce7542cf21e37309f7ca24b5d5e053"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00200-w4a16.scales.f16le",
+      "sha256": "33e4c0a64f90fff4213e9a0073fafbfd77e7db30f3d9af2c82e4011b63b8a72b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00200-w4a16.values.bin",
+      "sha256": "8746fcb6472b0fb1f468db67901fc539a629378d7d29b1bb870ace7b6cc927bc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00201-w4a16.scales.f16le",
+      "sha256": "268cb72e3520ffbc72b1ca37f39f8b752c6f3e35eb59f2ac5639cc7d7ef1e87c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00201-w4a16.values.bin",
+      "sha256": "d1eaff54606f7297847afa6ae40b17b2c988ea22c41660c644624fe8542f1ec2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00202-w4a16.scales.f16le",
+      "sha256": "044aead453cf87c1e2b1e69eb472e717e2e6ea74ea074aef50f1440241683b57"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00202-w4a16.values.bin",
+      "sha256": "7d17fb32a05ddb64c44349e7433566948e72e877628bf6075f83c45156749a5b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00203-w4a16.scales.f16le",
+      "sha256": "79961fb9105d5e5a5b357ea03ca48c7510a33a4b29333e3d450cb36835269d0c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00203-w4a16.values.bin",
+      "sha256": "f32424b4d61f3022abd1e68a2ac2123ccd45548c2faa168d3f9e9dae93a369d6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00204-w4a16.scales.f16le",
+      "sha256": "8f0516571e0181a87ff75076d40d47b1c92cab03dd3669b2be3edb728cc73ff2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00204-w4a16.values.bin",
+      "sha256": "34080dbdc20263e3491ddbcfc4f0b957fb53b61c66ed3150f15b41748bfa652c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00205-w4a16.scales.f16le",
+      "sha256": "03161b175f3899fa462d0332b8f0933bd53dc181bcd3dceb802294851033acb6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00205-w4a16.values.bin",
+      "sha256": "35e832a9663a84fd66ee15b11075065125d9d5ced47dcb985d7efd50d6630917"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00206-w4a16.scales.f16le",
+      "sha256": "6bdfff8bcc757f925de39ee4438695e13f2fa93d8ed9553d5b0837d6f95e178d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00206-w4a16.values.bin",
+      "sha256": "c076712cbe2d5fcb48c2931d1cc1bc0e889dfb86a041eb224bee2a54f61aec89"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00207-w4a16.scales.f16le",
+      "sha256": "42a60cd760a34f9b47f88d0d88923e8985e253ed564cc501511c80a56cb354e7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00207-w4a16.values.bin",
+      "sha256": "e52b3f4fd64d9fb930b8cd55c09609e16924fd321689974639c842a89adbee49"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00208-w4a16.scales.f16le",
+      "sha256": "46c737e5114f2fa90763e91cb7858305c8e35f2a1538381b0da04dda7eecab04"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00208-w4a16.values.bin",
+      "sha256": "673201753ff5617f8786ec0a61c66d7a744eb293c872f92ede866b4de6feb38a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00209-w4a16.scales.f16le",
+      "sha256": "c5d31bd06b72e202089a4cb79e15eb1a6675910fe6769b18de18e7f5c6ba82b1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00209-w4a16.values.bin",
+      "sha256": "8306516b07b87938a0bc89512d6b847a6bb55ef8b46189de9d50dcbd63334cb6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00210-w4a16.scales.f16le",
+      "sha256": "5bba94544f30c868a604c1d063fa3c5fae7dbd847e49d9a8df17bdfb5a587473"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00210-w4a16.values.bin",
+      "sha256": "4531737757df0d74e783070b8f5ac2732c83c769fce2252810533b36bd69a391"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00211-w4a16.scales.f16le",
+      "sha256": "7c0a36cade65d40d0b295b34f121ed76191dbede8fda4670928a15a48df135c8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00211-w4a16.values.bin",
+      "sha256": "7db301f8d80592e8576824704ceea467fcd40db946ec56f8c2176defce15f3e2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00212-w4a16.scales.f16le",
+      "sha256": "f2adf12d66b4984f89dc3e4cd5859b69849ab66d84ffa35080f3707f91cc00e6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00212-w4a16.values.bin",
+      "sha256": "e56a65c58bfe7d4f71182c9e30d2f1f8e540aac782efd22ac02e6528f6d5527e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00213-w4a16.scales.f16le",
+      "sha256": "58aed2597e59958080d7a7cd8206106bc3debfe5cd14be773702d4584009f733"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00213-w4a16.values.bin",
+      "sha256": "51c29f96a0bc7f1bb7303c47c2fe41a08260ff45675115214daebf12a56b9ce2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00214-w4a16.scales.f16le",
+      "sha256": "c50d0677c1b26e7020cefd336c508fbc898dccc915412904aa544e32400eb888"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00214-w4a16.values.bin",
+      "sha256": "9f7f17994760477b3297b943dd35d6dadac00efdd855c08faddbdb9c6df06dc9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00215-w4a16.scales.f16le",
+      "sha256": "d33c7af214bc91c05bf15a70c09ab6acbe487185cc444b7471bc8b5a1fee97bf"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00215-w4a16.values.bin",
+      "sha256": "c967a1c8cbb2cd00692e52ab8bcdba5cababc9a5786dc3847f12967d27310c25"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00216-w4a16.scales.f16le",
+      "sha256": "44fa11303bc38907ce6e797afd3043bac3ef5560f8ef96f89a02ef8e795acbf9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00216-w4a16.values.bin",
+      "sha256": "1ce5e05e6f35d8f9df72024d5ccb18a48454e6a72f0b8dfb6ddd817d2c5d1b97"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00217-w4a16.scales.f16le",
+      "sha256": "71499e5e491332bffa9d3cf1b9e4a9c8b5fb698f2047fc90168ce6e632011959"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00217-w4a16.values.bin",
+      "sha256": "ac7904d2db517c1fda32de9b2eb34546f2d0dc11cf4daeebef8c1b22cb04cd24"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00218-w4a16.scales.f16le",
+      "sha256": "a5eabb5b6202cfedf0deba8c4e452164fce138c8c433a731a13504db5c523959"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00218-w4a16.values.bin",
+      "sha256": "7e52250a610fce44f9da7c7d72a5b65e0c9141b853e3c8d3f71b860d7c968918"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00219-w4a16.scales.f16le",
+      "sha256": "ad87a9c5e9af3873de1054a48a807dedcaeaabcbbd93fd38db98f8927b3523d7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00219-w4a16.values.bin",
+      "sha256": "3b1ff42046430b9e3b79e8a88b355e03e42e28be2991f1483cd3047455b652d9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00220-w4a16.scales.f16le",
+      "sha256": "b378059b53a98855d96687286b261dd6dcdf65f09d0048114f724683dbdaa5a4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00220-w4a16.values.bin",
+      "sha256": "4fccd06ae432be54b7a2663a00e096790b7fd8f434d83bd374363a06d25a86d3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00221-w4a16.scales.f16le",
+      "sha256": "610a89e2129373de722f0d170e0dfd7f32d027f40961c013643154c6b33e0010"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00221-w4a16.values.bin",
+      "sha256": "cbbc3fe6011d91acafc6305abf5e77f7f678af9c881d2875d4b833b8d2f29dc9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00222-w4a16.scales.f16le",
+      "sha256": "03659575a9dbfb13c03dc2d03d3aa65f8bd22b3e125c1dcc159509e46b42d2e0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00222-w4a16.values.bin",
+      "sha256": "e7849ed7a465189f6e93a7e270d75fe7eca8942d94c8356a98b7216f29a004e5"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00223-w4a16.scales.f16le",
+      "sha256": "3417fd0b363b8743e4e750ab173b1bac83f597e98cbbf78d3d5ac774f08d0356"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00223-w4a16.values.bin",
+      "sha256": "cac16fce6cd33c208b65b43bbff7c4d84f93886de843966c87c70baadab5b398"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00224-w4a16.scales.f16le",
+      "sha256": "b648e544cbcd2d77c2c0a830be4f20d1fd875ed8a0ba488d9b06a8be4c84f2ff"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00224-w4a16.values.bin",
+      "sha256": "5cb1bf0e0a0c3ce6c850806fa66e9e1a79ba625b7af7ece34256ed9a5e4f6720"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00225-w4a16.scales.f16le",
+      "sha256": "dc5fa60e975cb0beba882da55ac4f11e579b073d28d5ff151d661ecb703e728c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00225-w4a16.values.bin",
+      "sha256": "bf23367e3edf97c801af035856d64d1a1bfb427a330d96cbf6ba7b28c0e0c65a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00226-w4a16.scales.f16le",
+      "sha256": "33ff319ac101d077506e7522b836a6cdc56e4c4657b8228c33b0b68ccbe14811"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00226-w4a16.values.bin",
+      "sha256": "2d140921b57766febf47c7e6de9c6b934f9e92102d10bd1223a199b868766f33"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00227-w4a16.scales.f16le",
+      "sha256": "8d96e08cb63024000af58052fed87c09651c587ec20b76f2af9adb745931b0b0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00227-w4a16.values.bin",
+      "sha256": "9eba3b49c7be267c07a77da4fb67680f92e3f4f6a1f3d103d4e8d60b85a23851"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00228-w4a16.scales.f16le",
+      "sha256": "7bb69d44e21913f43b7a97d2a9f4faf27f806a321b281434a82c3188f8e8ce1b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00228-w4a16.values.bin",
+      "sha256": "846dc6490c0cf49df7b541931f77c3917beac5b2c7a6d8113c2a967171e890f0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00229-w4a16.scales.f16le",
+      "sha256": "f55a8e818e29cb46deffb5801e8b7ef87f78b481959a4913ee9b83b35c840408"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00229-w4a16.values.bin",
+      "sha256": "a8cb1bdbe1460a15f0d9ae936e8c87f7f0a240d90a9e239b33affed19e3967de"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00230-w4a16.scales.f16le",
+      "sha256": "6d6e77e111e64e32d43e0bc404b02660c802e32d1a08c603f7f92dd76b3aab61"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00230-w4a16.values.bin",
+      "sha256": "8a77fbd9cc6b798f2520a1ddcea3bc27441f96ab2995178075486758191781a9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00231-w4a16.scales.f16le",
+      "sha256": "6ab3277d8235783ec5b8043d094a2aa4697bfa54186987cd08e0d6b4f4c5f5d7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00231-w4a16.values.bin",
+      "sha256": "d6ba4227c0ec0a2b3f7749a7e23bc4f7c5c9474766a7bcbd725a88b81fcc88a1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00232-w4a16.scales.f16le",
+      "sha256": "ad85642e3b12e8aedf7b0644f63af26477252232a847f96feb194d214fd00a7a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00232-w4a16.values.bin",
+      "sha256": "73b55f493f8a54f77b0a1784f4aa64337531df5749e3cc4ecccf52246c60eb5e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00233-w4a16.scales.f16le",
+      "sha256": "addecf06e875566262eaaab26ea2e03fb6851dd62f6c29f312a4f0a63654958a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00233-w4a16.values.bin",
+      "sha256": "cf33bd8e171266bda90e5ca4ebcab16c840055302b77d7bf6af6acf0b9b9c146"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00234-w4a16.scales.f16le",
+      "sha256": "d16b27dc57ee87856aeeb0e48146508961b4dc2cef9decbc056aa9c1c7f48f35"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00234-w4a16.values.bin",
+      "sha256": "88180d3d5a46ce922768f5796ff05c4379f255cb7ed55593787b7edd0bb2778e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00235-w4a16.scales.f16le",
+      "sha256": "6fd1c61fba7429c6f26474937be604094fa97386e557d57532a0a01750074880"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00235-w4a16.values.bin",
+      "sha256": "ad26bc0c66ff88b5e6726153f3f633484c3af31f265b5d68abbf6d2e86103df3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00236-w4a16.scales.f16le",
+      "sha256": "0309ecbb20597ed4d2c3933f784dba3b13baaaedc8c52592a331db249870eb2c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00236-w4a16.values.bin",
+      "sha256": "0d7ab0b8c7d0ce0a9c40336741974d7359f9e9bea28d8fd45aafa4341f8ae385"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00237-w4a16.scales.f16le",
+      "sha256": "0774dcbecf6252a40bccec231a25906e7a1444a9be073ba4a812ee6b764f0ca7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00237-w4a16.values.bin",
+      "sha256": "aaf102a04d245a2b40b2542e89db81ffca2f9d16b3f2b596e0340ede1ce61275"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00238-w4a16.scales.f16le",
+      "sha256": "010b497cf6e9dfa3d90a412c53ee682bb9d987ffee7d1374b79dea2e31f2c180"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00238-w4a16.values.bin",
+      "sha256": "412ae801790d84eccdb31a85b771f34f096a88184167727e4f0f33d720e8751a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00239-w4a16.scales.f16le",
+      "sha256": "6a66b62103b400dba24b37177b4ea33707ebf6bc9597b8ca0172f5b2ec45485a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00239-w4a16.values.bin",
+      "sha256": "6815de21aa651c875a66d53f31c7c7a52f5f594d6ce46e652d3a6a701f4a71bd"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00240-w4a16.scales.f16le",
+      "sha256": "15f4f9f2be42fd68da09526c8df7a2a770dca8d7b4e373e63e4f1193d6227746"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00240-w4a16.values.bin",
+      "sha256": "371774366a4220f6fd96c7a1f3816838a0f3e9181310d93dc3bbe4f90d80735e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00241-w4a16.scales.f16le",
+      "sha256": "3b1834bb050849e6b6fa332c8dd72d8d564540376fe70b2b2049a10066332925"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00241-w4a16.values.bin",
+      "sha256": "ce94fb05b42320822d09e215e654bb34bee2206203fe47140060b440b7264b1d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00242-w4a16.scales.f16le",
+      "sha256": "8ce2517bafa4e2c0e657669f727b7a620acf511b3ef2afd4baed0414974a83ea"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00242-w4a16.values.bin",
+      "sha256": "12d108e54d6b0d0ce294f96d2567a98e88d8f23d9104a2491a8c2d4ef6638f6a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00243-w4a16.scales.f16le",
+      "sha256": "f1f34af4fce564fb018de70da5edeef7e1ae3dffce9720ae7507de40d98bce12"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00243-w4a16.values.bin",
+      "sha256": "7b6c6c2833c304309655f40ca56238b42ae248e51271ac42d07129886fea08df"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00244-w4a16.scales.f16le",
+      "sha256": "bcbaf01fbf83fd6a8b3b8d2ec7368582f66fba22c61eb58574acf421536a2a08"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00244-w4a16.values.bin",
+      "sha256": "8f649bb5bad517c00b75ce41798d9fb720cf1eb75eb769a1584429c0b56628ec"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00245-w4a16.scales.f16le",
+      "sha256": "aa6b93bed1a43451862ed8a362d5c29e30bb55d2eb42ba48e79b31cb5b9a9409"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00245-w4a16.values.bin",
+      "sha256": "e2329536de5040b8b609328723fcc7258097c1456e1cabfabb61c4d3538eb258"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00246-w4a16.scales.f16le",
+      "sha256": "d5ff42212cb244891c80f54743370187f7a24687bc2e10b49cd083a8208aaed9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00246-w4a16.values.bin",
+      "sha256": "93167230da2f3812406d79b9310456aa105366b4f2f00cf58fd82c4ea7774b79"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00247-w4a16.scales.f16le",
+      "sha256": "e424001cfc27d8cf2d3ee275dd54d6f15b790253a5f8a12b0604831e963f7492"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00247-w4a16.values.bin",
+      "sha256": "7ec154765bb3e1c3682e98239b8f0c55901cb15aa575e436d070af506e7a6f4f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00248-w4a16.scales.f16le",
+      "sha256": "c46f1565917006d125080d1595595f69f02a0a2f55ee995f64410bbee57b02ba"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00248-w4a16.values.bin",
+      "sha256": "963123ac942649bfe8e1728e1959a9335ad3185bb909e55377f59ac889b30ee0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00249-w4a16.scales.f16le",
+      "sha256": "dac8a0ea11d68fefa7b234ce68bb54e98260fa83bf5e41912c8504eae00fb794"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00249-w4a16.values.bin",
+      "sha256": "91f4f7df9abea777b6f8ed1820005721fa816201e0c4afd6732bb043b9cb7194"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00250-w4a16.scales.f16le",
+      "sha256": "6d3c2ba8f1e003cd298f5b12621640e7f0f30ec61ebdc8d8fc482371e3a21f0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00250-w4a16.values.bin",
+      "sha256": "8cb9a4e6ea43ddb04ed75d4ed57481e8f5f02167942a23cf413da913dbb7ca94"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00251-w4a16.scales.f16le",
+      "sha256": "1447d261b5cad6be1a507435d153d3f13739e0d3f76bf5de2ff1bc660378985e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00251-w4a16.values.bin",
+      "sha256": "58b7bc01e236e601925361f6fcd2e8590d7ef4465ace9e68f6826a96f3480a9c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00252-w4a16.scales.f16le",
+      "sha256": "1451ccd7c469bc97c7b52c0c29999138c70676bd94e9c870b3b960effd857e19"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00252-w4a16.values.bin",
+      "sha256": "4acb97040d3f4e754d1484c91ae1496678199b9b2273bcf58a10f23399166591"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00253-w4a16.scales.f16le",
+      "sha256": "b41155b6acaca5fd8ed9c9749de4a501c3f56af1414ebeeb16070f6cf3f57320"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00253-w4a16.values.bin",
+      "sha256": "04c4e67a2888ea0233f1f06051f7dc90be22bad83230d1146529e9df0e8529a0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00254-w4a16.scales.f16le",
+      "sha256": "ca22d026b30e31be83c7a1ce6ee965891c51895378e66a90f9ca1af774e2491a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00254-w4a16.values.bin",
+      "sha256": "e63f1d238ce387dc520d365dcd56f8022b2bdebde3c352fc4da2fbdfb1af28e3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00255-w4a16.scales.f16le",
+      "sha256": "a45c4abbee4a2b8b62e9198b6abf41454a096adf057393397090887466af2b3e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00255-w4a16.values.bin",
+      "sha256": "c85bf0b7c0b69de926c8b57777e9abd000661fe8b7626dc9bb461f837900c3a0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00256-w4a16.scales.f16le",
+      "sha256": "77f414fff67bce309dc736c40100e8ba1d66d41230ba246433e50bc2ce94b850"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00256-w4a16.values.bin",
+      "sha256": "32bdefb29d9af7d4e258e3f453282c2afc1332b27464a7b8fb1f22b6350af7cb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00257-w4a16.scales.f16le",
+      "sha256": "bd2e93bef6812dee144c67a25639d074fd173b15ea9af8d65d0aec995ba55775"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00257-w4a16.values.bin",
+      "sha256": "b8c76c9497d34879475391d4615102cda254e9fa6478c2292b68d355f0ac5699"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00258-w4a16.scales.f16le",
+      "sha256": "8806e8234b16aac2fb43134970290caa82d90b39a4bffcedf7040fd3b286386d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00258-w4a16.values.bin",
+      "sha256": "8c475ea7b7dc1dfff5a686304acda0533330b1690806be10442d729d0cc69a3c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00259-w4a16.scales.f16le",
+      "sha256": "7c9887a7d580a2086af6a651912f68b5d7f1f8b549f3be5ce326a7d1c1b91751"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00259-w4a16.values.bin",
+      "sha256": "07513913884ece9ba214f70a723eebb2029858a2b3ac84f6edecf185b509bea0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00260-w4a16.scales.f16le",
+      "sha256": "b26cebec94080ace7ee2c117076a51cf5f128171d948fa22838f05c3d192e8f7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00260-w4a16.values.bin",
+      "sha256": "189427d8b23f79cb8dcfd4ed8db14ffdaa0f7c93341b439903bdc9907a8bbbc4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00261-w4a16.scales.f16le",
+      "sha256": "46fb8df0c0469f9f92d34919684b438ad6ab96fcac249394ff4c6b9ef4a0b78a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00261-w4a16.values.bin",
+      "sha256": "0e79422893c882a09191975c56e5dd63623004ba7737b5f091b3cb87f850640b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00262-w4a16.scales.f16le",
+      "sha256": "4aa1574ed9dd4ea6427556a6698c6f307d93b45eafaebb52e1a649ec63f4804d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00262-w4a16.values.bin",
+      "sha256": "6e5fb638ce589ef670b6a9b1019c9bf93e55d22f555a50a3f42b680ac40fa948"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00263-w4a16.scales.f16le",
+      "sha256": "aea4eb2141eadb9640522d54ea8e8afde3d27b36b47257ea80b571aeda5e604b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00263-w4a16.values.bin",
+      "sha256": "ae10d8ba27bc1821b29ccf62eecaea482b08d8181638a00ee74e0d3acbde0ad7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00264-w4a16.scales.f16le",
+      "sha256": "a4c46102338a578b920904bc31604fedc1224b6a7e45c5bc55db74a70a748b05"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00264-w4a16.values.bin",
+      "sha256": "8a61c6ece383e23c832b6d59247374aea002edf558e5cb016ba7cf6a8a822633"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00265-w4a16.scales.f16le",
+      "sha256": "98710153ea894df36ad2be9272ef1ceecd90fe49d65c068bcf25a49d0193a89e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00265-w4a16.values.bin",
+      "sha256": "60953b6a016a7f1d0885d5c35ba4d36e9d9097181896c76d9e0eb1dbf5387e97"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00266-w4a16.scales.f16le",
+      "sha256": "19c558c126d72b1b98161b0851b15121aa3cf517f1807c28451450f9693cc73b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00266-w4a16.values.bin",
+      "sha256": "f5ba247eec2613df24d7b3c6a9a65578084b438c66e61efe8e5f74fa1a00b160"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00267-w4a16.scales.f16le",
+      "sha256": "278d2888d47a623135e0449c8e02b9c7e8c7a0042b13a273032a2f5e003ac6d3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00267-w4a16.values.bin",
+      "sha256": "fd0ca05142cf6cb59e710cab138d6cec98f042d5eb28073afabcfa195893aeac"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00268-w4a16.scales.f16le",
+      "sha256": "1320974810c87fb0b2c0dcb90b25f2cef93ab942fb84747e8429c83d5196b350"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00268-w4a16.values.bin",
+      "sha256": "d2ef8da198a63e590f0958751a522c52ff87b1302393c52472d31bf1755161f9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00269-w4a16.scales.f16le",
+      "sha256": "8a58afe253767c19fcf68e3d0f94f318ca48bdeff36a1571de2145f99f2cfdd3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00269-w4a16.values.bin",
+      "sha256": "56b1d38148c0b3d723346c23ab218524d5d9e42b0afa6590c217ef79e90800f8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00270-w4a16.scales.f16le",
+      "sha256": "f8955df19edfd02234403f41eb65c4ddb8af72d718ab4a0fd3084e1896804281"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00270-w4a16.values.bin",
+      "sha256": "6fbfa847df1ed5078b3b4046d28a19c395160cc32417723f061ce06986c73c28"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00271-w4a16.scales.f16le",
+      "sha256": "24ca432a645ceaa51250b8f492bdfebc8c322aa3eae9b2b8dd9278f2845a020a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00271-w4a16.values.bin",
+      "sha256": "72d4c6497eddad2b3c87c40dec3d4d1796f8ed3c28d5646cbef7c8e911104092"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00272-w4a16.scales.f16le",
+      "sha256": "e4bffb7eb906cca45ce5488cc2da63b4a6063737c5b61a880e54078e3cf716d1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00272-w4a16.values.bin",
+      "sha256": "d87b16f9f37fb8469d0975400387c241c2520bd2b987121f8a2721ce8c963cb9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00273-w4a16.scales.f16le",
+      "sha256": "999e181612306bed2513e05829183187d8cf73f348c754674c40263faffa7f96"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00273-w4a16.values.bin",
+      "sha256": "01903e4b583355141cf72dbe1df8fcd73cd9ada7193d0c08cc0138de5acdfcf7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00274-w4a16.scales.f16le",
+      "sha256": "bd636cf69f1c2345937f9e0b613e9739755d4a46ba6b1a4679b3f996308332f3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00274-w4a16.values.bin",
+      "sha256": "69cf5c56a879e722b2f4e036c10a7474ee9d6a833dc8db93cb5ffd4938ed4a5e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00275-w4a16.scales.f16le",
+      "sha256": "d589fad197cb90b92015a10622597008c25d2470a8f4ff5df64729c85152e591"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00275-w4a16.values.bin",
+      "sha256": "a15f8e21093e303077bf9c468b7058a1285d5127c6ed79eb2b37619988ad0bdc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00276-w4a16.scales.f16le",
+      "sha256": "dde39be3286297ccec94d7aed194606ce1e6ddcd3b1ad2290e6e55d04eaa14b4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00276-w4a16.values.bin",
+      "sha256": "eb7d28c23c0cf0ad5f26e5afca2e576ad9d562986a0c4a5d1411cbb5459d9182"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00277-w4a16.scales.f16le",
+      "sha256": "a9de20420c2e36a75038eb7085c5d66b193d92d9e58788a83c75113f19256a3a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00277-w4a16.values.bin",
+      "sha256": "2756cba0468f68c19b7af18e824f900753812c51ca5bb53d1edf02e71c2d2ab2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00278-w4a16.scales.f16le",
+      "sha256": "3c6466cb2500cad6a68c0fb02daa49f5d4526973bde35ebff8768925ac75d358"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00278-w4a16.values.bin",
+      "sha256": "251f6d04dd21081823786f1a3ec81042ab65bebf6b47ece9923b626b2ce73891"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00279-w4a16.scales.f16le",
+      "sha256": "16433f92e9de1d7a96604832a23bb4fd041fc81a17ab837cfef1567655c438d0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00279-w4a16.values.bin",
+      "sha256": "bb8499d4a54237c31d69293f90d5d6d5aa37902e2bb2556711b27742bdf65a18"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00280-w4a16.scales.f16le",
+      "sha256": "5ef21b3ddf4001a0a80d045fe990c19c44f91b2f5aa0a280687e92d13d8ff658"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00280-w4a16.values.bin",
+      "sha256": "12dcd709270aacb06a5ba2075ab6acc092af586fcbbe7649954997a215beef73"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00281-w4a16.scales.f16le",
+      "sha256": "78e5784076219122dacd53b7114c4ea1ce04b1fca29ee627386d28b3500fc511"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00281-w4a16.values.bin",
+      "sha256": "5c5ffc13e56736da107c5ad591722c5bf543c8e173639469abfff5540bb178bd"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00282-w4a16.scales.f16le",
+      "sha256": "45229adc018cbdf3d1507609108b342797e496449d6a979b3edf91720bb90cb1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00282-w4a16.values.bin",
+      "sha256": "2528115120ca20d240d3985c854f556a4c5eb88d002de2818f8442d003b52449"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00283-w4a16.scales.f16le",
+      "sha256": "280101ccd6733e5c0ef62a0289b5757f3b2613645563a52e2eb7e953d0b22bd4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00283-w4a16.values.bin",
+      "sha256": "d63c8e546c2490ef20065c9c9d98557901194967a2c6c5674b293987ec44563b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00284-w4a16.scales.f16le",
+      "sha256": "da119566009b334c4c824e0ab2a8a6720a6e405d57e1ee6ea48e8e458d8c256d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00284-w4a16.values.bin",
+      "sha256": "1aea19c44542ceca64bcd5121b374552e7227024c09baf1b1c51de76f1fbf366"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00285-w4a16.scales.f16le",
+      "sha256": "14ea9713583e10c288f1bb13e720c99ca26addb4b06d0d46628a1403f144048c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00285-w4a16.values.bin",
+      "sha256": "4a3e04888d1b30982803b13750ad9e89ebe508698ac27a1b0871e8f99c881186"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00286-w4a16.scales.f16le",
+      "sha256": "52ce1efdb4e6e07834ecfa27defb800ca20c00e30aa019129c1c2b40bd568a3a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00286-w4a16.values.bin",
+      "sha256": "c57c090c3d2087be8de27bb37b1c58bc46f4a64716c15e2e6c43c2e647afb93e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00287-w4a16.scales.f16le",
+      "sha256": "c74a85ac1274cee3c135a3b1f410db8fd57de8e595a4bec2a28d12c50ca3fe80"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00287-w4a16.values.bin",
+      "sha256": "3961ab07dc3c3c7cbbfd3044e9e559bb65f5ef91f651e12c9a1c0aa64cc45ce8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00288-w4a16.scales.f16le",
+      "sha256": "ab34f6b0597a3b853533b742ff5178c02709451df510a54cac16a343df925943"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00288-w4a16.values.bin",
+      "sha256": "1444aed40b0d1244f96a63e4b9b4221108b7d1afda68f4fd67930d78aaa4066a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00289-w4a16.scales.f16le",
+      "sha256": "9d319df08948517fab8c59c26fd402d1578764e7f7b48ce7af257f8dcd6fb4f7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00289-w4a16.values.bin",
+      "sha256": "be33ddf27aa663fac177b9c3c397e00e9dfd6e02e573d3eaaf04c540cd076f32"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00290-w4a16.scales.f16le",
+      "sha256": "98dd6b36addc32af6eb8d5bc66256d22fe22ded7b8303489b975138afd410384"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00290-w4a16.values.bin",
+      "sha256": "783d1be74dec22739ff6129cb17240e150714dbf68fd8b4d131f141bf79a6c83"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00291-w4a16.scales.f16le",
+      "sha256": "b2479c2572efbc2c5c81c0abb1920e17f36eddcd297bb1d212d612ac240526c9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00291-w4a16.values.bin",
+      "sha256": "c118bb03411958991d7c4523e7d3c540219c9d95c4b5d9889f235e9435b5938d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00292-w4a16.scales.f16le",
+      "sha256": "7b2a04a7544afae5350872f9e4c5104376a950f9d6b1033bc6d3e340ea44360e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00292-w4a16.values.bin",
+      "sha256": "bc5b77024e6116762795055314de5e27f8ab394854781ee4f408c9f7c09ddf85"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00293-w4a16.scales.f16le",
+      "sha256": "dcd0524f440ab210fdf2a5d63634832f6f9b0fbfede201c3510b54ec896a1910"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00293-w4a16.values.bin",
+      "sha256": "f2797e717f7f5581a1c27d09c626b985e84431106161a6a79a2fd203f5e7720b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00294-w4a16.scales.f16le",
+      "sha256": "a3b22973796df06c6ef2d41b5479aab816325f20f37d8d1dc8a693fe9565d64d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00294-w4a16.values.bin",
+      "sha256": "cbe2ec944dc8c4e95037d22f08e7c0ed4eac75606c544397bd1d61dde4b812bb"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00295-w4a16.scales.f16le",
+      "sha256": "ce78f43b642116c6bd258e5f005932d514475932bb02d6eebcaeb89f8490f1dd"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00295-w4a16.values.bin",
+      "sha256": "94630f6eb4c5693ed715f7e9820bd7b0d7d488f5f29f80ab66c3a8a4c4048c27"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00296-w4a16.scales.f16le",
+      "sha256": "327ff01e382097c8d8535ba21946c43c6ca40dfd820a89d97f10e59ecdb723b7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00296-w4a16.values.bin",
+      "sha256": "f2673660c9ef78b15e1b6491ca8221eeb03f0885137bcf5369aa6df3a80530d8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00297-w4a16.scales.f16le",
+      "sha256": "972ec1c92977a3589ac8143ea57a3d2077aeb902fbb918fce0d703d7adbe14cc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00297-w4a16.values.bin",
+      "sha256": "93c2d6871e4f05eb0cda6f66f802f4598b5c76494bb7588c228efb8954a9fbd4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00298-w4a16.scales.f16le",
+      "sha256": "07a0774590c0f140034f2715e613954859b15e82875774bb77882c3838a9d985"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00298-w4a16.values.bin",
+      "sha256": "48bd3859b91d567a5dccfc518f59d90de7f2dd5c94a2a14341cfb6179232595d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00299-w4a16.scales.f16le",
+      "sha256": "859264cef4de70d1a004b25c2b4193831823cc3b532cb7d2b2351d8018610ba3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00299-w4a16.values.bin",
+      "sha256": "fd941379a1593bae2b85a9e30f2bb5fcab1ac55b89819b18e2342e98aa228ec7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00300-w4a16.scales.f16le",
+      "sha256": "e017519d94fed546a009fe74f546f197af3368ad2b020bea54d539f64113e30d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00300-w4a16.values.bin",
+      "sha256": "0ffac22744eeb20248ca41344dcfebac71fd662c3705975000bc6d24272ba358"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00301-w4a16.scales.f16le",
+      "sha256": "3ef11bd8f44cbd351bcc05e59e77402b6ba41db5181b524507889f75a3732be3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00301-w4a16.values.bin",
+      "sha256": "286475b1b99af5aa59622fdad0232f050e94caea683f2343e3b47bec4def548c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00302-w4a16.scales.f16le",
+      "sha256": "3f2330e733fee66217c1d1215635cd6fcf59b54de061cfda2441d47a6478f96d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00302-w4a16.values.bin",
+      "sha256": "395b59a52bdde53d6ee4f2748c93abf18c1805747b6eba0a0559e725908259d6"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00303-w4a16.scales.f16le",
+      "sha256": "acd5fafe3cb6fc3e9af12408558f57294bb156eef988567dec90fb49313f5a76"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00303-w4a16.values.bin",
+      "sha256": "c8abb6d7317f990e56eca88af8639c3c9240cfafddf867d31bf9353493e4380e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00304-w4a16.scales.f16le",
+      "sha256": "f66d80f8f21c7cc378bf4adc03882e7466b2065157cad171e3cb5ee3dd9a2fb1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00304-w4a16.values.bin",
+      "sha256": "3394f226748b3c9a03f70183e151da2ed43d64cb9c3f756aead7f2a8a7ff4649"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00305-w4a16.scales.f16le",
+      "sha256": "b318a1cc09612db8dd8becaa8b8c15b0a6826db59a219e35920ec9fa12ad5e4f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00305-w4a16.values.bin",
+      "sha256": "d8b426add13feb86ddc0a27972fc81436481061e07e266a4c0498c51b4151239"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00306-w4a16.scales.f16le",
+      "sha256": "91939ace4b2336dd993e863721d0388f727b3e73a2d2d5d72472ec062f59d80b"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00306-w4a16.values.bin",
+      "sha256": "a213167235e589be2ad21e6f835942d9f5db3d11247e2a2ac3a960aac5c6b26e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00307-w4a16.scales.f16le",
+      "sha256": "0a2d2665da3ea43f35d1df478c06f242a32a0d4bc65a44f1b7b67f991b5f082a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00307-w4a16.values.bin",
+      "sha256": "d15c590ccdb18b815947aaf22e4afa659a2f9c82705f2c9ce0f9b4bcbd37d50f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00308-w4a16.scales.f16le",
+      "sha256": "fed5962d6781233b57c0756a095430c9db74ad4383d2efc4010c43bb8382a357"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00308-w4a16.values.bin",
+      "sha256": "5945814d18da346c0738e4b863f1523161324480c797b56cd5423f6037183523"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00309-w4a16.scales.f16le",
+      "sha256": "0dd07ffe4f5f1f76ba2a460be0764a9ec9aeed6e671dece644f8fb1f2cd70180"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00309-w4a16.values.bin",
+      "sha256": "1ca081ebf17220a2f730696d27665f042443e0a9971585fbb751a9fbbada154a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00310-w4a16.scales.f16le",
+      "sha256": "aa74332e4d73e271f309bd10b9ab5a047c7c6458361619e74835e1c3dffbc4a3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00310-w4a16.values.bin",
+      "sha256": "9852acad3850b6d78f4df94e2a07856fe134f546cebf963ae000fb3e0b402439"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00311-w4a16.scales.f16le",
+      "sha256": "5c13c1870caaba21cb48b2227db129c570e967968cba7419aa12fb2e827d6ba8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00311-w4a16.values.bin",
+      "sha256": "d5c8c83e38423ff93e938627e9bc5436bb9c4152fc6e5130ad77c82b673796d2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00312-w4a16.scales.f16le",
+      "sha256": "5b8a779d72e23e30b72d55ce1463a5b5bd6731ab63a7a24d6cf066b66ffd198f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00312-w4a16.values.bin",
+      "sha256": "57e62a4f22e93a94f6e0d254e7fed8fea279896d14c6cd757a52aa4bfbd260ae"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00313-w4a16.scales.f16le",
+      "sha256": "cd97afbb33e78678c2cd3705bdf5256f652fe3f3f9d858ec8506ba097eb7b125"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00313-w4a16.values.bin",
+      "sha256": "d1537aa7b564cb06146491c5d649fc158fba2ffe7b0b9169367ae7467a844258"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00314-w4a16.scales.f16le",
+      "sha256": "266de8dcf5ffe4a9677d56aaeffc5b6483d7f92805e2ba338700713c912f7635"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00314-w4a16.values.bin",
+      "sha256": "19b395efd9b31582e38d7d753a36e2c95f62775095b863dfcddab65a50ceb41d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00315-w4a16.scales.f16le",
+      "sha256": "e9a1072e441bdc6db3e9ce7928685853a270551b27f3cca7578753bd43e25cc1"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00315-w4a16.values.bin",
+      "sha256": "e5b38a8392c41f8f23c9bb8bc38f471027fddec8d038242521d2a4f1a67b5098"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00316-w4a16.scales.f16le",
+      "sha256": "dc11d8ef235eb061c4575107bcc7f8ee11f4313769254b5797268e19308766db"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00316-w4a16.values.bin",
+      "sha256": "254e2c6e11a4f26b72799fdf1101da27e524ed62e6aeb18ca91f362cd46adfa4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00317-w4a16.scales.f16le",
+      "sha256": "29645b3ae6c21b35591c7f76ecc637a4653ab832d9aaa9c60c0775852dce538c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00317-w4a16.values.bin",
+      "sha256": "8445e6a91cef87240b101aa29fa3464e17d33c35b8e7986e570993467ff69c01"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00318-w4a16.scales.f16le",
+      "sha256": "b41e9bdaf26f983338295b71b1aac57b84f7dbd4cb30ab083982e61f1056cce9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00318-w4a16.values.bin",
+      "sha256": "bec8117133429a06cf25b0b4412c610795980d2098c363191d5e786d5503d01a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00319-w4a16.scales.f16le",
+      "sha256": "28cc410fd9b032e6f7c98487c0fb75fef0415acd7f022af31e5e45069f04fb77"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00319-w4a16.values.bin",
+      "sha256": "492727e0da346235c772ea79cb38752996c49f86338c18b5a26dc0495b633fa8"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00320-w4a16.scales.f16le",
+      "sha256": "4b4157a8bcf4d24a382b24bdb3be24bf7ccba9904ec3372da43f30f11af7b2b3"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00320-w4a16.values.bin",
+      "sha256": "037c2426dd6930f201b84b1b676ae855fc9b87f6aa7e776def93fdcba93b67f0"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00321-w4a16.scales.f16le",
+      "sha256": "b239ed06241d45fbe6e199f10ace1e3606c8035da5ad733e573aad501fab9408"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00321-w4a16.values.bin",
+      "sha256": "39fa2308413d742f97ca78a0214306858a9a7f3d873dd6504c4f65456eb46e79"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00322-w4a16.scales.f16le",
+      "sha256": "9414a3bdeed2c0df690ce3ad90f66ba93a0eb5acad0fcff4b089b61ba01b23f4"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00322-w4a16.values.bin",
+      "sha256": "6d85cd91187a681c4bc85e662ad96c83b5a6c00624ef370e0aba66fb0f104232"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00323-w4a16.scales.f16le",
+      "sha256": "186eab4c037136434d6485ca6973e956f6e75b576d3b8e4b89b342f46406b7b7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00323-w4a16.values.bin",
+      "sha256": "799feb6140fef10688d01310f6d9a7f61209dfd41cf4fecabb8d83dc1184c5bd"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00324-w4a16.scales.f16le",
+      "sha256": "1f74f3ea73926a76609734a13d8aeafc012627923ec26600a76ac4c66a31bb5e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00324-w4a16.values.bin",
+      "sha256": "f9d9e2f819f7af8507854f6c7dd5408382a4b927e14fe9085b3114bf37d7af43"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00325-w4a16.scales.f16le",
+      "sha256": "a52e78093a3026faee8f452e04ded43a0d6ae1458f42b6ef133c3861084d7d40"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00325-w4a16.values.bin",
+      "sha256": "44dff0cb3d5a4ff23e28bc43d0a0a347facf871b8f70b63b29fc667c0317ede9"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00326-w4a16.scales.f16le",
+      "sha256": "fff425e1d09c145d8b6be26225bbeb33e6d51a6ea473e1b616553ecac2f66816"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00326-w4a16.values.bin",
+      "sha256": "fd7d74977e2ec71e1fdf643554fe37a78fdcab3549acfbef29e90a7984388230"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00327-w4a16.scales.f16le",
+      "sha256": "b97a5efcb46542aa113b2f980ea2e420f162ff9604d95fafb454aa8b4e0435b7"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/target/gemma4-12b-it-fulltext-w4-v1.rvllm/weights/low-bit/00327-w4a16.values.bin",
+      "sha256": "bb494c95a23c9db4bce48a406a6b0c3674ab2f30fb1b94b9e0e0f0d748544a2c"
+    }
+  ],
+  "max_run_seconds": 1800,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

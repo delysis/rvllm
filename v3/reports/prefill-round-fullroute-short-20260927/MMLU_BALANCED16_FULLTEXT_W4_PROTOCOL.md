@@ -44,11 +44,17 @@ largest continuation 43 tokens. All 16 cases meet the builder's 128–1024
 prompt and 1–64 target bounds. If any source/token pin changes, abort rather
 than silently replacing a row.
 
-The next step is **not yet authorized for queue submission by this protocol
-alone**. First implement/test a separate safe-Rust fail-closed generator and
-referee, seal fresh immutable manifests and output paths, verify the 328
-dense-text-projection W4 package identity and same BF16 SG8 donor, and
-estimate the queue runtime/resource budget from prior clean jobs. The frozen
+The source-bound safe-Rust generator and separate fail-closed referee are
+stored in `v3/crates/rvllm-runtime/src/bin/`. The authoritative create-new
+`mmlu-balanced16-w4-queue/` directory has 32 immutable manifests and 16
+single-prompt JSONL files. The referee freezes the SHA-256 of each manifest
+in case/route order and its host tests check all 32 files. This is a host
+preparation result, **not queue submission or numerical evidence**. Before
+submitting even the first wave, independently review its manifests and
+output paths, check the live serial queue and disk budget, and retain the
+separate unsubmitted `mmlu-balanced16-w4-queue-dry-run/` directory.
+
+The frozen
 teacher CLI requires **one JSON prompt and one target list per process**;
 it cannot score four cases in one job. Without a separately implemented and
 tested safe-Rust multi-case teacher route, this trial requires 32 fresh
@@ -58,7 +64,8 @@ and their BF16 controls 33–36 seconds each. A simple 16-pair extrapolation
 is roughly 118–132 minutes before queue gaps or variable-length effects,
 not a guaranteed duration. Because the existing job template's maximum
 wait is 7200 seconds, do **not** submit a single dependent 32-job chain.
-Seal fixed waves of at most four case-pairs and submit each wave only after
+The manifests define fixed waves of four case-pairs, beginning at q00, q04,
+q08 and q12, with no dependency between waves. Submit each wave only after
 the previous wave is terminal; no completed ID is replayed. If the new
 generator/referee or resource review cannot make this safe, stop before
 submission rather than changing the selected cases or weakening the gate.

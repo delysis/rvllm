@@ -1,0 +1,105 @@
+{
+  "after": [
+    "prefill26-mmlu-balanced16-w4-q13-w4-v1-20260928"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--teacher-prompt-jsonl",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-w4-queue/q14-prompt.jsonl",
+      "--teacher-token-ids",
+      "603,236761,1546,563,919,12030,4596,531,2263,6877,41903,1082,886,2264,236764,22169,600,1239,4532,21215,529,12878,964,168197,21112,528,13512,11560,532,8710,11560,236761",
+      "--max-new-tokens",
+      "32",
+      "--max-total-tokens",
+      "1024",
+      "--large-model-opt-in",
+      "--json"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "env": {
+      "RVLLM_METAL_METALLIB_BF16": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-build/core.metallib",
+      "RVLLM_METAL_RESEARCH": "metal-donor12b-sg8"
+    },
+    "executable": {
+      "path": "/private/tmp/rvllm-prefill-full-vector-artifacts-20260927/rvllm_metal_infer",
+      "sha256": "1f9cfedd5c1a91f4a1046e2930e13071847fc0b90c7bafa2f391f3e99b3082c5"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 68719476736,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "prefill26-mmlu-balanced16-w4-q14-native-v1-20260928",
+  "inputs": [
+    {
+      "path": "/Users/george/.cache/huggingface/datasets/cais___mmlu/all/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe/mmlu-test.arrow",
+      "sha256": "58769d67ced092719390e496f1d4bbf8b99c43b77bba39d054b9a09aecb63cab"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-donor12b-pr4-integration-20260926/v3/reports/donor12b-pr4-integration-20260926/sg8-build/core.metallib",
+      "sha256": "21d81a66d31075e9307b64b7cb8eb0eea1f1dee74c0865ff3d0fa8125579dd06"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_gemma4_mmlu_balanced16_w4_job_gen.rs",
+      "sha256": "e295e90927902ec89aa08a49b6bd8838130842ae250f73ed4811de1eaab83479"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_metal_infer.rs",
+      "sha256": "5158928cc2f97381b8943e75657b0485f4cbb76abd55a56867e2cfb9c05277ec"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/lowbit-full-text-selectors-sealed-v1.json",
+      "sha256": "087e5e87f8ef2fd68e6d910af17867ec2cf12ef9344e9b70cf481a6992591d7e"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/lowbit-mmlu-v1-queue/logic-native-job.json",
+      "sha256": "8bb718fcfbb59f4701567df8b5c2be581ab75d967494ee210d21ab514a061527"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-fulltext-w4-source-v1.json",
+      "sha256": "c99f34ae929484d019630ada0589ff9fbd7149e86b6109efd513ebf977cd1c22"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-fulltext-w4-tokens-v1.json",
+      "sha256": "ff019f8554630f2c8c6ca5165728109299e17a66d6cc2a8fc5bc8325fbab2b15"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-balanced16-w4-queue/q14-prompt.jsonl",
+      "sha256": "86c0ad7e5eca4f890f9e5ec5c821349cdf5013d74a4ab0745bf3d6146fa363fa"
+    }
+  ],
+  "max_run_seconds": 1800,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}
