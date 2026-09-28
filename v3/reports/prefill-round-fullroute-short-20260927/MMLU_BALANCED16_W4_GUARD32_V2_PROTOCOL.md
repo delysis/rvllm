@@ -1,5 +1,10 @@
 # Prospective 32 GiB disk guard for later W4 correctness jobs
 
+Historical planning note: the user's later explicit instruction authorized a
+live amendment of pending local manifests. The controlling provenance record
+is `MMLU_BALANCED16_W4_LIVE_GUARD_AMENDMENT.md`; the restrictions below describe
+the earlier prospective-only plan, not the subsequently authorized action.
+
 This is a new protocol decision, not an amendment to the submitted balanced16
 v1 manifests. Those manifests remain immutable with their 64 GiB guard. The
 q01-W4 receipt remains condition-ineligible, and the frozen 32-arm v1 referee
