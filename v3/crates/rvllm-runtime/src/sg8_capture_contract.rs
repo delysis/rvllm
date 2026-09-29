@@ -380,22 +380,35 @@ impl Plan {
                         )?;
                     }
                 }
+                let input = &layer_points[0].dispatch_prefix;
                 let q = &layer_points[3].dispatch_prefix;
+                let before_attention = &layer_points[7].dispatch_prefix;
                 let attention = &layer_points[8].dispatch_prefix;
+                let before_gate = &layer_points[9].dispatch_prefix;
                 let output = &layer_points[12].dispatch_prefix;
                 require(
-                    q.get(PROJECTION).copied().unwrap_or(0) > 0,
+                    q.get(PROJECTION).copied().unwrap_or(0)
+                        > input.get(PROJECTION).copied().unwrap_or(0),
                     "SG8 Q boundary lacks named projection dispatch",
                 )?;
-                let local = attention.get(LOCAL).copied().unwrap_or(0);
-                let global = attention.get(GLOBAL).copied().unwrap_or(0);
+                let local = attention.get(LOCAL).copied().unwrap_or(0)
+                    - before_attention.get(LOCAL).copied().unwrap_or(0);
+                let global = attention.get(GLOBAL).copied().unwrap_or(0)
+                    - before_attention.get(GLOBAL).copied().unwrap_or(0);
+                let expected_attention = if layer_points[0].layer == Some(5) {
+                    (0, 1)
+                } else {
+                    (1, 0)
+                };
                 require(
-                    (local == 1 && global == 0) || (local == 0 && global == 1),
-                    "SG8 attention boundary lacks one named attention dispatch",
+                    (local, global) == expected_attention,
+                    "SG8 attention boundary lacks the layer's named attention dispatch",
                 )?;
                 require(
-                    output.get(PROJECTION).copied().unwrap_or(0) > 0
-                        && output.get(GATE).copied().unwrap_or(0) > 0,
+                    output.get(PROJECTION).copied().unwrap_or(0)
+                        > q.get(PROJECTION).copied().unwrap_or(0)
+                        && output.get(GATE).copied().unwrap_or(0)
+                            > before_gate.get(GATE).copied().unwrap_or(0),
                     "SG8 output lacks named projection and gate dispatch",
                 )?;
             }
@@ -802,12 +815,13 @@ mod tests {
                     .insert(PROJECTION.into(), 1);
             }
             for i in 8..LAYER_BOUNDARIES.len() {
+                let attention_name = if layer == 1 { GLOBAL } else { LOCAL };
                 plan.points[base + i]
                     .dispatch_prefix
-                    .insert(LOCAL.into(), 1);
+                    .insert(attention_name.into(), 1);
                 receipt.records[base + i]
                     .dispatch_prefix
-                    .insert(LOCAL.into(), 1);
+                    .insert(attention_name.into(), 1);
             }
             for i in 11..LAYER_BOUNDARIES.len() {
                 plan.points[base + i].dispatch_prefix.insert(GATE.into(), 1);
@@ -815,11 +829,73 @@ mod tests {
                     .dispatch_prefix
                     .insert(GATE.into(), 1);
             }
+            plan.points[base + 12]
+                .dispatch_prefix
+                .insert(PROJECTION.into(), 2);
+            receipt.records[base + 12]
+                .dispatch_prefix
+                .insert(PROJECTION.into(), 2);
         }
         receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
         assert!(check(&plan, &receipt, &payload).is_ok());
         plan.points[9].dispatch_prefix.remove(LOCAL);
         receipt.records[9].dispatch_prefix.remove(LOCAL);
+        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        assert!(check(&plan, &receipt, &payload).is_err());
+    }
+
+    #[test]
+    fn sg8_rejects_wrong_attention_kind_and_stale_dispatch_prefix() {
+        let (mut plan, mut receipt, payload) = fixture();
+        plan.route = Route::Sg8;
+        for layer in 0..3 {
+            let base = layer * LAYER_BOUNDARIES.len();
+            let attention_name = if layer == 1 { GLOBAL } else { LOCAL };
+            for i in 3..LAYER_BOUNDARIES.len() {
+                plan.points[base + i]
+                    .dispatch_prefix
+                    .insert(PROJECTION.into(), if i == 12 { 2 } else { 1 });
+            }
+            for i in 8..LAYER_BOUNDARIES.len() {
+                plan.points[base + i]
+                    .dispatch_prefix
+                    .insert(attention_name.into(), 1);
+            }
+            for i in 11..LAYER_BOUNDARIES.len() {
+                plan.points[base + i].dispatch_prefix.insert(GATE.into(), 1);
+            }
+        }
+        for (point, record) in plan.points.iter().zip(&mut receipt.records) {
+            record.dispatch_prefix = point.dispatch_prefix.clone();
+        }
+        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        assert!(check(&plan, &receipt, &payload).is_ok());
+
+        let base = LAYER_BOUNDARIES.len();
+        for i in 8..LAYER_BOUNDARIES.len() {
+            plan.points[base + i].dispatch_prefix.remove(GLOBAL);
+            plan.points[base + i]
+                .dispatch_prefix
+                .insert(LOCAL.into(), 1);
+            receipt.records[base + i].dispatch_prefix =
+                plan.points[base + i].dispatch_prefix.clone();
+        }
+        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        assert!(check(&plan, &receipt, &payload).is_err());
+
+        let base = LAYER_BOUNDARIES.len();
+        for i in 8..LAYER_BOUNDARIES.len() {
+            plan.points[base + i].dispatch_prefix.remove(LOCAL);
+            plan.points[base + i]
+                .dispatch_prefix
+                .insert(GLOBAL.into(), 1);
+            receipt.records[base + i].dispatch_prefix =
+                plan.points[base + i].dispatch_prefix.clone();
+        }
+        plan.points[base + 7]
+            .dispatch_prefix
+            .insert(GLOBAL.into(), 1);
+        receipt.records[base + 7].dispatch_prefix = plan.points[base + 7].dispatch_prefix.clone();
         receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
         assert!(check(&plan, &receipt, &payload).is_err());
     }
