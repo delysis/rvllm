@@ -1,6 +1,6 @@
 # SG8 same-input readback boundary: current-tree design
 
-Status: source-only design at PR #8 commit `e6e24d1eaa147495fd3a198ea7fb28df177472e5`. No capture implementation, device job, or numerical verdict is authorized by this document. New development remains safe idiomatic Rust; this design does not import Astra's patch or add an unsafe operation.
+Status: source-only design from PR #8 commit `e6e24d1eaa147495fd3a198ea7fb28df177472e5`, now accompanied by a default-off, host-testable safe-Rust contract. There is still no tensor capture transport, device job, or numerical verdict. The implementation does not import Astra's patch or add an unsafe operation.
 
 ## Evidence and limits
 
@@ -15,6 +15,16 @@ Current-tree readback capabilities are narrower:
 - `rvllm-apple-metal/src/layer_forward.rs`: the optional legacy trace changes route selection (`trace.is_none()` participates in prefill MMA and fused QKV decisions). It cannot certify route-preserving Q capture. `probe_read_decode_logits_f32` returns final logits only.
 
 There is therefore **no current safe route-preserving producer of the full active Q or transient layer boundary bytes**. A safe contract module alone cannot make those bytes available. Do not disguise an unsafe arena read or a recomputed Q as a safe capture.
+
+`gpu_capture.rs` records a Metal GPU trace document, not an owned snapshot of tensor bytes. Its capture-manager API is not a substitute readback producer.
+
+## Host-only contract now implemented
+
+The feature `sg8-capture-contract` exposes `rvllm-runtime/src/sg8_capture_contract.rs` (SHA-256 `3e320d6a996d7a6a6ea3c04159551c2bd2f69a834e38f232c3f8145336a0dedf`). It is default-off and declares `#![forbid(unsafe_code)]`. The module validates a strict JSON plan, completion receipt and supplied owned payload slice. It is not wired to a Metal encoder or the inference CLI.
+
+The initial schema is deliberately limited to one decode ordinal after a complete 256- or 512-token prompt, one live slot, and ordered boundaries at layers 4, 5 and 6 plus the final residual. It requires syntactically valid source/model/config/tokenizer/metallib/executable hash fields; full conditioning token IDs and their recomputed hash; context/position/ticket identity; layer-4/6 local and layer-5 global geometry; logical K/V producer aliases and bounded, nonduplicated physical page tables; exact boundary shape, BF16/F32 dtype and order; explicit unavailable fused interiors; monotonic named SG8 dispatch prefixes; a completed-status receipt; contiguous nonoverlapping spans; per-tensor and complete payload hashes. Metadata is capped at 2 MiB and payload at 512 MiB. Unknown/duplicate JSON fields, missing/reordered boundaries, wrong ticket/history, malformed shape, skipped required Q, bad K/V table, changed dispatch, truncated/extra payload and hash mismatch fail closed. The hash fields do not authenticate external files until a future caller independently verifies and pins them.
+
+Nine focused host tests passed with `cargo test --locked --offline -p rvllm-runtime --features sg8-capture-contract --lib sg8_capture_contract`; the feature build/check passed, and targeted Clippy correctness passed. Other workspace warnings were not treated as this module's failures. These are synthetic structural checks only. A caller could fabricate both JSON and bytes; the verifier cannot prove that a production command wrote them, that its claimed dispatch actually occurred, or that a submitted command completed. Those facts require an independently reviewed current-tree transport and live route evidence. No device or quality claim follows from the host pass.
 
 ## Minimal experiment, once transport exists
 
@@ -48,4 +58,4 @@ Host negative tests should cover every rejection above, especially wrong command
 
 ## Sequencing decision
 
-First implement only the safe plan/descriptor/referee logic and host negatives against this current tree, without a concrete Q transport or device run. Audit available Metal abstractions for a genuinely safe owned snapshot primitive. If none exists, record that as the blocker. Only after the transport and route gates are independently reviewed should a fresh immutable serial experiment be predeclared on distinct input. Do not replay prior trace IDs, weaken numerical gates, or promote from one matching top token or a first stored-bit difference.
+The safe plan/descriptor/referee logic and host negatives are implemented, without a concrete Q transport or device run. The Metal abstraction audit found no genuinely safe owned snapshot primitive for transient Q/residuals; that remains the blocker. Only after transport and route gates are independently reviewed should a fresh immutable serial experiment be predeclared on distinct input. Do not replay prior trace IDs, weaken numerical gates, or promote from one matching top token or a first stored-bit difference.
