@@ -245,8 +245,8 @@ impl LogicalKv {
     fn validate(&self, context: u64) -> Check<()> {
         require(
             (FIRST_LAYER..=LAST_LAYER).contains(&self.consumer_layer)
-                && self.producer_layer <= self.consumer_layer,
-            "invalid logical KV producer alias",
+                && self.producer_layer == self.consumer_layer,
+            "pinned 12B-it route cannot alias a different KV producer",
         )?;
         let expected_geometry = if self.consumer_layer == 5 {
             (1, 512)
@@ -1133,7 +1133,7 @@ mod tests {
         sg8.0.logical_kv[2].producer_layer = 4;
         sg8.1.logical_kv = sg8.0.logical_kv.clone();
         sg8.1.plan_sha256 = digest(&serde_json::to_vec(&sg8.0).unwrap());
-        assert!(check(&sg8.0, &sg8.1, &sg8.2).is_ok());
+        assert!(check(&sg8.0, &sg8.1, &sg8.2).is_err());
         assert!(paired(&off, &sg8).is_err());
     }
 
