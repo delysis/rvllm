@@ -481,6 +481,31 @@ pub struct VerifiedCapture {
     pub payload_sha256: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct StoredDifference {
+    pub layer: Option<u8>,
+    pub boundary: Boundary,
+    pub element_index: u64,
+    pub off_bits: u32,
+    pub sg8_bits: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct BoundaryDifference {
+    pub layer: Option<u8>,
+    pub boundary: Boundary,
+    pub differing_elements: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PairComparison {
+    pub compared_points: usize,
+    pub compared_elements: u64,
+    pub differing_elements: u64,
+    pub first_stored_difference: Option<StoredDifference>,
+    pub differing_boundaries: Vec<BoundaryDifference>,
+}
+
 /// Validate supplied evidence only. This cannot establish the provenance of
 /// bytes before the future platform transport hands them to this function.
 pub fn verify(plan_json: &[u8], receipt_json: &[u8], payload: &[u8]) -> Check<VerifiedCapture> {
@@ -561,6 +586,136 @@ pub fn verify(plan_json: &[u8], receipt_json: &[u8], payload: &[u8]) -> Check<Ve
         payload_bytes,
         payload_sha256: receipt.payload_sha256,
     })
+}
+
+fn stored_bytes<'a>(record: &Record, payload: &'a [u8]) -> Check<Option<&'a [u8]>> {
+    let Storage::Stored { offset, len, .. } = &record.storage else {
+        return Ok(None);
+    };
+    let start = usize::try_from(*offset).map_err(|_| "capture offset overflow")?;
+    let end = offset
+        .checked_add(*len)
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or("capture end overflow")?;
+    payload
+        .get(start..end)
+        .map(Some)
+        .ok_or("capture span exceeds payload".into())
+}
+
+/// Compare two independently supplied captures after validating each one.
+/// The first difference is in descriptor order, not proof of the first
+/// arithmetic cause or of either payload's live GPU provenance.
+pub fn compare_pair(
+    off_plan_json: &[u8],
+    off_receipt_json: &[u8],
+    off_payload: &[u8],
+    sg8_plan_json: &[u8],
+    sg8_receipt_json: &[u8],
+    sg8_payload: &[u8],
+) -> Check<PairComparison> {
+    verify(off_plan_json, off_receipt_json, off_payload)?;
+    verify(sg8_plan_json, sg8_receipt_json, sg8_payload)?;
+    let off: Plan = parse_strict_json(off_plan_json).map_err(|e| e.to_string())?;
+    let sg8: Plan = parse_strict_json(sg8_plan_json).map_err(|e| e.to_string())?;
+    let off_receipt: Receipt = parse_strict_json(off_receipt_json).map_err(|e| e.to_string())?;
+    let sg8_receipt: Receipt = parse_strict_json(sg8_receipt_json).map_err(|e| e.to_string())?;
+    require(
+        off.route == Route::Off && sg8.route == Route::Sg8,
+        "paired capture routes are not selector-off then SG8",
+    )?;
+    require(
+        off.identity == sg8.identity
+            && off.prompt_tokens == sg8.prompt_tokens
+            && off.decode_ordinal == sg8.decode_ordinal
+            && off.execution_slot == sg8.execution_slot
+            && off.position == sg8.position
+            && off.context == sg8.context
+            && off.conditioning_token_ids == sg8.conditioning_token_ids
+            && off.input_ids_sha256 == sg8.input_ids_sha256
+            && off.logical_kv == sg8.logical_kv,
+        "paired capture identities, input histories or logical KV maps differ",
+    )?;
+    let mut result = PairComparison {
+        compared_points: 0,
+        compared_elements: 0,
+        differing_elements: 0,
+        first_stored_difference: None,
+        differing_boundaries: Vec::new(),
+    };
+    for (((off_point, sg8_point), off_record), sg8_record) in off
+        .points
+        .iter()
+        .zip(&sg8.points)
+        .zip(&off_receipt.records)
+        .zip(&sg8_receipt.records)
+    {
+        require(
+            off_point.layer == sg8_point.layer
+                && off_point.boundary == sg8_point.boundary
+                && off_point.shape == sg8_point.shape
+                && off_point.dtype == sg8_point.dtype
+                && off_point.availability == sg8_point.availability,
+            "paired capture descriptors or availability differ",
+        )?;
+        let (Some(off_bytes), Some(sg8_bytes)) = (
+            stored_bytes(off_record, off_payload)?,
+            stored_bytes(sg8_record, sg8_payload)?,
+        ) else {
+            continue;
+        };
+        require(
+            off_bytes.len() == sg8_bytes.len(),
+            "paired tensor lengths differ",
+        )?;
+        result.compared_points += 1;
+        let width = usize::try_from(off_point.dtype.width()).map_err(|_| "invalid dtype width")?;
+        let mut boundary_differences = 0_u64;
+        for (index, (left, right)) in off_bytes
+            .chunks_exact(width)
+            .zip(sg8_bytes.chunks_exact(width))
+            .enumerate()
+        {
+            result.compared_elements = result
+                .compared_elements
+                .checked_add(1)
+                .ok_or("comparison element count overflow")?;
+            if left != right {
+                let bits = |bytes: &[u8]| -> u32 {
+                    if width == 2 {
+                        u32::from(u16::from_le_bytes([bytes[0], bytes[1]]))
+                    } else {
+                        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                    }
+                };
+                result
+                    .first_stored_difference
+                    .get_or_insert(StoredDifference {
+                        layer: off_point.layer,
+                        boundary: off_point.boundary,
+                        element_index: u64::try_from(index)
+                            .map_err(|_| "comparison element index overflow")?,
+                        off_bits: bits(left),
+                        sg8_bits: bits(right),
+                    });
+                boundary_differences = boundary_differences
+                    .checked_add(1)
+                    .ok_or("boundary difference count overflow")?;
+            }
+        }
+        if boundary_differences > 0 {
+            result.differing_elements = result
+                .differing_elements
+                .checked_add(boundary_differences)
+                .ok_or("comparison difference count overflow")?;
+            result.differing_boundaries.push(BoundaryDifference {
+                layer: off_point.layer,
+                boundary: off_point.boundary,
+                differing_elements: boundary_differences,
+            });
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -683,6 +838,47 @@ mod tests {
             &serde_json::to_vec(plan).unwrap(),
             &serde_json::to_vec(receipt).unwrap(),
             payload,
+        )
+    }
+
+    fn sg8_fixture() -> (Plan, Receipt, Vec<u8>) {
+        let (mut plan, mut receipt, payload) = fixture();
+        plan.route = Route::Sg8;
+        for layer in 0..3 {
+            let base = layer * LAYER_BOUNDARIES.len();
+            let attention_name = if layer == 1 { GLOBAL } else { LOCAL };
+            for i in 3..LAYER_BOUNDARIES.len() {
+                plan.points[base + i]
+                    .dispatch_prefix
+                    .insert(PROJECTION.into(), if i == 12 { 2 } else { 1 });
+            }
+            for i in 8..LAYER_BOUNDARIES.len() {
+                plan.points[base + i]
+                    .dispatch_prefix
+                    .insert(attention_name.into(), 1);
+            }
+            for i in 11..LAYER_BOUNDARIES.len() {
+                plan.points[base + i].dispatch_prefix.insert(GATE.into(), 1);
+            }
+        }
+        for (point, record) in plan.points.iter().zip(&mut receipt.records) {
+            record.dispatch_prefix = point.dispatch_prefix.clone();
+        }
+        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        (plan, receipt, payload)
+    }
+
+    fn paired(
+        off: &(Plan, Receipt, Vec<u8>),
+        sg8: &(Plan, Receipt, Vec<u8>),
+    ) -> Check<PairComparison> {
+        compare_pair(
+            &serde_json::to_vec(&off.0).unwrap(),
+            &serde_json::to_vec(&off.1).unwrap(),
+            &off.2,
+            &serde_json::to_vec(&sg8.0).unwrap(),
+            &serde_json::to_vec(&sg8.1).unwrap(),
+            &sg8.2,
         )
     }
 
@@ -846,29 +1042,7 @@ mod tests {
 
     #[test]
     fn sg8_rejects_wrong_attention_kind_and_stale_dispatch_prefix() {
-        let (mut plan, mut receipt, payload) = fixture();
-        plan.route = Route::Sg8;
-        for layer in 0..3 {
-            let base = layer * LAYER_BOUNDARIES.len();
-            let attention_name = if layer == 1 { GLOBAL } else { LOCAL };
-            for i in 3..LAYER_BOUNDARIES.len() {
-                plan.points[base + i]
-                    .dispatch_prefix
-                    .insert(PROJECTION.into(), if i == 12 { 2 } else { 1 });
-            }
-            for i in 8..LAYER_BOUNDARIES.len() {
-                plan.points[base + i]
-                    .dispatch_prefix
-                    .insert(attention_name.into(), 1);
-            }
-            for i in 11..LAYER_BOUNDARIES.len() {
-                plan.points[base + i].dispatch_prefix.insert(GATE.into(), 1);
-            }
-        }
-        for (point, record) in plan.points.iter().zip(&mut receipt.records) {
-            record.dispatch_prefix = point.dispatch_prefix.clone();
-        }
-        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        let (mut plan, mut receipt, payload) = sg8_fixture();
         assert!(check(&plan, &receipt, &payload).is_ok());
 
         let base = LAYER_BOUNDARIES.len();
@@ -898,5 +1072,86 @@ mod tests {
         receipt.records[base + 7].dispatch_prefix = plan.points[base + 7].dispatch_prefix.clone();
         receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
         assert!(check(&plan, &receipt, &payload).is_err());
+    }
+
+    #[test]
+    fn paired_capture_reports_only_the_first_stored_boundary() {
+        let off = fixture();
+        let mut sg8 = sg8_fixture();
+        let equal = paired(&off, &sg8).unwrap();
+        assert_eq!(equal.differing_elements, 0);
+        assert_eq!(equal.first_stored_difference, None);
+        assert_eq!(equal.compared_points, 34);
+
+        for record_index in [0, 3] {
+            let Storage::Stored {
+                offset,
+                len,
+                sha256,
+            } = &mut sg8.1.records[record_index].storage
+            else {
+                panic!("test boundary must be stored")
+            };
+            let start = usize::try_from(*offset).unwrap();
+            let end = start + usize::try_from(*len).unwrap();
+            sg8.2[start] ^= 1;
+            *sha256 = digest(&sg8.2[start..end]);
+        }
+        sg8.1.payload_sha256 = digest(&sg8.2);
+        let result = paired(&off, &sg8).unwrap();
+        assert_eq!(result.differing_elements, 2);
+        assert_eq!(result.differing_boundaries.len(), 2);
+        assert_eq!(
+            result.first_stored_difference,
+            Some(StoredDifference {
+                layer: Some(4),
+                boundary: Boundary::InputResidual,
+                element_index: 0,
+                off_bits: u32::from(u16::from_le_bytes([off.2[0], off.2[1]])),
+                sg8_bits: u32::from(u16::from_le_bytes([sg8.2[0], sg8.2[1]])),
+            })
+        );
+    }
+
+    #[test]
+    fn paired_capture_requires_same_source_and_logical_history() {
+        let off = fixture();
+        let mut sg8 = sg8_fixture();
+        sg8.0.identity.model_sha256 = digest(b"different-model");
+        sg8.1.plan_sha256 = digest(&serde_json::to_vec(&sg8.0).unwrap());
+        assert!(check(&sg8.0, &sg8.1, &sg8.2).is_ok());
+        assert!(paired(&off, &sg8).is_err());
+
+        let mut sg8 = sg8_fixture();
+        sg8.0.logical_kv[0].block_table.rotate_left(1);
+        sg8.1.logical_kv = sg8.0.logical_kv.clone();
+        sg8.1.plan_sha256 = digest(&serde_json::to_vec(&sg8.0).unwrap());
+        assert!(check(&sg8.0, &sg8.1, &sg8.2).is_ok());
+        assert!(paired(&off, &sg8).is_err());
+
+        let mut sg8 = sg8_fixture();
+        sg8.0.logical_kv[2].producer_layer = 4;
+        sg8.1.logical_kv = sg8.0.logical_kv.clone();
+        sg8.1.plan_sha256 = digest(&serde_json::to_vec(&sg8.0).unwrap());
+        assert!(check(&sg8.0, &sg8.1, &sg8.2).is_ok());
+        assert!(paired(&off, &sg8).is_err());
+    }
+
+    #[test]
+    fn paired_capture_rejects_wrong_route_or_forged_payload() {
+        let off = fixture();
+        let mut sg8 = sg8_fixture();
+        sg8.0.route = Route::Off;
+        for (point, record) in sg8.0.points.iter_mut().zip(&mut sg8.1.records) {
+            point.dispatch_prefix.clear();
+            record.dispatch_prefix.clear();
+        }
+        sg8.1.plan_sha256 = digest(&serde_json::to_vec(&sg8.0).unwrap());
+        assert!(check(&sg8.0, &sg8.1, &sg8.2).is_ok());
+        assert!(paired(&off, &sg8).is_err());
+
+        let mut sg8 = sg8_fixture();
+        sg8.2[0] ^= 1;
+        assert!(paired(&off, &sg8).is_err());
     }
 }
