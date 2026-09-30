@@ -16,6 +16,8 @@ Current-tree readback capabilities are narrower:
 
 There is therefore **no current safe route-preserving producer of the full active Q or transient layer boundary bytes**. A safe contract module alone cannot make those bytes available. Do not disguise an unsafe arena read or a recomputed Q as a safe capture.
 
+The existing KV read is narrower even for KV-only evidence. `capture_page` returns one owned, serialized physical page in `(layer K, layer V)` order for every layer, and refuses access while a submission still owns the arena. The public `KvPageIo` trait reports only the total page byte count; it does not return per-layer offsets or dimensions, a logical block table, valid token lengths, conditioning history, or the command ticket that filled the page. `ModelMetalBackend::kv_page_layout` computes the validated layout internally but is private. A future safe caller could use the existing page read **after collection**, but must first obtain and authenticate the actual materialized mapping and layout and bind them to the completed step. Treating a raw page hash or a caller-invented layout as `AttendedK`/`AttendedV` would not pass the proposed capture boundary. No page-capture job is authorized by this source review.
+
 `gpu_capture.rs` records a Metal GPU trace document, not an owned snapshot of tensor bytes. Its capture-manager API is not a substitute readback producer.
 
 ## Host-only contract now implemented
