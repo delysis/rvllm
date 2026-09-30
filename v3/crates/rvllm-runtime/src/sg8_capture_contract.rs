@@ -368,18 +368,18 @@ impl Plan {
             point.validate(self.route, kv)?;
         }
         if self.route == Route::Sg8 {
+            for pair in self.points.windows(2) {
+                for name in [PROJECTION, GATE, LOCAL, GLOBAL] {
+                    require(
+                        pair[1].dispatch_prefix.get(name).copied().unwrap_or(0)
+                            >= pair[0].dispatch_prefix.get(name).copied().unwrap_or(0),
+                        "SG8 dispatch prefix regressed across capture boundaries",
+                    )?;
+                }
+            }
             for layer_points in
                 self.points[..self.points.len() - 1].chunks_exact(LAYER_BOUNDARIES.len())
             {
-                for pair in layer_points.windows(2) {
-                    for name in [PROJECTION, GATE, LOCAL, GLOBAL] {
-                        require(
-                            pair[1].dispatch_prefix.get(name).copied().unwrap_or(0)
-                                >= pair[0].dispatch_prefix.get(name).copied().unwrap_or(0),
-                            "SG8 dispatch prefix regressed within layer",
-                        )?;
-                    }
-                }
                 let input = &layer_points[0].dispatch_prefix;
                 let q = &layer_points[3].dispatch_prefix;
                 let before_attention = &layer_points[7].dispatch_prefix;
@@ -844,23 +844,24 @@ mod tests {
     fn sg8_fixture() -> (Plan, Receipt, Vec<u8>) {
         let (mut plan, mut receipt, payload) = fixture();
         plan.route = Route::Sg8;
+        let mut counts = BTreeMap::new();
         for layer in 0..3 {
             let base = layer * LAYER_BOUNDARIES.len();
             let attention_name = if layer == 1 { GLOBAL } else { LOCAL };
-            for i in 3..LAYER_BOUNDARIES.len() {
-                plan.points[base + i]
-                    .dispatch_prefix
-                    .insert(PROJECTION.into(), if i == 12 { 2 } else { 1 });
-            }
-            for i in 8..LAYER_BOUNDARIES.len() {
-                plan.points[base + i]
-                    .dispatch_prefix
-                    .insert(attention_name.into(), 1);
-            }
-            for i in 11..LAYER_BOUNDARIES.len() {
-                plan.points[base + i].dispatch_prefix.insert(GATE.into(), 1);
+            for i in 0..LAYER_BOUNDARIES.len() {
+                let name = match i {
+                    3 | 12 => Some(PROJECTION),
+                    8 => Some(attention_name),
+                    11 => Some(GATE),
+                    _ => None,
+                };
+                if let Some(name) = name {
+                    *counts.entry(name.into()).or_insert(0) += 1;
+                }
+                plan.points[base + i].dispatch_prefix = counts.clone();
             }
         }
+        plan.points.last_mut().unwrap().dispatch_prefix = counts;
         for (point, record) in plan.points.iter().zip(&mut receipt.records) {
             record.dispatch_prefix = point.dispatch_prefix.clone();
         }
@@ -1000,42 +1001,26 @@ mod tests {
         plan.route = Route::Sg8;
         receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
         assert!(check(&plan, &receipt, &payload).is_err());
-        for layer in 0..3 {
-            let base = layer * LAYER_BOUNDARIES.len();
-            for i in 3..LAYER_BOUNDARIES.len() {
-                plan.points[base + i]
-                    .dispatch_prefix
-                    .insert(PROJECTION.into(), 1);
-                receipt.records[base + i]
-                    .dispatch_prefix
-                    .insert(PROJECTION.into(), 1);
-            }
-            for i in 8..LAYER_BOUNDARIES.len() {
-                let attention_name = if layer == 1 { GLOBAL } else { LOCAL };
-                plan.points[base + i]
-                    .dispatch_prefix
-                    .insert(attention_name.into(), 1);
-                receipt.records[base + i]
-                    .dispatch_prefix
-                    .insert(attention_name.into(), 1);
-            }
-            for i in 11..LAYER_BOUNDARIES.len() {
-                plan.points[base + i].dispatch_prefix.insert(GATE.into(), 1);
-                receipt.records[base + i]
-                    .dispatch_prefix
-                    .insert(GATE.into(), 1);
-            }
-            plan.points[base + 12]
-                .dispatch_prefix
-                .insert(PROJECTION.into(), 2);
-            receipt.records[base + 12]
-                .dispatch_prefix
-                .insert(PROJECTION.into(), 2);
-        }
-        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        let (mut plan, mut receipt, payload) = sg8_fixture();
         assert!(check(&plan, &receipt, &payload).is_ok());
         plan.points[9].dispatch_prefix.remove(LOCAL);
         receipt.records[9].dispatch_prefix.remove(LOCAL);
+        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        assert!(check(&plan, &receipt, &payload).is_err());
+    }
+
+    #[test]
+    fn sg8_rejects_counter_reset_between_layers_or_at_final_residual() {
+        let (mut plan, mut receipt, payload) = sg8_fixture();
+        let layer_five_input = LAYER_BOUNDARIES.len();
+        plan.points[layer_five_input].dispatch_prefix.clear();
+        receipt.records[layer_five_input].dispatch_prefix.clear();
+        receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
+        assert!(check(&plan, &receipt, &payload).is_err());
+
+        let (mut plan, mut receipt, payload) = sg8_fixture();
+        plan.points.last_mut().unwrap().dispatch_prefix.clear();
+        receipt.records.last_mut().unwrap().dispatch_prefix.clear();
         receipt.plan_sha256 = digest(&serde_json::to_vec(&plan).unwrap());
         assert!(check(&plan, &receipt, &payload).is_err());
     }
