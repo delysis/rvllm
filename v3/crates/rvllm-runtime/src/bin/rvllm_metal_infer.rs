@@ -46,6 +46,8 @@ struct CliArgs {
     #[cfg(feature = "metal-quality-research")]
     teacher_token_ids: Option<Vec<u32>>,
     #[cfg(feature = "metal-quality-research")]
+    teacher_session: bool,
+    #[cfg(feature = "metal-quality-research")]
     teacher_prefill_last_logits: bool,
     #[cfg(feature = "metal-quality-research")]
     teacher_lm_head_shape_probe: bool,
@@ -294,6 +296,8 @@ where
     #[cfg(feature = "metal-quality-research")]
     let mut teacher_token_ids = None;
     #[cfg(feature = "metal-quality-research")]
+    let mut teacher_session = false;
+    #[cfg(feature = "metal-quality-research")]
     let mut teacher_prefill_last_logits = false;
     #[cfg(feature = "metal-quality-research")]
     let mut teacher_lm_head_shape_probe = false;
@@ -427,6 +431,13 @@ where
                 top_logits = parse_positive_usize("--top-logits", &value)?;
             }
             #[cfg(feature = "metal-quality-research")]
+            "--teacher-session" => {
+                if teacher_session {
+                    return Err("--teacher-session may be specified only once".to_owned());
+                }
+                teacher_session = true;
+            }
+            #[cfg(feature = "metal-quality-research")]
             "--teacher-token-ids" => {
                 let value = iter
                     .next()
@@ -510,6 +521,26 @@ where
         return Err("--profile-report requires --profile-samples".to_owned());
     }
     #[cfg(feature = "metal-quality-research")]
+    if teacher_session
+        && (prompts_jsonl.is_none()
+            || session_backend != SessionBackend::Direct
+            || !json_output
+            || teacher_token_ids.is_some()
+            || teacher_prefill_last_logits
+            || teacher_lm_head_shape_probe
+            || teacher_prefill_full_logits_output.is_some()
+            || hf_reference.is_some()
+            || !eos_token_ids.is_empty()
+            || profile_samples != 0
+            || profile_report.is_some()
+            || top_logits != 0
+            || report
+                .as_ref()
+                .is_some_and(|path: &PathBuf| !path.is_absolute() || path.exists()))
+    {
+        return Err("--teacher-session requires --prompts-jsonl, direct backend and --json, with no other teacher probe, reference, EOS, profile or top-logit flags; --report must be a new absolute path".to_owned());
+    }
+    #[cfg(feature = "metal-quality-research")]
     if let Some(targets) = &teacher_token_ids {
         if prompt.is_none()
             || !json_output
@@ -558,6 +589,8 @@ where
         #[cfg(feature = "metal-quality-research")]
         teacher_token_ids,
         #[cfg(feature = "metal-quality-research")]
+        teacher_session,
+        #[cfg(feature = "metal-quality-research")]
         teacher_prefill_last_logits,
         #[cfg(feature = "metal-quality-research")]
         teacher_lm_head_shape_probe,
@@ -577,6 +610,8 @@ fn usage() -> String {
         .to_owned();
     #[cfg(feature = "metal-quality-research")]
     usage.push_str("\nresearch-only: --teacher-prompt-jsonl PATH --teacher-token-ids ID,ID,... [--teacher-prefill-last-logits [--teacher-lm-head-shape-probe] [--teacher-prefill-full-logits-output NEW_ABSOLUTE_PATH]] --json (single prompt; never timing evidence)");
+    #[cfg(feature = "metal-quality-research")]
+    usage.push_str("\nresearch-only: --prompts-jsonl PATH --teacher-session --json (strict multi-case teacher targets; never timing evidence)");
     usage
 }
 
@@ -1022,6 +1057,8 @@ struct SessionCaseSpec {
     max_total_tokens: Option<usize>,
     no_bos: bool,
     hf_reference: Option<PathBuf>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_token_ids: Option<Vec<u32>>,
 }
 
 #[derive(Debug)]
@@ -1072,6 +1109,8 @@ struct SessionCaseReport {
     last_step_command_buffer_wait_ns: u64,
     max_supported_total_tokens: usize,
     comparison: Option<ReferenceComparison>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_forced: Option<TeacherReport>,
 }
 
 fn json_string_field<'a>(
@@ -1179,6 +1218,8 @@ fn session_case_from_value(
         max_total_tokens,
         no_bos,
         hf_reference: reference,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_token_ids: None,
     })
 }
 
@@ -1214,6 +1255,64 @@ fn load_jsonl_session_cases(
             "prompts JSONL {} did not contain any cases",
             path.display()
         ));
+    }
+    validate_unique_case_names(&cases)?;
+    Ok(cases)
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TeacherSessionInput {
+    name: String,
+    prompt: String,
+    max_new_tokens: usize,
+    max_total_tokens: Option<usize>,
+    no_bos: Option<bool>,
+    teacher_token_ids: Vec<u32>,
+}
+
+#[cfg(feature = "metal-quality-research")]
+fn load_teacher_session_cases(path: &std::path::Path) -> Result<Vec<SessionCaseSpec>, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|err| format!("read teacher session {}: {err}", path.display()))?;
+    let mut cases = Vec::new();
+    for (idx, line) in raw.lines().enumerate() {
+        if line.trim().is_empty() {
+            return Err(format!("teacher session line {} is empty", idx + 1));
+        }
+        let input: TeacherSessionInput =
+            rvllm_runtime::kernel_game::parse_strict_json(line.as_bytes())
+                .map_err(|err| format!("teacher session line {}: {err}", idx + 1))?;
+        if input.name.is_empty()
+            || input.prompt.is_empty()
+            || input.max_new_tokens == 0
+            || input.max_new_tokens > 64
+            || input.teacher_token_ids.len() != input.max_new_tokens
+        {
+            return Err(format!(
+                "teacher session line {} has invalid name, prompt or target count",
+                idx + 1
+            ));
+        }
+        if let Some(value) = input.max_total_tokens {
+            parse_max_total_tokens("max_total_tokens", &value.to_string())?;
+        }
+        cases.push(SessionCaseSpec {
+            name: input.name,
+            prompt: input.prompt,
+            max_new_tokens: input.max_new_tokens,
+            max_total_tokens: input.max_total_tokens,
+            no_bos: input.no_bos.unwrap_or(false),
+            hf_reference: None,
+            teacher_token_ids: Some(input.teacher_token_ids),
+        });
+        if cases.len() > 4 {
+            return Err("teacher session accepts at most four cases".to_owned());
+        }
+    }
+    if cases.is_empty() {
+        return Err("teacher session contains no cases".to_owned());
     }
     validate_unique_case_names(&cases)?;
     Ok(cases)
@@ -1354,6 +1453,8 @@ fn load_manifest_session_cases(
                 &manifest,
                 reference_raw,
             )),
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
         });
     }
     validate_unique_case_names(&cases)?;
@@ -1539,12 +1640,34 @@ fn prefill_phase_value(
     value
 }
 
+#[cfg(feature = "metal-quality-research")]
+fn remove_invalid_timing_fields(value: &mut serde_json::Value) {
+    let object = value.as_object_mut().expect("report object");
+    for field in [
+        "prepare_ms",
+        "prefill_ms",
+        "decode_ms",
+        "total_ms",
+        "tok_per_s",
+        "last_step_gpu_execution_ns",
+        "cpu_wall_ns",
+        "cpu_encode_ns",
+        "command_buffer_wait_ns",
+        "last_step_cpu_wall_ns",
+        "last_step_cpu_encode_ns",
+        "last_step_command_buffer_wait_ns",
+    ] {
+        object.remove(field);
+    }
+}
+
 fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
     let status = match &report.comparison {
         Some(comparison) if !comparison.matched => "fail",
         _ => "pass",
     };
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut value = serde_json::json!({
         "name": report.name,
         "status": status,
         "prompt": report.prompt,
@@ -1592,7 +1715,14 @@ fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
         "last_step_command_buffer_wait_ns": report.last_step_command_buffer_wait_ns,
         "max_supported_total_tokens": report.max_supported_total_tokens,
         "hf_reference": hf_reference_value(report.comparison.as_ref()),
-    })
+    });
+    #[cfg(feature = "metal-quality-research")]
+    if let Some(teacher) = report.teacher_forced.as_ref() {
+        value["teacher_forced"] = serde_json::to_value(teacher).expect("serialize teacher report");
+        value["timing_valid"] = serde_json::Value::Bool(false);
+        remove_invalid_timing_fields(&mut value);
+    }
+    value
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -1704,7 +1834,8 @@ fn session_report_value(
     } else {
         0.0
     };
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut value = serde_json::json!({
         "schema": SESSION_JSON_SCHEMA,
         "claim": CLAIM,
         "backend": backend.as_str(),
@@ -1756,7 +1887,16 @@ fn session_report_value(
         "large_model_opt_in": large_model_opt_in,
         "max_supported_total_tokens": max_supported_total_tokens,
         "cases": case_reports.iter().map(case_report_value).collect::<Vec<_>>(),
-    })
+    });
+    #[cfg(feature = "metal-quality-research")]
+    if args.teacher_session {
+        value["schema"] =
+            serde_json::Value::String("rvllm.metal_teacher_forced_session.v1".to_owned());
+        value["claim"] = serde_json::Value::String("research-only teacher-forced decode loss in one direct Metal process; readback timing is invalid and no independent quality or performance conclusion follows".to_owned());
+        value["timing_valid"] = serde_json::Value::Bool(false);
+        remove_invalid_timing_fields(&mut value);
+    }
+    value
 }
 
 fn write_report_if_requested(
@@ -1957,6 +2097,8 @@ fn run_direct_session(
 
         let mut current = *prompt_tokens.last().expect("prompt token");
         let mut generated_token_ids = Vec::with_capacity(case.spec.max_new_tokens);
+        #[cfg(feature = "metal-quality-research")]
+        let mut teacher_steps = Vec::new();
         let mut finish_reason = FinishReason::Length;
         let decode_start = std::time::Instant::now();
         for step_idx in 0..case.spec.max_new_tokens {
@@ -1988,6 +2130,21 @@ fn run_direct_session(
                 ));
             }
             let sampled = out[0].token_id.raw();
+            #[cfg(feature = "metal-quality-research")]
+            if let Some(targets) = case.spec.teacher_token_ids.as_ref() {
+                let target = targets[step_idx];
+                let logits = backend.probe_read_decode_logits_f32(1).map_err(|err| {
+                    format!(
+                        "session case {} read teacher logits at step {step_idx}: {err}",
+                        case.spec.name
+                    )
+                })?;
+                teacher_steps.push(score_teacher_step(&logits, target, sampled)?);
+                generated_token_ids.push(target);
+                current = TokenId(target);
+                check_case_timeout(args, &case.spec.name, case_start)?;
+                continue;
+            }
             generated_token_ids.push(sampled);
             current = TokenId(sampled);
             if args.eos_token_ids.contains(&sampled) {
@@ -2026,6 +2183,35 @@ fn run_direct_session(
             generated_token_ids.len() as f64 / (decode_ms / 1000.0)
         } else {
             0.0
+        };
+        #[cfg(feature = "metal-quality-research")]
+        let teacher_forced = if case.spec.teacher_token_ids.is_some() {
+            let total_negative_log_likelihood: f64 = teacher_steps
+                .iter()
+                .map(|step| step.negative_log_likelihood)
+                .sum();
+            let mean_negative_log_likelihood =
+                total_negative_log_likelihood / teacher_steps.len() as f64;
+            let perplexity = mean_negative_log_likelihood.exp();
+            if !total_negative_log_likelihood.is_finite() || !perplexity.is_finite() {
+                return Err(format!(
+                    "session case {} nonfinite teacher aggregate",
+                    case.spec.name
+                ));
+            }
+            Some(TeacherReport {
+                schema: "rvllm.metal_teacher_forced_quality.v1",
+                claim: "research-only teacher-forced decode loss after normal-route prefill; readback adds synchronization and is never timing or independent numerical-reference evidence",
+                prefill_last_step: None,
+                lm_head_shape_probe: None,
+                prefill_full_logits: None,
+                steps: teacher_steps,
+                total_negative_log_likelihood,
+                mean_negative_log_likelihood,
+                perplexity,
+            })
+        } else {
+            None
         };
         case_reports.push(SessionCaseReport {
             name: case.spec.name.clone(),
@@ -2066,6 +2252,8 @@ fn run_direct_session(
             last_step_command_buffer_wait_ns: delta.last_step_command_buffer_wait_ns,
             max_supported_total_tokens: case.max_supported_total_tokens,
             comparison,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced,
         });
 
         // Persist each completed case. Long-context sessions can take minutes per
@@ -2447,6 +2635,8 @@ fn run_engine_session(
             last_step_command_buffer_wait_ns: 0,
             max_supported_total_tokens: case.max_supported_total_tokens,
             comparison,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced: None,
         });
     }
     let status = if case_reports
@@ -2503,10 +2693,42 @@ fn run_session_once(args: &CliArgs) -> Result<serde_json::Value, String> {
         ));
     }
     let tokenizer = load_tokenizer(&args.model_dir)?;
+    #[cfg(feature = "metal-quality-research")]
+    let specs = if args.teacher_session {
+        load_teacher_session_cases(
+            args.prompts_jsonl
+                .as_deref()
+                .ok_or("teacher session requires prompts JSONL")?,
+        )?
+    } else {
+        load_session_case_specs(args)?
+    };
+    #[cfg(not(feature = "metal-quality-research"))]
     let specs = load_session_case_specs(args)?;
     let cases = prepare_session_cases(&tokenizer, specs)?;
     let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&args.model_dir)
         .map_err(|err| format!("parse Gemma4 architecture: {err}"))?;
+    #[cfg(feature = "metal-quality-research")]
+    if args.teacher_session {
+        for case in &cases {
+            for &target in case
+                .spec
+                .teacher_token_ids
+                .as_ref()
+                .expect("teacher targets")
+            {
+                if usize::try_from(target)
+                    .ok()
+                    .is_none_or(|id| id >= arch.vocab_size)
+                {
+                    return Err(format!(
+                        "session case {} target token {target} exceeds vocabulary {}",
+                        case.spec.name, arch.vocab_size
+                    ));
+                }
+            }
+        }
+    }
     let effective_large_opt_in = validate_large_model_opt_in(&arch, args)?;
     match args.session_backend {
         SessionBackend::Direct => {
@@ -3337,7 +3559,11 @@ fn run_main() -> Result<(), String> {
         return Ok(());
     }
     let mut args = parse_args_from(raw_args)?;
-    if args.eos_token_ids.is_empty() {
+    #[cfg(feature = "metal-quality-research")]
+    let load_default_eos = !args.teacher_session;
+    #[cfg(not(feature = "metal-quality-research"))]
+    let load_default_eos = true;
+    if args.eos_token_ids.is_empty() && load_default_eos {
         args.eos_token_ids = rvllm_loader::generation::load_eos_token_ids(&args.model_dir)?;
     }
     if args.prompts_jsonl.is_some() || args.reference_manifest.is_some() {
@@ -3446,6 +3672,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
             #[cfg(feature = "metal-quality-research")]
@@ -4056,6 +4284,8 @@ mod tests {
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
             #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
+            #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
             #[cfg(feature = "metal-quality-research")]
             teacher_lm_head_shape_probe: false,
@@ -4108,6 +4338,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
             #[cfg(feature = "metal-quality-research")]
@@ -4197,6 +4429,8 @@ mod tests {
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
             #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
+            #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
             #[cfg(feature = "metal-quality-research")]
             teacher_lm_head_shape_probe: false,
@@ -4283,6 +4517,8 @@ mod tests {
             top_logits: 0,
             #[cfg(feature = "metal-quality-research")]
             teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
             #[cfg(feature = "metal-quality-research")]
             teacher_prefill_last_logits: false,
             #[cfg(feature = "metal-quality-research")]
@@ -4639,5 +4875,72 @@ mod tests {
             "--json",
         ];
         assert!(parse_args_from(duplicate).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_session_requires_isolated_direct_json_mode() {
+        let base = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompts-jsonl",
+            "/tmp/cases.jsonl",
+            "--teacher-session",
+            "--json",
+        ];
+        assert!(parse_args_from(base).unwrap().teacher_session);
+        for extra in [
+            vec!["--session-backend", "engine"],
+            vec!["--teacher-token-ids", "7"],
+            vec!["--eos-token-ids", "1"],
+            vec!["--hf-reference", "/tmp/reference.json"],
+            vec!["--profile-samples", "2"],
+        ] {
+            assert!(parse_args_from(base.into_iter().chain(extra).collect::<Vec<_>>()).is_err());
+        }
+        assert!(parse_args_from(base[..base.len() - 1].iter().copied()).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_session_strict_cases_and_bounds() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cases.jsonl");
+        let good = "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":2,\"teacher_token_ids\":[7,8]}\n{\"name\":\"b\",\"prompt\":\"two\",\"max_new_tokens\":1,\"teacher_token_ids\":[9]}\n";
+        std::fs::write(&path, good).unwrap();
+        let cases = load_teacher_session_cases(&path).unwrap();
+        assert_eq!(cases.len(), 2);
+        assert_eq!(cases[0].teacher_token_ids.as_deref(), Some(&[7, 8][..]));
+        for bad in [
+            "{\"name\":\"a\",\"name\":\"b\",\"prompt\":\"one\",\"max_new_tokens\":1,\"teacher_token_ids\":[7]}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":1,\"teacher_token_ids\":[7],\"unknown\":1}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":2,\"teacher_token_ids\":[7]}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":0,\"teacher_token_ids\":[]}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":1,\"teacher_token_ids\":[7]}\n\n",
+        ] {
+            std::fs::write(&path, bad).unwrap();
+            assert!(load_teacher_session_cases(&path).is_err(), "accepted {bad:?}");
+        }
+        std::fs::write(&path, good.repeat(3)).unwrap();
+        assert!(load_teacher_session_cases(&path).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_session_report_removes_readback_distorted_timing() {
+        let mut value = serde_json::json!({
+            "prefill_ms": 1.0,
+            "decode_ms": 2.0,
+            "tok_per_s": 3.0,
+            "cpu_wall_ns": 4,
+            "teacher_forced": {"steps": [1]},
+            "research_dispatch": {"counts": {"sg8": 1}},
+        });
+        remove_invalid_timing_fields(&mut value);
+        for field in ["prefill_ms", "decode_ms", "tok_per_s", "cpu_wall_ns"] {
+            assert!(value.get(field).is_none());
+        }
+        assert_eq!(value["teacher_forced"]["steps"][0], 1);
+        assert_eq!(value["research_dispatch"]["counts"]["sg8"], 1);
     }
 }
