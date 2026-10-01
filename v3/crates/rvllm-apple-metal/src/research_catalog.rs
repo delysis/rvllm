@@ -16,7 +16,7 @@ pub struct CandidateSpec {
     pub(crate) source: &'static str,
 }
 
-pub const ALL_CANDIDATES: [MetalResearchCandidate; 48] = [
+pub const ALL_CANDIDATES: [MetalResearchCandidate; 52] = [
     MetalResearchCandidate::Off,
     MetalResearchCandidate::ShortMma16x64,
     MetalResearchCandidate::RoundedGate32,
@@ -65,6 +65,10 @@ pub const ALL_CANDIDATES: [MetalResearchCandidate; 48] = [
     MetalResearchCandidate::QmvW8G32R4Sg8K8,
     MetalResearchCandidate::Donor12bSg8,
     MetalResearchCandidate::Donor12bSg4,
+    MetalResearchCandidate::PrefillLoad4Control,
+    MetalResearchCandidate::PrefillPipeline32x64,
+    MetalResearchCandidate::PrefillQ4K16,
+    MetalResearchCandidate::PrefillPipeline32x64Q4K16,
 ];
 
 // Compile exactly one specialization pair with the shared implementation.
@@ -231,6 +235,62 @@ impl MetalResearchCandidate {
     pub const fn spec(self) -> CandidateSpec {
         use ResearchKernel::*;
         match self {
+            Self::PrefillLoad4Control => CandidateSpec {
+                name: "metal-prefill-load4-control",
+                kernels: &[PrefillControlGemm, PrefillControlQkv, PrefillControlRaw, PrefillControlNorm],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/prefill_load4_control.metal"),
+                min_tokens: 6,
+                max_tokens: 2048,
+                window_independent: true,
+                numerical_contract: "native-storage-ascending-k8-mma-materialized-boundaries",
+                source: concat!(
+                    include_str!("research_shaders/prefill_projection_common.metal"),
+                    include_str!("research_shaders/prefill_postnorm_common.metal"),
+                    include_str!("research_shaders/prefill_load4_control.metal")
+                ),
+            },
+            Self::PrefillPipeline32x64 => CandidateSpec {
+                name: "metal-prefill-pipeline32x64",
+                kernels: &[PrefillPipelineGemm, PrefillPipelineQkv, PrefillPipelineRaw, PrefillPipelineNorm],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/prefill_pipeline32x64.metal"),
+                min_tokens: 6,
+                max_tokens: 2048,
+                window_independent: true,
+                numerical_contract: "native-storage-register-lookahead-ascending-k8-mma-materialized-boundaries",
+                source: concat!(
+                    include_str!("research_shaders/prefill_projection_common.metal"),
+                    include_str!("research_shaders/prefill_postnorm_common.metal"),
+                    include_str!("research_shaders/prefill_pipeline32x64.metal")
+                ),
+            },
+            Self::PrefillQ4K16 => CandidateSpec {
+                name: "metal-prefill-q4k16",
+                kernels: &[PrefillQ4K16D256, PrefillQ4K16D512],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/prefill_q4k16.metal"),
+                min_tokens: 6,
+                max_tokens: 2048,
+                window_independent: false,
+                numerical_contract: "bf16-paged-absolute-position-fp32-tile-online-softmax-once-rounded",
+                source: concat!(
+                    include_str!("research_shaders/prefill_attention_common.metal"),
+                    include_str!("research_shaders/prefill_q4k16.metal")
+                ),
+            },
+            Self::PrefillPipeline32x64Q4K16 => CandidateSpec {
+                name: "metal-prefill-pipeline32x64-q4k16",
+                kernels: &[PrefillCombinedGemm, PrefillCombinedQkv, PrefillCombinedD256, PrefillCombinedD512, PrefillCombinedRaw, PrefillCombinedNorm],
+                source_file: Some("crates/rvllm-apple-metal/src/research_shaders/prefill_pipeline32x64_q4k16.metal"),
+                min_tokens: 6,
+                max_tokens: 2048,
+                window_independent: false,
+                numerical_contract: "native-storage-register-lookahead-mma-and-fp32-paged-tile-softmax",
+                source: concat!(
+                    include_str!("research_shaders/prefill_projection_common.metal"),
+                    include_str!("research_shaders/prefill_postnorm_common.metal"),
+                    include_str!("research_shaders/prefill_attention_common.metal"),
+                    include_str!("research_shaders/prefill_pipeline32x64_q4k16.metal")
+                ),
+            },
             Self::Donor12bSg8 => CandidateSpec {
                 name: "metal-donor12b-sg8",
                 kernels: &[DonorSg8W4, DonorSg8W8, DonorSg8BatchW4, DonorSg8BatchW8, DonorSg8GateW4, DonorSg8GateW8, DonorSg8QkvW4, DonorSg8QkvW8, DonorSg8NativeGate, DonorSg8NativeProjection, DonorSg8LocalAttention, DonorSg8GlobalAttention],
@@ -605,8 +665,9 @@ mod tests {
         let runtime = catalog_json();
         assert_eq!(reviewed, runtime);
         let all = runtime["candidates"].as_array().unwrap();
-        assert_eq!(all.len(), 48);
-        assert_eq!(all[46..].len(), 2);
+        assert_eq!(all.len(), 52);
+        assert_eq!(all[46..48].len(), 2);
+        assert_eq!(all[48..].len(), 4);
         assert_eq!(
             all[44..46]
                 .iter()
@@ -730,7 +791,7 @@ mod tests {
                 },
                 Gemma12bResearchShape { tokens: 0, ..good },
                 Gemma12bResearchShape {
-                    tokens: 1025,
+                    tokens: candidate.spec().max_tokens + 1,
                     ..good
                 },
             ] {

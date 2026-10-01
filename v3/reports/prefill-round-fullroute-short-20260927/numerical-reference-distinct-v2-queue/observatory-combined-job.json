@@ -1,0 +1,94 @@
+{
+  "after": [
+    "prefill26-prefill-ref-distinct-v2-observatory-off-20260927"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--teacher-prompt-jsonl",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/numerical-reference-distinct-v2-queue/observatory-prompt.jsonl",
+      "--teacher-token-ids",
+      "80444",
+      "--teacher-prefill-last-logits",
+      "--max-new-tokens",
+      "1",
+      "--max-total-tokens",
+      "1024",
+      "--large-model-opt-in",
+      "--json"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "env": {
+      "RVLLM_METAL_METALLIB_BF16": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-apple-build-v3-20260927/metal-prefill-pipeline32x64-q4k16.metallib",
+      "RVLLM_METAL_RESEARCH": "metal-prefill-pipeline32x64-q4k16"
+    },
+    "executable": {
+      "path": "/private/tmp/rvllm-prefill-shape-artifacts-20260927/rvllm_metal_infer",
+      "sha256": "23a662ad72dcc4357458d8d8720e0a228b357c3940fbc8ad15b1bf1d2de45463"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 17179869184,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "prefill26-prefill-ref-distinct-v2-observatory-combined-20260927",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-apple-build-v3-20260927/metal-prefill-pipeline32x64-q4k16.metallib",
+      "sha256": "8a1234a3ac14cb1c55c6c4c601c4fb2647defbc955b14be3a2c23414552fbfcb"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_metal_infer.rs",
+      "sha256": "c091c7069ad563271ae2d46361190c0f8f451f521abfe41d7d30b749c4fbdf04"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/numerical-reference-distinct-v2-source.json",
+      "sha256": "2f212a4b1c316e49b52b78fc80e33a62c35772f0028e4da7d52ee7268c3d008a"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/numerical-reference-distinct-v2-queue/observatory-prompt.jsonl",
+      "sha256": "6f5b0bf37acd7b0cc2f60c547c2f413bffc7f491b30fcc673686d8cd561d822d"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_gemma4_distinct_reference_job_gen.rs",
+      "sha256": "defd8dcdf4e70768178dba27a5ad30d4e4d02d7f791376df48acc12c3f5843dc"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/mmlu-prefill-reference-v1-queue/logic-combined-job.json",
+      "sha256": "e1a50e88d764167331ffe08f4033d9c05cdeec797b752b7301b06cc562021965"
+    }
+  ],
+  "max_run_seconds": 1800,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

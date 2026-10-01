@@ -1,0 +1,16 @@
+{
+  "schema": "rvllm.gemma4_heldout_text.v1",
+  "provenance": "Original human-authored evaluation text, frozen on 2026-09-27 after candidate implementation and before either route was scored. Continuations are not model-generated, not calibration data, and must not be changed in response to results.",
+  "cases": [
+    {
+      "id": "map-catalog",
+      "prompt": "The city archive keeps two catalogs of historical maps. The paper catalog records the year of each survey, while the digital catalog records when a scan was uploaded. These dates answer different questions. In April, a volunteer scanned several nineteenth-century maps, including one surveyed in 1848 and another surveyed in 1872. Both scans were uploaded on the same afternoon. The curator asked for a display ordered by survey year, with the earliest survey first. A draft display accidentally sorted by upload time; because the scans shared an upload date, it placed them in filename order instead. The volunteer noticed the mistake before visitors arrived. She checked the handwriting on the original sheets, confirmed the survey years against the paper catalog, and corrected the display labels. The archive kept the upload dates in a separate technical log for preservation staff. No survey year was inferred from the scan filename or from the day the images were copied to a backup drive. Write a concise caption explaining which map should appear first and why.",
+      "continuation": "\nCaption: The map surveyed in 1848 comes first. Survey year, not scan upload time, determines the display order."
+    },
+    {
+      "id": "reservoir-log",
+      "prompt": "At a small research station, three sealed reservoirs feed a laboratory sink. The blue reservoir holds rainwater, the green reservoir holds filtered well water, and the gray reservoir is reserved for cleaning equipment. Each container has a separate meter. On Tuesday morning the blue meter read 120 liters and the green meter read 90 liters. By evening the blue meter had fallen to 75 liters and the green meter to 60 liters. A technician filled an empty sample bottle from the blue reservoir at noon, then poured the unused portion back into the same reservoir before the evening reading. That temporary transfer was not an additional source of water. The gray reservoir was never connected to the laboratory sink that day. A handwritten note claimed the sink used 80 liters from the blue and green reservoirs combined, but the technician wanted the calculation checked against the meter readings. State the combined net decrease and explain which measurements are relevant. Do not count the returned sample twice or include the gray reservoir.",
+      "continuation": "\nThe combined net decrease was 75 liters: 45 from blue and 30 from green. The gray reservoir and returned sample do not add to sink use."
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "after": [
+    "e2b-multicase-teacher-qual-v1-20261001-observatory-single"
+  ],
+  "command": {
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-E2B-it-qat-q4_0-unquantized/snapshots/6befbaca7398925921802abd1f277b495b78b738",
+      "--teacher-prompt-jsonl",
+      "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/e2b-multicase-qual-v1-queue/kitchen-prompt.jsonl",
+      "--teacher-token-ids",
+      "6819,236761",
+      "--max-new-tokens",
+      "2",
+      "--max-total-tokens",
+      "512",
+      "--large-model-opt-in",
+      "--json"
+    ],
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "env": {
+      "RVLLM_METAL_RESEARCH": "off"
+    },
+    "executable": {
+      "path": "/private/tmp/rvllm-e2b-multicase-qual-v1-20261001/rvllm_metal_infer",
+      "sha256": "149d447d70227edf265c52c721534531bb69a9c31cda44b5512566054db30d06"
+    }
+  },
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "idle_llama_servers": [],
+    "low_power_mode": null,
+    "minimum_free_bytes": 34359738368,
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer"
+    ],
+    "pmset_power_mode": null,
+    "power_source": "ac",
+    "quiet_process_names": [],
+    "thermal_state": null
+  },
+  "id": "e2b-multicase-teacher-qual-v1-20261001-kitchen-single",
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/e2b-multicase-teacher-qual-source-v1.json",
+      "sha256": "9a8e792014de7096b0ea89c9a2440448acc00797e26676ce67dd35a4b13cb17c"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/E2B_MULTICASE_TEACHER_QUALIFICATION_PROTOCOL.md",
+      "sha256": "8dced743830e7a11efa4bb6790116ac674d16b60bf5381cc7f4c6cb1eb3503c0"
+    },
+    {
+      "path": "/private/tmp/rvllm-e2b-multicase-qual-v1-20261001/rvllm_metal_infer",
+      "sha256": "149d447d70227edf265c52c721534531bb69a9c31cda44b5512566054db30d06"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_metal_infer.rs",
+      "sha256": "2682c8abf2dbe6d97bffd2959a37964e541cab2c17853ce910ad98c7377c79a2"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/crates/rvllm-runtime/src/bin/rvllm_gemma4_e2b_multicase_qual_job_gen.rs",
+      "sha256": "8b35bd8b55928f49d5664ce9b254c99938739d4f58450a5f7275fecbd45ca6d5"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-E2B-it-qat-q4_0-unquantized/snapshots/6befbaca7398925921802abd1f277b495b78b738/config.json",
+      "sha256": "bbeff1e2fd3fe282536e7ace02309d43e0dbd9b6ac4b6a149b97e3ab6942a878"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-E2B-it-qat-q4_0-unquantized/snapshots/6befbaca7398925921802abd1f277b495b78b738/generation_config.json",
+      "sha256": "b69207f9be617e982d13cc273cce6fd88c98dda99a4bdc5e2d52ffe0a0d9f0a9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-E2B-it-qat-q4_0-unquantized/snapshots/6befbaca7398925921802abd1f277b495b78b738/model.safetensors",
+      "sha256": "33fe0cece08fb527ffefbd1a3a9ce73bd71073727993a283506293e5c6bf0137"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-E2B-it-qat-q4_0-unquantized/snapshots/6befbaca7398925921802abd1f277b495b78b738/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/e2b-multicase-qual-v1-queue/kitchen-prompt.jsonl",
+      "sha256": "97284d464ede31f4fc415d89076e3343c95654f99990496943f6852d5f60005a"
+    }
+  ],
+  "max_run_seconds": 1800,
+  "max_wait_seconds": 7200,
+  "purpose": "correctness",
+  "schema": "rvllm.experiment_job.v1",
+  "stable_seconds": 0
+}

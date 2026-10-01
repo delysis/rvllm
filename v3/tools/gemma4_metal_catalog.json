@@ -1089,10 +1089,154 @@
       "numerical_contract": "signed-g32-fp16-scales-bf16-boundaries-fp32-donor-order-not-bitwise-incumbent",
       "source_file": "crates/rvllm-apple-metal/src/research_shaders/donor12b_sg4.metal",
       "window_independent": true
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill_control_gemm",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_control_qkv",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_control_raw_norm_projection",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_control_raw_norm",
+          "source_shared_bytes": 1024,
+          "threads": 256
+        }
+      ],
+      "kernels": [
+        "research_prefill_control_gemm",
+        "research_prefill_control_qkv",
+        "research_prefill_control_raw_norm_projection",
+        "research_prefill_control_raw_norm"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-load4-control",
+      "numerical_contract": "native-storage-ascending-k8-mma-materialized-boundaries",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill_load4_control.metal",
+      "window_independent": true
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill_pipeline_gemm",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_pipeline_qkv",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_pipeline_raw_norm_projection",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_pipeline_raw_norm",
+          "source_shared_bytes": 1024,
+          "threads": 256
+        }
+      ],
+      "kernels": [
+        "research_prefill_pipeline_gemm",
+        "research_prefill_pipeline_qkv",
+        "research_prefill_pipeline_raw_norm_projection",
+        "research_prefill_pipeline_raw_norm"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-pipeline32x64",
+      "numerical_contract": "native-storage-register-lookahead-ascending-k8-mma-materialized-boundaries",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill_pipeline32x64.metal",
+      "window_independent": true
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill_q4k16_d256",
+          "source_shared_bytes": 8512,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_q4k16_d512",
+          "source_shared_bytes": 16704,
+          "threads": 128
+        }
+      ],
+      "kernels": [
+        "research_prefill_q4k16_d256",
+        "research_prefill_q4k16_d512"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-q4k16",
+      "numerical_contract": "bf16-paged-absolute-position-fp32-tile-online-softmax-once-rounded",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill_q4k16.metal",
+      "window_independent": false
+    },
+    {
+      "budgets": [
+        {
+          "kernel": "research_prefill_combined_gemm",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_combined_qkv",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_combined_d256",
+          "source_shared_bytes": 8512,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_combined_d512",
+          "source_shared_bytes": 16704,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_combined_raw_norm_projection",
+          "source_shared_bytes": 8192,
+          "threads": 128
+        },
+        {
+          "kernel": "research_prefill_combined_raw_norm",
+          "source_shared_bytes": 1024,
+          "threads": 256
+        }
+      ],
+      "kernels": [
+        "research_prefill_combined_gemm",
+        "research_prefill_combined_qkv",
+        "research_prefill_combined_d256",
+        "research_prefill_combined_d512",
+        "research_prefill_combined_raw_norm_projection",
+        "research_prefill_combined_raw_norm"
+      ],
+      "max_tokens": 2048,
+      "min_tokens": 6,
+      "name": "metal-prefill-pipeline32x64-q4k16",
+      "numerical_contract": "native-storage-register-lookahead-mma-and-fp32-paged-tile-softmax",
+      "source_file": "crates/rvllm-apple-metal/src/research_shaders/prefill_pipeline32x64_q4k16.metal",
+      "window_independent": false
     }
   ],
   "default": "off",
   "device_qualified": false,
-  "dispatch_schema": "rvllm.metal.research-dispatch.v5",
+  "dispatch_schema": "rvllm.metal.research-dispatch.v6",
   "schema": "rvllm.metal.research-catalog.v1"
 }

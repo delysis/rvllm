@@ -45,6 +45,8 @@ pub mod prompt_cache;
 pub mod request_api;
 pub mod sched_state;
 pub mod scheduler;
+#[cfg(feature = "sg8-capture-contract")]
+pub mod sg8_capture_contract;
 pub mod text_generation;
 
 #[cfg(feature = "apple")]

@@ -1,0 +1,54 @@
+{
+  "schema": "rvllm.prefill-round.queue-config.v1",
+  "campaign": "prefill26",
+  "root": "/ABS/NEW_CAMPAIGN",
+  "referee": "/ABS/rvllm/v3/target/release/rvllm-prefill-round",
+  "driver": "/ABS/strict-build/MetalArm",
+  "libraries": "/ABS/strict-build",
+  "referee_lock": "/ABS/queue/prefill-referee.lock",
+  "conditions": {
+    "power_source": "ac",
+    "low_power_mode": false,
+    "pmset_power_mode": null,
+    "thermal_state": 0,
+    "minimum_free_bytes": 17179869184,
+    "disk_path": "/",
+    "quiet_process_names": [
+      "cargo",
+      "rustc",
+      "llama-server",
+      "mlx_lm.benchmark"
+    ]
+  },
+  "limit": 64,
+  "selections": [
+    {
+      "arm": "normal",
+      "role": "down-norm"
+    },
+    {
+      "arm": "metal-prefill-load4-control",
+      "role": "down-norm"
+    },
+    {
+      "arm": "metal-prefill-pipeline32x64",
+      "role": "down-norm"
+    },
+    {
+      "arm": "normal",
+      "role": "gate-gelu"
+    },
+    {
+      "arm": "metal-prefill-pipeline32x64",
+      "role": "gate-gelu"
+    },
+    {
+      "arm": "metal-prefill-q4k16",
+      "role": "attention-local"
+    },
+    {
+      "arm": "metal-prefill-q4k16",
+      "role": "attention-global"
+    }
+  ]
+}

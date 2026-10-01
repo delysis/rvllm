@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Append-only diagnostic slots; the first five retain their original indices.
 /// Consumers must bind the registry and executable used by a receipt.
-pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v5";
-pub const RESEARCH_KERNEL_COUNT: usize = 86;
+pub const RESEARCH_DISPATCH_SCHEMA: &str = "rvllm.metal.research-dispatch.v6";
+pub const RESEARCH_KERNEL_COUNT: usize = 102;
 pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_gemm_mma16x64",
     "research_qkv_mma16x64",
@@ -95,6 +95,22 @@ pub const RESEARCH_KERNEL_NAMES: [&str; RESEARCH_KERNEL_COUNT] = [
     "research_donor12b_sg4_native_projection",
     "research_donor12b_sg4_local_attention",
     "research_donor12b_sg4_global_attention",
+    "research_prefill_control_gemm",
+    "research_prefill_control_qkv",
+    "research_prefill_pipeline_gemm",
+    "research_prefill_pipeline_qkv",
+    "research_prefill_q4k16_d256",
+    "research_prefill_q4k16_d512",
+    "research_prefill_combined_gemm",
+    "research_prefill_combined_qkv",
+    "research_prefill_combined_d256",
+    "research_prefill_combined_d512",
+    "research_prefill_control_raw_norm_projection",
+    "research_prefill_control_raw_norm",
+    "research_prefill_pipeline_raw_norm_projection",
+    "research_prefill_pipeline_raw_norm",
+    "research_prefill_combined_raw_norm_projection",
+    "research_prefill_combined_raw_norm",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -186,6 +202,22 @@ pub enum ResearchKernel {
     DonorSg4NativeProjection = 83,
     DonorSg4LocalAttention = 84,
     DonorSg4GlobalAttention = 85,
+    PrefillControlGemm = 86,
+    PrefillControlQkv = 87,
+    PrefillPipelineGemm = 88,
+    PrefillPipelineQkv = 89,
+    PrefillQ4K16D256 = 90,
+    PrefillQ4K16D512 = 91,
+    PrefillCombinedGemm = 92,
+    PrefillCombinedQkv = 93,
+    PrefillCombinedD256 = 94,
+    PrefillCombinedD512 = 95,
+    PrefillControlRaw = 96,
+    PrefillControlNorm = 97,
+    PrefillPipelineRaw = 98,
+    PrefillPipelineNorm = 99,
+    PrefillCombinedRaw = 100,
+    PrefillCombinedNorm = 101,
 }
 
 impl ResearchKernel {
@@ -203,6 +235,22 @@ impl ResearchKernel {
     /// Source budgets, checked in addition to queried PSO/device limits.
     pub const fn limits(self) -> (usize, usize) {
         match self {
+            Self::PrefillControlRaw => (128, 8192),
+            Self::PrefillControlNorm => (256, 1024),
+            Self::PrefillPipelineRaw => (128, 8192),
+            Self::PrefillPipelineNorm => (256, 1024),
+            Self::PrefillCombinedRaw => (128, 8192),
+            Self::PrefillCombinedNorm => (256, 1024),
+            Self::PrefillControlGemm => (128, 8192),
+            Self::PrefillControlQkv => (128, 8192),
+            Self::PrefillPipelineGemm => (128, 8192),
+            Self::PrefillPipelineQkv => (128, 8192),
+            Self::PrefillQ4K16D256 => (128, 8512),
+            Self::PrefillQ4K16D512 => (128, 16704),
+            Self::PrefillCombinedGemm => (128, 8192),
+            Self::PrefillCombinedQkv => (128, 8192),
+            Self::PrefillCombinedD256 => (128, 8512),
+            Self::PrefillCombinedD512 => (128, 16704),
             Self::DonorSg8W4 => (256, 0),
             Self::DonorSg8W8 => (256, 0),
             Self::DonorSg8BatchW4 => (256, 0),
@@ -289,6 +337,22 @@ impl ResearchKernel {
     pub const fn owner(self) -> crate::research::MetalResearchCandidate {
         use crate::research::MetalResearchCandidate;
         match self {
+            Self::PrefillControlRaw => crate::MetalResearchCandidate::PrefillLoad4Control,
+            Self::PrefillControlNorm => crate::MetalResearchCandidate::PrefillLoad4Control,
+            Self::PrefillPipelineRaw => crate::MetalResearchCandidate::PrefillPipeline32x64,
+            Self::PrefillPipelineNorm => crate::MetalResearchCandidate::PrefillPipeline32x64,
+            Self::PrefillCombinedRaw => crate::MetalResearchCandidate::PrefillPipeline32x64Q4K16,
+            Self::PrefillCombinedNorm => crate::MetalResearchCandidate::PrefillPipeline32x64Q4K16,
+            Self::PrefillControlGemm => MetalResearchCandidate::PrefillLoad4Control,
+            Self::PrefillControlQkv => MetalResearchCandidate::PrefillLoad4Control,
+            Self::PrefillPipelineGemm => MetalResearchCandidate::PrefillPipeline32x64,
+            Self::PrefillPipelineQkv => MetalResearchCandidate::PrefillPipeline32x64,
+            Self::PrefillQ4K16D256 => MetalResearchCandidate::PrefillQ4K16,
+            Self::PrefillQ4K16D512 => MetalResearchCandidate::PrefillQ4K16,
+            Self::PrefillCombinedGemm => MetalResearchCandidate::PrefillPipeline32x64Q4K16,
+            Self::PrefillCombinedQkv => MetalResearchCandidate::PrefillPipeline32x64Q4K16,
+            Self::PrefillCombinedD256 => MetalResearchCandidate::PrefillPipeline32x64Q4K16,
+            Self::PrefillCombinedD512 => MetalResearchCandidate::PrefillPipeline32x64Q4K16,
             Self::DonorSg8W4 => MetalResearchCandidate::Donor12bSg8,
             Self::DonorSg8W8 => MetalResearchCandidate::Donor12bSg8,
             Self::DonorSg8BatchW4 => MetalResearchCandidate::Donor12bSg8,

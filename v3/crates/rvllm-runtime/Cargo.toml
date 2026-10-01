@@ -28,9 +28,11 @@ cuda = [
 gb10 = ["cuda", "rvllm-mem/gb10"]
 apple = ["dep:rvllm-apple", "dep:rvllm-apple-metal"]
 "metal-stage-instrumentation" = ["apple", "rvllm-apple-metal/metal-stage-instrumentation"]
+"metal-quality-research" = ["apple"]
 "metal-route-diagnostics" = ["apple", "rvllm-apple-metal/metal-route-diagnostics"]
 "metal-gpu-capture" = ["apple", "rvllm-apple-metal/metal-gpu-capture"]
 "donor-route-attribution" = ["apple", "rvllm-apple-metal/donor-route-attribution"]
+"sg8-capture-contract" = []
 macos-private-ane-research = ["apple", "rvllm-apple/macos-private-ane-research", "dep:ctrlc", "dep:fs4"]
 
 [[bin]]
@@ -77,6 +79,49 @@ path = "src/bin/probe_apple_metal_decode.rs"
 [[bin]]
 name = "rvllm_metal_infer"
 path = "src/bin/rvllm_metal_infer.rs"
+
+[[bin]]
+name = "rvllm_gemma4_lowbit_teacher_job_gen"
+path = "src/bin/rvllm_gemma4_lowbit_teacher_job_gen.rs"
+required-features = ["apple"]
+
+[[bin]]
+name = "rvllm_gemma4_fulltext_w4_job_gen"
+path = "src/bin/rvllm_gemma4_fulltext_w4_job_gen.rs"
+required-features = ["apple"]
+
+[[bin]]
+name = "rvllm_gemma4_mmlu_balanced16_w4_job_gen"
+path = "src/bin/rvllm_gemma4_mmlu_balanced16_w4_job_gen.rs"
+required-features = ["apple"]
+
+[[bin]]
+name = "rvllm_gemma4_e2b_multicase_qual_job_gen"
+path = "src/bin/rvllm_gemma4_e2b_multicase_qual_job_gen.rs"
+
+[[bin]]
+name = "rvllm_gemma4_e2b_multicase_qual_summary"
+path = "src/bin/rvllm_gemma4_e2b_multicase_qual_summary.rs"
+
+[[bin]]
+name = "rvllm_gemma4_lowbit_teacher_summary"
+path = "src/bin/rvllm_gemma4_lowbit_teacher_summary.rs"
+
+[[bin]]
+name = "rvllm_gemma4_prefill_reference_job_gen"
+path = "src/bin/rvllm_gemma4_prefill_reference_job_gen.rs"
+
+[[bin]]
+name = "rvllm_gemma4_prefill_reference_summary"
+path = "src/bin/rvllm_gemma4_prefill_reference_summary.rs"
+
+[[bin]]
+name = "rvllm_gemma4_distinct_reference_job_gen"
+path = "src/bin/rvllm_gemma4_distinct_reference_job_gen.rs"
+
+[[bin]]
+name = "rvllm_gemma4_distinct_reference_summary"
+path = "src/bin/rvllm_gemma4_distinct_reference_summary.rs"
 
 [dependencies]
 ctrlc = { version = "3.5", features = ["termination"], optional = true }

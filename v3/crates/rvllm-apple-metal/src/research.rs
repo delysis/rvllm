@@ -56,6 +56,10 @@ pub enum MetalResearchCandidate {
     QmvW8G32R4Sg8K8,
     Donor12bSg8,
     Donor12bSg4,
+    PrefillLoad4Control,
+    PrefillPipeline32x64,
+    PrefillQ4K16,
+    PrefillPipeline32x64Q4K16,
 }
 
 impl MetalResearchCandidate {

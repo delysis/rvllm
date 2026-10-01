@@ -1,4 +1,5 @@
 #![recursion_limit = "256"]
+#![forbid(unsafe_code)]
 
 //! Apple Metal text inference workflow for Gemma tokenizers.
 //!
@@ -42,6 +43,16 @@ struct CliArgs {
     profile_samples: usize,
     profile_report: Option<PathBuf>,
     top_logits: usize,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_token_ids: Option<Vec<u32>>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_session: bool,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_prefill_last_logits: bool,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_lm_head_shape_probe: bool,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_prefill_full_logits_output: Option<PathBuf>,
     json_output: bool,
 }
 
@@ -111,6 +122,80 @@ struct InferReport {
     metal_weight_dtype: String,
     metal_moe_router_weight_dtype: String,
     diagnostic_top_logits: Vec<TopLogit>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_forced: Option<TeacherReport>,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct TeacherStep {
+    target_token_id: u32,
+    sampled_token_id: u32,
+    target_logit: f32,
+    target_rank: usize,
+    negative_log_likelihood: f64,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct TeacherReport {
+    schema: &'static str,
+    claim: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefill_last_step: Option<TeacherStep>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lm_head_shape_probe: Option<LmHeadShapeProbe>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefill_full_logits: Option<PrefillFullLogitsReceipt>,
+    steps: Vec<TeacherStep>,
+    total_negative_log_likelihood: f64,
+    mean_negative_log_likelihood: f64,
+    perplexity: f64,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct PrefillFullLogitsReceipt {
+    path: PathBuf,
+    sha256: String,
+    bytes: usize,
+    vocab_size: usize,
+    negative_infinity_count: usize,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(serde::Serialize)]
+struct PrefillFullLogitsFile {
+    schema: &'static str,
+    claim: &'static str,
+    prompt_tokens: usize,
+    target_token_id: u32,
+    vocab_size: usize,
+    representation: &'static str,
+    logit_bits: Vec<u32>,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct LogitVectorDifference {
+    exact_bits_equal: usize,
+    differing: usize,
+    nonfinite_mismatches: usize,
+    max_finite_abs_diff: f64,
+    max_finite_abs_diff_token_id: u32,
+    mean_finite_abs_diff: f64,
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct LmHeadShapeProbe {
+    schema: &'static str,
+    claim: &'static str,
+    full_rows: usize,
+    compared_row: usize,
+    vocab_size: usize,
+    short_vs_full: LogitVectorDifference,
+    short_repeat: LogitVectorDifference,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -208,6 +293,16 @@ where
     let mut profile_samples = 0usize;
     let mut profile_report = None;
     let mut top_logits = 0usize;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_token_ids = None;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_session = false;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_prefill_last_logits = false;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_lm_head_shape_probe = false;
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_prefill_full_logits_output = None;
     let mut json_output = false;
 
     let mut iter = args.into_iter().map(Into::into).peekable();
@@ -226,7 +321,34 @@ where
                 if value.is_empty() {
                     return Err("--prompt must not be empty".to_owned());
                 }
+                if prompt.is_some() {
+                    return Err("single-prompt input was specified more than once".to_owned());
+                }
                 prompt = Some(value);
+            }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-prompt-jsonl" => {
+                let path = PathBuf::from(
+                    iter.next()
+                        .ok_or_else(|| "--teacher-prompt-jsonl requires a path".to_owned())?,
+                );
+                if prompt.is_some() {
+                    return Err("single-prompt input was specified more than once".to_owned());
+                }
+                let raw = std::fs::read_to_string(&path)
+                    .map_err(|error| format!("read {}: {error}", path.display()))?;
+                let mut lines = raw.lines();
+                let line = lines.next().ok_or("empty teacher prompt JSONL")?;
+                if lines.any(|line| !line.trim().is_empty()) {
+                    return Err("teacher prompt JSONL must contain exactly one case".to_owned());
+                }
+                let value: serde_json::Value = serde_json::from_str(line)
+                    .map_err(|error| format!("parse {}: {error}", path.display()))?;
+                let text = value["prompt"]
+                    .as_str()
+                    .filter(|text| !text.is_empty())
+                    .ok_or("teacher prompt JSONL requires nonempty prompt")?;
+                prompt = Some(text.to_owned());
             }
             "--prompts-jsonl" => {
                 prompts_jsonl =
@@ -308,6 +430,57 @@ where
                     .ok_or_else(|| "--top-logits requires a value".to_owned())?;
                 top_logits = parse_positive_usize("--top-logits", &value)?;
             }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-session" => {
+                if teacher_session {
+                    return Err("--teacher-session may be specified only once".to_owned());
+                }
+                teacher_session = true;
+            }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-token-ids" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "--teacher-token-ids requires a value".to_owned())?;
+                if teacher_token_ids.is_some() {
+                    return Err("--teacher-token-ids may be specified only once".to_owned());
+                }
+                if value.split(',').any(|part| part.trim().is_empty()) {
+                    return Err("--teacher-token-ids contains an empty token ID".to_owned());
+                }
+                teacher_token_ids = Some(parse_token_ids("--teacher-token-ids", &value)?);
+            }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-prefill-last-logits" => {
+                if teacher_prefill_last_logits {
+                    return Err(
+                        "--teacher-prefill-last-logits may be specified only once".to_owned()
+                    );
+                }
+                teacher_prefill_last_logits = true;
+            }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-lm-head-shape-probe" => {
+                if teacher_lm_head_shape_probe {
+                    return Err(
+                        "--teacher-lm-head-shape-probe may be specified only once".to_owned()
+                    );
+                }
+                teacher_lm_head_shape_probe = true;
+            }
+            #[cfg(feature = "metal-quality-research")]
+            "--teacher-prefill-full-logits-output" => {
+                if teacher_prefill_full_logits_output.is_some() {
+                    return Err(
+                        "--teacher-prefill-full-logits-output may be specified only once"
+                            .to_owned(),
+                    );
+                }
+                teacher_prefill_full_logits_output =
+                    Some(PathBuf::from(iter.next().ok_or_else(|| {
+                        "--teacher-prefill-full-logits-output requires a path".to_owned()
+                    })?));
+            }
             "--json" => {
                 json_output = true;
             }
@@ -347,6 +520,54 @@ where
     if profile_report.is_some() && profile_samples == 0 {
         return Err("--profile-report requires --profile-samples".to_owned());
     }
+    #[cfg(feature = "metal-quality-research")]
+    if teacher_session
+        && (prompts_jsonl.is_none()
+            || session_backend != SessionBackend::Direct
+            || !json_output
+            || teacher_token_ids.is_some()
+            || teacher_prefill_last_logits
+            || teacher_lm_head_shape_probe
+            || teacher_prefill_full_logits_output.is_some()
+            || hf_reference.is_some()
+            || !eos_token_ids.is_empty()
+            || profile_samples != 0
+            || profile_report.is_some()
+            || top_logits != 0
+            || report
+                .as_ref()
+                .is_some_and(|path: &PathBuf| !path.is_absolute() || path.exists()))
+    {
+        return Err("--teacher-session requires --prompts-jsonl, direct backend and --json, with no other teacher probe, reference, EOS, profile or top-logit flags; --report must be a new absolute path".to_owned());
+    }
+    #[cfg(feature = "metal-quality-research")]
+    if let Some(targets) = &teacher_token_ids {
+        if prompt.is_none()
+            || !json_output
+            || hf_reference.is_some()
+            || !eos_token_ids.is_empty()
+            || top_logits != 0
+            || targets.len() != max_new_tokens
+        {
+            return Err("--teacher-token-ids requires one JSON prompt, exactly --max-new-tokens targets, and no HF reference, EOS list or top-logit probe".to_owned());
+        }
+    }
+    #[cfg(feature = "metal-quality-research")]
+    if teacher_prefill_last_logits && teacher_token_ids.is_none() {
+        return Err("--teacher-prefill-last-logits requires --teacher-token-ids".to_owned());
+    }
+    #[cfg(feature = "metal-quality-research")]
+    if teacher_lm_head_shape_probe && !teacher_prefill_last_logits {
+        return Err(
+            "--teacher-lm-head-shape-probe requires --teacher-prefill-last-logits".to_owned(),
+        );
+    }
+    #[cfg(feature = "metal-quality-research")]
+    if let Some(path) = teacher_prefill_full_logits_output.as_ref() {
+        if !teacher_prefill_last_logits || !path.is_absolute() || path.exists() {
+            return Err("--teacher-prefill-full-logits-output requires --teacher-prefill-last-logits and a new absolute path".to_owned());
+        }
+    }
 
     Ok(CliArgs {
         model_dir: model_dir.ok_or_else(|| "--model-dir is required".to_owned())?,
@@ -365,17 +586,33 @@ where
         profile_samples,
         profile_report,
         top_logits,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_token_ids,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_session,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_prefill_last_logits,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_lm_head_shape_probe,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_prefill_full_logits_output,
         json_output,
     })
 }
 
 fn usage() -> String {
-    "usage: rvllm_metal_infer --model-dir <DIR> (--prompt <TEXT> | --prompts-jsonl <PATH> | --reference-manifest <PATH>) \
+    #[allow(unused_mut)] // The research-only feature appends its own arguments.
+    let mut usage = "usage: rvllm_metal_infer --model-dir <DIR> (--prompt <TEXT> | --prompts-jsonl <PATH> | --reference-manifest <PATH>) \
      [--session-backend direct|engine] [--max-new-tokens N] [--max-total-tokens N] \
      [--eos-token-ids IDS] [--no-bos] [--large-model-opt-in] [--hf-reference <JSON>] \
      [--report <JSON>] [--case-timeout-seconds N] [--profile-samples N] \
      [--profile-report <JSON>] [--top-logits N] [--json]"
-        .to_owned()
+        .to_owned();
+    #[cfg(feature = "metal-quality-research")]
+    usage.push_str("\nresearch-only: --teacher-prompt-jsonl PATH --teacher-token-ids ID,ID,... [--teacher-prefill-last-logits [--teacher-lm-head-shape-probe] [--teacher-prefill-full-logits-output NEW_ABSOLUTE_PATH]] --json (single prompt; never timing evidence)");
+    #[cfg(feature = "metal-quality-research")]
+    usage.push_str("\nresearch-only: --prompts-jsonl PATH --teacher-session --json (strict multi-case teacher targets; never timing evidence)");
+    usage
 }
 
 fn tokenizer_path(model_dir: &std::path::Path) -> PathBuf {
@@ -732,6 +969,12 @@ fn report_value(
                 .clone()
                 .unwrap_or(serde_json::Value::Null),
         );
+    #[cfg(feature = "metal-quality-research")]
+    if let Some(teacher) = report.teacher_forced.as_ref() {
+        value["claim"] = serde_json::json!("research-only teacher-forced quality diagnostic; timing and full-route promotion are not qualified");
+        value["teacher_forced"] = serde_json::to_value(teacher)
+            .expect("teacher report contains only finite, serializable values");
+    }
     value
 }
 
@@ -814,6 +1057,8 @@ struct SessionCaseSpec {
     max_total_tokens: Option<usize>,
     no_bos: bool,
     hf_reference: Option<PathBuf>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_token_ids: Option<Vec<u32>>,
 }
 
 #[derive(Debug)]
@@ -864,6 +1109,8 @@ struct SessionCaseReport {
     last_step_command_buffer_wait_ns: u64,
     max_supported_total_tokens: usize,
     comparison: Option<ReferenceComparison>,
+    #[cfg(feature = "metal-quality-research")]
+    teacher_forced: Option<TeacherReport>,
 }
 
 fn json_string_field<'a>(
@@ -971,6 +1218,8 @@ fn session_case_from_value(
         max_total_tokens,
         no_bos,
         hf_reference: reference,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_token_ids: None,
     })
 }
 
@@ -1006,6 +1255,64 @@ fn load_jsonl_session_cases(
             "prompts JSONL {} did not contain any cases",
             path.display()
         ));
+    }
+    validate_unique_case_names(&cases)?;
+    Ok(cases)
+}
+
+#[cfg(feature = "metal-quality-research")]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TeacherSessionInput {
+    name: String,
+    prompt: String,
+    max_new_tokens: usize,
+    max_total_tokens: Option<usize>,
+    no_bos: Option<bool>,
+    teacher_token_ids: Vec<u32>,
+}
+
+#[cfg(feature = "metal-quality-research")]
+fn load_teacher_session_cases(path: &std::path::Path) -> Result<Vec<SessionCaseSpec>, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|err| format!("read teacher session {}: {err}", path.display()))?;
+    let mut cases = Vec::new();
+    for (idx, line) in raw.lines().enumerate() {
+        if line.trim().is_empty() {
+            return Err(format!("teacher session line {} is empty", idx + 1));
+        }
+        let input: TeacherSessionInput =
+            rvllm_runtime::kernel_game::parse_strict_json(line.as_bytes())
+                .map_err(|err| format!("teacher session line {}: {err}", idx + 1))?;
+        if input.name.is_empty()
+            || input.prompt.is_empty()
+            || input.max_new_tokens == 0
+            || input.max_new_tokens > 64
+            || input.teacher_token_ids.len() != input.max_new_tokens
+        {
+            return Err(format!(
+                "teacher session line {} has invalid name, prompt or target count",
+                idx + 1
+            ));
+        }
+        if let Some(value) = input.max_total_tokens {
+            parse_max_total_tokens("max_total_tokens", &value.to_string())?;
+        }
+        cases.push(SessionCaseSpec {
+            name: input.name,
+            prompt: input.prompt,
+            max_new_tokens: input.max_new_tokens,
+            max_total_tokens: input.max_total_tokens,
+            no_bos: input.no_bos.unwrap_or(false),
+            hf_reference: None,
+            teacher_token_ids: Some(input.teacher_token_ids),
+        });
+        if cases.len() > 4 {
+            return Err("teacher session accepts at most four cases".to_owned());
+        }
+    }
+    if cases.is_empty() {
+        return Err("teacher session contains no cases".to_owned());
     }
     validate_unique_case_names(&cases)?;
     Ok(cases)
@@ -1146,6 +1453,8 @@ fn load_manifest_session_cases(
                 &manifest,
                 reference_raw,
             )),
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
         });
     }
     validate_unique_case_names(&cases)?;
@@ -1331,12 +1640,34 @@ fn prefill_phase_value(
     value
 }
 
+#[cfg(feature = "metal-quality-research")]
+fn remove_invalid_timing_fields(value: &mut serde_json::Value) {
+    let object = value.as_object_mut().expect("report object");
+    for field in [
+        "prepare_ms",
+        "prefill_ms",
+        "decode_ms",
+        "total_ms",
+        "tok_per_s",
+        "last_step_gpu_execution_ns",
+        "cpu_wall_ns",
+        "cpu_encode_ns",
+        "command_buffer_wait_ns",
+        "last_step_cpu_wall_ns",
+        "last_step_cpu_encode_ns",
+        "last_step_command_buffer_wait_ns",
+    ] {
+        object.remove(field);
+    }
+}
+
 fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
     let status = match &report.comparison {
         Some(comparison) if !comparison.matched => "fail",
         _ => "pass",
     };
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut value = serde_json::json!({
         "name": report.name,
         "status": status,
         "prompt": report.prompt,
@@ -1384,7 +1715,14 @@ fn case_report_value(report: &SessionCaseReport) -> serde_json::Value {
         "last_step_command_buffer_wait_ns": report.last_step_command_buffer_wait_ns,
         "max_supported_total_tokens": report.max_supported_total_tokens,
         "hf_reference": hf_reference_value(report.comparison.as_ref()),
-    })
+    });
+    #[cfg(feature = "metal-quality-research")]
+    if let Some(teacher) = report.teacher_forced.as_ref() {
+        value["teacher_forced"] = serde_json::to_value(teacher).expect("serialize teacher report");
+        value["timing_valid"] = serde_json::Value::Bool(false);
+        remove_invalid_timing_fields(&mut value);
+    }
+    value
 }
 
 #[cfg(all(feature = "apple", target_os = "macos"))]
@@ -1496,7 +1834,8 @@ fn session_report_value(
     } else {
         0.0
     };
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut value = serde_json::json!({
         "schema": SESSION_JSON_SCHEMA,
         "claim": CLAIM,
         "backend": backend.as_str(),
@@ -1548,7 +1887,16 @@ fn session_report_value(
         "large_model_opt_in": large_model_opt_in,
         "max_supported_total_tokens": max_supported_total_tokens,
         "cases": case_reports.iter().map(case_report_value).collect::<Vec<_>>(),
-    })
+    });
+    #[cfg(feature = "metal-quality-research")]
+    if args.teacher_session {
+        value["schema"] =
+            serde_json::Value::String("rvllm.metal_teacher_forced_session.v1".to_owned());
+        value["claim"] = serde_json::Value::String("research-only teacher-forced decode loss in one direct Metal process; readback timing is invalid and no independent quality or performance conclusion follows".to_owned());
+        value["timing_valid"] = serde_json::Value::Bool(false);
+        remove_invalid_timing_fields(&mut value);
+    }
+    value
 }
 
 fn write_report_if_requested(
@@ -1749,6 +2097,8 @@ fn run_direct_session(
 
         let mut current = *prompt_tokens.last().expect("prompt token");
         let mut generated_token_ids = Vec::with_capacity(case.spec.max_new_tokens);
+        #[cfg(feature = "metal-quality-research")]
+        let mut teacher_steps = Vec::new();
         let mut finish_reason = FinishReason::Length;
         let decode_start = std::time::Instant::now();
         for step_idx in 0..case.spec.max_new_tokens {
@@ -1780,6 +2130,21 @@ fn run_direct_session(
                 ));
             }
             let sampled = out[0].token_id.raw();
+            #[cfg(feature = "metal-quality-research")]
+            if let Some(targets) = case.spec.teacher_token_ids.as_ref() {
+                let target = targets[step_idx];
+                let logits = backend.probe_read_decode_logits_f32(1).map_err(|err| {
+                    format!(
+                        "session case {} read teacher logits at step {step_idx}: {err}",
+                        case.spec.name
+                    )
+                })?;
+                teacher_steps.push(score_teacher_step(&logits, target, sampled)?);
+                generated_token_ids.push(target);
+                current = TokenId(target);
+                check_case_timeout(args, &case.spec.name, case_start)?;
+                continue;
+            }
             generated_token_ids.push(sampled);
             current = TokenId(sampled);
             if args.eos_token_ids.contains(&sampled) {
@@ -1818,6 +2183,35 @@ fn run_direct_session(
             generated_token_ids.len() as f64 / (decode_ms / 1000.0)
         } else {
             0.0
+        };
+        #[cfg(feature = "metal-quality-research")]
+        let teacher_forced = if case.spec.teacher_token_ids.is_some() {
+            let total_negative_log_likelihood: f64 = teacher_steps
+                .iter()
+                .map(|step| step.negative_log_likelihood)
+                .sum();
+            let mean_negative_log_likelihood =
+                total_negative_log_likelihood / teacher_steps.len() as f64;
+            let perplexity = mean_negative_log_likelihood.exp();
+            if !total_negative_log_likelihood.is_finite() || !perplexity.is_finite() {
+                return Err(format!(
+                    "session case {} nonfinite teacher aggregate",
+                    case.spec.name
+                ));
+            }
+            Some(TeacherReport {
+                schema: "rvllm.metal_teacher_forced_quality.v1",
+                claim: "research-only teacher-forced decode loss after normal-route prefill; readback adds synchronization and is never timing or independent numerical-reference evidence",
+                prefill_last_step: None,
+                lm_head_shape_probe: None,
+                prefill_full_logits: None,
+                steps: teacher_steps,
+                total_negative_log_likelihood,
+                mean_negative_log_likelihood,
+                perplexity,
+            })
+        } else {
+            None
         };
         case_reports.push(SessionCaseReport {
             name: case.spec.name.clone(),
@@ -1858,6 +2252,8 @@ fn run_direct_session(
             last_step_command_buffer_wait_ns: delta.last_step_command_buffer_wait_ns,
             max_supported_total_tokens: case.max_supported_total_tokens,
             comparison,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced,
         });
 
         // Persist each completed case. Long-context sessions can take minutes per
@@ -2239,6 +2635,8 @@ fn run_engine_session(
             last_step_command_buffer_wait_ns: 0,
             max_supported_total_tokens: case.max_supported_total_tokens,
             comparison,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced: None,
         });
     }
     let status = if case_reports
@@ -2295,10 +2693,42 @@ fn run_session_once(args: &CliArgs) -> Result<serde_json::Value, String> {
         ));
     }
     let tokenizer = load_tokenizer(&args.model_dir)?;
+    #[cfg(feature = "metal-quality-research")]
+    let specs = if args.teacher_session {
+        load_teacher_session_cases(
+            args.prompts_jsonl
+                .as_deref()
+                .ok_or("teacher session requires prompts JSONL")?,
+        )?
+    } else {
+        load_session_case_specs(args)?
+    };
+    #[cfg(not(feature = "metal-quality-research"))]
     let specs = load_session_case_specs(args)?;
     let cases = prepare_session_cases(&tokenizer, specs)?;
     let arch = rvllm_loader::gemma4_arch::Gemma4Arch::from_dir(&args.model_dir)
         .map_err(|err| format!("parse Gemma4 architecture: {err}"))?;
+    #[cfg(feature = "metal-quality-research")]
+    if args.teacher_session {
+        for case in &cases {
+            for &target in case
+                .spec
+                .teacher_token_ids
+                .as_ref()
+                .expect("teacher targets")
+            {
+                if usize::try_from(target)
+                    .ok()
+                    .is_none_or(|id| id >= arch.vocab_size)
+                {
+                    return Err(format!(
+                        "session case {} target token {target} exceeds vocabulary {}",
+                        case.spec.name, arch.vocab_size
+                    ));
+                }
+            }
+        }
+    }
     let effective_large_opt_in = validate_large_model_opt_in(&arch, args)?;
     match args.session_backend {
         SessionBackend::Direct => {
@@ -2582,6 +3012,185 @@ fn select_top_logits(logits: &[f32], limit: usize) -> Vec<TopLogit> {
     ranked
 }
 
+#[cfg(feature = "metal-quality-research")]
+fn score_teacher_step(
+    logits: &[f32],
+    target_token_id: u32,
+    sampled_token_id: u32,
+) -> Result<TeacherStep, String> {
+    let target_index = target_token_id as usize;
+    let target_logit = *logits
+        .get(target_index)
+        .ok_or_else(|| format!("teacher token {target_token_id} exceeds vocabulary"))?;
+    if !target_logit.is_finite()
+        || logits.is_empty()
+        || logits
+            .iter()
+            .any(|value| value.is_nan() || *value == f32::INFINITY)
+    {
+        return Err("teacher target or logits are nonfinite".to_owned());
+    }
+    let max_logit = logits
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .fold(f32::NEG_INFINITY, f32::max) as f64;
+    let exp_sum: f64 = logits
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .map(|value| ((value as f64) - max_logit).exp())
+        .sum();
+    if !exp_sum.is_finite() || exp_sum <= 0.0 {
+        return Err("invalid teacher log-sum-exp".to_owned());
+    }
+    let nll = max_logit + exp_sum.ln() - target_logit as f64;
+    if !nll.is_finite() || nll < -1e-9 {
+        return Err("invalid teacher negative log likelihood".to_owned());
+    }
+    let target_rank = 1 + logits
+        .iter()
+        .enumerate()
+        .filter(|(index, value)| {
+            **value > target_logit || (**value == target_logit && *index < target_index)
+        })
+        .count();
+    Ok(TeacherStep {
+        target_token_id,
+        sampled_token_id,
+        target_logit,
+        target_rank,
+        negative_log_likelihood: nll.max(0.0),
+    })
+}
+
+#[cfg(feature = "metal-quality-research")]
+fn score_prefill_last_logits(
+    logits: &[f32],
+    prompt_len: usize,
+    target_token_id: u32,
+) -> Result<TeacherStep, String> {
+    if prompt_len == 0 || logits.is_empty() || logits.len() % prompt_len != 0 {
+        return Err("final prefill logits have an invalid token stride".to_owned());
+    }
+    let vocab_size = logits.len() / prompt_len;
+    let final_logits = &logits[(prompt_len - 1) * vocab_size..];
+    let sampled_token_id = select_top_logits(final_logits, 1)
+        .first()
+        .ok_or("final prefill logits have no finite token")?
+        .token_id;
+    score_teacher_step(final_logits, target_token_id, sampled_token_id)
+}
+
+#[cfg(feature = "metal-quality-research")]
+fn write_prefill_full_logits(
+    path: &std::path::Path,
+    logits: &[f32],
+    prompt_len: usize,
+    vocab_size: usize,
+    target_token_id: u32,
+) -> Result<PrefillFullLogitsReceipt, String> {
+    use std::io::Write as _;
+
+    let expected = prompt_len
+        .checked_mul(vocab_size)
+        .ok_or("full prefill logits size overflow")?;
+    if prompt_len == 0
+        || vocab_size == 0
+        || logits.len() != expected
+        || target_token_id as usize >= vocab_size
+    {
+        return Err("full prefill logits have invalid dimensions or target".to_owned());
+    }
+    let final_row = &logits[expected - vocab_size..];
+    if final_row
+        .iter()
+        .any(|value| value.is_nan() || *value == f32::INFINITY)
+    {
+        return Err("full prefill logits contain NaN or positive infinity".to_owned());
+    }
+    let negative_infinity_count = final_row
+        .iter()
+        .filter(|value| **value == f32::NEG_INFINITY)
+        .count();
+    let payload = PrefillFullLogitsFile {
+        schema: "rvllm.metal_prefill_final_full_logits_bits.v1",
+        claim: "research-only final prefill row; exact f32 bits, including negative infinity; added LM-head/readback invalidates timing; not numerical parity or promotion",
+        prompt_tokens: prompt_len,
+        target_token_id,
+        vocab_size,
+        representation: "f32::to_bits as unsigned decimal integers",
+        logit_bits: final_row.iter().map(|value| value.to_bits()).collect(),
+    };
+    let mut bytes = serde_json::to_vec(&payload)
+        .map_err(|error| format!("serialize full prefill logits: {error}"))?;
+    bytes.push(b'\n');
+    let sha256 = rvllm_runtime::kernel_game::Sha256Digest::bytes(&bytes)
+        .as_str()
+        .to_owned();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| format!("create full prefill logits {}: {error}", path.display()))?;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| format!("write full prefill logits {}: {error}", path.display()))?;
+    Ok(PrefillFullLogitsReceipt {
+        path: path.to_path_buf(),
+        sha256,
+        bytes: bytes.len(),
+        vocab_size,
+        negative_infinity_count,
+    })
+}
+
+#[cfg(feature = "metal-quality-research")]
+fn compare_logit_vectors(left: &[f32], right: &[f32]) -> Result<LogitVectorDifference, String> {
+    if left.is_empty() || left.len() != right.len() {
+        return Err("LM-head shape probe requires equal nonempty logit vectors".to_owned());
+    }
+    let mut exact_bits_equal = 0;
+    let mut nonfinite_mismatches = 0;
+    let mut finite_pairs = 0;
+    let mut finite_abs_diff_sum = 0.0;
+    let mut max_finite_abs_diff = 0.0;
+    let mut max_finite_abs_diff_token_id = 0;
+    for (index, (&a, &b)) in left.iter().zip(right).enumerate() {
+        if a.is_nan() || b.is_nan() || a == f32::INFINITY || b == f32::INFINITY {
+            return Err("LM-head shape probe found invalid logits".to_owned());
+        }
+        if a.to_bits() == b.to_bits() {
+            exact_bits_equal += 1;
+        }
+        if !a.is_finite() || !b.is_finite() {
+            if a.to_bits() != b.to_bits() {
+                nonfinite_mismatches += 1;
+            }
+            continue;
+        }
+        let abs_diff = (a as f64 - b as f64).abs();
+        finite_pairs += 1;
+        finite_abs_diff_sum += abs_diff;
+        if abs_diff > max_finite_abs_diff {
+            max_finite_abs_diff = abs_diff;
+            max_finite_abs_diff_token_id = u32::try_from(index)
+                .map_err(|_| "LM-head shape probe vocabulary exceeds u32".to_owned())?;
+        }
+    }
+    if finite_pairs == 0 {
+        return Err("LM-head shape probe found no finite logit pairs".to_owned());
+    }
+    Ok(LogitVectorDifference {
+        exact_bits_equal,
+        differing: left.len() - exact_bits_equal,
+        nonfinite_mismatches,
+        max_finite_abs_diff,
+        max_finite_abs_diff_token_id,
+        mean_finite_abs_diff: finite_abs_diff_sum / finite_pairs as f64,
+    })
+}
+
 #[cfg(all(feature = "apple", target_os = "macos"))]
 fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     use rvllm_apple::{AppleBackend, HandoffCapsule, HandoffKind};
@@ -2717,8 +3326,69 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         ordinary_dispatch,
     );
 
+    // Research-only: score the final prompt position before the usual decode
+    // replay of its token. This adds a full-prompt logits pass and a blocking
+    // readback, so neither this run nor its continuation can be timed.
+    #[cfg(feature = "metal-quality-research")]
+    let (prefill_last_step, lm_head_shape_probe, prefill_full_logits) = if args
+        .teacher_prefill_last_logits
+    {
+        // The first row is identical input work for both LM-head shapes. A
+        // short/full/short sequence also checks whether the intervening
+        // full-row readback visibly changes a repeated short projection.
+        let short_before = if args.teacher_lm_head_shape_probe {
+            Some(
+                backend
+                    .probe_read_decode_logits_f32(1)
+                    .map_err(|err| format!("read short prefill LM-head logits: {err}"))?,
+            )
+        } else {
+            None
+        };
+        let logits = backend
+            .probe_read_decode_logits_f32(prompt_len)
+            .map_err(|err| format!("read final prefill logits: {err}"))?;
+        let target = args
+            .teacher_token_ids
+            .as_ref()
+            .expect("prefill probe requires teacher target IDs")[0];
+        let last_step = score_prefill_last_logits(&logits, prompt_len, target)?;
+        let full_logits = args
+            .teacher_prefill_full_logits_output
+            .as_ref()
+            .map(|path| {
+                write_prefill_full_logits(path, &logits, prompt_len, arch.vocab_size, target)
+            })
+            .transpose()?;
+        let shape_probe = if let Some(short_before) = short_before {
+            let vocab_size = logits.len() / prompt_len;
+            let short_vs_full = compare_logit_vectors(&short_before, &logits[..vocab_size])?;
+            drop(logits);
+            let short_after = backend
+                .probe_read_decode_logits_f32(1)
+                .map_err(|err| format!("repeat short prefill LM-head logits: {err}"))?;
+            let short_repeat = compare_logit_vectors(&short_before, &short_after)?;
+            Some(LmHeadShapeProbe {
+                schema: "rvllm.metal_lm_head_shape_probe.v1",
+                claim: "research-only same-residual row-zero short/full/short LM-head comparison; not a final-row, tensor-reference, production, or timing verdict",
+                full_rows: prompt_len,
+                compared_row: 0,
+                vocab_size,
+                short_vs_full,
+                short_repeat,
+            })
+        } else {
+            None
+        };
+        (Some(last_step), shape_probe, full_logits)
+    } else {
+        (None, None, None)
+    };
+
     let mut current = *prompt_tokens.last().expect("prompt token");
     let mut generated_token_ids = Vec::with_capacity(args.max_new_tokens);
+    #[cfg(feature = "metal-quality-research")]
+    let mut teacher_steps = Vec::with_capacity(args.max_new_tokens);
     let mut finish_reason = FinishReason::Length;
     let decode_start = std::time::Instant::now();
     for step_idx in 0..args.max_new_tokens {
@@ -2743,6 +3413,17 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
             ));
         }
         let sampled = out[0].token_id.raw();
+        #[cfg(feature = "metal-quality-research")]
+        if let Some(targets) = args.teacher_token_ids.as_ref() {
+            let target = targets[step_idx];
+            let logits = backend
+                .probe_read_decode_logits_f32(1)
+                .map_err(|err| format!("read teacher logits at step {step_idx}: {err}"))?;
+            teacher_steps.push(score_teacher_step(&logits, target, sampled)?);
+            generated_token_ids.push(target);
+            current = TokenId(target);
+            continue;
+        }
         generated_token_ids.push(sampled);
         current = TokenId(sampled);
         if args.eos_token_ids.contains(&sampled) {
@@ -2774,6 +3455,30 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
     } else {
         Vec::new()
     };
+    #[cfg(feature = "metal-quality-research")]
+    let teacher_forced = args.teacher_token_ids.as_ref().map(|_| {
+        let total_negative_log_likelihood: f64 = teacher_steps
+            .iter()
+            .map(|step| step.negative_log_likelihood)
+            .sum();
+        let mean_negative_log_likelihood =
+            total_negative_log_likelihood / teacher_steps.len() as f64;
+        let perplexity = mean_negative_log_likelihood.exp();
+        if !total_negative_log_likelihood.is_finite() || !perplexity.is_finite() {
+            return Err("nonfinite teacher-forced aggregate".to_owned());
+        }
+        Ok(TeacherReport {
+            schema: "rvllm.metal_teacher_forced_quality.v1",
+            claim: "research-only teacher-forced decode loss after normal-route prefill; readback adds synchronization and is never timing or independent numerical-reference evidence",
+            prefill_last_step,
+            lm_head_shape_probe,
+            prefill_full_logits,
+            steps: teacher_steps,
+            total_negative_log_likelihood,
+            mean_negative_log_likelihood,
+            perplexity,
+        })
+    }).transpose()?;
     let stats = backend.probe_perf_stats();
     let research_dispatch = backend
         .probe_research_dispatches()
@@ -2837,6 +3542,8 @@ fn run_infer(args: &CliArgs) -> Result<InferReport, String> {
         metal_weight_dtype,
         metal_moe_router_weight_dtype,
         diagnostic_top_logits,
+        #[cfg(feature = "metal-quality-research")]
+        teacher_forced,
     })
 }
 
@@ -2852,7 +3559,11 @@ fn run_main() -> Result<(), String> {
         return Ok(());
     }
     let mut args = parse_args_from(raw_args)?;
-    if args.eos_token_ids.is_empty() {
+    #[cfg(feature = "metal-quality-research")]
+    let load_default_eos = !args.teacher_session;
+    #[cfg(not(feature = "metal-quality-research"))]
+    let load_default_eos = true;
+    if args.eos_token_ids.is_empty() && load_default_eos {
         args.eos_token_ids = rvllm_loader::generation::load_eos_token_ids(&args.model_dir)?;
     }
     if args.prompts_jsonl.is_some() || args.reference_manifest.is_some() {
@@ -2959,6 +3670,16 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_full_logits_output: None,
             json_output: true,
         }
     }
@@ -3346,7 +4067,8 @@ mod tests {
 
     #[test]
     fn rvllm_metal_infer_json_report_has_schema_and_claim() {
-        let report = InferReport {
+        #[allow(unused_mut)]
+        let mut report = InferReport {
             model_dir: PathBuf::from("/tmp/gemma4-e2b"),
             prompt: "Hello".to_owned(),
             prompt_token_ids: vec![2, 4],
@@ -3402,6 +4124,8 @@ mod tests {
             metal_weight_dtype: "bfloat16".to_owned(),
             metal_moe_router_weight_dtype: "bfloat16".to_owned(),
             diagnostic_top_logits: Vec::new(),
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced: None,
         };
         let comparison = ReferenceComparison {
             path: PathBuf::from("/tmp/ref.json"),
@@ -3416,6 +4140,26 @@ mod tests {
         assert_eq!(value["library_compiles"], 1);
         assert_eq!(value["pipeline_state_compiles"], 31);
         assert_eq!(value["last_step_gpu_execution_ns"], 1_000_000);
+        #[cfg(feature = "metal-quality-research")]
+        {
+            report.teacher_forced = Some(TeacherReport {
+                schema: "rvllm.metal_teacher_forced_quality.v1",
+                claim: "test research diagnostic",
+                prefill_last_step: None,
+                lm_head_shape_probe: None,
+                prefill_full_logits: None,
+                steps: vec![score_teacher_step(&[0.0, 1.0], 1, 1).unwrap()],
+                total_negative_log_likelihood: 0.313_261_687_518_222_8,
+                mean_negative_log_likelihood: 0.313_261_687_518_222_8,
+                perplexity: 0.313_261_687_518_222_8_f64.exp(),
+            });
+            let quality = report_value(&report, None);
+            assert_eq!(
+                quality["teacher_forced"]["schema"],
+                "rvllm.metal_teacher_forced_quality.v1"
+            );
+            assert!(quality["claim"].as_str().unwrap().contains("research-only"));
+        }
         #[cfg(feature = "metal-stage-instrumentation")]
         assert_eq!(
             value["metal_stage_timing"]["schema"],
@@ -3487,6 +4231,8 @@ mod tests {
             metal_weight_dtype: "bfloat16".to_owned(),
             metal_moe_router_weight_dtype: "bfloat16".to_owned(),
             diagnostic_top_logits: Vec::new(),
+            #[cfg(feature = "metal-quality-research")]
+            teacher_forced: None,
         };
         let reference = HfReference {
             path: PathBuf::from("/tmp/ref.json"),
@@ -3535,6 +4281,16 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_full_logits_output: None,
             json_output: true,
         };
         let report = run_infer(&args).expect("run E2B Metal text inference");
@@ -3580,6 +4336,16 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_full_logits_output: None,
             json_output: true,
         };
         let report = run_infer(&args).expect("run configured-context E2B Metal text inference");
@@ -3660,6 +4426,16 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_full_logits_output: None,
             json_output: true,
         };
         let reference = parse_hf_reference(reference_path).expect("parse HF text reference");
@@ -3739,6 +4515,16 @@ mod tests {
             profile_samples: 0,
             profile_report: None,
             top_logits: 0,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_token_ids: None,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_session: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_last_logits: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_lm_head_shape_probe: false,
+            #[cfg(feature = "metal-quality-research")]
+            teacher_prefill_full_logits_output: None,
             json_output: true,
         };
         let prompt_token_ids =
@@ -3825,5 +4611,336 @@ mod tests {
             CLAIM,
             "Apple Metal text inference workflow; not production-ready until acceptance gates pass"
         );
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_score_is_stable_and_rejects_invalid_logits() {
+        let step = score_teacher_step(&[0.0, 1.0, 2.0], 1, 2).unwrap();
+        let expected = (1.0_f64 + (-1.0_f64).exp() + (-2.0_f64).exp()).ln() + 1.0;
+        assert!((step.negative_log_likelihood - expected).abs() < 1e-12);
+        assert_eq!(step.target_rank, 2);
+        assert_eq!(step.sampled_token_id, 2);
+        assert!(score_teacher_step(&[f32::NEG_INFINITY, 1.0], 1, 1).is_ok());
+        assert!(score_teacher_step(&[0.0, f32::NAN], 0, 0).is_err());
+        assert!(score_teacher_step(&[0.0], 1, 0).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn prefill_last_score_selects_only_the_final_prompt_row() {
+        let step = score_prefill_last_logits(&[9.0, 0.0, 0.0, 0.0, 1.0, 2.0], 2, 1)
+            .expect("score final row");
+        assert_eq!(step.target_token_id, 1);
+        assert_eq!(step.sampled_token_id, 2);
+        assert_eq!(step.target_rank, 2);
+        assert!(score_prefill_last_logits(&[1.0, 2.0], 0, 1).is_err());
+        assert!(score_prefill_last_logits(&[1.0, 2.0, 3.0], 2, 1).is_err());
+        assert!(score_prefill_last_logits(&[f32::NAN, f32::NAN], 1, 1).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn full_prefill_logits_are_final_row_only_and_create_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("full.json");
+        let logits = [9.0_f32, 8.0, 7.0, 0.0, 1.0, 2.0];
+        let receipt = write_prefill_full_logits(&path, &logits, 2, 3, 1).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            value["schema"],
+            "rvllm.metal_prefill_final_full_logits_bits.v1"
+        );
+        assert_eq!(value["prompt_tokens"], 2);
+        assert_eq!(value["target_token_id"], 1);
+        assert_eq!(value["vocab_size"], 3);
+        assert_eq!(
+            value["logit_bits"],
+            serde_json::json!([0.0_f32.to_bits(), 1.0_f32.to_bits(), 2.0_f32.to_bits()])
+        );
+        assert_eq!(receipt.bytes, bytes.len());
+        assert_eq!(receipt.vocab_size, 3);
+        assert_eq!(receipt.negative_infinity_count, 0);
+        assert_eq!(
+            receipt.sha256,
+            rvllm_runtime::kernel_game::Sha256Digest::bytes(&bytes).as_str()
+        );
+        assert!(write_prefill_full_logits(&path, &logits, 2, 3, 1).is_err());
+        assert!(write_prefill_full_logits(&dir.path().join("bad.json"), &logits, 2, 4, 1).is_err());
+        let negative_infinity = dir.path().join("negative-infinity.json");
+        let negative_infinity_receipt = write_prefill_full_logits(
+            &negative_infinity,
+            &[0.0, 1.0, 2.0, f32::NEG_INFINITY, 1.0, 2.0],
+            2,
+            3,
+            1,
+        )
+        .unwrap();
+        assert_eq!(negative_infinity_receipt.negative_infinity_count, 1);
+        let negative_infinity_json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(negative_infinity).unwrap()).unwrap();
+        assert_eq!(
+            negative_infinity_json["logit_bits"][0],
+            f32::NEG_INFINITY.to_bits()
+        );
+        assert!(write_prefill_full_logits(
+            &dir.path().join("nonfinite.json"),
+            &[0.0, 1.0, 2.0, f32::NAN, 1.0, 2.0],
+            2,
+            3,
+            1
+        )
+        .is_err());
+        assert!(!dir.path().join("nonfinite.json").exists());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn lm_head_shape_comparison_retains_exact_and_finite_differences() {
+        let left = [1.0, -2.0, f32::NEG_INFINITY, 4.0];
+        let right = [1.0, -1.5, f32::NEG_INFINITY, 3.0];
+        let difference = compare_logit_vectors(&left, &right).unwrap();
+        assert_eq!(difference.exact_bits_equal, 2);
+        assert_eq!(difference.differing, 2);
+        assert_eq!(difference.nonfinite_mismatches, 0);
+        assert_eq!(difference.max_finite_abs_diff, 1.0);
+        assert_eq!(difference.max_finite_abs_diff_token_id, 3);
+        assert!((difference.mean_finite_abs_diff - 0.5).abs() < 1e-12);
+        assert!(compare_logit_vectors(&[], &[]).is_err());
+        assert!(compare_logit_vectors(&[1.0], &[1.0, 2.0]).is_err());
+        assert!(compare_logit_vectors(&[f32::NAN], &[1.0]).is_err());
+        assert!(compare_logit_vectors(&[f32::NEG_INFINITY], &[f32::NEG_INFINITY]).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_mode_requires_single_json_prompt_and_exact_targets() {
+        let base = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7,8",
+            "--json",
+        ];
+        assert_eq!(
+            parse_args_from(base).unwrap().teacher_token_ids,
+            Some(vec![7, 8])
+        );
+        let wrong_count = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7",
+            "--json",
+        ];
+        assert!(parse_args_from(wrong_count).is_err());
+        let no_json = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7,8",
+        ];
+        assert!(parse_args_from(no_json).is_err());
+        let empty_id = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--max-new-tokens",
+            "2",
+            "--teacher-token-ids",
+            "7,,8",
+            "--json",
+        ];
+        assert!(parse_args_from(empty_id).is_err());
+
+        let mut with_prefill = base.to_vec();
+        with_prefill.push("--teacher-prefill-last-logits");
+        assert!(
+            parse_args_from(with_prefill.clone())
+                .unwrap()
+                .teacher_prefill_last_logits
+        );
+        with_prefill.push("--teacher-prefill-last-logits");
+        assert!(parse_args_from(with_prefill).is_err());
+        let mut with_shape = base.to_vec();
+        with_shape.push("--teacher-prefill-last-logits");
+        with_shape.push("--teacher-lm-head-shape-probe");
+        assert!(
+            parse_args_from(with_shape.clone())
+                .unwrap()
+                .teacher_lm_head_shape_probe
+        );
+        with_shape.push("--teacher-lm-head-shape-probe");
+        assert!(parse_args_from(with_shape).is_err());
+        let mut without_prefill = base.to_vec();
+        without_prefill.push("--teacher-lm-head-shape-probe");
+        assert!(parse_args_from(without_prefill).is_err());
+        let full_dir = tempfile::tempdir().unwrap();
+        let first = full_dir.path().join("first.json");
+        let second = full_dir.path().join("second.json");
+        let mut with_full = base.to_vec();
+        with_full.extend([
+            "--teacher-prefill-last-logits",
+            "--teacher-prefill-full-logits-output",
+            first.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            parse_args_from(with_full.clone())
+                .unwrap()
+                .teacher_prefill_full_logits_output,
+            Some(first.clone())
+        );
+        with_full.extend([
+            "--teacher-prefill-full-logits-output",
+            second.to_str().unwrap(),
+        ]);
+        assert!(parse_args_from(with_full).is_err());
+        let mut relative = base.to_vec();
+        relative.extend([
+            "--teacher-prefill-last-logits",
+            "--teacher-prefill-full-logits-output",
+            "relative.json",
+        ]);
+        assert!(parse_args_from(relative).is_err());
+        let mut without_prefill = base.to_vec();
+        without_prefill.extend([
+            "--teacher-prefill-full-logits-output",
+            first.to_str().unwrap(),
+        ]);
+        assert!(parse_args_from(without_prefill).is_err());
+        let no_teacher = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Hello",
+            "--teacher-prefill-last-logits",
+            "--json",
+        ];
+        assert!(parse_args_from(no_teacher).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_prompt_jsonl_requires_exactly_one_nonempty_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.jsonl");
+        std::fs::write(&path, "{\"prompt\":\"Hello\"}\n").unwrap();
+        let path = path.to_str().unwrap();
+        let args = [
+            "--model-dir",
+            "/tmp/model",
+            "--teacher-prompt-jsonl",
+            path,
+            "--teacher-token-ids",
+            "7",
+            "--json",
+        ];
+        assert_eq!(
+            parse_args_from(args).unwrap().prompt.as_deref(),
+            Some("Hello")
+        );
+
+        std::fs::write(
+            dir.path().join("prompt.jsonl"),
+            "{\"prompt\":\"Hello\"}\n{\"prompt\":\"Again\"}\n",
+        )
+        .unwrap();
+        assert!(parse_args_from(args).is_err());
+        std::fs::write(dir.path().join("prompt.jsonl"), "{\"prompt\":\"\"}\n").unwrap();
+        assert!(parse_args_from(args).is_err());
+        std::fs::write(dir.path().join("prompt.jsonl"), "{\"prompt\":\"Hello\"}\n").unwrap();
+        let duplicate = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompt",
+            "Duplicate",
+            "--teacher-prompt-jsonl",
+            path,
+            "--teacher-token-ids",
+            "7",
+            "--json",
+        ];
+        assert!(parse_args_from(duplicate).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_session_requires_isolated_direct_json_mode() {
+        let base = [
+            "--model-dir",
+            "/tmp/model",
+            "--prompts-jsonl",
+            "/tmp/cases.jsonl",
+            "--teacher-session",
+            "--json",
+        ];
+        assert!(parse_args_from(base).unwrap().teacher_session);
+        for extra in [
+            vec!["--session-backend", "engine"],
+            vec!["--teacher-token-ids", "7"],
+            vec!["--eos-token-ids", "1"],
+            vec!["--hf-reference", "/tmp/reference.json"],
+            vec!["--profile-samples", "2"],
+        ] {
+            assert!(parse_args_from(base.into_iter().chain(extra).collect::<Vec<_>>()).is_err());
+        }
+        assert!(parse_args_from(base[..base.len() - 1].iter().copied()).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_session_strict_cases_and_bounds() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cases.jsonl");
+        let good = "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":2,\"teacher_token_ids\":[7,8]}\n{\"name\":\"b\",\"prompt\":\"two\",\"max_new_tokens\":1,\"teacher_token_ids\":[9]}\n";
+        std::fs::write(&path, good).unwrap();
+        let cases = load_teacher_session_cases(&path).unwrap();
+        assert_eq!(cases.len(), 2);
+        assert_eq!(cases[0].teacher_token_ids.as_deref(), Some(&[7, 8][..]));
+        for bad in [
+            "{\"name\":\"a\",\"name\":\"b\",\"prompt\":\"one\",\"max_new_tokens\":1,\"teacher_token_ids\":[7]}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":1,\"teacher_token_ids\":[7],\"unknown\":1}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":2,\"teacher_token_ids\":[7]}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":0,\"teacher_token_ids\":[]}\n",
+            "{\"name\":\"a\",\"prompt\":\"one\",\"max_new_tokens\":1,\"teacher_token_ids\":[7]}\n\n",
+        ] {
+            std::fs::write(&path, bad).unwrap();
+            assert!(load_teacher_session_cases(&path).is_err(), "accepted {bad:?}");
+        }
+        std::fs::write(&path, good.repeat(3)).unwrap();
+        assert!(load_teacher_session_cases(&path).is_err());
+    }
+
+    #[cfg(feature = "metal-quality-research")]
+    #[test]
+    fn teacher_session_report_removes_readback_distorted_timing() {
+        let mut value = serde_json::json!({
+            "prefill_ms": 1.0,
+            "decode_ms": 2.0,
+            "tok_per_s": 3.0,
+            "cpu_wall_ns": 4,
+            "teacher_forced": {"steps": [1]},
+            "research_dispatch": {"counts": {"sg8": 1}},
+        });
+        remove_invalid_timing_fields(&mut value);
+        for field in ["prefill_ms", "decode_ms", "tok_per_s", "cpu_wall_ns"] {
+            assert!(value.get(field).is_none());
+        }
+        assert_eq!(value["teacher_forced"]["steps"][0], 1);
+        assert_eq!(value["research_dispatch"]["counts"]["sg8"], 1);
     }
 }

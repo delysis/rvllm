@@ -1,0 +1,16 @@
+{
+  "schema": "rvllm.gemma4_heldout_text.v1",
+  "provenance": "Codex-authored synthetic numerical diagnostics, frozen before any model scoring of these exact prompts. These are not independent natural text, a held-out corpus, or a quality benchmark.",
+  "cases": [
+    {
+      "id": "observatory-clock-v2",
+      "prompt": "A small observatory records every telescope exposure in two clocks. The camera writes a monotonic counter that starts at zero when the camera powers on. The control computer writes a wall-clock timestamp that may jump when its network clock is corrected. During one evening, the camera stayed powered on while the control computer corrected its clock backward by four minutes. The exposure log lists three frames. Frame cedar has counter 410 and wall-clock time 21:14. Frame birch has counter 425 and wall-clock time 21:11. Frame ash has counter 440 and wall-clock time 21:12. An assistant sorted the frames by wall-clock time and concluded that birch preceded cedar. The instrument operator instead compared the counters, checked that the camera had not restarted, and kept the wall-clock correction as a separate event in the maintenance record. Nothing in the counter log suggests that a frame was deleted or duplicated. State the exposure order and identify the clock that determines it.\nAnswer:",
+      "continuation": " cedar, birch, ash; the uninterrupted camera counter determines the exposure order."
+    },
+    {
+      "id": "library-ledger-v2",
+      "prompt": "A lending library keeps a physical returns ledger and a separate digital catalog. A book is considered returned when the desk worker receives it and signs the ledger, even if the digital catalog is updated later. On Monday, a reader returned a red atlas at 09:10 and a blue field guide at 09:25. The desk worker signed both entries immediately. A network outage prevented catalog updates until noon. When service returned, the worker entered the blue guide first and the red atlas second, so the catalog's update timestamps reverse the order of the physical returns. The reader asked which item was returned first because a fee waiver depends on the order of actual desk receipt, not on data entry. The worker checked the signed ledger and confirmed that neither item had been left in an unattended drop box. The computer timestamps remain useful for auditing the delayed catalog updates, but they do not replace the signed receipt times. Answer with the first returned item and the evidence that establishes the order.\nAnswer:",
+      "continuation": " the red atlas, because its signed desk receipt is at 09:10, before the blue field guide at 09:25."
+    }
+  ]
+}

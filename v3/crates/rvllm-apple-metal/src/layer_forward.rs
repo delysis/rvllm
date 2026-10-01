@@ -172,10 +172,63 @@ fn is_gemma4_12b_prompt_projection(m: u32, n: u32, k: u32) -> bool {
     (20..=32).contains(&m) && matches!((n, k), (30_720, 3_840) | (3_840, 4_096 | 8_192 | 15_360))
 }
 
+/// Explicit prefill tournament policy. Check both output ABIs before enabling
+/// the materialized route; missing libraries/PSOs never count as participation.
+/// No allocation, environment access or new Metal FFI enters this predicate.
+fn supports_prefill_round_projection_layer(
+    pipelines: &PipelineCache,
+    dims: &MetalLayerDims,
+) -> bool {
+    let candidate = pipelines.kernel_options().research;
+    let Some(kernels) = crate::prefill_round::projection_kernels(candidate) else {
+        return false;
+    };
+    crate::prefill_round::projection_layer_supported(
+        candidate,
+        prefill_round_model(dims),
+        pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+            && !pipelines.kernel_options().quantized_bf16_accumulation,
+        matches!(
+            pipelines.gpu_family(),
+            AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10
+        ),
+    ) && kernels
+        .into_iter()
+        .chain(
+            crate::prefill_round::postnorm_kernels(candidate)
+                .into_iter()
+                .flatten(),
+        )
+        .all(|kernel| {
+            let (threads, shared) = kernel.limits();
+            pipelines
+                .research_pso(kernel.name(), threads, shared)
+                .is_some()
+        })
+}
+
+fn prefill_round_model(dims: &MetalLayerDims) -> crate::research::Gemma12bResearchShape {
+    crate::research::Gemma12bResearchShape {
+        tokens: dims.num_tokens,
+        hidden: dims.hidden,
+        intermediate: dims.intermediate,
+        layers: dims.num_layers,
+        heads: dims.num_heads,
+        kv_heads: dims.num_kv_heads,
+        head_dim: dims.head_dim,
+        attention_window: dims.attention_window,
+        moe_experts: dims.moe_num_experts,
+        moe_top_k: dims.moe_top_k,
+        moe_intermediate: dims.moe_intermediate,
+        ple: dims.ple_dim,
+    }
+}
+
 /// Eligibility shared by encoding and diagnostic encoder accounting.
 #[must_use]
 pub fn supports_qkv_prefill_projection(pipelines: &PipelineCache, dims: &MetalLayerDims) -> bool {
-    (pipelines.kernel_options().qkv_prefill_batch8
+    supports_prefill_round_projection_layer(pipelines, dims)
+        || ((pipelines.kernel_options().qkv_prefill_batch8
         || prefill_mma_enabled(pipelines))
         // The diagnostic scalar-rounding rewrite does not apply to batch8.
         && !pipelines.kernel_options().quantized_bf16_accumulation
@@ -190,7 +243,7 @@ pub fn supports_qkv_prefill_projection(pipelines: &PipelineCache, dims: &MetalLa
         && dims.moe_intermediate == 0
         && dims.ple_dim == 0
         && dims.num_heads == 16
-        && matches!((dims.num_kv_heads, dims.head_dim), (8, 256) | (1, 512))
+        && matches!((dims.num_kv_heads, dims.head_dim), (8, 256) | (1, 512)))
 }
 
 fn prefill_mma_enabled(pipelines: &PipelineCache) -> bool {
@@ -248,8 +301,8 @@ pub fn supports_gemma4_prefill_mma(
     phase: MetalPhase,
 ) -> bool {
     matches!(phase, MetalPhase::Prefill { .. })
-        && prefill_mma_enabled(pipelines)
-        && supports_qkv_prefill_projection(pipelines, dims)
+        && (supports_prefill_round_projection_layer(pipelines, dims)
+            || (prefill_mma_enabled(pipelines) && supports_qkv_prefill_projection(pipelines, dims)))
 }
 
 #[cfg(test)]
@@ -611,7 +664,12 @@ fn supports_batch8_gemm(gpu_family: AppleGpuFamily, m: u32, n: u32, k: u32) -> b
 /// projection before RMSNorm; other larger prefills retain the fused fallback.
 #[must_use]
 pub fn metal_gemm_rmsnorm_encoder_count(m: u32, n: u32, k: u32, allow_prefill_mma: bool) -> u64 {
-    if supports_vec_gemm(m, n, k) || (allow_prefill_mma && is_prefill_mma_shape(m, n, k, false)) {
+    // The owner admits old MMA selectors only through M=1024. The new,
+    // explicitly selected family alone can set this permission at M=1025..2048.
+    // Keep the old shader/selector eligibility function unchanged.
+    if supports_vec_gemm(m, n, k)
+        || (allow_prefill_mma && crate::prefill_round::projection_shape(m, n, k, false))
+    {
         2
     } else {
         1
@@ -1970,19 +2028,57 @@ pub unsafe fn metal_encode_forward_layer(
                 )
             })?;
             let research_kind = pipelines.kernel_options().research;
+            let round_plan = meta.cu_seqlens_offset.and_then(|cu| {
+                crate::prefill_round::AttentionRequest {
+                    candidate: research_kind,
+                    model: prefill_round_model(dims),
+                    native_bf16: pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+                        && !pipelines.kernel_options().quantized_bf16_accumulation,
+                    apple9_or_10: matches!(
+                        pipelines.gpu_family(),
+                        AppleGpuFamily::Apple9 | AppleGpuFamily::Apple10
+                    ),
+                    prefill_single_sequence: batch_size == 1,
+                    trace: trace.is_some(),
+                    block_size: dims.block_size,
+                    max_blocks: dims.max_blocks_per_seq,
+                    num_blocks: dims.num_blocks_total,
+                    scale: dims.attn_scale,
+                    offsets: [
+                        scratch.q_offset,
+                        attention_kv_cache_k_offset,
+                        attention_kv_cache_v_offset,
+                        scratch.attn_out,
+                        meta.block_tables_offset,
+                        meta.context_lens_offset,
+                        cu,
+                        meta.positions_offset,
+                    ],
+                    arena_bytes: buf.length(),
+                }
+                .plan()
+                .ok()
+            });
             let temporal = research_kind == crate::MetalResearchCandidate::AttentionQ4;
-            let research_name = match (temporal, dims.head_dim) {
-                (true, 256) => "research_attn_q4_d256",
-                (true, _) => "research_attn_q4_d512",
-                (false, 256) => "research_gqa_kv8_d256",
-                (false, _) => "research_gqa_kv8_d512",
+            let research_name = if let Some(plan) = round_plan {
+                plan.kernel.name()
+            } else {
+                match (temporal, dims.head_dim) {
+                    (true, 256) => "research_attn_q4_d256",
+                    (true, _) => "research_attn_q4_d512",
+                    (false, 256) => "research_gqa_kv8_d256",
+                    (false, _) => "research_gqa_kv8_d512",
+                }
             };
-            let research_threads = if temporal || dims.num_kv_heads != 8 {
+            let research_threads = if round_plan.is_some() || temporal || dims.num_kv_heads != 8 {
                 128
             } else {
                 64
             };
-            let research_pso = if batch_size == 1
+            let research_pso = if let Some(plan) = round_plan {
+                let (threads, shared) = plan.kernel.limits();
+                pipelines.research_pso(plan.kernel.name(), threads, shared)
+            } else if batch_size == 1
                 && dims.attn_scale == 1.0
                 && matches!(
                     research_kind,
@@ -1994,7 +2090,8 @@ pub unsafe fn metal_encode_forward_layer(
                     || crate::research_next::temporal_context_capacity_fits(
                         dims.block_size,
                         dims.max_blocks_per_seq,
-                    )) {
+                    ))
+            {
                 meta.cu_seqlens_offset.and_then(|cu| {
                     let shape = crate::research::GqaBufferShape {
                         tokens: num_tokens,
@@ -2115,7 +2212,14 @@ pub unsafe fn metal_encode_forward_layer(
                     17,
                 );
             }
-            let groups = if use_research && temporal {
+            let groups = if use_research && round_plan.is_some() {
+                let plan = round_plan.expect("selected prefill attention plan");
+                MTLSize {
+                    width: plan.grid[0],
+                    height: plan.grid[1],
+                    depth: plan.grid[2],
+                }
+            } else if use_research && temporal {
                 MTLSize {
                     width: (total_q as usize).div_ceil(4),
                     height: dims.num_heads as usize,
@@ -2157,11 +2261,15 @@ pub unsafe fn metal_encode_forward_layer(
             }
             if use_research {
                 use crate::research_evidence::ResearchKernel;
-                pipelines.record_research_dispatch(match (temporal, dims.head_dim) {
-                    (true, 256) => ResearchKernel::Temporal256,
-                    (true, _) => ResearchKernel::Temporal512,
-                    (false, 256) => ResearchKernel::Gqa256,
-                    (false, _) => ResearchKernel::Gqa512,
+                pipelines.record_research_dispatch(if let Some(plan) = round_plan {
+                    plan.kernel
+                } else {
+                    match (temporal, dims.head_dim) {
+                        (true, 256) => ResearchKernel::Temporal256,
+                        (true, _) => ResearchKernel::Temporal512,
+                        (false, 256) => ResearchKernel::Gqa256,
+                        (false, _) => ResearchKernel::Gqa512,
+                    }
                 });
             }
         }
@@ -2277,6 +2385,7 @@ pub unsafe fn metal_encode_forward_layer(
                 dims.rms_eps,
                 "post_attn_norm",
                 allow_prefill_mma,
+                Some(scratch.qkv_out),
             )?;
         }
         if let Some(trace) = trace {
@@ -2599,6 +2708,7 @@ pub unsafe fn metal_encode_forward_layer(
                 dims.rms_eps,
                 "post_ff1_norm",
                 allow_prefill_mma,
+                Some(scratch.qkv_out),
             )?;
         }
         if let Some(trace) = trace {
@@ -2773,6 +2883,7 @@ pub unsafe fn metal_encode_forward_layer(
                 dims.rms_eps,
                 "post_ff_norm",
                 allow_prefill_mma,
+                Some(scratch.qkv_out),
             )?;
         }
         if let Some(trace) = trace {
@@ -2979,6 +3090,7 @@ pub unsafe fn metal_encode_forward_layer(
                 dims.rms_eps,
                 "post_per_layer_input_norm",
                 allow_prefill_mma,
+                Some(scratch.qkv_out),
             )?;
             if let Some(trace) = trace {
                 if let Some(post_per_layer_input_norm) = trace.post_per_layer_input_norm {
@@ -3529,17 +3641,34 @@ unsafe fn encode_rmsnorm_with_policy(
             },
         )
     })?;
-    let decision = crate::research_projection::postnorm_plan(
-        pipelines.kernel_options().research,
-        full_prefill_projection,
-        pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
-            && !pipelines.kernel_options().quantized_bf16_accumulation,
-        [input_offset, output_offset, gamma_offset],
-        num_tokens,
-        hidden,
-        eps,
-        buf.length(),
-    );
+    let decision = if crate::prefill_round::postnorm_kernels(pipelines.kernel_options().research)
+        .is_some()
+        && full_prefill_projection
+    {
+        crate::prefill_round::postnorm_plan(
+            pipelines.kernel_options().research,
+            full_prefill_projection,
+            pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+                && !pipelines.kernel_options().quantized_bf16_accumulation,
+            [input_offset, output_offset, gamma_offset],
+            num_tokens,
+            hidden,
+            eps,
+            buf.length(),
+        )
+    } else {
+        crate::research_projection::postnorm_plan(
+            pipelines.kernel_options().research,
+            full_prefill_projection,
+            pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+                && !pipelines.kernel_options().quantized_bf16_accumulation,
+            [input_offset, output_offset, gamma_offset],
+            num_tokens,
+            hidden,
+            eps,
+            buf.length(),
+        )
+    };
     let research = decision.ok().and_then(|plan| {
         let (threads, shared) = plan.kernel.limits();
         pipelines
@@ -3713,8 +3842,78 @@ unsafe fn encode_gemm_rmsnorm(
     eps: f32,
     op: &'static str,
     allow_prefill_mma: bool,
+    prefill_projection_scratch: Option<usize>,
 ) -> Result<()> {
-    if metal_gemm_rmsnorm_encoder_count(m, n, k, allow_prefill_mma) == 2 {
+    let round = allow_prefill_mma
+        && crate::prefill_round::projection_kernels(pipelines.kernel_options().research).is_some()
+        && crate::prefill_round::raw_norm_route(m, n, k);
+    if round {
+        if let Some(raw) = prefill_projection_scratch {
+            let native = pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
+                && !pipelines.kernel_options().quantized_bf16_accumulation;
+            let projection = crate::prefill_round::projection_plan(
+                crate::research_projection::ProjectionRequest {
+                    candidate: pipelines.kernel_options().research,
+                    full_prefill: true,
+                    native_bf16: native,
+                    alpha: 1.0,
+                    beta: 0.0,
+                    shape: [m, n, k],
+                    output_f32: true,
+                    offsets: [a_offset, b_offset, raw],
+                    arena_bytes: buf.length(),
+                },
+            );
+            let norm = crate::prefill_round::postnorm_plan(
+                pipelines.kernel_options().research,
+                true,
+                native,
+                [raw, c_offset, gamma_offset],
+                m,
+                n,
+                eps,
+                buf.length(),
+            );
+            if let (Ok(projection), Ok(norm)) = (projection, norm) {
+                let available = [projection.kernel, norm.kernel].into_iter().all(|kernel| {
+                    let (threads, shared) = kernel.limits();
+                    pipelines
+                        .research_pso(kernel.name(), threads, shared)
+                        .is_some()
+                });
+                let output_disjoint = crate::research::projection_buffers_fit(
+                    [a_offset, b_offset, c_offset],
+                    [m, n, k],
+                    2,
+                    buf.length(),
+                );
+                if available && output_disjoint {
+                    // QKV projection scratch is dead here, after its norm/RoPE/cache
+                    // consumers. Keep FP32 until the unchanged normalization boundary.
+                    encode_gemm_with_output(
+                        cmd_buf, pipelines, buf, a_offset, b_offset, raw, m, n, k, 1.0, 0.0, true,
+                        true,
+                    )?;
+                    return encode_rmsnorm_with_policy(
+                        cmd_buf,
+                        pipelines,
+                        buf,
+                        raw,
+                        c_offset,
+                        gamma_offset,
+                        n,
+                        eps,
+                        m,
+                        op,
+                        true,
+                    );
+                }
+            }
+        }
+        // Refusal keeps the ORIGINAL fused FP32 projection/norm route. Never
+        // silently fall through to a BF16 materialization on this family.
+    }
+    if !round && metal_gemm_rmsnorm_encoder_count(m, n, k, allow_prefill_mma) == 2 {
         // The fused kernel has one threadgroup per token. That is useful for
         // large-prefill locality, but severely under-occupies decode-sized
         // projections. Materializing the dtype-rounded projection, from GEMV
@@ -6566,7 +6765,7 @@ unsafe fn encode_gemm_with_output(
         )
     })?;
     let candidate = pipelines.kernel_options().research;
-    let decision = crate::research_projection::ProjectionRequest {
+    let request = crate::research_projection::ProjectionRequest {
         candidate,
         full_prefill: allow_prefill_mma,
         native_bf16: pipelines.float_type() == Some(crate::MetalFloatType::Bf16)
@@ -6577,8 +6776,12 @@ unsafe fn encode_gemm_with_output(
         output_f32,
         offsets: [a_offset, b_offset, c_offset],
         arena_bytes: buf.length(),
-    }
-    .plan();
+    };
+    let decision = if crate::prefill_round::projection_kernels(candidate).is_some() {
+        crate::prefill_round::projection_plan(request)
+    } else {
+        request.plan()
+    };
     let research = decision.ok().and_then(|plan| {
         let (threads, shared) = plan.kernel.limits();
         pipelines

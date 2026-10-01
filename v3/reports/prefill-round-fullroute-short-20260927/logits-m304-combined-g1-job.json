@@ -1,0 +1,79 @@
+{
+  "schema": "rvllm.experiment_job.v1",
+  "id": "prefill26-logits-m304-combined-g1-20260927",
+  "purpose": "correctness",
+  "command": {
+    "executable": {
+      "path": "/tmp/rvllm-prefill-v3-target-20260927/release/rvllm_metal_infer",
+      "sha256": "7b6487471816cfe71999bf9d54631589105dcf88cb4f569e924c28c048cc1e20"
+    },
+    "cwd": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "args": [
+      "--model-dir",
+      "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "--prompt",
+      "Field notes from a fictional observatory: The north dome opens at dusk, but its camera is offline every third evening for calibration. The south dome opens only when the wind is below twelve kilometers per hour. On Monday both domes were open; the north camera saved forty images and the south camera saved twenty. On Tuesday the wind rose above the limit, so the south dome stayed closed. The north camera saved thirty images. On Wednesday the north camera entered its scheduled calibration evening and saved no images, while the south dome saved fifty images. The archivist verified that every saved image has a unique identifier and that the daily counts contain no duplicates. A later note says the archive copied ten Monday north images to a review folder, but copying did not create new observations. On Thursday the wind was calm and both domes opened. The north camera saved twenty-five images, while the south camera saved fifteen. The review folder still contained those ten copies and no other files. A colleague proposed counting the review copies as Thursday observations, but the archivist rejected that proposal because the original timestamps remained Monday's. On Friday the south dome was closed for maintenance, while the north camera saved thirty-five images. The maintenance log did not record any camera calibration on Friday. The observatory wants a weekly count of unique saved observations, broken down by dome, without treating copies as new exposures. Compute the totals for Monday through Friday, identify the day with the greatest combined count, and explain why the ten review copies do not change the answer.",
+      "--session-backend",
+      "direct",
+      "--max-new-tokens",
+      "1",
+      "--max-total-tokens",
+      "1024",
+      "--large-model-opt-in",
+      "--top-logits",
+      "256",
+      "--json"
+    ],
+    "env": {
+      "RVLLM_METAL_RESEARCH": "metal-prefill-pipeline32x64-q4k16",
+      "RVLLM_METAL_METALLIB_BF16": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-apple-build-v3-20260927/metal-prefill-pipeline32x64-q4k16.metallib"
+    }
+  },
+  "inputs": [
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-fullroute-short-20260927/prompt-m304-only.jsonl",
+      "sha256": "72e42ab11ef82d9a1779c2d93c9f30c3bbc39bc9f5ea478cc293ec18a4b68406"
+    },
+    {
+      "path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3/reports/prefill-round-apple-build-v3-20260927/metal-prefill-pipeline32x64-q4k16.metallib",
+      "sha256": "8a1234a3ac14cb1c55c6c4c601c4fb2647defbc955b14be3a2c23414552fbfcb"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/config.json",
+      "sha256": "478c46e8d2c52d5c2d85bf67e3b3e8c90e7c9d91086cee27e3c267907e936bd9"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/model.safetensors",
+      "sha256": "5a84cb313260ac447237b890387116dfa8682e49a6b44bc585ae8353abbff18d"
+    },
+    {
+      "path": "/Users/george/.cache/huggingface/hub/models--google--gemma-4-12B-it/snapshots/707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7/tokenizer.json",
+      "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+    }
+  ],
+  "after": [
+    "prefill26-logits-m304-off-g1-20260927"
+  ],
+  "conditions": {
+    "disk_path": "/Users/george/.codex/worktrees/rvllm-prefill-fb5f169c-20260927/v3",
+    "idle_llama_servers": [],
+    "quiet_process_names": [],
+    "observe_process_names": [
+      "cargo",
+      "rustc",
+      "metal",
+      "metallib",
+      "llama-server",
+      "ollama",
+      "rvllm_metal_infer"
+    ],
+    "power_source": "ac",
+    "low_power_mode": null,
+    "pmset_power_mode": null,
+    "thermal_state": null,
+    "minimum_free_bytes": 17179869184
+  },
+  "stable_seconds": 0,
+  "max_wait_seconds": 7200,
+  "max_run_seconds": 1800
+}

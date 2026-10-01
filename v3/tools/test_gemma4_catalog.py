@@ -7,11 +7,17 @@ class CatalogTests(unittest.TestCase):
     def setUp(self):self.value=json.loads((TOOLS/'gemma4_metal_catalog.json').read_text())
     def test_complete_catalog_and_entrypoint_map(self):
         got=catalog.validate(self.value)
-        self.assertEqual(len(got['candidates']),48)
-        self.assertEqual(len(catalog.exports(got)),48)
-        self.assertEqual(len(catalog.sources(got)),55)
+        self.assertEqual(len(got['candidates']),52)
+        self.assertEqual(len(catalog.exports(got)),52)
+        self.assertEqual(len(catalog.sources(got)),62)
         self.assertEqual(catalog.exports(got)['metal-mma32-load4'],('wave2_gemm_mma32_load4','wave2_qkv_mma32_load4'))
         self.assertEqual(len(catalog.exports(got)['metal-donor12b-sg8']),12)
+    def test_only_new_prefill_family_can_admit_2048(self):
+        catalog.validate(self.value)
+        for index,limit in [(1,1025),(48,2049)]:
+            mutant=copy.deepcopy(self.value);mutant['candidates'][index]['max_tokens']=limit
+            with self.assertRaises(ValueError):catalog.validate(mutant)
+        self.assertEqual(self.value['candidates'][48]['max_tokens'],2048)
     def test_duplicate_names_missing_families_and_unknown_fields_are_rejected(self):
         for change in [lambda v:v['candidates'].pop(),lambda v:v['candidates'].append(v['candidates'][1]),
                        lambda v:v.update(device_qualified=True),lambda v:v.update(default='auto'),

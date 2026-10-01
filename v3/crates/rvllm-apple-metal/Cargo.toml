@@ -29,6 +29,7 @@ attention-atlas-research = ["dep:serde"]
 # Opt-in, device-only referee for authenticated real checkpoint projection
 # tensors. It is deliberately excluded from normal builds and dispatch.
 low-bit-real-weight-research = ["dep:serde"]
+prefill-route-abba-research = ["dep:serde"]
 
 [dependencies]
 rvllm-core = { workspace = true }
@@ -92,6 +93,20 @@ path = "src/bin/rvllm-low-bit-direct-summary.rs"
 name = "rvllm-prefill-receipt-validate"
 path = "src/bin/rvllm-prefill-receipt-validate.rs"
 required-features = ["attention-atlas-research"]
+
+[[bin]]
+name = "rvllm-prefill-route-profile-summary"
+path = "src/bin/rvllm-prefill-route-profile-summary.rs"
+
+[[bin]]
+name = "rvllm-prefill-route-abba"
+path = "src/bin/rvllm-prefill-route-abba.rs"
+required-features = ["prefill-route-abba-research"]
+
+[[bin]]
+name = "rvllm-prefill-logit-compare"
+path = "src/bin/rvllm-prefill-logit-compare.rs"
+required-features = ["prefill-route-abba-research"]
 
 [[bin]]
 name = "rvllm-donor12b-source"
