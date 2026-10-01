@@ -492,11 +492,35 @@ mod tests {
         let report = workspace.join("reports/prefill-round-fullroute-short-20260927");
         let root = report.join("e2b-multicase-qual-v1-queue");
         let source = read(&report.join("e2b-multicase-teacher-qual-source-v1.json")).unwrap();
-        let arms = MANIFEST_FILES.map(|name| Arm {
+        let mut arms = MANIFEST_FILES.map(|name| Arm {
             job: read(&root.join(name)).unwrap(),
             trial: Value::Null,
             receipts: BTreeMap::new(),
         });
+        // Queue paths are intentionally host-specific. For a checkout on CI,
+        // map only the prompt path to the byte-identical checked-in file;
+        // assert its frozen SHA before exercising the production verifier.
+        for (index, arm) in arms.iter_mut().enumerate() {
+            let flag = if index == 2 {
+                "--prompts-jsonl"
+            } else {
+                "--teacher-prompt-jsonl"
+            };
+            let original = arg(&arm.job, flag).unwrap().to_owned();
+            let name = Path::new(&original).file_name().unwrap();
+            let local = root.join(name);
+            let pin = arm.job["inputs"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|entry| entry["path"] == original)
+                .unwrap();
+            assert_eq!(pin["sha256"], digest(&local).unwrap());
+            pin["path"] = json!(local);
+            let args = arm.job["command"]["args"].as_array_mut().unwrap();
+            let position = args.iter().position(|value| value == flag).unwrap();
+            args[position + 1] = json!(local);
+        }
         assert!(verify_prompt_inputs(&arms, array(&source, "cases").unwrap()).is_ok());
         let mut bad = arms;
         bad[1].job["command"]["args"][5] = json!("8,8");
