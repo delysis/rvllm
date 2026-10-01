@@ -1,0 +1,13 @@
+# E2B multi-case teacher qualification: frozen preparation
+
+This is a prospective route-independence qualification, not a quality or speed claim. No job in this cohort had been submitted when this preparation was frozen. The earlier balanced16 W4 v1 cohort is unrelated and remains failed without replay.
+
+- Sealed source: `e2b-multicase-teacher-qual-source-v1.json`, SHA-256 `9a8e792014de7096b0ea89c9a2440448acc00797e26676ce67dd35a4b13cb17c`.
+- Prospective protocol: `E2B_MULTICASE_TEACHER_QUALIFICATION_PROTOCOL.md`, SHA-256 `8dced743830e7a11efa4bb6790116ac674d16b60bf5381cc7f4c6cb1eb3503c0`.
+- Frozen direct-Metal executable: `/private/tmp/rvllm-e2b-multicase-qual-v1-20261001/rvllm_metal_infer`, SHA-256 `149d447d70227edf265c52c721534531bb69a9c31cda44b5512566054db30d06`. CLI source SHA-256 `2682c8abf2dbe6d97bffd2959a37964e541cab2c17853ce910ad98c7377c79a2`.
+- Safe-Rust generator SHA-256 `8b35bd8b55928f49d5664ce9b254c99938739d4f58450a5f7275fecbd45ca6d5`; its focused host tests passed. It created the authoritative new directory `e2b-multicase-qual-v1-queue/` without queue submission. The separate `e2b-multicase-qual-v1-dry-run/` remains unsubmitted and untracked.
+- Safe-Rust referee SHA-256 `06236b4fa29325c0c99cb2d617c965e2a93b65f894c2cba7ec9b666577024e3f`; five focused host tests passed. Default build passed. Its negative absent-result check exited 1 without creating output. Targeted Clippy encountered existing unrelated `rvllm-apple` errors; do not claim Clippy passed.
+- Exact authoritative manifest hashes, in dependency order: observatory single `a50b5f9533749ca68e35d195eb49a68b0a1e213ea241ceac9b5eea88384c6b4d`; kitchen single `a0a046b120d9f066b6484651f9dd770c6b3b3b2fdac8c7cc744668f2570f92db`; two-case batch `e3e6f44952b45e663c8ace4796e8f056cf8fa84538bd17e1cec040ab9aa85c26`.
+- All three manifests pin the same E2B snapshot, source, protocol, executable, CLI/generator source and exact prompt JSONL. Their selector is `off`, free-disk floor is 32 GiB, thermal dwell zero, max run 1800 s, and dependency wait 7200 s. These are two Codex-authored synthetic cases with two forced targets each. No prior output was used to choose them.
+
+The referee requires three terminal clean eligible five-file queue receipts; exact immutable jobs and pins; sampled condition journals; no research selector dispatch or overflow; the complete ordered two-case batch; all forced targets and sampled IDs; finite per-position and aggregate teacher values; and exact standalone-versus-batch equality. Any mismatch is a rejection with no replay or tolerance widening. All teacher timing is invalid. Even success would qualify only this E2B multi-case route on two synthetic cases, not 12B W4 quality, full-route parity, performance or promotion.
